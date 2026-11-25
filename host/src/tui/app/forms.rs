@@ -56,6 +56,7 @@ impl App {
             worktree_mode: b.worktree_mode.unwrap_or_default(),
             auto: b.auto,
             mode: b.mode.clone(),
+            paused: b.paused,
             notify: b.notify,
             computer: b.computer,
             manage_team: b.manage_team,
@@ -189,6 +190,7 @@ impl App {
                         | Field::ThreadWorktrees
                         | Field::WorktreeMode
                         | Field::Approvals
+                        | Field::Paused
                         | Field::Compaction
                         | Field::Notify
                         | Field::Computer
@@ -241,6 +243,7 @@ impl App {
                         f.max_threads = f.max_threads.map(|n| step(n).clamp(1, MAX_THREADS));
                     }
                     Field::Approvals => self.cycle_approval(&mut f, d),
+                    Field::Paused => f.paused = !f.paused,
                     Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
@@ -349,6 +352,7 @@ impl Form {
             "fastMode": self.fast,
             "fallbacks": self.fallbacks,
             "selfFallbacks": self.self_fallbacks,
+            "paused": self.paused,
             "notify": self.notify,
             "computer": self.computer,
             "manageTeam": self.manage_team.unwrap_or_default(),

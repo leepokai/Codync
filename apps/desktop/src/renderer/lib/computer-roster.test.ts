@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { computerSections, connectionSummary, moveInOrder, orderedComputers, rosterBand, rosterOrder } from './computer-roster.ts'
+import { computerSections, connectionSummary, moveInOrder, movePreservingFrozenLead, orderedComputers, rosterBand, rosterOrder } from './computer-roster.ts'
 
 test('saved computer order survives reconnect order and appends new computers', () => {
   const computers = [{ id: 'new' }, { id: 'a' }, { id: 'b' }]
@@ -28,6 +28,23 @@ test('each computer keeps its own bots in activity order, including duplicate bo
   const sections = computerSections([{ id: 'a' }, { id: 'b' }, { id: 'empty' }], roster)
   assert.deepEqual(sections.map((s) => s.items.map((i) => i.id)), [['same'], ['same', 'older'], []])
   assert.equal(sections[0]?.items[0]?.ref.computerId, 'a')
+})
+
+test('moving across a frozen lead keeps the lead in its slot; the input list is untouched', () => {
+  const ids = ['a', 'lead', 'b']
+  assert.deepEqual(movePreservingFrozenLead(ids, 'a', 'b', 'lead'), ['b', 'lead', 'a'])
+  assert.deepEqual(movePreservingFrozenLead(ids, 'b', 'a', 'lead'), ['b', 'lead', 'a'])
+  assert.deepEqual(movePreservingFrozenLead(['lead', 'a', 'b'], 'a', 'b', 'lead'), ['lead', 'b', 'a'])
+  // Moving the lead itself is refused before this runs; the guard keeps it anyway.
+  assert.deepEqual(movePreservingFrozenLead(ids, 'lead', 'b', 'lead'), ['a', 'lead', 'b'])
+  assert.deepEqual(movePreservingFrozenLead(ids, 'b', 'lead', 'lead'), ['a', 'lead', 'b'], 'a drop onto the lead is refused too')
+  assert.notEqual(movePreservingFrozenLead(ids, 'lead', 'b', 'lead'), ids, 'the refused path still returns a fresh list')
+  // Unfrozen (no lead id), the plain move applies - the lead rides along, which is what the freeze prevents.
+  assert.deepEqual(movePreservingFrozenLead(ids, 'a', 'b', undefined), ['lead', 'b', 'a'])
+  assert.deepEqual(movePreservingFrozenLead(ids, 'b', 'a', undefined), ['b', 'a', 'lead'], 'the unfrozen fallback is a plain move both ways')
+  // A lead in the last slot resplices at the end.
+  assert.deepEqual(movePreservingFrozenLead(['a', 'b', 'lead'], 'b', 'a', 'lead'), ['b', 'a', 'lead'])
+  assert.deepEqual([...ids], ['a', 'lead', 'b'])
 })
 
 test('pinned bots sort first; the lead is placed like any bot', () => {

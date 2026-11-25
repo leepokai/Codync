@@ -238,7 +238,7 @@ private fun computerUseDetail(screen: ScreenState): String = when {
 private fun CardRows.manageTeamRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
     if (state.bots.none { it.manageTeam != null }) return
     row {
-        SwitchRow("Manage the team", "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
+        SwitchRow("Manage the team", "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.",
             draft.manageTeam, { change(draft.copy(manageTeam = it)) })
     }
 }

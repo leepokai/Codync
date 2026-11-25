@@ -63,6 +63,7 @@
     "event:bot.bot.outside": "object",
     "event:bot.bot.outside.startedAt": "null",
     "event:bot.bot.outside.status": "string",
+    "event:bot.bot.paused": "bool",
     "event:bot.bot.permission": "string",
     "event:bot.bot.pinned": "bool",
     "event:bot.bot.position": "number",

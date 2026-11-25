@@ -7,6 +7,8 @@ mod common;
 
 use common::host::Host;
 use serde_json::{Value, json};
+use std::ffi::OsStr;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 async fn wait(host: &Host, bot: &str, found: impl Fn(&Value) -> bool) -> Value {
@@ -71,6 +73,18 @@ async fn a_lead_creates_a_bot_the_user_allowed_and_not_one_change_they_denied() 
     .await;
     assert!(reply.starts_with("Refused: ") && reply.contains("didn't allow"), "{reply}");
     assert_eq!(bot(&host.snapshot().await)["hidden"], false);
+
+    // A command-backend bot's model list is its command's to answer: its model goes as it comes, its settings are
+    // refused — there is no list to check them against, and checking would run the command. Nothing probes, so no
+    // card: the refusal comes straight back.
+    let args = json!({"botId": lead, "modelOptions": {"effort": "high"}});
+    host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
+    wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.contains("modelOptions can't be checked"))
+    })
+    .await;
 
     // The lead changes its own model: the turn that asked for it finishes, then the agent starts afresh.
     let reply = manage(&host, &lead, "update_bot", &json!({"botId": lead, "model": "fixture-2"}), "allow", |detail| {
@@ -145,4 +159,138 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
     std::fs::write(workspace.join("release"), "").unwrap();
     drop(stdin);
     mcp.wait().unwrap();
+}
+
+/// Ryan's dry run: a manager checks a change without applying it — the answer carries the resolved model or
+/// the reason, no approval card ever goes up, and the bot's setup is untouched.
+#[tokio::test]
+async fn a_validate_only_check_answers_without_a_card_or_a_change() {
+    // Two dry calls answer alike, so each waits for the reply carrying its own marker.
+    async fn dry(host: &Host, lead: &str, args: Value, marker: &str) -> Value {
+        host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
+        let reply = wait(host, lead, |e| {
+            e["kind"] == "agent"
+                && e["data"]["final"] == true
+                && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Done: ") && t.contains(marker))
+        })
+        .await;
+        let text = reply["data"]["text"].as_str().unwrap().to_owned();
+        serde_json::from_str(text.strip_prefix("Done: ").unwrap_or_else(|| panic!("{text}"))).unwrap()
+    }
+
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "auto", "manageTeam": true})).await;
+
+    let ok = dry(&host, &lead, json!({"botId": lead, "model": "fixture-2", "validateOnly": true}), "fixture-2").await;
+    assert_eq!(ok["valid"], json!(true), "{ok}");
+    assert_eq!(ok["resolvedModel"], json!("fixture-2"), "{ok}");
+    assert_eq!(ok["applied"], json!(false), "{ok}");
+    // The lead runs a custom command, so a model id is taken as it comes (its list is the command's to answer)
+    // and what a dry run can refuse here is its model settings: the true negative through the real process.
+    // Where a list is there to check against, a cross-engine id is refused with the backend named
+    // (`checks::an_engine_hint_names_the_backend_a_model_belongs_to`).
+    let bad = dry(
+        &host,
+        &lead,
+        json!({"botId": lead, "modelOptions": {"effort": "high"}, "validateOnly": true}),
+        "modelOptions can't be checked",
+    )
+    .await;
+    assert_eq!(bad["valid"], json!(false), "{bad}");
+    assert!(bad["reason"].as_str().unwrap().contains("modelOptions can't be checked"), "{bad}");
+    assert_eq!(bad["applied"], json!(false), "{bad}");
+    // Neither call applied anything: the lead's model is still what it started on.
+    let sync = host.snapshot().await;
+    let lead_bot = sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == lead).unwrap();
+    assert_ne!(lead_bot["model"], json!("fixture-2"), "a validateOnly check must not change the bot");
+}
+
+/// The model check rides the login profile the target bot runs on, not the machine's default: a model outside
+/// that profile's catalog is refused naming it, and one from it lands. The lead's own catalog is its command's
+/// to answer, so the target is a stand-in `grok` CLI whose `session/new` lists what the profile's env says.
+#[tokio::test]
+async fn update_bot_checks_the_model_on_the_login_profile_the_bot_runs_on() {
+    if common::python_missing() {
+        return;
+    }
+    let shim_root = std::env::temp_dir().join(format!("codync-manage-models-{}", uuid::Uuid::new_v4()));
+    let bin = shim_root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/models_agent.py");
+    #[cfg(windows)]
+    {
+        let cmd = format!("@echo off\r\n{} -X utf8 -u \"{}\" %*\r\n", common::python(), fixture.display());
+        std::fs::write(bin.join("grok.cmd"), cmd).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let script = format!("#!/bin/sh\nexec {} -X utf8 -u '{}' \"$@\"\n", common::python(), fixture.display());
+        let file = bin.join("grok");
+        std::fs::write(&file, script).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&inherited))).unwrap();
+    let empty = OsStr::new("");
+    let host = Host::start_with(&[
+        ("PATH", path.as_os_str()),
+        ("CODYNC_AGENT_ACCOUNT", empty),
+        ("E2E_MODEL_TIER", empty),
+        ("XDG_DATA_HOME", empty),
+        ("XDG_STATE_HOME", empty),
+    ])
+    .await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "ask", "manageTeam": true})).await;
+
+    // A grok-backed bot: on the machine default, its catalog is `default-flash`, so that model lands.
+    let made = manage(&host, &lead, "create_bot", &json!({"name": "Switcher", "agent": "grok"}), "allow", |detail| {
+        assert!(detail.contains("Name: Switcher"), "{detail}");
+    })
+    .await;
+    let made: Value = serde_json::from_str(made.strip_prefix("Done: ").unwrap_or_else(|| panic!("{made}"))).unwrap();
+    let target = made["bot"]["id"].as_str().unwrap().to_owned();
+    let reply =
+        manage(&host, &lead, "update_bot", &json!({"botId": target, "model": "default-flash"}), "allow", |detail| {
+            assert_eq!(detail, "Model: default-flash");
+        })
+        .await;
+    assert!(reply.starts_with("Done: "), "{reply}");
+
+    // Onto an API-key login profile (grok keeps one sign-in) whose vaulted vars set the fixture's tier, so
+    // its catalog is `ultra-neon` and `ultra-carbon`: its own model lands, and the machine default's is
+    // refused naming that catalog — the check rode the profile the bot runs on, which a mis-threaded one
+    // would have checked against the default's instead.
+    let profile =
+        host.call("addLoginProfile", json!({"backend": "grok", "kind": "apiKey"})).await["loginProfile"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    host.call("setLoginProfileKeys", json!({"loginProfile": profile, "vars": {"E2E_MODEL_TIER": "ultra"}})).await;
+    host.call("updateBot", json!({"id": target, "loginProfile": profile})).await;
+    let reply =
+        manage(&host, &lead, "update_bot", &json!({"botId": target, "model": "ultra-neon"}), "allow", |detail| {
+            assert_eq!(detail, "Model: ultra-neon");
+        })
+        .await;
+    assert!(reply.starts_with("Done: "), "{reply}");
+    let args = json!({"botId": target, "model": "default-flash"});
+    host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
+    let refused = wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Refused: "))
+    })
+    .await;
+    let text = refused["data"]["text"].as_str().unwrap();
+    assert!(text.contains("ultra-carbon"), "the refusal names the profile's catalog: {text}");
+    assert!(text.contains("ultra-neon"), "the refusal names the profile's model: {text}");
+    let sync = host.snapshot().await;
+    let bot = sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == target).unwrap();
+    assert_eq!(bot["model"], json!("ultra-neon"), "the refusal wrote nothing");
+    assert_eq!(bot["loginProfile"], json!(profile), "the profile the bot runs on is unchanged");
+
+    let _ = std::fs::remove_dir_all(&shim_root);
 }

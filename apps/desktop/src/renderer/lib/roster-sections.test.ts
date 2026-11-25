@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
+import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, shownSection, type RosterLine } from './roster-sections.ts'
 
-const item = (id: string, section?: string, { pinned = false, unread = 0, waiting = 0 } = {}) => ({ id, bot: { pinned, section, unread, waiting } })
+const item = (id: string, section?: string, { pinned = false, unread = 0, waiting = 0, lead = false } = {}) => ({ id, bot: { pinned, section, unread, waiting, lead } })
 type Item = ReturnType<typeof item>
 
 /** Each line as text: a row's id, the "Bots" label, or a header's name, count, unread and fold. */
@@ -69,6 +69,46 @@ test('a bot moves past bots with the same pin state and section; pinned bots ign
   assert.equal(sameRosterGroup(bot(), bot('')), true)
   assert.equal(sameRosterGroup(bot('Work', true), bot('Home', true)), true)
   assert.equal(sameRosterGroup(bot('Work', true), bot('Work')), false)
+})
+
+test('frozen, the lead renders above the pinned rows and outside every section', () => {
+  const roster = [
+    item('pinned', undefined, { pinned: true }),
+    item('lead', 'Work', { lead: true }),
+    item('a', 'Work'),
+    item('loose'),
+  ]
+  assert.deepEqual(outline(rosterLines(roster, [], [], true)), [
+    'lead',
+    'pinned',
+    'Work 1 0: a',
+    'BOTS',
+    'loose',
+  ])
+  // Without the freeze the lead keeps its section like any bot.
+  assert.deepEqual(outline(rosterLines(roster, [])), ['pinned', 'Work 2 0: lead a', 'BOTS', 'loose'])
+  assert.deepEqual(rosterRows(roster, [], true).map((i) => i.id), ['lead', 'pinned', 'a', 'loose'])
+  assert.deepEqual(outline(rosterLines([], [], [], true)), [], 'an empty roster stays empty')
+  assert.deepEqual(outline(rosterLines([item('lead', 'Work', { lead: true })], [], [], true)), ['lead'], 'a solo lead leaves its section')
+  // The direct call the roster views and the store make (SectionRoster, useComputerRoster's move check).
+  assert.deepEqual(
+    rosterGroups([item('lead', 'Work', { lead: true }), item('a', 'Work')], [], [], true).flatMap((group) => group.items.map((i) => i.id)),
+    ['a'],
+    'a direct rosterGroups call keeps the lead out of every group',
+  )
+})
+
+test('frozen, nothing drags past the lead and it shows in no section', () => {
+  const bot = (over: { pinned?: boolean; section?: string; lead?: boolean } = {}) => ({ lead: false, pinned: false, section: undefined, ...over })
+  assert.equal(sameRosterGroup(bot({ lead: true }), bot({ pinned: true }), true), false)
+  assert.equal(sameRosterGroup(bot({ pinned: true }), bot({ lead: true }), true), false)
+  assert.equal(sameRosterGroup(bot({ lead: true }), bot({ section: 'Work' }), true), false)
+  // The load-bearing ones: same band and section (or none of either), only the freeze separates them.
+  assert.equal(sameRosterGroup(bot({ lead: true, section: 'Work' }), bot({ section: 'Work' }), true), false, 'same section: only the freeze separates them')
+  assert.equal(sameRosterGroup(bot(), bot({ lead: true }), true), false, 'both sectionless: only the freeze separates them')
+  // Unfrozen, the lead moves like any bot (same section here).
+  assert.equal(sameRosterGroup(bot({ lead: true, section: 'Work' }), bot({ section: 'Work' })), true)
+  assert.equal(shownSection(bot({ lead: true, section: 'Work' }), true), undefined)
 })
 
 test('every section once, sorted by name', () => {

@@ -1,4 +1,4 @@
-import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
+import { computerSections, movePreservingFrozenLead, orderedComputers } from '../lib/computer-roster'
 import { renamedSectionOrder } from '../lib/roster-section-order'
 import { prefs, toggled, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
@@ -15,6 +15,7 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
   const [folded, setFolded] = usePref(prefs.collapsedRosterSections)
   const [byComputer] = usePref(prefs.botsByComputer)
   const [byStatus] = usePref(prefs.botsByStatus)
+  const [freezeLead] = usePref(prefs.freezeLeadAtTop)
   const computers = orderedComputers(app.computers, order)
   const sections = computerSections(computers.filter((c) => shown.has(c.id)), app.roster)
     .map((section) => ({ ...section, store: app.store(section.computer.id) }))
@@ -29,14 +30,15 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     collapsed,
     folded,
     sectionOrders,
+    freezeLead,
     orderSections(computerId: string, names: string[]) {
       setSectionOrders({ ...prefs.rosterSectionOrder.get(), [computerId]: names })
     },
     items: sections.flatMap((section) => section.items),
     /** Every bot in the order the roster puts them on screen, whether or not its section or computer is folded. */
-    ordered: sections.flatMap((section) => rosterRows(section.items, sectionOrders[section.computer.id])),
+    ordered: sections.flatMap((section) => rosterRows(section.items, sectionOrders[section.computer.id], freezeLead)),
     /** The rows on screen, top to bottom, for ↑/↓. */
-    navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded, sectionOrders[section.computer.id]))),
+    navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded, sectionOrders[section.computer.id], freezeLead))),
     toggle(id: string) {
       setCollapsed(toggled(collapsed, id))
     },
@@ -48,7 +50,7 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     renameSection(store: BotStore, from: string, to: string | null) {
       const orders = prefs.rosterSectionOrder.get()
       const oldOrder = orders[store.computer.id] ?? []
-      const displayed = rosterGroups(store.roster.map((bot) => ({ bot })), [], oldOrder).map((group) => group.name)
+      const displayed = rosterGroups(store.roster.map((bot) => ({ bot })), [], oldOrder, freezeLead).map((group) => group.name)
       const newOrder = renamedSectionOrder(displayed, from, sectionRename(from, to).to)
       setSectionOrders({ ...orders, [store.computer.id]: newOrder })
       // Read now: a name dialog saves after the render that built its menu.
@@ -65,17 +67,21 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     move(id: string, target: string) {
       app.computerOrder.move(id, target, computers.map((c) => c.id))
     },
-    /** One place up (-1) or down (+1) among its computer's bots in the same band (lead, pinned, the rest) and, for the rest, the same section. */
+    /** One place up (-1) or down (+1) among its computer's bots in the same band (lead, pinned, the rest) and, for the rest, the same section. Frozen, the lead moves for nothing. */
     moveBot(ref: BotRef, offset: number) {
       const section = sections.find((s) => s.computer.id === ref.computerId)
       const items = section?.items ?? []
       const moved = items.find((item) => item.bot.id === ref.botId)
-      const shown = moved && shownSection(moved.bot)
+      const shown = moved && shownSection(moved.bot, freezeLead)
       // A folded section shows no order to change.
       if (!section || !moved || (shown && folded.includes(shown))) return
-      const group = items.filter((item) => sameRosterGroup(item.bot, moved.bot))
+      const group = items.filter((item) => sameRosterGroup(item.bot, moved.bot, freezeLead))
       const target = group[group.indexOf(moved) + offset]
-      if (target) section.store.reorder(moveInOrder(items.map((item) => item.bot.id), ref.botId, target.bot.id))
+      if (target) {
+        // Frozen, the lead keeps its slot: a move across it never rewrites the lead's host position.
+        const leadId = freezeLead ? items.find((item) => item.bot.lead)?.bot.id : undefined
+        section.store.reorder(movePreservingFrozenLead(items.map((item) => item.bot.id), ref.botId, target.bot.id, leadId))
+      }
     },
   }
 }

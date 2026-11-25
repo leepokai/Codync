@@ -4,7 +4,7 @@ You can make as many bots as you like, and they work at the same time. A reviewe
 
 ## Your lead bot
 
-Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. It has a gold star at the bottom-right of its avatar, and it's the one to talk to first. Open its details and tap or click the larger star to read what your **Lead agent** does. In the terminal, click its gold star or select the lead bot and press `I`; use the arrow keys to scroll and `Esc` to close.
+Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. The desktop marks it with a gold crown worn on its avatar and its name in bold; iPhone and Android keep a gold star at the bottom-right of its avatar. It's the one to talk to first. In the terminal, click its gold star or select the lead bot and press `I`, then use the arrow keys to scroll and `Esc` to close, to read what your **Lead agent** does. On the desktop, the Bots list's filter menu has **Freeze the lead bot at the top** to keep it above every other bot (it leads the Threads list's grouping too).
 
 - **It takes initiative.** It keeps track of what you're working toward, follows up on what's still open and offers the next step. When it could help more with access to one of your services, such as Gmail or your calendar, it says what for and asks you to connect it, with a card in the chat.
 - **It checks in.** Its routine **Check in** runs at 9:00 and 18:00 on your computer's clock. If something deserves your attention, or there's a step it can take for you, it messages you; otherwise it stays quiet. What it reads in your email, documents or web pages is information to it, never instructions, and it doesn't send, forward, reply to, delete, pay for or post anything you didn't ask for in the chat. It skips a check-in while your agent plan is above 75% of a limit. Change the times, pause it or delete it like any routine. See [Routines](/docs/routines).
@@ -133,11 +133,21 @@ For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes 
 
 With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks and Advisor mode: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
 
+## Pausing a bot
+
+A paused bot answers nothing and spends nothing until you resume it. A message sent to it is refused with a notice in its chat, a turn it is working on stops, and its queued routine runs are cancelled (its schedules continue from their next trigger after the resume). A bot that messages it hears that it is paused. Its history, settings, memory and files stay as they are, and resuming it picks up where things left off.
+
+- **Desktop:** right-click the bot in the sidebar, then **Pause bot** (or **Resume bot**). The same switch is in its settings, first under **Activity**.
+- **Terminal UI:** select the bot and press `e` for settings; **Paused** is the switch under **Approvals**.
+
+A bot whose **Manage the team** is on can pause and resume other bots on your word, with the usual approval for each change: ask your lead bot to pause every bot that runs a given agent, pause all but one, or resume them all. Its `list_team` shows which bots are paused.
+
 ## Activity
 
+- **Paused:** answers nothing and spends nothing until you resume it. See [Pausing a bot](#pausing-a-bot).
 - **Notifications:** notify you when this bot finishes, fails or needs you. Turn it off to keep the bot quiet.
 - **Use the computer:** let this bot see the screen and use the mouse and keyboard. The computer needs Computer access set up first. See [Computer use](/docs/computer-use).
-- **Manage the team:** let this bot create bots and change any bot's setup, its own included. Bots it creates can do the same, with no more access than it has: they take its approval setting, connectors and skills, and never get computer use. Only you can turn this on, and it's off by default. See [Teamwork](/docs/teamwork).
+- **Manage the team:** let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. Bots it creates can do the same, with no more access than it has: they take its approval setting, connectors and skills, and never get computer use. Only you can turn this on, and it's off by default. See [Teamwork](/docs/teamwork).
 - **Offered to the network:** shows while the computer is in a network of your computers. Turn it off and your other computers don't list this bot and can't message it; it can still message bots there and get their replies. In the terminal UI it's **Network**. See [Teamwork](/docs/teamwork#choose-who-reaches-your-bots).
 - **Reachable by cloud assistants:** shows while cloud assistants are on for the computer. Turn it off and ChatGPT or Claude don't list this bot and can't message it, also when they ask through another of your computers. In the terminal UI it's **Assistants**. See [Cloud assistants](/docs/cloud-assistants).
 

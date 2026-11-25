@@ -116,7 +116,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         }
         Field::WorktreeMode => tr(worktree_mode_text(f.worktree_mode).1).into_owned(),
         Field::Team => {
-            tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
+            tr("Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.").into_owned()
         }
         Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
         Field::Assistants => {
@@ -179,6 +179,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
+            Field::Paused => "Paused",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
             Field::Computer => "Use computer",
@@ -420,6 +421,10 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 };
                 put(buf, vx, y, vw, &value, style.patch(base));
             }
+            Field::Paused => {
+                let s = switch(f.paused);
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
             Field::Computer => {
                 let s = switch(f.computer);
                 let status = super::computer_access::status(&app.screen, app.online);
@@ -517,6 +522,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         | Field::Color
         | Field::Shape
         | Field::Approvals
+        | Field::Paused
         | Field::Compaction
         | Field::Notify
         | Field::Computer

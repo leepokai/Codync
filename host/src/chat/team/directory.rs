@@ -61,6 +61,8 @@ fn rows(
                 // Where its code work is: its default project, else its own folder.
                 "backend": c.backend, "cwd": crate::agent::workspace::work_folder(&c), "projects": c.projects,
                 "status": hub.runtime(&c.id).status,
+                "model": c.model, "modelOptions": c.model_options, "fallbacks": crate::chat::fallbacks::wire(&c.fallbacks),
+                "paused": c.paused,
             }),
             computer: None,
             online: true,

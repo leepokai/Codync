@@ -9,6 +9,19 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 impl Hub {
+    /// Whether `id` (a bot, or one of its threads) is paused: it answers nothing and spends nothing until it is
+    /// resumed. A thread stands for its bot's pause.
+    pub fn paused(&self, id: &str) -> bool {
+        let owner = if crate::store::is_thread_id(id) {
+            self.store.bot(id).ok().flatten().filter(|b| !b.deleted).and_then(|b| b.config.thread_of)
+        } else {
+            Some(id.to_owned())
+        };
+        owner.is_some_and(|owner| {
+            self.store.bot(&owner).ok().flatten().filter(|b| !b.deleted).is_some_and(|b| b.config.paused)
+        })
+    }
+
     /// Makes `cfg` ready to save over `before` (none: a new bot). Called under `emit_lock`, with the save: its login
     /// profile can't be removed in between (`login_profiles::remove`).
     fn settle_config(&self, cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<()> {

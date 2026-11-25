@@ -76,6 +76,7 @@
     "event:bot.bot.rev": "number",
     "event:bot.bot.section": "string",
     "event:bot.bot.selfFallbacks": "bool",
+    "event:bot.bot.sharedFolders": "object",
     "event:bot.bot.sharedMemory": "bool",
     "event:bot.bot.skills": "array",
     "event:bot.bot.startedAt": "null",
@@ -266,10 +267,13 @@
     "hello.signKey": "string",
     "hello.startThread": "bool",
     "hello.threadFiles": "bool",
+    "hello.threadFolders": "bool",
     "hello.threadLogins": "bool",
+    "hello.threadPlace": "bool",
     "hello.threadsWithoutBot": "bool",
     "hello.version": "string",
     "hello.workflowThreads": "bool",
-    "hello.workflows": "bool"
+    "hello.workflows": "bool",
+    "hello.worktreeFill": "bool"
   }
 }

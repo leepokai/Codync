@@ -237,7 +237,8 @@ impl Network {
         // The lock `publish` holds while it gives the bots theirs.
         let _handles = self.handles.locked();
         let mut given = given_handles(store);
-        let free = numbered(base, given.len(), |h| !given.contains_key(h));
+        // Nor a bot's id, which a message names it by too.
+        let free = numbered(base, given.len(), |h| !given.contains_key(h) && !matches!(store.bot(h), Ok(Some(_))));
         given.insert(free.clone(), owner.to_owned());
         store.kv_set(KV_HANDLES, &json!(given).to_string()).context("couldn't save the address names")?;
         Ok(free)

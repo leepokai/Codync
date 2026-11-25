@@ -169,7 +169,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 /** Where the bot works, how many of its threads work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
-    if (state.botProjects) projectRows(state.bots.firstOrNull { it.id == draft.id }, draft, change, chooseFolder) else workspaceRows(state, draft, change, chooseFolder)
+    if (state.botProjects) projectRows(state.bots.firstOrNull { it.id == draft.id }, draft, state.worktreeFill, change, chooseFolder) else workspaceRows(state, draft, change, chooseFolder)
     // Only from a host that has the box (its bots say).
     draft.maxThreads?.let { count ->
         row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }

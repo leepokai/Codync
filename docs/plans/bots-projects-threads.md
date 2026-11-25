@@ -12,10 +12,10 @@ the separate "bot home and projects" and "thread profile" plans. Answers part of
 | [Worktrees counted per repository](#count-side-by-side-per-repository) | **Built** (stage 5) |
 | [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
 | [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
-| [A task names its place](#a-task-names-its-place) (`add_task` `place`) | Proposed |
-| [Filling a new worktree](#filling-a-new-worktree) (`.worktreeinclude`, shared folders) | Proposed |
-| [Threads without a bot get a folder of their own](#5-threads-without-a-bot-get-a-folder-of-their-own) | Proposed |
-| [`ask_task`](#8-the-bot-watching-its-threads): the bot asks a thread and gets an answer | Proposed |
+| [A task names its place](#a-task-names-its-place) (`add_task` `place`) | **Built** (stage 7) |
+| [Filling a new worktree](#filling-a-new-worktree) (`.worktreeinclude`, shared folders) | **Built** (stage 7) |
+| [Threads without a bot get a folder of their own](#5-threads-without-a-bot-get-a-folder-of-their-own) | **Built** (stage 7) |
+| [`ask_task`](#8-the-bot-watching-its-threads): the bot asks a thread and gets an answer | **Built** (stage 7) |
 
 ## Words
 
@@ -255,13 +255,13 @@ threads whose folder is in the same repository (same `git rev-parse --show-tople
 
 ### A task names its place
 
-Proposed. `add_task` gains `place: here | worktree` (absent: the bot's mode decides). The bot knows whether a task
+Built (stage 7). `add_task` gains `place: here | worktree` (absent: the bot's mode decides). The bot knows whether a task
 edits code the user may be touching, or should build on the work of the thread before it; the mode is the default,
 the task the exception. `startThread`'s setup takes the same choice from the new-thread page.
 
 ### Filling a new worktree
 
-Proposed. A new worktree is a clean checkout: no ignored folders (`node_modules`, `target`, `.venv`), no local
+Built (stage 7). A new worktree is a clean checkout: no ignored folders (`node_modules`, `target`, `.venv`), no local
 config (`.env`), none of the user's uncommitted changes. Two lists the project keeps, read from the project's main
 checkout:
 
@@ -291,8 +291,8 @@ and [filling a new worktree](#filling-a-new-worktree) take the two ideas that fi
 
 ## 5. Threads without a bot get a folder of their own
 
-Proposed. Today such a thread works in the user's home folder unless one is picked (§2): no separation between up to
-6 at once, no versions, and a home folder kept in git (dotfiles) can be given a worktree of itself.
+Built (stage 7). Before, such a thread worked in the user's home folder unless one was picked (§2): no separation
+between up to 6 at once, no versions, and a home folder kept in git (dotfiles) can be given a worktree of itself.
 
 Each thread without a bot gets `<data dir>/threads/<task id>/`, made when its thread starts and versioned like a bot's
 own folder (`agent::versions`: `git init`, the default `.gitignore`, a save before and after each turn). It is the
@@ -449,7 +449,7 @@ chat's prompt). A user's thread gets the bot's profile instead ([above](#a-users
 3. **Working.** The thread uses the agent's tools in its folder. A choice or approval shows as a card in the bot's
    chat (a user's thread: in the thread), and the thread waits on it, its seat lent to the next task.
 4. **Watched.** The bot reads it with `work_status` and `recall_task`, corrects it with `tell_task`, asks with
-   `ask_task` (proposed), restarts it with `steer_task replace` or ends it with `steer_task stop`. The user can
+   `ask_task`, restarts it with `steer_task replace` or ends it with `steer_task stop`. The user can
    open the thread and write to it.
 5. **Reported.** Its turn ends: the last message is the report; the bot gets a turn with it and tells the user (a
    user's thread: it stays in the thread). Its worktree is removed or kept (§4).
@@ -499,7 +499,7 @@ What the bot has today (`chat` server; for its own tasks, routine runs and reque
 
 Missing: a question with an answer. `tell_task`'s words are read, but the thread's answer comes only in its report.
 
-Proposed: `ask_task {task, question}` → `{answer}`. The question goes into the thread's running turn as
+Built (stage 7): `ask_task {task, question}` → `{answer}`. The question goes into the thread's running turn as
 `tell_task now` does, marked as the bot asking; the thread answers with one short message that goes back to the bot
 as the tool's result (not as the report) and goes on with its task. The bot's turn waits for the answer up to a time
 limit (60 s), then gets `no answer yet` and the answer arrives later as a turn of its own, as a `message_bot` reply
@@ -521,9 +521,6 @@ does. Refused for an ended task, a user's thread, a routine's run and a request.
 
 ## Open
 
-- [A task names its place](#a-task-names-its-place), [filling a new worktree](#filling-a-new-worktree),
-  [§5](#5-threads-without-a-bot-get-a-folder-of-their-own) and [`ask_task`](#8-the-bot-watching-its-threads): proposed,
-  waiting for the owner.
 - Can a user's thread hand its result to the bot ("tell my bot about this")? A button that posts the thread's result
   into the bot's chat would, without the bot seeing the box.
 - Does a user's thread want the bot's connectors, or only its skills and memory?
@@ -552,8 +549,16 @@ Each stage ships on its own, in this order; host-only stages need no client rele
 6. **Migration** (§3). Needs 4 and 5. Built with 5 (`hub/projects/migrate.rs`). A routine stamped with the old folder
    always runs in a thread, so on a bot that uses the computer or manages the team (whose runs were turns in its chat)
    it loses those tools: that is the price of keeping the folder, kept as the plan says.
-7. Proposed parts, once decided: a task's place, filling a new worktree, threads without a bot's own folder,
-   `ask_task`.
+7. **A task's place, filling a new worktree, threads without a bot's own folder, `ask_task`** (§4, §5, §8). Host
+   and clients built, as [work](../features/work.md) says: the desktop's new-thread place menu (Here / New worktree)
+   and Own folder, and the Shared folders editor under each git project on the desktop, iPhone, Android and TUI. Beyond the plan: the place is kept in the task's `setup`, so a task
+   tried again or replaced keeps it, and `add_task` answers `placeNote` when the place can't apply; the folder of a
+   thread without a bot is made as its task is added and goes when the task leaves the box (dropped, or a week after
+   it ended), which is when its thread bot and transcript go; a shared folder is linked only into worktrees of its
+   project's repository, at the project's place inside it, and the links Codync made don't keep an untouched
+   worktree (each link is listed in the repository's `info/exclude`, so a thread can't commit it); `ask_task` takes one question at a time a task, and a task that ends before it answers counts as
+   `late`; a late answer is its own host turn (`Cmd::TaskAnswer`). `hello.threadPlace`, `hello.worktreeFill`,
+   `hello.threadFolders` tell the clients.
 
 Docs in the same stages: `docs/features/work.md`, `docs/architecture/conversation-runtime.md` (Work), the user
 manual's bots and conversations pages, the site's mockups of bot settings.

@@ -2110,7 +2110,6 @@
   "A follow-up is the bot's own: x cancels it": "跟進由 Bot 自己設定：按 x 取消",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "用你自己的 Boat 或 InstaBox 賬戶啟動一台雲端電腦，電腦關機時 Bot 也能繼續工作。",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "在智慧體設定頁的「登入設定」讓同一個智慧體登入多個賬戶或新增 API 金鑰，再選擇每個 Bot 要用哪一個。",
-  "Picking up from the chat…": "正在從聊天接著做…",
   "Stop this task?": "停止這個 task？",
   "What it already changed stays.": "已經改的內容會留著。",
   "No work": "沒有工作",
@@ -2488,5 +2487,9 @@
   "Context handed off": "脈絡已交接",
   "Switched": "已切換",
   "No threads right now": "目前沒有 Threads",
-  "Tasks your bots work on show up here.": "你的 Bot 正在處理的任務會顯示在這裡。"
+  "Tasks your bots work on show up here.": "你的 Bot 正在處理的任務會顯示在這裡。",
+  "Folder": "資料夾",
+  "Bot's folder": "Bot 的資料夾",
+  "Use the bot's folder": "改用 Bot 的資料夾",
+  "Each run works here in a thread of its own.": "每次執行都會在這裡用獨立的 thread 進行。"
 }

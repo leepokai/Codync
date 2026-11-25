@@ -2110,7 +2110,6 @@
   "A follow-up is the bot's own: x cancels it": "Un seguimiento es del propio bot: x lo cancela",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Inicia un ordenador en la nube en tu propia cuenta de Boat o InstaBox para que tus bots trabajen mientras tu ordenador está apagado.",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Inicia sesión con un agente en varias cuentas o añade claves de API en «Perfiles de inicio de sesión», dentro de su configuración, y elige cuál usa cada bot.",
-  "Picking up from the chat…": "Retomando desde el chat…",
   "Stop this task?": "¿Detener esta tarea?",
   "What it already changed stays.": "Lo que ya cambió se conserva.",
   "No work": "Sin trabajo",
@@ -2488,5 +2487,9 @@
   "Context handed off": "Contexto transferido",
   "Switched": "Cambiado",
   "No threads right now": "No hay hilos ahora",
-  "Tasks your bots work on show up here.": "Las tareas en las que trabajan tus bots aparecen aquí."
+  "Tasks your bots work on show up here.": "Las tareas en las que trabajan tus bots aparecen aquí.",
+  "Folder": "Carpeta",
+  "Bot's folder": "Carpeta del bot",
+  "Use the bot's folder": "Usar la carpeta del bot",
+  "Each run works here in a thread of its own.": "Cada ejecución trabaja aquí en un thread propio."
 }

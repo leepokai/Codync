@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, emptyDraft, followUpLine, repeatChoice, runLabel, scheduleCaption, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, folderField, followUpLine, repeatChoice, runLabel, scheduleCaption, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -85,4 +85,12 @@ test('a waiting follow-up says when it happens: the time today, the date too on 
   assert.equal(followUpLine(followUp(tomorrow), 'zh-Hant', now), `Follow-up at ${dated}`)
   // Due, and waiting its turn behind what the bot is doing.
   assert.equal(followUpLine(followUp(now - 1), 'en-GB', now), 'Follow-up due now')
+})
+
+test("saving sends the routine's folder on a host that has it: the path, or null for the bot's own", () => {
+  assert.deepEqual(folderField('/Users/me/repo', true), { folder: '/Users/me/repo' })
+  assert.deepEqual(folderField(null, true), { folder: null })
+  assert.deepEqual(folderField('', true), { folder: null })
+  // An older host never hears of it.
+  assert.deepEqual(folderField('/Users/me/repo', false), {})
 })

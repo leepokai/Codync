@@ -276,6 +276,7 @@ impl App {
                 self.auto_order = v["autoOrder"].as_bool();
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
+                self.routine_folder = v["routineFolder"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
                 // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
                 // missed, now that the host's version says which name `threadEntries` goes by.

@@ -80,7 +80,7 @@ import androidx.compose.ui.semantics.semantics
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
     CodyncSheet(folders, { folders = false }) {
-        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
+        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.computerName, store::listDirs, store::selectWorkspace) {
             change(draft.copy(cwd = it)); folders = false
         }
     }

@@ -11,6 +11,7 @@
 //! compaction. Memory changes in between are told on the next message the same way
 //! (see `memory::change_notice`).
 
+use crate::chat::work::Source;
 use crate::store::{BotConfig, Store};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -123,13 +124,15 @@ fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
 /// The snapshot for `session` at its current epoch, rendering a fresh one when
 /// the stored one belongs to another session or an earlier epoch.
 pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot> {
-    let epoch = epoch(store, &cfg.id, session);
-    let stored = load(store, &cfg.id, session);
+    // A thread's sessions are kept with its bot's, as its memory is.
+    let owner = cfg.owner();
+    let epoch = epoch(store, owner, session);
+    let stored = load(store, owner, session);
     if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
         return Ok(s.clone());
     }
     let identity = Identity::of(store, cfg);
-    let memory = crate::chat::memory::current_revision(store, &cfg.id);
+    let memory = crate::chat::memory::current_revision(store, owner);
     let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
     let s = Snapshot {
         session: session.to_owned(),
@@ -142,7 +145,7 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
         announced: stored.map_or(identity, |old| old.announced),
         memory,
     };
-    save(store, &cfg.id, &s)?;
+    save(store, owner, &s)?;
     Ok(s)
 }
 
@@ -178,14 +181,14 @@ pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String, memo
     let identity = Identity::of(store, cfg);
     let s = Snapshot {
         session: session.to_owned(),
-        epoch: epoch(store, &cfg.id, session),
+        epoch: epoch(store, cfg.owner(), session),
         system,
         system_identity: identity.clone(),
         announced: identity,
         memory,
         unprompted: true,
     };
-    save(store, &cfg.id, &s)?;
+    save(store, cfg.owner(), &s)?;
     Ok(s)
 }
 
@@ -195,8 +198,46 @@ pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()>
     update_if_current(store, bot_id, sent, |current| std::mem::take(&mut current.unprompted))
 }
 
-/// The bot's instructions, rendered live.
+/// Whether a session of `cfg` working for `source` is told who the bot is (name, description, memory): all but a
+/// thread on a task the bot handed out, which is told the task alone.
+pub fn as_bot(cfg: &BotConfig, source: &Source) -> bool {
+    !cfg.is_thread() || !source.is_bot()
+}
+
+/// What a thread on a handed-out task is told of itself.
+const TASK: &str = "You are doing one task for the user through Codync, away from the chat where it was handed out: \
+everything you know about it is in the message that gives it to you, and you don't see that chat. If something you \
+need isn't there, look it up (search_memory and read_memory, the files) before you ask. Your last message is your \
+report: the bot that gave you the task tells the user what matters, so say what you did, what you found, what is left \
+and where (files, branch). When the user must choose before you can go on, call request_decision; to hand over a file \
+or a page, send_file or publish_artifact. Save what should outlast this task with edit_memory.";
+
+/// What a thread the user opened with the bot is told of where it is.
+const USER: &str = "Away from your chat: the user opened this thread to work with you directly. It starts without \
+your chat's conversation; the user reads your answers here and may write to you again. When they must choose before \
+you can go on, call request_decision; to hand over a file or a page, send_file or publish_artifact.";
+
+/// What a thread on a routine's run is told of where it is.
+const ROUTINE: &str = "Away from your chat: you are running one of your routines. Its message says which and what to \
+do; your final reply is the run's result, posted in your chat, so write it for the user.";
+
+/// What a thread on another bot's request is told of where it is.
+const REQUEST: &str = "Away from your chat: another bot asked you something. Its message says who and what; your \
+final reply goes back to that bot as your answer, so write it for that bot.";
+
+const OTHER_COMPUTERS: &str = "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the request is about that computer's files or system rather than its bots.";
+
+/// The instructions of a session of `cfg`, a bot or one of its threads, rendered live.
 pub fn render(store: &Store, cfg: &BotConfig) -> String {
+    if cfg.is_thread() {
+        render_thread(store, cfg, &crate::chat::work::source_of(store, cfg))
+    } else {
+        render_bot(store, cfg)
+    }
+}
+
+/// Who the bot is: its name and description.
+fn identity(cfg: &BotConfig) -> Vec<String> {
     let name = cfg.name.trim();
     let mut lines = vec!["Agent profile:".to_owned()];
     if !name.is_empty() {
@@ -206,37 +247,66 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     if !cfg.description.trim().is_empty() {
         lines.push(format!("Description: {}", cfg.description.trim()));
     }
-    // General on purpose: how to talk and where to work. Each tool's own instructions (MCP
-    // servers, tool descriptions) explain the tool, so they aren't repeated here.
     lines.push(String::new());
     lines.push(
         "You are a persistent agent the user delegates work to through Codync, from their phone or computer."
             .to_owned(),
     );
-    if cfg.lead {
-        lines.push(crate::chat::lead::BRIEF.to_owned());
-    }
+    lines
+}
+
+/// Where the agent runs: in Codync, not in its engine's own app.
+fn environment(cfg: &BotConfig, chat: bool) -> String {
     // Claude Code's own system prompt, which this is appended to, says the user is in its CLI.
     let engine = if cfg.backend == "custom" {
         "the coding agent".to_owned()
     } else {
         crate::agent::fallback::name(&cfg.backend)
     };
-    lines.push(format!(
-        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on; where Codync offers New session in the bot's menu (^k in the terminal UI), the user can pick it to start over with a fresh context, and the chat stays."
-    ));
+    let mut line = format!(
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them."
+    );
+    if chat {
+        line.push_str(" A chat in Codync is one conversation that goes on; where Codync offers New session in the bot's menu (^k in the terminal UI), the user can pick it to start over with a fresh context, and the chat stays.");
+    }
+    line
+}
+
+/// What every session ends with: the skills, the compaction keep-list and, told who the bot is, its memory.
+fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool) -> String {
+    if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
+        lines.push(String::new());
+        lines.push(skills);
+    }
     lines.push(String::new());
-    lines.push(format!("Messages: {}", crate::chat::outbox::instructions()));
+    lines.push(codync_mem::compaction::KEEP.to_owned());
+    let mut out = lines.join("\n");
+    let memory = if memory { crate::chat::memory::opening(store, &cfg.as_owner()) } else { String::new() };
+    if !memory.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(&memory);
+    }
+    out
+}
+
+/// The bot's own instructions.
+fn render_bot(store: &Store, cfg: &BotConfig) -> String {
+    let mut lines = identity(cfg);
+    if cfg.lead {
+        lines.push(crate::chat::lead::BRIEF.to_owned());
+    }
+    // General on purpose: how to talk and where to work. Each tool's own instructions (MCP
+    // servers, tool descriptions) explain the tool, so they aren't repeated here.
+    lines.push(environment(cfg, true));
+    lines.push(String::new());
+    lines.push(format!("Messages: {}", crate::chat::outbox::instructions(false)));
     lines.push(String::new());
     lines.push(
         "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line; in your own chat, each user message starts with [Codync: message <id>], the id send_message and send_file take as reply_to. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: <bot> replied to your message_bot request ...] (or couldn't finish it): carry on with the user's request from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
             .to_owned(),
     );
     lines.push(String::new());
-    lines.push(
-        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the request is about that computer's files or system rather than its bots."
-            .to_owned(),
-    );
+    lines.push(OTHER_COMPUTERS.to_owned());
     lines.push(String::new());
     lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, workspace_origin(cfg)));
     lines.push(String::new());
@@ -245,19 +315,54 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(crate::routines::BRIEF.to_owned());
     lines.push(String::new());
     lines.push(crate::chat::work::BRIEF.to_owned());
-    if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
-        lines.push(String::new());
-        lines.push(skills);
-    }
+    closing(store, cfg, lines, true)
+}
+
+/// A thread's instructions: what its task needs, never the chat's own paragraphs (messages, rooms, the event box).
+/// On a handed-out task it is told the task alone; otherwise who the bot is too, as the bot away from its chat.
+fn render_thread(store: &Store, cfg: &BotConfig, source: &Source) -> String {
+    let as_bot = as_bot(cfg, source);
+    let mut lines = if as_bot { identity(cfg) } else { Vec::new() };
+    lines.push(
+        match source {
+            Source::Bot => TASK,
+            Source::User => USER,
+            Source::Routine { .. } => ROUTINE,
+            Source::Request { .. } => REQUEST,
+        }
+        .to_owned(),
+    );
     lines.push(String::new());
-    lines.push(codync_mem::compaction::KEEP.to_owned());
-    let mut out = lines.join("\n");
-    let memory = crate::chat::memory::opening(store, cfg);
-    if !memory.is_empty() {
-        out.push_str("\n\n");
-        out.push_str(&memory);
+    lines.push(environment(cfg, false));
+    lines.push(String::new());
+    lines.push(format!(
+        "Workspace: you work in {}. {} Keep to it: don't change Codync settings to work elsewhere.",
+        cfg.cwd,
+        thread_origin(cfg)
+    ));
+    lines.push(String::new());
+    lines.push(crate::dev_servers::BRIEF.to_owned());
+    // The servers a run and a request keep (`Actor::mcp_servers`).
+    if !source.own() {
+        lines.push(String::new());
+        lines.push(crate::routines::BRIEF.to_owned());
     }
-    out
+    if matches!(source, Source::Routine { .. }) {
+        lines.push(String::new());
+        lines.push(OTHER_COMPUTERS.to_owned());
+    }
+    closing(store, cfg, lines, as_bot)
+}
+
+/// Whose a thread's folder is.
+fn thread_origin(cfg: &BotConfig) -> &'static str {
+    if crate::agent::workspace::own_folder(cfg).is_some() {
+        "It is the bot's own folder, which Codync keeps versions of in git."
+    } else if crate::chat::work::is_worktree(&cfg.cwd) {
+        "It is a git worktree Codync made for this task, on a branch of its own: the user's uncommitted changes are not in it."
+    } else {
+        "It is a folder the user chose."
+    }
 }
 
 /// Whose the bot's working directory is, and for its own folder, the versions Codync keeps there.
@@ -345,6 +450,44 @@ mod tests {
     fn store() -> Store {
         let path = std::env::temp_dir().join(format!("codync-context-{}.db", uuid::Uuid::new_v4()));
         Store::open(&path).expect("temp store")
+    }
+
+    fn thread_of(owner: &BotConfig) -> BotConfig {
+        BotConfig { id: "thread-1".into(), thread_of: Some(owner.id.clone()), ..owner.clone() }
+    }
+
+    #[test]
+    fn a_thread_on_a_handed_out_task_is_told_the_task_alone() {
+        let store = store();
+        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::Bot);
+        assert!(text.starts_with(TASK), "{text}");
+        for absent in ["Fixer", "Description:", "add_task", "Other conversations", "Messages:", "Other computers"] {
+            assert!(!text.contains(absent), "{absent} in: {text}");
+        }
+        assert!(text.contains("Workspace: you work in /tmp."), "{text}");
+        assert!(text.contains(crate::dev_servers::BRIEF), "it may start dev servers");
+    }
+
+    #[test]
+    fn a_thread_the_user_opened_is_the_bot_away_from_its_chat() {
+        let store = store();
+        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::User);
+        assert!(text.contains("Title: Fixer") && text.contains("Description: Fix bugs"), "{text}");
+        assert!(text.contains(USER), "{text}");
+        for absent in ["add_task", "Other conversations", "Messages:", crate::routines::BRIEF] {
+            assert!(!text.contains(absent), "{absent} in: {text}");
+        }
+    }
+
+    #[test]
+    fn a_routines_run_and_a_request_keep_the_routines_they_can_use() {
+        let store = store();
+        let thread = thread_of(&cfg("Fixer", "Fix bugs"));
+        let run = render_thread(&store, &thread, &Source::Routine { id: "r1".into(), run: "run-1".into() });
+        assert!(run.contains(crate::routines::BRIEF) && run.contains(OTHER_COMPUTERS), "{run}");
+        let asked = render_thread(&store, &thread, &Source::Request { id: None });
+        assert!(asked.contains(crate::routines::BRIEF) && !asked.contains(OTHER_COMPUTERS), "{asked}");
+        assert!(!run.contains("add_task") && !asked.contains("add_task"));
     }
 
     #[test]

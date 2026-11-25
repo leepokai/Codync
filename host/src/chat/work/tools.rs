@@ -20,6 +20,8 @@ pub const TOOLS: [&str; 5] = ["add_task", "steer_task", "tell_task", "work_statu
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
     if hub.store.bot(bot)?.is_some_and(|row| row.config.is_thread()) {
+        let properties = json!({"tool": what});
+        analytics::capture(hub, Event::ThreadToolRefused, properties.as_object().cloned().unwrap_or_default());
         bail!(
             "{what} isn't available in a thread: say in your report what you need, and you will handle it in the chat"
         );
@@ -40,22 +42,30 @@ pub fn acting_as(hub: &Hub, bot: &str, what: &str) -> Result<String> {
     Ok(cfg.owner().to_owned())
 }
 
-/// Refuses a thread the `chat` server's tools that change the bot or its box (`prompts::task_prompt` tells it so).
-/// What asks the user or shares with them goes to the thread's actor, which posts it in the bot's chat.
+/// The `chat` server's tools a thread neither lists (`mcp::chat_tools`) nor may call: `send_message` (its last message
+/// is its report), `react` (it answers no chat message), and what changes the bot, its skills or its box. What asks
+/// the user or shares with them goes to the thread's actor, which posts it in the bot's chat.
+pub fn chat_only(name: &str) -> bool {
+    use crate::chat::{fallbacks, profile, reactions, skills};
+    ["send_message", reactions::TOOL, skills::TOOL].contains(&name)
+        || TOOLS.contains(&name)
+        || profile::TOOLS.contains(&name)
+        || fallbacks::TOOLS.contains(&name)
+}
+
+/// Refuses a thread a call to a [`chat_only`] tool.
 pub fn refuse_chat_only(hub: &Hub, bot: &str, name: &str) -> Result<()> {
-    use crate::chat::{fallbacks, profile};
-    let chat_only = TOOLS.contains(&name) || profile::TOOLS.contains(&name) || fallbacks::TOOLS.contains(&name);
-    if chat_only { refuse_in_thread(hub, bot, name) } else { Ok(()) }
+    if chat_only(name) { refuse_in_thread(hub, bot, name) } else { Ok(()) }
 }
 
 pub fn tools() -> Vec<Value> {
     vec![
         json!({
             "name": "add_task",
-            "description": "Put long work in your event box as a task: one of your threads (you again, in a session of its own) does it away from this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
+            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
             "inputSchema": {"type": "object", "properties": {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
-                "brief": {"type": "string", "description": "Everything needed to do the work: the goal, what you already know, what done looks like."},
+                "brief": {"type": "string", "description": "Everything needed to do the work, standing alone (the thread sees nothing of this chat): the goal, what you already know, the user's words that matter, what done looks like."},
                 "after": {"type": "string", "description": "The id of a task that is working or waiting: this one is done after it, in the same thread, knowing what that one did. For more of the same work."},
             }, "required": ["title", "brief"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
@@ -203,9 +213,19 @@ fn users_words(hub: &Hub, bot: &str) -> Option<String> {
     entry.data["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
 }
 
+/// Refuses a task the user started as a thread: it is theirs, not the bot's to steer or write to.
+fn the_bots(hub: &Hub, bot: &str, id: &str) -> Result<()> {
+    if tasks::load(&hub.store, bot).iter().any(|i| i.id == id && i.source.is_user()) {
+        let why = "that thread is one the user started: it's theirs to steer, not yours".to_owned();
+        return Err(thread::Refused::error("users", why));
+    }
+    Ok(())
+}
+
 fn steer_task(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
     let id = text("task").ok_or_else(|| anyhow!("task is required: its id, from work_status"))?;
+    the_bots(hub, bot, id)?;
     let refused = || anyhow!("how is first, now, replace or stop");
     let how = Steer::deserialize(&args["how"]).map_err(|_| refused())?;
     match how {
@@ -269,13 +289,14 @@ fn told(hub: &Arc<Hub>, bot: &str, args: &Value, now: bool) -> Result<(String, T
     if words.len() > MAX_BRIEF {
         return Err(invalid(format!("text is at most {MAX_BRIEF} bytes")));
     }
+    the_bots(hub, bot, id)?;
     Ok((id.to_owned(), thread::tell(hub, bot, id, words, now)?))
 }
 
 fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let cfg = hub.store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
     let now = now_ms();
-    let tasks: Vec<Value> = tasks::shown(hub, &cfg)
+    let tasks: Vec<Value> = tasks::seen_by_bot(hub, &cfg)
         .into_iter()
         .map(|Shown { task, status, activity, wait }| {
             let seconds = task.started_at.map(|at| (task.ended_at.unwrap_or(now) - at) / 1000);
@@ -370,6 +391,35 @@ mod tests {
         assert!(refuse_chat_only(&hub, "thread-1", "tell_task").is_err(), "a thread can't tell its siblings");
         hub.ceilings.set("b1", codync_network::Access::Ask);
         assert!(hub.ceilings.check_tool("b1", "tell_task").is_err(), "it acts later: held under a ceiling");
+    }
+
+    #[test]
+    fn the_users_own_thread_is_neither_seen_nor_steered_by_the_bot() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let tasks = json!([
+            {"id": "i1", "title": "Docs", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0},
+            {"id": "u1", "title": "Mine", "brief": "x", "status": "waiting", "order": 2, "createdAt": 0,
+                "source": {"kind": "user"}},
+        ]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
+
+        let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
+        let told = call(&hub, "b1", "tell_task", &json!({"task": "u1", "text": "x"})).expect_err("the user's");
+        assert_eq!(category(told), Some("users"));
+        let steered = call(&hub, "b1", "steer_task", &json!({"task": "u1", "how": "first"})).expect_err("the user's");
+        assert_eq!(category(steered), Some("users"));
+        let listed = call(&hub, "b1", "work_status", &json!({})).expect("listed");
+        assert_eq!(
+            listed["tasks"].as_array().map(|t| t.iter().map(|i| i["taskId"].clone()).collect()),
+            Some(vec![json!("i1")])
+        );
+        let recalled = call(&hub, "b1", "recall_task", &json!({})).expect("recalled");
+        assert!(!recalled.to_string().contains("u1"), "{recalled}");
+        let cfg = hub.store.bot("b1").expect("read").expect("there").config;
+        let lines = tasks::lines(&hub, &cfg, "Your").expect("one live");
+        assert!(lines.contains("Docs") && !lines.contains("Mine"), "{lines}");
     }
 
     /// #386: work added too often in a row leaves the user one Continue notice a turn, as the handoff limit does.

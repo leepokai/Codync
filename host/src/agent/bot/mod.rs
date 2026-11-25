@@ -42,7 +42,6 @@ pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
 use codync_agent::mcp_names::Renamed;
 pub use commands::listed as agent_commands;
-pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
 use inflight::Inflight;
 pub(crate) use inflight::resumable;

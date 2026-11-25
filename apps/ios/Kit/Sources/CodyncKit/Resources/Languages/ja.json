@@ -2110,7 +2110,6 @@
   "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。",
-  "Picking up from the chat…": "チャットの内容を引き継いでいます…",
   "Stop this task?": "この task を停止しますか？",
   "What it already changed stays.": "すでに変更された内容は残ります。",
   "No work": "作業はありません",
@@ -2488,5 +2487,9 @@
   "Context handed off": "コンテキストを引き継ぎました",
   "Switched": "切り替えました",
   "No threads right now": "現在スレッドはありません",
-  "Tasks your bots work on show up here.": "ボットが取り組んでいるタスクがここに表示されます。"
+  "Tasks your bots work on show up here.": "ボットが取り組んでいるタスクがここに表示されます。",
+  "Folder": "フォルダ",
+  "Bot's folder": "Bot のフォルダ",
+  "Use the bot's folder": "Bot のフォルダを使う",
+  "Each run works here in a thread of its own.": "各実行はここで専用の thread で動きます。"
 }

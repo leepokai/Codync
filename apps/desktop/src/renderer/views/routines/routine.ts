@@ -27,6 +27,8 @@ export interface Routine {
   nextRunAt?: number | null
   timeoutSeconds?: number | null
   lastError?: string | null
+  /** The folder its runs work in (each in a thread of its own); null or absent: the bot's own. */
+  folder?: string | null
 }
 
 export interface RoutineRun {
@@ -42,6 +44,9 @@ export interface RoutineRun {
 }
 
 export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running', 'recovering'].includes(run.status)
+
+/** `saveRoutine`'s `folder`, on a host that has it: the path, or null for the bot's own folder. */
+export const folderField = (folder: string | null, supported: boolean) => (supported ? { folder: folder || null } : {})
 
 /** A run's status in the routines list; a waiting retry says when it goes. */
 export function runLabel(run: RoutineRun, now = Date.now()) {

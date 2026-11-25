@@ -103,8 +103,10 @@ pub enum Event {
     FollowUpCancelled,
     /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
+    /// A task of a bot's box ended (`outcome`).
     WorkFinished,
+    /// A thread called a tool only its bot's chat may call (`tool`): one its tool list still offered it.
+    ThreadToolRefused,
     /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
     /// At host start, worktrees no task knew any more went, their work merged (`removed`).
@@ -296,6 +298,7 @@ impl Event {
             Self::FollowUpCancelled => "follow_up_cancelled",
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
+            Self::ThreadToolRefused => "thread_tool_refused",
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",

@@ -157,33 +157,44 @@ private struct StreamingThoughtBody: View {
     private var rawText: String { entry.data.text ?? "" }
     private var isBotWorking: Bool { model.bots[entry.botId]?.isWorking(in: entry.botId) == true }
 
-    var body: some View {
+    private var resolvedDisplay: (text: String, isAnimating: Bool, eligible: Bool) {
         let eligible = allowsLiveReveal && expanded && !reduceMotion && scenePhase == .active && model.shouldRevealLiveText(for: entry)
-        let displayedText: String
-        let isAnimating: Bool
         if let pacer {
-            displayedText = (eligible || pacer.needsTick) ? pacer.displayedText : rawText
-            isAnimating = eligible && pacer.isStreamingActive
-        } else if eligible {
+            return (
+                (eligible || pacer.needsTick) ? pacer.displayedText : rawText,
+                eligible && pacer.isStreamingActive,
+                eligible
+            )
+        }
+        if eligible {
             let initial = min(max(0, model.initialRevealedCount(for: entry) ?? 0), rawText.count)
             let end = rawText.index(rawText.startIndex, offsetBy: initial)
-            displayedText = String(rawText[..<end])
-            isAnimating = true
-        } else {
-            displayedText = rawText
-            isAnimating = false
+            return (String(rawText[..<end]), true, true)
         }
+        return (rawText, false, false)
+    }
 
-        let pieces = ThoughtChunking.pieces(of: displayedText)
+    private func prepareThoughtPieces(text: String, isAnimating: Bool, eligible: Bool, now: TimeInterval) -> [String] {
+        let pieces = ThoughtChunking.pieces(of: text)
+        fadeHolder.sync(pieces: pieces, isStreaming: isAnimating, hidden: !eligible, now: now)
+        return pieces
+    }
+
+    private func frameFadeState(at now: TimeInterval) -> TailFadeSweepState {
+        fadeHolder.state.prune(now: now)
+        return fadeHolder.state
+    }
+
+    var body: some View {
+        let display = resolvedDisplay
         let now = ProcessInfo.processInfo.systemUptime
-        let _ = fadeHolder.sync(pieces: pieces, isStreaming: isAnimating, hidden: !eligible, now: now)
+        let pieces = prepareThoughtPieces(text: display.text, isAnimating: display.isAnimating, eligible: display.eligible, now: now)
 
         Group {
-            if eligible, isAnimating, fadeHolder.state.isAnimating {
+            if display.eligible, display.isAnimating, fadeHolder.state.isAnimating {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
                     let frameNow = ProcessInfo.processInfo.systemUptime
-                    let _ = fadeHolder.state.prune(now: frameNow)
-                    piecesStack(pieces, fadeState: fadeHolder.state, now: frameNow)
+                    piecesStack(pieces, fadeState: frameFadeState(at: frameNow), now: frameNow)
                 }
             } else {
                 piecesStack(pieces, fadeState: nil, now: now)

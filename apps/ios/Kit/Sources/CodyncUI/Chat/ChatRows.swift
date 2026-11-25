@@ -496,24 +496,26 @@ struct StreamingMarkdownBody: View {
     private var rawText: String { entry.data.text ?? "" }
     private var isLiveFromHost: Bool { entry.data.final != true }
 
-    var body: some View {
+    private var resolvedDisplay: (text: String, isStreaming: Bool) {
         let eligible = !reduceMotion && scenePhase == .active && model.shouldRevealLiveText(for: entry)
-        let displayedText: String
-        let isStreaming: Bool
         if let pacer {
-            displayedText = (eligible || pacer.needsTick) ? pacer.displayedText : rawText
-            isStreaming = eligible && pacer.isStreamingActive
-        } else if eligible {
+            return (
+                (eligible || pacer.needsTick) ? pacer.displayedText : rawText,
+                eligible && pacer.isStreamingActive
+            )
+        }
+        if eligible {
             let initial = min(max(0, model.initialRevealedCount(for: entry) ?? 0), rawText.count)
             let end = rawText.index(rawText.startIndex, offsetBy: initial)
-            displayedText = String(rawText[..<end])
-            isStreaming = true
-        } else {
-            displayedText = rawText
-            isStreaming = false
+            return (String(rawText[..<end]), true)
         }
+        return (rawText, false)
+    }
 
-        MarkdownText(displayedText, isStreaming: isStreaming, fadeKey: entry.id)
+    var body: some View {
+        let display = resolvedDisplay
+
+        MarkdownText(display.text, isStreaming: display.isStreaming, fadeKey: entry.id)
             .equatable()
             .onAppear {
                 reconcilePacer()

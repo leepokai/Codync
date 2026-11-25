@@ -27,18 +27,28 @@ public struct MarkdownText: View {
         self.fadeKey = fadeKey
     }
 
+    private func prepareBlocks(shouldAnimate: Bool, now: TimeInterval) -> [RenderedMarkdownBlock] {
+        let blocks = blockCache.render(source, isStreaming: isStreaming)
+        fadeCoordinator.prepare(forKey: fadeKey)
+        fadeCoordinator.sync(blocks: blocks, isStreaming: isStreaming, hidden: !shouldAnimate, now: now)
+        return blocks
+    }
+
+    private func frameTimeAfterPrune() -> TimeInterval {
+        let frameNow = ProcessInfo.processInfo.systemUptime
+        _ = fadeCoordinator.pruneAndCheckActive(at: frameNow)
+        return frameNow
+    }
+
     public var body: some View {
         let shouldAnimate = isStreaming && !reduceMotion && scenePhase == .active
-        let blocks = blockCache.render(source, isStreaming: isStreaming)
         let now = ProcessInfo.processInfo.systemUptime
-        let _ = fadeCoordinator.prepare(forKey: fadeKey)
-        let _ = fadeCoordinator.sync(blocks: blocks, isStreaming: isStreaming, hidden: !shouldAnimate, now: now)
+        let blocks = prepareBlocks(shouldAnimate: shouldAnimate, now: now)
 
         Group {
             if shouldAnimate, fadeCoordinator.hasActiveAnimations {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
-                    let frameNow = ProcessInfo.processInfo.systemUptime
-                    let _ = fadeCoordinator.pruneAndCheckActive(at: frameNow)
+                    let frameNow = frameTimeAfterPrune()
                     blocksStack(blocks, now: frameNow, animate: true)
                 }
             } else {

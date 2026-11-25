@@ -380,6 +380,8 @@ public struct Hello: Codable, Sendable {
     public var projects: Bool?
     /// A new worktree gets the bot's `sharedFolders` linked: the setting shows. Missing on older hosts.
     public var worktreeFill: Bool?
+    /// A thread without a bot gets a folder of its own when none is sent.
+    public var threadFolders: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

@@ -65,11 +65,7 @@ impl App {
             Overlay::Thread(s) if s.typing => Some(&mut s.draft),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
             Overlay::Workflows(sheet) => sheet.text_editor(),
-            Overlay::Routine(f) => Some(match f.field {
-                super::super::manage::RoutineField::Name => &mut f.name,
-                super::super::manage::RoutineField::Instruction => &mut f.instruction,
-                super::super::manage::RoutineField::When => &mut f.when,
-            }),
+            Overlay::Routine(f) => f.editor(),
             _ => None,
         }
     }

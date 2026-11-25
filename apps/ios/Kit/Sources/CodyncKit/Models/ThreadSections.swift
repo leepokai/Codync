@@ -114,8 +114,7 @@ public struct ThreadSections<Row> {
             }
             // A thread in its own worktree, or in its bot's folder, works where its bot does.
             guard task.worktree == nil, let path = task.wherePath, path != owner.cwd else { return nil }
-            let name = path.split { $0 == "/" || $0 == "\\" }.last.map(String.init) ?? path
-            return Group(key: "folder:\(path)", kind: .folder, title: name)
+            return Group(key: "folder:\(path)", kind: .folder, title: path.folderName)
         }
     }
 }

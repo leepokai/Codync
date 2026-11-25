@@ -10,8 +10,8 @@ the separate "bot home and projects" and "thread profile" plans. Answers part of
 | [Bot home and projects](#3-bot-home-and-projects) | **Decided**, not built |
 | [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Decided**, not built |
 | [Worktrees counted per repository](#count-side-by-side-per-repository) | **Decided**, not built |
-| [Thread profile, no fork](#7-thread-profile-no-fork) | **Decided**, not built |
-| [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Decided**, not built |
+| [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
+| [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
 | [A task names its place](#a-task-names-its-place) (`add_task` `place`) | Proposed |
 | [Filling a new worktree](#filling-a-new-worktree) (`.worktreeinclude`, shared folders) | Proposed |
 | [Threads without a bot get a folder of their own](#5-threads-without-a-bot-get-a-folder-of-their-own) | Proposed |
@@ -317,7 +317,7 @@ the **queue** and the bot's **view**.
 | --- | --- | --- |
 | Where the task lives | The bot's box | Same box, same `Task`, `source: user` |
 | Counts toward `maxThreads` | Yes | **No** |
-| Waits for the bot's own turn | Yes (`chat_free`) | **No** (that wait guards a fork; there are no forks, §7) |
+| Waits for the bot's own turn | Yes (`chat_free`) | **No**: nothing of that turn is in it, and stopping that turn can't drop it |
 | Near the usage limit | One thread at a time | Unchanged |
 | Counts for side by side (worktrees) | Yes | Yes: two threads in one repository still need two folders |
 | In the bot's box summary, `work_status`, `recall_task` | Yes | **No** |
@@ -387,7 +387,7 @@ thread only; the bot's own settings don't change. The bot itself still doesn't s
 | `chat`: box, profile, fallback tools | ✗ | ✗ | ✗ | ✗ |
 | `memory`, connectors, Composio, `workflows` | ✔ | ✔ | ✔ | ✔ |
 | `routines` + its paragraph | ✗ | ✗ | ✔ (progress note, follow-ups) | ✔ (an asked bot runs its own routine) |
-| `team` (`list_bots`, `message_bot`) | ✗ | ✗ | ✔ | ✗ |
+| `team` (`list_bots`, `message_bot`) | ✗ | ✗ | ✔ | ✔ (`message_bot` refused with why, as in the chat) |
 | `computer`, `manage` | ✗ | ✗ | ✗ | ✗ |
 
 The routine and request columns are today's rules (`work.md`, "Other sources") written as a profile.
@@ -460,7 +460,9 @@ chat's prompt). A user's thread gets the bot's profile instead ([above](#a-users
 - `sources::from_chat` goes; `dispatch::fork_source`, `threads_fork`, `task.fork_from`, `task.fork_failed` and
   the actor's fork path in `agent/bot/session.rs` go with their tests and the `work.md` text about forks. A task
   that follows another (`after`) still goes on in that thread's session.
-- `capacity.chat_free` goes: a new thread no longer waits for the bot's own turn to end.
+- `capacity.chat_free` stays for the bot's own tasks: stopping the turn that added a task drops the task, and a
+  routine's run or a room's turn shares the actor, so a task still starts once that turn ends. A user's thread
+  doesn't wait for it ([§6](#6-a-users-thread-leaves-the-bots-queue)).
 - The brief carries the weight: `add_task`'s `brief` description and `work::BRIEF` say the thread knows nothing of
   the chat, so the brief has the goal, what is known, the user's words that matter and what done looks like. The
   user's words of the turn are already kept with the task (`words`, `notes`) and still go to the thread.
@@ -531,10 +533,12 @@ does. Refused for an ended task, a user's thread, a routine's run and a request.
 Each stage ships on its own, in this order; host-only stages need no client release beyond the version bump.
 
 1. **Recap on a folder change.** Built (`a5fccdbf7`).
-2. **Thread profile and no fork** (§7). Host only. Comes first: it removes `chat_free` that §6 also drops, and every
-   later stage starts threads from briefs anyway.
-3. **A user's thread leaves the queue** (§6). Host only.
-4. **Routine `folder`.** Host + clients (the routine editor).
+2. **Thread profile and no fork** (§7). Host only. Built: a routine's run and another bot's request are told who the
+   bot is, as a user's thread is (they act as the bot, not on a brief the bot wrote), with only their own paragraph.
+3. **A user's thread leaves the queue** (§6). Host only. Built; `waitedMs` went on `work_finished` (there is no start
+   event).
+4. **Routine `folder`.** Host + clients (the routine editor). Built: any existing folder for now (projects come in 5);
+   a run with one always works in a thread, and a folder that went fails the run.
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
    the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client.
 6. **Migration** (§3). Needs 4 and 5.

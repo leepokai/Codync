@@ -294,7 +294,6 @@ fn event_box_words_read_in_traditional_chinese() {
         ("B opens", "B 開啟"),
         ("X stops", "X 停止"),
         ("↵ opens", "↵ 開啟"),
-        ("Picking up from the chat…", "正在從聊天接著做…"),
     ] {
         assert_eq!(translate_with(english, &super::HANT), chinese);
     }

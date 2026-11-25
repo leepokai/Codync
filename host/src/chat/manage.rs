@@ -8,7 +8,7 @@ use crate::agent::bot::Cmd;
 use crate::chat::naming::MAX_NAME_CHARS;
 use crate::chat::profile::{MAX_INSTRUCTIONS_CHARS, checked_instructions, checked_name};
 use crate::hub::Hub;
-use crate::routines::Trigger;
+use crate::routines::{Folder, Trigger};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Fallback, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
@@ -537,7 +537,12 @@ fn routines(hub: &Hub, bot: &str, args: &Value) -> Result<(Vec<Value>, Vec<Strin
         .map(|r| {
             let routine = hub.routines.check(bot, r)?;
             let when: Vec<String> = routine.triggers.iter().map(Trigger::description).collect();
-            Ok(format!("• {} ({}): {}", routine.name, when.join("; "), routine.instruction))
+            let folder = match &routine.folder {
+                Folder::Keep => String::new(),
+                Folder::Bots => " in the bot's folder".to_owned(),
+                Folder::Path(path) => format!(" in {path}"),
+            };
+            Ok(format!("• {} ({}){folder}: {}", routine.name, when.join("; "), routine.instruction))
         })
         .collect::<Result<_>>()?;
     Ok((list, lines))

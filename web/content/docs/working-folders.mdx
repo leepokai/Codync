@@ -34,7 +34,7 @@ A copy holds what is committed. Changes in your folder that aren't committed are
 
 **Worktree per thread** is under **Workspace** in the bot's **Settings**. It shows only when a project folder is in a Git repository, and is on unless you turn it off. With it off, every thread works in the bot's folder.
 
-Routine runs and other bots' requests always work in the bot's folder.
+Routine runs work in the bot's folder, unless the routine names a folder of its own (see [Routines](/docs/routines)). Other bots' requests always work in the bot's folder.
 
 ## What happens to the copies
 
@@ -68,7 +68,7 @@ Codync can keep versions and give threads their own copies only with Git. In bot
 
 A project folder may not be a Git repository. (A bot's own folder becomes one by itself once Git is installed.) Choose one of these:
 
-- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn, except while a thread waits for you (an approval, a choice or a sign-in): then the next task starts in the same folder, and once you answer, both work there at once. To keep them apart even then, make the folder a repository.
+- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn, except while a thread waits for you (an approval, a choice or a sign-in): then the next task starts in the same folder, and once you answer, both work there at once. To keep them apart even then, make the folder a repository. The number limits only the bot's own tasks: a thread you start yourself runs at once, beside them in the same folder, so to keep your own threads apart too, make the folder a repository.
 - **Make the folder a repository.** A copy starts from a commit, so the folder needs at least one:
 
 ```sh

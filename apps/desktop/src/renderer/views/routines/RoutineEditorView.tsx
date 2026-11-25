@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, CardSection, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Dialog, ModalHeader } from '../../components/Overlay'
+import { Dialog, ModalHeader, Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, scheduleLine, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, folderField, repeatChoice, sameDraft, scheduleLine, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { lastPathComponent } from '../bots/drafts'
+import { FolderPicker } from '../bots/FolderPicker'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
@@ -29,6 +31,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
   const [schedule, setSchedule] = useState<RoutineScheduleDraft>(emptyDraft)
   const [timeout, setTimeoutText] = useState(String(routine?.timeoutSeconds ?? 3600))
+  const [folder, setFolder] = useState<string | null>(routine?.folder ?? null)
+  const [pickingFolder, setPickingFolder] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [advanced, setAdvanced] = useState(false)
@@ -111,6 +115,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
         instruction,
         schedule,
         timeoutSeconds: timeout,
+        ...folderField(folder, store.routinesHaveFolders),
       })
       saved(result.routine)
     } catch (e) {
@@ -156,52 +161,66 @@ export function RoutineEditorView({ botId, routine, saved }: {
     <VStack className="routine-editor">
       <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={tr(routine ? 'Edit routine' : 'Set up a routine')} />
       {/* The card fits the form; it scrolls only when taller than the window allows. */}
-      <fieldset className="routine-form" disabled={busy || !loaded}>
-        <VStack gap={24} className="routine-form-body">
-          <VStack gap={16}>
-            <Field label="Name">
-              <input className="routine-input" value={name} placeholder={tr('e.g. Morning summary')} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Field label={tr('Instruction')}>
-              <textarea className="routine-input" value={instruction} placeholder={tr('Describe what this bot should do each time it runs.')} onChange={(e) => setInstruction(e.target.value)} />
-            </Field>
-          </VStack>
-          <VStack gap={10}>
-            <HStack gap={12}>
-              <Text tone="text" grow>{tr(`When to run`)}</Text>
-              <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
-            </HStack>
-            {loaded ? (
-              triggerFields()
-            ) : (
-              <HStack as="span" gap={6} className="routine-loading">
-                <Icon name="clock" size={12} />
-                Loading schedule…
+      <div className="routine-form-scroll">
+        <fieldset className="routine-form" disabled={busy || !loaded}>
+          <VStack gap={24} className="routine-form-body">
+            <VStack gap={16}>
+              <Field label="Name">
+                <input className="routine-input" value={name} placeholder={tr('e.g. Morning summary')} onChange={(e) => setName(e.target.value)} />
+              </Field>
+              <Field label={tr('Instruction')}>
+                <textarea className="routine-input" value={instruction} placeholder={tr('Describe what this bot should do each time it runs.')} onChange={(e) => setInstruction(e.target.value)} />
+              </Field>
+              {store.routinesHaveFolders ? (
+                <Field label={tr('Folder')} detail={tr('Each run works here in a thread of its own.')}>
+                  <HStack gap={8}>
+                    <button className="press routine-input routine-folder" title={folder ?? undefined} onClick={() => setPickingFolder(true)}>
+                      <Icon name="folder" size={12} color="var(--secondary)" />
+                      <Text size="callout" truncate grow>{folder ? lastPathComponent(folder) : tr("Bot's folder")}</Text>
+                      <Icon name="chevron.right" size={10} color="var(--tertiary)" />
+                    </button>
+                    {folder ? <IconButton title="Use the bot's folder" icon="xmark" onClick={() => setFolder(null)} /> : null}
+                  </HStack>
+                </Field>
+              ) : null}
+            </VStack>
+            <VStack gap={10}>
+              <HStack gap={12}>
+                <Text tone="text" grow>{tr(`When to run`)}</Text>
+                <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
               </HStack>
-            )}
+              {loaded ? (
+                triggerFields()
+              ) : (
+                <HStack as="span" gap={6} className="routine-loading">
+                  <Icon name="clock" size={12} />
+                  Loading schedule…
+                </HStack>
+              )}
+            </VStack>
+            <VStack gap={10}>
+              <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
+                {tr('Run settings')}
+                <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
+                  <Icon name="chevron.down" size={10} weight="semibold" />
+                </span>
+                <Spacer />
+                {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout, durationLocale))}</Text> : null}
+              </button>
+              {advanced ? (
+                <div className="routine-fade">
+                  <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
+                    <LabeledRow label="Timeout">
+                      <input className="schedule-input routine-timeout" aria-label={tr('Timeout in seconds')} value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
+                      <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
+                    </LabeledRow>
+                  </CardSection>
+                </div>
+              ) : null}
+            </VStack>
           </VStack>
-          <VStack gap={10}>
-            <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
-              {tr('Run settings')}
-              <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
-                <Icon name="chevron.down" size={10} weight="semibold" />
-              </span>
-              <Spacer />
-              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout, durationLocale))}</Text> : null}
-            </button>
-            {advanced ? (
-              <div className="routine-fade">
-                <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
-                  <LabeledRow label="Timeout">
-                    <input className="schedule-input routine-timeout" aria-label={tr('Timeout in seconds')} value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
-                    <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
-                  </LabeledRow>
-                </CardSection>
-              </div>
-            ) : null}
-          </VStack>
-        </VStack>
-      </fieldset>
+        </fieldset>
+      </div>
 
       <VStack gap={12} className="routine-editor-footer">
         {previewError !== null ? (
@@ -276,6 +295,15 @@ export function RoutineEditorView({ botId, routine, saved }: {
         ]}
         onClose={() => setConfirmDelete(false)}
       />
+      <Sheet open={pickingFolder} onClose={() => setPickingFolder(false)} width={460} height={520}>
+        <FolderPicker
+          start={folder || store.hello?.home || null}
+          onPick={(path) => {
+            setFolder(path)
+            setPickingFolder(false)
+          }}
+        />
+      </Sheet>
     </VStack>
   )
 }

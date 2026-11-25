@@ -15,6 +15,7 @@ pub(super) fn routine() -> Routine {
         timeout_seconds: default_timeout(),
         last_error: None,
         progress: None,
+        folder: None,
     }
 }
 /// An in-memory store and `Routines` holding `routine()`.

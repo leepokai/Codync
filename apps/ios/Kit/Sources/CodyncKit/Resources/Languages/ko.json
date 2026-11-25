@@ -2100,7 +2100,6 @@
   "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "내 Boat 또는 InstaBox 계정에서 클라우드 컴퓨터를 시작하면 컴퓨터가 꺼져 있어도 봇이 계속 작업합니다.",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요.",
-  "Picking up from the chat…": "채팅 내용을 이어받는 중…",
   "Stop this task?": "이 task를 중지할까요?",
   "What it already changed stays.": "이미 변경한 내용은 그대로 남습니다.",
   "No work": "작업 없음",
@@ -2496,5 +2495,9 @@
   "Context handed off": "컨텍스트 인계됨",
   "Switched": "전환됨",
   "No threads right now": "지금은 스레드가 없습니다",
-  "Tasks your bots work on show up here.": "봇이 작업 중인 태스크가 여기에 표시됩니다."
+  "Tasks your bots work on show up here.": "봇이 작업 중인 태스크가 여기에 표시됩니다.",
+  "Folder": "폴더",
+  "Bot's folder": "Bot 폴더",
+  "Use the bot's folder": "Bot 폴더 사용",
+  "Each run works here in a thread of its own.": "각 실행은 이곳에서 자체 thread로 작업합니다."
 }

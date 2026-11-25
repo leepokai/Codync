@@ -735,6 +735,9 @@ export interface Hello {
   autoOrder?: boolean
   /** Another bot may review a chain stopped at the hop limit (`setHopReview`). Absent from older hosts. Off when false. */
   hopReview?: boolean
+  /** Days after a thread last ended that the computer deletes it, 0 never (`setThreadKeepDays`); it lists older threads
+   * (`olderThreads`). Absent from older hosts. */
+  threadKeepDays?: number
   /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
   startThread?: boolean
   /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */

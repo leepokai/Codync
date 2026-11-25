@@ -255,6 +255,7 @@ export class BotSync extends BotMirror {
     if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
     this.iconsRevision = -1
     this.hello = h
+    this.olderThreads.reset()
     if (h.workflows === true) void this.reloadWorkflowMirror()
     else this.workflows = []
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
@@ -352,6 +353,9 @@ export class BotSync extends BotMirror {
         break
       case 'hopReview':
         this.showHopReview(event.enabled)
+        break
+      case 'threadKeepDays':
+        this.showThreadKeepDays(event.days)
         break
       case 'network':
         this.network = event.network

@@ -384,6 +384,9 @@ public struct Hello: Codable, Sendable {
     public var worktreeFill: Bool?
     /// A thread without a bot gets a folder of its own when none is sent.
     public var threadFolders: Bool?
+    /// How many days after a thread last finished the computer deletes it, 0 never (`setThreadKeepDays`). Missing on
+    /// older hosts, which don't list older threads (`olderThreads`) either.
+    public var threadKeepDays: Int?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

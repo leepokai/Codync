@@ -40,6 +40,7 @@ pub enum After {
     Analytics,
     AutoOrder,
     HopReview,
+    ThreadKeep,
     CredentialsReset,
     History(String),
     Dirs(String),

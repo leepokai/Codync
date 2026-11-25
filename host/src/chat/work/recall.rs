@@ -1,5 +1,5 @@
 //! `recall_task`: the bot looks back at its tasks, ended ones too, up to 30 days: those in its box and its past ones
-//! (`tasks::past`).
+//! (`archive::recent`).
 
 use super::tasks::{self, Task};
 use crate::analytics::{self, Event};
@@ -23,7 +23,7 @@ pub(super) fn call(hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
     let mut all = tasks::load(&hub.store, bot);
     let now = now_ms();
     all.retain(|i| i.ended_at.is_none_or(|at| tasks::within_past(at, now)));
-    all.extend(tasks::past(&hub.store, bot, now));
+    all.extend(super::archive::recent(&hub.store, bot, now - tasks::PAST_MS, tasks::PAST_MOST));
     // The user's own threads are theirs: the bot doesn't look back at them (`tasks::seen_by_bot`).
     all.retain(|i| !i.source.is_user());
     let (by, recalled) = if let Some(id) = text("task") {
@@ -123,7 +123,8 @@ mod tests {
             )
             .expect("a task")
         };
-        tasks::put_past(&hub.store, "b1", vec![ended("i1", 20), ended("i0", 40)], now).expect("kept");
+        let old = [ended("i1", 20), ended("i0", 40)];
+        super::super::archive::put(&hub, "b1", &old, &[]).expect("kept");
         let thread = crate::store::Lane::main("thread-2");
         for n in 0..35 {
             let step = json!({"text": format!("step {n}")});
@@ -141,7 +142,7 @@ mod tests {
 
         let audit = recall(json!({"task": "i1"})).expect("20 days back");
         assert_eq!((audit["result"].as_str(), &audit["followedBy"]), (Some("Found 3 bugs"), &json!(["i2"])));
-        assert_eq!(audit["steps"], json!([]), "its thread went after a week");
+        assert_eq!(audit["steps"], json!([]), "its thread is gone");
         let login = recall(json!({"task": "i2"})).expect("its thread is still here");
         assert_eq!(login["steps"].as_array().map(Vec::len), Some(30));
         assert_eq!(login["steps"][29]["text"], "step 34", "the latest page first");

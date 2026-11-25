@@ -28,6 +28,7 @@ class ConversationCollectionView: UICollectionView {
     private var displayLink: CADisplayLink?
     private var lastFrame: TimeInterval?
     private var motion = ConversationScrollMotion()
+    private var motionPosition: CGFloat?
     var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private var autoScrollSuppressedUntil: TimeInterval = -.infinity
 
@@ -169,6 +170,7 @@ class ConversationCollectionView: UICollectionView {
             return
         }
         motion = ConversationScrollMotion(response: response)
+        motionPosition = nil
         lastFrame = nil
         let link = CADisplayLink(target: ConversationScrollFrames(self), selector: #selector(ConversationScrollFrames.tick(_:)))
         displayLink = link
@@ -178,6 +180,7 @@ class ConversationCollectionView: UICollectionView {
     func cancelScrollingToEnd() {
         displayLink?.invalidate()
         displayLink = nil
+        motionPosition = nil
         lastFrame = nil
         scrollingToEnd = false
         followingContentGrowth = false
@@ -203,11 +206,13 @@ class ConversationCollectionView: UICollectionView {
             cancelScrollingToEnd()
             return
         }
-        let next = motion.step(from: contentOffset.y, to: target, elapsed: elapsed)
+        let current = motionPosition.flatMap { abs($0 - contentOffset.y) < 1.0 ? $0 : nil } ?? contentOffset.y
+        let next = motion.step(from: current, to: target, elapsed: elapsed)
+        motionPosition = next
         UIView.performWithoutAnimation { contentOffset.y = next }
-        if motion.isSettled(at: contentOffset.y, target: target) {
+        if motion.isSettled(at: next, target: target) {
+            UIView.performWithoutAnimation { contentOffset.y = target }
             cancelScrollingToEnd()
-            pinToEnd()
         }
     }
 }

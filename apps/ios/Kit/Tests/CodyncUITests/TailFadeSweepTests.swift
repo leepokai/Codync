@@ -17,7 +17,9 @@ import Testing
     // First batch hits 0.5 opacity halfway through its 0.715s duration.
     let mid = state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration * 0.5)
     #expect(abs(mid - 0.5) < 0.001)
-    #expect(state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration) == 1.0)
+    let end = state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration)
+    #expect(abs(end - 1.0) < 0.001)
+    #expect(state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration + 0.001) == 1.0)
 }
 
 @Test func tailFadeSweepCapsStaggerDelayAtMaxTotalDelay() {

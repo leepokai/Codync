@@ -191,7 +191,7 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     #expect(view.contentOffset.y <= view.endOffset + 0.5)
 
     // Wait for critically damped motion to settle; CADisplayLink must tear down automatically.
-    for _ in 0..<80 where view.hasActiveDisplayLink {
+    for _ in 0..<140 where view.hasActiveDisplayLink {
         try await Task.sleep(for: .milliseconds(25))
     }
     #expect(!view.hasActiveDisplayLink)

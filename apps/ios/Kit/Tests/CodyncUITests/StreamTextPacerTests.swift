@@ -266,7 +266,7 @@ import Testing
     #expect(store.liveArrivalIDs.contains("del-1"))
     #expect(store.revealedTextByID["del-1"] == 5)
 
-    await remote.emit(#"{"type":"botDeleted","id":"b1","rev":3}"#)
+    await remote.emit(#"{"type":"bot","rev":3,"bot":{"id":"b1","deleted":true,"rev":3}}"#)
     #expect(await until { store.bots["b1"] == nil })
     #expect(!store.liveArrivalIDs.contains("del-1"))
     #expect(store.revealedTextByID["del-1"] == nil)

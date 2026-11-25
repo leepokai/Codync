@@ -48,15 +48,9 @@ public struct MarkdownText: View {
         let activeDeadline = shouldAnimate ? fadeCoordinator.latestEndTime : nil
         let isActivelyFading = activeDeadline != nil && settledDeadline != activeDeadline
 
-        Group {
-            if isActivelyFading {
-                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
-                    let frameNow = frameTimeAfterPrune()
-                    blocksStack(blocks, now: frameNow, animate: fadeCoordinator.hasActiveAnimations)
-                }
-            } else {
-                blocksStack(blocks, now: now, animate: false)
-            }
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isActivelyFading)) { _ in
+            let frameNow = isActivelyFading ? frameTimeAfterPrune() : now
+            blocksStack(blocks, now: frameNow, animate: isActivelyFading && fadeCoordinator.hasActiveAnimations)
         }
         .textSelection(.enabled)
         .task(id: activeDeadline) {

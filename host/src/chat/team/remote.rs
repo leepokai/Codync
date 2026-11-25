@@ -272,9 +272,6 @@ pub(super) fn ask_for_replies(
 ) -> Result<(String, String)> {
     let node = hub.network.slot(Some(&to.network))?.node;
     hub.network.send_as(from)?;
-    if !hub.assistant.has_room() {
-        anyhow::bail!("too many requests are still running on this computer to track another: try again later");
-    }
     let letter = Letter::new(from, to.address.clone(), message);
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
     // Kept before the letter goes, so an outcome as quick as a refusal finds them: the route first,
@@ -282,7 +279,11 @@ pub(super) fn ask_for_replies(
     expire(hub);
     awaits_in_replies(hub, &id, &peer, message, wait_until(hub, to));
     let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
-    keep_reply(hub, if offers_bot(hub, to) { reply } else { reply.unlimited() });
+    // Refused before the letter goes when there's no room to track its reply.
+    if let Err(error) = keep_reply(hub, if offers_bot(hub, to) { reply } else { reply.unlimited() }) {
+        hub.waiting.take(&id);
+        return Err(error);
+    }
     let (hub, request) = (hub.clone(), id.clone());
     tokio::spawn(async move {
         match node.send(letter).await {
@@ -307,10 +308,14 @@ pub(super) fn offers_bot(hub: &Hub, to: &Target) -> bool {
 }
 
 /// Keeps `reply` in its asker's replies, ending the routes of the running requests it pushes out.
-pub(super) fn keep_reply(hub: &Hub, reply: super::assistant::Reply) {
-    for forgotten in hub.assistant.add(reply) {
+pub(super) fn keep_reply(hub: &Hub, reply: super::assistant::Reply) -> Result<()> {
+    let forgotten = hub.assistant.add(reply).ok_or_else(|| {
+        anyhow!("too many requests are still running on this computer to track another: try again later")
+    })?;
+    for forgotten in forgotten {
         hub.waiting.take(&forgotten);
     }
+    Ok(())
 }
 
 /// The answer to letter `id` goes to its asker's replies.

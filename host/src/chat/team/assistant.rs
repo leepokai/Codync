@@ -270,7 +270,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let exchange =
         Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name), hops: None };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {name}: {message}"), true)?);
-    remote::keep_reply(hub, Reply::queued(&asker.id, &request, &target.name, message));
+    remote::keep_reply(hub, Reply::queued(&asker.id, &request, &target.name, message))?;
     lifetime.deliver(&target.id, Access::Allow, request_prompt(&asker.who, name, Access::Allow, message))?;
     Ok(json!({
         "requestId": request, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,
@@ -403,29 +403,27 @@ impl Reply {
 impl Replies {
     /// Keeps `reply`, forgetting the oldest finished ones (or ones to sessions, which may never
     /// finish) past `KEEP`: the requests forgotten while still running, whose waits end with them.
-    pub(super) fn add(&self, reply: Reply) -> Vec<String> {
+    /// `None`, keeping nothing, when `reply` itself would be the one to go.
+    pub(super) fn add(&self, reply: Reply) -> Option<Vec<String>> {
         let mut all = self.0.locked();
         all.push(reply);
         let mut dropped = Vec::new();
         while all.len() > KEEP {
             let Some(i) = all.iter().position(|r| !r.running() || !r.limited) else { break };
+            if i == all.len() - 1 {
+                all.pop();
+                return None;
+            }
             let gone = all.remove(i);
             if gone.running() {
                 dropped.push(gone.request);
             }
         }
-        dropped
+        Some(dropped)
     }
 
     fn running(&self, asker: &str) -> usize {
         self.0.locked().iter().filter(|r| r.asker == asker && r.limited && r.running()).count()
-    }
-
-    /// Whether one more reply can be kept without forgetting it at once: room left, or an older
-    /// one that may go.
-    pub(super) fn has_room(&self) -> bool {
-        let all = self.0.locked();
-        all.len() < KEEP || all.iter().any(|r| !r.running() || !r.limited)
     }
 
     fn set(&self, request: &str, status: RequestStatus, text: Option<String>) {

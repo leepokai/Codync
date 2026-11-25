@@ -389,7 +389,7 @@ fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotCo
     props.insert("actorBotId".into(), source.id.clone().into());
     props.insert("actorKind".into(), "lead".into());
     props.insert("targetBotId".into(), after.id.clone().into());
-    props.insert("targetName".into(), after.name.clone().into());
+    // The name stays in the local notice: analytics carries feature use, never content.
     props.insert("approvalMode".into(), mode.into());
     let mut names: Vec<&str> = Vec::new();
     for (key, _label) in FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)) {

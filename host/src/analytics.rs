@@ -77,6 +77,33 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
     capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
 }
 
+/// What a coding agent's session did with its Network mailbox.
+#[derive(Clone, Copy)]
+pub enum SessionAction {
+    /// It called for the first time and got an address.
+    Registered,
+    /// `set_name`.
+    Renamed,
+    /// A letter was left for it.
+    Posted,
+    /// `check_inbox` handed it letters.
+    Read,
+}
+
+pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
+    let action = match action {
+        SessionAction::Registered => "registered",
+        SessionAction::Renamed => "renamed",
+        SessionAction::Posted => "posted",
+        SessionAction::Read => "read",
+    };
+    capture(
+        hub,
+        Event::NetworkSession,
+        Map::from_iter([("action".into(), action.into()), ("kind".into(), kind.as_str().into())]),
+    );
+}
+
 pub struct Analytics {
     enabled: Mutex<bool>,
     /// Every event's `env`: the build's, or `dev` on a test machine.

@@ -162,6 +162,8 @@ impl Actor {
         progress: impl Fn(&str),
     ) -> Result<Conn> {
         let mut command = [candidate.resolve(progress).await?.acp()];
+        // A user-scope `codync` network server the agent loads knows it serves a bot.
+        env.push((crate::mcp::BOT_ENV.into(), self.cfg.id.clone()));
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
         let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {

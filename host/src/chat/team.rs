@@ -19,6 +19,7 @@ pub mod assistant;
 mod ceilings;
 mod directory;
 pub mod limit;
+pub mod mailbox;
 pub mod remote;
 mod requests;
 pub mod restart;
@@ -497,7 +498,7 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         "list_bots" => {
             visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
-            directory::list(hub, from, args, &remote, |_| true)
+            directory::list(hub, from, args, &remote, &[], |_| true)
         }
         "message_bot" => {
             let (to, message) = message_args(args)?;
@@ -516,7 +517,7 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
 fn call(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Result<Value> {
     let source = visible_bot(hub, from)?;
     match name {
-        "list_bots" => directory::list(hub, from, args, &[], |_| true),
+        "list_bots" => directory::list(hub, from, args, &[], &[], |_| true),
         "message_bot" => {
             let (to, message) = message_args(args)?;
             match hub.network.recipient(to)? {

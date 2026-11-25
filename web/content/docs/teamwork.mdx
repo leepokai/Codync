@@ -91,13 +91,15 @@ Each computer decides for itself who may message its bots; the senders can't get
 
 ### Agents that aren't Codync bots
 
-A Claude Code, Codex or other agent session on the same computer can list your bots (here and on your other computers), message one and read its reply, through an MCP server the host runs:
+A Claude Code, Codex, Copilot CLI or other coding agent session on the same computer gets its own Network address and mailbox through an MCP server the host runs. It can list your bots (here and on your other computers) and the other sessions here, message them, and read the replies:
 
 ```sh
-claude mcp add codync -- codync-host mcp network --name "Claude Code"
+claude mcp add codync -- codync-host mcp network
 ```
 
-The bot's chat shows "Message from Claude Code (this computer)". Bots can take minutes, so the session collects answers with `read_replies` when it's ready, rather than waiting.
+Each session is named once, when it first uses the server: its project folder and agent, like `api-claude` (`api-claude-2` for a second one). The same session keeps that address when you resume it, and the letters waiting for it. A new session gets a new address. The address doesn't change when the session's title does; ask the agent to change it (`set_name`) if you want another one. A session asks `whoami` for its address. `check_inbox` reads its letters, and every tool result says how many are waiting. A bot's chat shows "Message from api-claude (this computer)". Bots can take minutes, so the session collects answers with `read_replies` when it's ready, rather than waiting.
+
+Sessions aren't offered to your other computers unless a rule under the network allows a sender to reach that session's address by name (**Allow**, naming the address; a rule for any agent doesn't count). The apps can't pick a session in a rule yet; that comes when they show sessions. An agent that doesn't tell the server which session it is gets an address that lasts only while it runs; listings mark it temporary.
 
 ## Manage the team
 

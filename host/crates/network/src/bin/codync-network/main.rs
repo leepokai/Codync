@@ -278,6 +278,7 @@ impl Daemon {
                 Reach::ClaudeCode { session } => format!("Claude Code {session}"),
                 Reach::Codex { thread } => format!("Codex {thread}"),
                 Reach::App => "app".into(),
+                Reach::Mailbox { session } => format!("mailbox {session}"),
             };
             out.push(format!("{:<16} {how}", a.agent.id));
         }

@@ -215,12 +215,21 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             .collect();
         let name = if s["older"] == true { t.dim } else { t.text };
         let detail = detail.join(" · ");
-        let x = put(buf, body.x, y, 2, if runs { "●" } else { "○" }, if runs { t.text } else { t.dim }.patch(t.panel));
+        // No state, no dot: unknown isn't offline.
+        let dot = if s["state"].is_null() {
+            " "
+        } else if runs {
+            "●"
+        } else {
+            "○"
+        };
+        let x = put(buf, body.x, y, 2, dot, if runs { t.text } else { t.dim }.patch(t.panel)) + 1;
         // The address and the rest go in whole where they can: the title gives way first (down to 12).
         let rest = u16::try_from(detail.chars().count()).unwrap_or(u16::MAX);
         let room = body.width.saturating_sub(2 + 2 + rest).clamp(12, 34);
         let x =
             put(buf, x, y, room + 2, &md::truncate(title.unwrap_or(address), usize::from(room)), name.patch(t.panel));
+        let x = x + 2;
         put(buf, x, y, body.right().saturating_sub(x), &detail, t.secondary.patch(t.panel));
         y += 1;
     }
@@ -374,6 +383,8 @@ mod tests {
         assert!(tall.contains("Coding agents") && tall.contains("Working · Checks its mail"), "{tall}");
         let at = |s: &str| tall.find(s).unwrap_or(usize::MAX);
         assert!(at("Fix refunds") < at("web-codex") && at("web-codex") < at("infra-codex"), "{tall}");
+        assert!(tall.contains("● Fix refunds  billing-claude · Working"), "spaced apart: {tall}");
+        assert!(tall.contains("○ web-codex") && tall.contains("  infra-codex"), "no state, no dot: {tall}");
         assert!(!tall.contains("More sessions"), "{tall}");
         let short = text(SHORT);
         assert!(short.contains("Fix refunds") && short.contains("More sessions: 2"), "{short}");

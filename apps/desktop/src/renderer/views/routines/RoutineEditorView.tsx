@@ -153,7 +153,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
           <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
-        return <Note icon="sparkles" title={routine ? scheduleLine(routine, tr) : ''} detail={tr('Set up by the bot. Pick Schedule or Webhook to replace it.')} />
+        return <Note icon="sparkles" title={routine ? scheduleLine(routine, tr, durationLocale) : ''} detail={tr('Set up by the bot. Pick Schedule or Webhook to replace it.')} />
     }
   }
 

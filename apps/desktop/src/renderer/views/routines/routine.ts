@@ -14,6 +14,20 @@ export interface RoutineTrigger {
   filters?: Record<string, string> | null
 }
 
+export type TriggerPresentationItem =
+  | { kind: 'interval'; seconds: number }
+  | { kind: 'once'; at: number }
+  | { kind: 'calendar'; weekdays: string[]; hour: number; minute: number; expression: string; timeZone: string }
+  | { kind: 'cron'; expression: string; timeZone: string }
+  | { kind: 'webhook' }
+  | { kind: 'event'; source: string; event: string }
+  | { kind: string; [key: string]: unknown }
+
+export interface TriggerPresentation {
+  version: number
+  items: TriggerPresentationItem[]
+}
+
 export interface Routine {
   id: string
   botId: string
@@ -24,6 +38,7 @@ export interface Routine {
   createdAt: number
   updatedAt: number
   triggerDescriptions: string[]
+  triggerPresentation?: TriggerPresentation | null
   nextRunAt?: number | null
   timeoutSeconds?: number | null
   lastError?: string | null
@@ -150,6 +165,7 @@ export interface RoutineSchedulePreview {
   draft: RoutineScheduleDraft
   triggers: RoutineTrigger[]
   summary: string
+  triggerPresentation?: TriggerPresentation | null
   nextRunAt?: number | null
   warning?: string | null
 }
@@ -212,7 +228,107 @@ export function durationText(text: string, locale = 'en') {
   return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(amount)
 }
 
-/** When it runs: each schedule line through `tr`, joined. */
-export const scheduleLine = (routine: Routine, tr: (text: string) => string) => routine.triggerDescriptions.map((line) => tr(line)).join(' · ')
+const weekdayTemplates: Record<string, string> = {
+  Sunday: 'Every Sunday at {times} · {zone}',
+  Monday: 'Every Monday at {times} · {zone}',
+  Tuesday: 'Every Tuesday at {times} · {zone}',
+  Wednesday: 'Every Wednesday at {times} · {zone}',
+  Thursday: 'Every Thursday at {times} · {zone}',
+  Friday: 'Every Friday at {times} · {zone}',
+  Saturday: 'Every Saturday at {times} · {zone}',
+}
+
+const workweek = 'Monday,Tuesday,Wednesday,Thursday,Friday'
+
+function presentTrigger(
+  item: TriggerPresentationItem,
+  fallback: string | undefined,
+  tr: (text: string) => string,
+  locale?: string,
+): string | null {
+  switch (item.kind) {
+    case 'interval': {
+      const seconds = item.seconds
+      if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null
+      if (seconds % 86400 === 0) return tr('Every {count} days').replaceAll('{count}', () => String(seconds / 86400))
+      if (seconds % 3600 === 0) return tr('Every {count} hours').replaceAll('{count}', () => String(seconds / 3600))
+      if (seconds % 60 === 0) return tr('Every {count} minutes').replaceAll('{count}', () => String(seconds / 60))
+      return tr('Every {count} seconds').replaceAll('{count}', () => String(seconds))
+    }
+    case 'once': {
+      const at = item.at
+      if (typeof at !== 'number' || !Number.isFinite(at)) return tr('Once')
+      const date = new Date(at)
+      if (Number.isNaN(date.getTime())) return tr('Once')
+      const when = date.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+      return tr('Once at {time}').replaceAll('{time}', () => when)
+    }
+    case 'calendar': {
+      if (!Array.isArray(item.weekdays) || typeof item.hour !== 'number' || typeof item.minute !== 'number' || typeof item.timeZone !== 'string') {
+        return null
+      }
+      const times = `${String(item.hour).padStart(2, '0')}:${String(item.minute).padStart(2, '0')}`
+      let template: string | undefined
+      if (item.weekdays.length === 7) {
+        template = 'Every day at {times} · {zone}'
+      } else if (item.weekdays.length === 5 && item.weekdays.join(',') === workweek) {
+        template = 'Every weekday at {times} · {zone}'
+      } else if (item.weekdays.length === 1 && typeof item.weekdays[0] === 'string') {
+        template = weekdayTemplates[item.weekdays[0]]
+      }
+      if (!template) return null
+      return tr(template).replaceAll('{times}', () => times).replaceAll('{zone}', () => item.timeZone as string)
+    }
+    case 'cron': {
+      if (typeof item.expression !== 'string' || typeof item.timeZone !== 'string') return null
+      if (fallback) {
+        const translated = tr(fallback)
+        // Host calendar phrases (hourly, multi-hour, monthly) already match catalog templates;
+        // raw croner descriptions don't, so non-English UI keeps the expression + zone instead.
+        if (translated !== fallback || tr('When a webhook fires') === 'When a webhook fires') return translated
+      }
+      return `${item.expression} · ${item.timeZone}`
+    }
+    case 'webhook':
+      return tr('When a webhook fires')
+    case 'event': {
+      if (typeof item.source !== 'string' || typeof item.event !== 'string') return null
+      return tr('When {source} fires {event}').replaceAll('{source}', () => item.source as string).replaceAll('{event}', () => item.event as string)
+    }
+    default:
+      return null
+  }
+}
+
+/** Formats host `triggerPresentation` items into the app's language, falling back per item to `triggerDescriptions`. */
+export function presentTriggers(
+  presentation: TriggerPresentation | null | undefined,
+  descriptions: string[],
+  tr: (text: string) => string,
+  locale?: string,
+): string {
+  if (presentation?.version === 1 && Array.isArray(presentation.items)) {
+    return presentation.items
+      .map((item, i) => {
+        const fallback = descriptions[i]
+        return presentTrigger(item, fallback, tr, locale) ?? (fallback ? tr(fallback) : '')
+      })
+      .filter(Boolean)
+      .join(' · ')
+  }
+  return descriptions.map((line) => tr(line)).join(' · ')
+}
+
+/** When it runs: structured `triggerPresentation` first, else legacy `triggerDescriptions` through `tr`, joined. */
+export const scheduleLine = (routine: Routine, tr: (text: string) => string, locale?: string) =>
+  presentTriggers(routine.triggerPresentation, routine.triggerDescriptions, tr, locale)
+
+/** Preview line for the schedule editor: structured `triggerPresentation` first, else legacy `summary`. */
+export const schedulePreviewLine = (preview: RoutineSchedulePreview, tr: (text: string) => string, locale?: string) => {
+  const presentation = preview.triggerPresentation
+  if (presentation?.version !== 1 || !Array.isArray(presentation.items)) return tr(preview.summary)
+  const descriptions = presentation.items.length === 1 && preview.summary ? [preview.summary] : []
+  return presentTriggers(presentation, descriptions, tr, locale)
+}
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

@@ -2493,5 +2493,6 @@
   "Threads work in the project itself": "thread가 프로젝트 자체에서 작업합니다",
   "A thread gets its own worktree when another thread works in the same repository": "같은 저장소에서 다른 thread가 작업 중이면 thread가 자체 worktree를 받습니다",
   "Every thread works in a worktree of its own; your checkout is never touched": "모든 thread가 자체 worktree에서 작업하며, 내 체크아웃은 건드리지 않습니다",
-  "Its chat, routines and files live here.": "채팅, 루틴, 파일이 여기에 있습니다."
+  "Its chat, routines and files live here.": "채팅, 루틴, 파일이 여기에 있습니다.",
+  "When {source} fires {event}": "{source}에서 {event} 발생 시"
 }

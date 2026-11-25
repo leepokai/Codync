@@ -479,7 +479,9 @@ fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
 fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"folder":r.folder,
-        "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
+        "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),
+        "triggerPresentation":Trigger::presentations(&r.triggers),
+        "nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
     Run {

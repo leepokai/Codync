@@ -177,9 +177,10 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     /// its answer already. A routine's task runs the routine again.
     public var canRetry: Bool { (status == .failed || status == .stopped) && source?.kind != .request }
 
-    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
-    /// another bot's request is stopped, never set aside.
-    public var givesWay: Bool { status.isLive && source == nil }
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A
+    /// routine's run or another bot's request is stopped, never set aside, and a thread the user started never holds
+    /// a seat (`seat`).
+    public var givesWay: Bool { status.isLive && takesSeat && source == nil }
 }
 
 /// A bot's `work` as the host sent it, each task that doesn't read left out.

@@ -9,6 +9,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ## 2.54.0
 ### zh-Hant
 - 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
+- Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾（「Bot 的資料夾」，可以複製路徑），聊天、例行任務和檔案都在那裡；你的資料夾改列為專案，可以新增專案、設為預設或移除專案，第一個就是預設，thread 從預設專案開始。專案是 git 儲存庫時可以選「worktree 模式」：關、並行時或一律（每個 thread 都有自己的 worktree，你的 checkout 不會被動到）。原本在專案裡工作的 Bot 更新後會搬回自己的資料夾，那個專案成為它的第一個專案，專案裡的東西不會改動。
 - 新增 Threads 分頁：列出 Bot 所有的 thread，需要你處理的排最上面，接著是分組和最近的 thread。右上角的篩選按鈕可以「依資料夾分組」、「依 Bot 分組」或「依電腦分組」，也能「依狀態排序」或「依最近活動排序」；旁邊的搜尋可以用標題或 Bot 名稱找 thread，+ 可以選一個 Bot、寫下第一則訊息開新的 thread；長按 thread 可以停止、插隊、重試、複製標題或移除。分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
 - Bot 分頁的篩選選單新增「依電腦分組」和「依狀態排序」；「將有新動態的機器人移到最前面」改成這裡的「依最近活動排序」，不再放在管理電腦裡。
 - Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方；列表捲動時頂端改成柔和的模糊。
@@ -21,6 +22,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ### en-US
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
+- Bot settings' Workspace now has Projects. A bot always lives in its own folder (Bot's folder, with a button to copy its path), where its chat, routines and files are; the folders it works on are its projects: add one, make another the default or remove one. Threads start in the default project. With a project in a git repository, Worktree mode picks Off, Side by side or Always (every thread gets its own worktree, so your checkout is never touched). A bot that worked in a project moves to its own folder, with that project as its first; nothing in the project changes.
 - A new Threads tab lists every thread of your bots: what needs you on top, then groups, then recent ones. Its filter button groups them by folder, bot or computer and sorts them by status or last active; Search beside it finds threads by title or bot, and + starts a new thread with a bot from its first message; touch and hold a thread to stop it, let it cut in, try it again, copy its title or drop it. Its badge counts what is being worked on. The Work button at the top of the bot list is gone.
 - The Bots tab's filter menu adds Group by computer and Sort by status. Move active bots to the top is now Sort by last active there, no longer in Manage computers.
 - The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, the connection status sits under the title, and the list now fades softly under the top bar as it scrolls.

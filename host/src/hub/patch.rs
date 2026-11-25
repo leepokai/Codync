@@ -6,7 +6,7 @@ use serde_json::Value;
 
 /// `stored` with `patch` laid over it: a field the patch leaves out keeps its saved value, a `null`
 /// clears it. The id, creation and lead fields never change here.
-pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
+pub(crate) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     let mut merged = serde_json::to_value(stored)?;
     for (k, v) in patch.as_object().into_iter().flatten() {
         if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
@@ -37,6 +37,12 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
     if cfg.backend != stored.backend && patch.get("mode").is_none() {
         cfg.mode = codync_agent::modes::on_other_agent(cfg.mode.as_deref());
+    }
+    // An older app sends the bool it knows: on keeps Always, off is Off.
+    if patch.get("worktreeMode").is_none()
+        && let Some(on) = patch.get("threadWorktrees").and_then(Value::as_bool)
+    {
+        cfg.worktree_mode = stored.worktree_mode.with_switch(on);
     }
     if cfg.kind != stored.kind {
         bail!("a bot can't become a group, or a group a bot");
@@ -81,6 +87,40 @@ mod tests {
 
     #[test]
     fn a_model_change_keeps_the_saved_options_unless_the_patch_sets_them() {
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "a", "name": "a", "backend": "claude", "model": "opus", "modelOptions": {"effort": "low"}}),
+        )
+        .expect("a bot config");
+        let effort = |patch| patched(&stored, &patch).expect("a valid patch").model_options.get("effort").cloned();
+        assert_eq!(
+            effort(json!({"model": "sonnet"})).as_deref(),
+            Some("low"),
+            "left out: kept, and the change is checked against the model it will run on"
+        );
+        let sent = json!({"model": "sonnet", "modelOptions": {"effort": "medium"}});
+        assert_eq!(effort(sent).as_deref(), Some("medium"));
+        assert_eq!(effort(json!({"name": "b"})).as_deref(), Some("low"), "same model: kept");
+        let cleared = patched(&stored, &json!({"model": "sonnet", "modelOptions": {}})).expect("a valid patch");
+        assert!(cleared.model_options.is_empty(), "an empty object the patch sends is a clear");
+    }
+
+    #[test]
+    fn an_older_apps_thread_worktrees_switch_never_drops_always() {
+        use crate::store::WorktreeMode::{Always, Off, SideBySide};
+        let stored = |mode: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": "a", "name": "a", "backend": "claude", "worktreeMode": mode}))
+                .expect("a bot config")
+        };
+        let mode = |from: &str, patch| patched(&stored(from), &patch).expect("a valid patch").worktree_mode;
+        assert_eq!(mode("always", json!({"name": "b", "threadWorktrees": true})), Always, "saving another field");
+        assert_eq!(mode("off", json!({"threadWorktrees": true})), SideBySide);
+        assert_eq!(mode("always", json!({"threadWorktrees": false})), Off);
+        assert_eq!(mode("off", json!({"threadWorktrees": true, "worktreeMode": "always"})), Always, "the new key wins");
+        assert_eq!(mode("always", json!({"name": "b"})), Always);
+    }
+
+    #[test]
+    fn a_new_model_keeps_only_the_options_sent_with_it() {
         let stored: BotConfig = serde_json::from_value(
             json!({"id": "a", "name": "a", "backend": "claude", "model": "opus", "modelOptions": {"effort": "low"}}),
         )

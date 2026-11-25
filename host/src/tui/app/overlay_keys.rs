@@ -368,7 +368,11 @@ impl App {
             return;
         }
         if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
-            f.cwd = path;
+            if f.projects.is_some() {
+                f.add_project(path);
+            } else {
+                f.cwd = path;
+            }
         }
     }
 }

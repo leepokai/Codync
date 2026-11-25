@@ -29,12 +29,18 @@ impl App {
     }
 
     /// Whether the form has `field`: no Login profile for an agent without login profiles, no Threads at once on a
-    /// host without the event box, no Worktree per thread outside a git repository.
+    /// host without the event box, no Worktree per thread outside a git repository or on a host with projects, no
+    /// Worktree mode without a project in one.
     pub(in crate::tui) fn field_shown(&self, f: &Form, field: Field) -> bool {
         match field {
             Field::LoginProfile => self.login_profiles(&f.backend).is_some(),
             Field::MaxThreads => f.max_threads.is_some(),
             Field::ThreadWorktrees => f.thread_worktrees.is_some(),
+            Field::Projects => f.projects.is_some(),
+            Field::WorktreeMode => {
+                let bot = self.bots.get(&f.bot_id);
+                f.projects.iter().flatten().any(|p| bot.is_some_and(|b| b.git_project(p)))
+            }
             Field::Advisor => f.advisor,
             Field::ThreadAgent | Field::ThreadFallbacks => f.thread_agent.is_some(),
             _ => true,

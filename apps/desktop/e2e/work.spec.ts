@@ -380,6 +380,28 @@ test("a routine's next runs wait for the one under way without keeping a free th
   }
 })
 
+test("a thread the user started never gives way: the cut-in ask lists only the bot's own working tasks", async () => {
+  const { browser, page } = await attach()
+  const name = `Work cut-in seat e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name, 1)
+    await api(page, 'startThread', { botId, text: `Mine ${HOLD}` })
+    await addWork(page, botId, 'Long job', HOLD)
+    await addWork(page, botId, 'Urgent job', HOLD)
+    await expect.poll(() => statuses(page, botId!)).toEqual({ [`Mine ${HOLD}`]: 'working', 'Long job': 'working', 'Urgent job': 'waiting' })
+
+    const details = await openDetails(page)
+    await row(details, 'Event box', 'Urgent job').getByRole('button', { name: 'Cut in' }).click()
+    const ask = page.getByRole('alertdialog')
+    await expect(ask.locator('.cut-in-pick')).toHaveText([/Long job/])
+    await ask.getByRole('button', { name: 'Cancel' }).click()
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('the first in line cuts in once the working task to give way is picked', async () => {
   const { browser, page } = await attach()
   const name = `Work cut-in e2e ${Date.now()}`

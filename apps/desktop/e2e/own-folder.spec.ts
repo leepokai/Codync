@@ -62,9 +62,9 @@ test('a new bot works in its own folder: so named in the list, its chat and its 
 
     // Codync makes its folder a repository to keep versions in, and every agent works there: no worktrees.
     const details = await openSettings(page, name)
-    await expect(details.locator('.workspace-pill')).toHaveText('Own folder')
-    await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per thread')).toHaveCount(0)
+    await expect(details.getByText("Bot's folder")).toBeVisible()
+    await expect(details.getByText(join(sandbox().home, 'bots', botId!, 'workspace'), { exact: true })).toBeVisible()
+    await expect(details.getByText('Worktree mode')).toHaveCount(0)
     expect(versions(join(sandbox().home, 'bots', botId!, 'workspace'))).toEqual([MADE])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
@@ -126,7 +126,7 @@ test('a file git cannot read stays out of the versions and the rest is still sav
   }
 })
 
-test('a project folder in a git repository keeps its worktree switch and its own history', async () => {
+test('a project in a git repository is the default, with the worktree mode, and keeps its own history', async () => {
   const { browser, page } = await attach()
   const name = `Project folder e2e ${Date.now()}`
   const dir = mkdtempSync(join(tmpdir(), 'codync-project-'))
@@ -136,9 +136,11 @@ test('a project folder in a git repository keeps its worktree switch and its own
     botId = (await echoBot(page, name, dir)).id
     await expect(row(page, name)).toContainText(` · ${basename(dir)}`)
     const details = await openSettings(page, name)
-    await expect(details.locator('.workspace-pill')).toHaveText(basename(dir))
-    await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per thread')).toBeVisible()
+    await expect(details.getByText(dir, { exact: true })).toBeVisible()
+    // On the project's row: the model picker can read "Default" too.
+    await expect(details.locator('.fade-in', { has: page.getByText(dir, { exact: true }) }).last().getByText('Default', { exact: true })).toBeVisible()
+    await expect(details.getByText('Worktree mode')).toBeVisible()
+    await expect(details.locator('.choice-label', { hasText: 'Side by side' })).toBeVisible()
     expect(versions(dir)).toEqual([])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

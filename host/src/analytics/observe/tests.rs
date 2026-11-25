@@ -389,6 +389,13 @@ async fn store_lookups_add_fields_choice_and_platform() {
             .unwrap();
     assert_eq!(p["fields"], json!(["name"]));
     assert!(p.get("compaction").is_none());
+    // The worktree mode picked, by its name or an older app's switch.
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "worktreeMode": "always"})).unwrap();
+    assert_eq!((&p["fields"], &p["worktreeMode"]), (&json!(["worktreeMode"]), &json!("always")));
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "threadWorktrees": false})).unwrap();
+    assert_eq!((&p["fields"], &p["worktreeMode"]), (&json!(["worktreeMode"]), &json!("off")));
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});
     let e =

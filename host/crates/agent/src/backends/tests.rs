@@ -115,6 +115,33 @@ fn workbuddy_accepts_node_without_npx() {
         "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
     });
     assert_eq!(node_state(harness("codex").unwrap(), false, Some(&npm_adapter)), Some(node::State::Missing));
+    assert_eq!(node_program(workbuddy, true, None), Some("node"));
+    assert_eq!(node_program(harness("codex").unwrap(), false, Some(&npm_adapter)), Some("npx"));
+}
+
+#[test]
+fn a_workbuddy_setup_checks_node_even_when_an_npx_shim_remains() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "npx");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let workbuddy = harness("workbuddy").unwrap();
+    assert_eq!(node_state(workbuddy, true, None), Some(node::State::Missing));
+    assert_eq!(node_program_for("workbuddy"), Some("node"));
+}
+
+#[test]
+fn a_codex_setup_checks_npx_not_the_node_binary_alone() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let adapter = json!({
+        "id": "codex-acp",
+        "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
+    });
+    registry::set_cache(Some(json!({"agents": [adapter]})));
+    let program = node_program_for("codex");
+    registry::set_cache(None);
+    assert_eq!(program, Some("npx"));
 }
 
 #[test]

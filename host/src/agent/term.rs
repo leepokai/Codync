@@ -148,7 +148,11 @@ impl Terms {
         let name = h.map_or(backend, |h| h.name);
         let command = match step {
             Step::Node => {
-                format!("{} node", codync_agent::shell::quote(&crate::service::current_exe()?.to_string_lossy()))
+                let program = backends::node_program_for(backend).unwrap_or("both");
+                format!(
+                    "{} node --program {program}",
+                    codync_agent::shell::quote(&crate::service::current_exe()?.to_string_lossy())
+                )
             }
             Step::Install => {
                 let h = h.ok_or_else(|| anyhow!("Codync downloads {name} by itself"))?;
@@ -163,7 +167,9 @@ impl Terms {
             },
             Step::Shell => bail!("a shell opens from its bot"),
         };
-        self.spawn((backend.to_owned(), step, None), command_line(&command), Some(&command), home(), cols, rows)
+        // Node.js belongs to the computer, so every agent shares its setup terminal.
+        let terminal_backend = if step == Step::Node { String::new() } else { backend.to_owned() };
+        self.spawn((terminal_backend, step, None), command_line(&command), Some(&command), home(), cols, rows)
     }
 
     /// Runs `builder` in `cwd` on a new PTY, its `banner` (the command) shown first, or returns the open terminal for

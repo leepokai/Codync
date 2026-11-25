@@ -158,13 +158,36 @@ pub fn list() -> Vec<Value> {
 
 /// The Node.js dependency of harness `h`, using the command that harness actually runs.
 fn node_state(h: &Harness, native: bool, reg: Option<&Value>) -> Option<node::State> {
+    node_program(h, native, reg).and_then(node::state_for)
+}
+
+/// The Node.js command harness `h` needs for this launch path, if any.
+fn node_program(h: &Harness, native: bool, reg: Option<&Value>) -> Option<&'static str> {
     if native {
-        workbuddy::runs_on_node(h.id).then_some(node::state_for("node")).flatten()
+        workbuddy::runs_on_node(h.id).then_some("node")
     } else if reg.is_some_and(registry::needs_node) {
-        node::state()
+        Some("npx")
     } else {
         None
     }
+}
+
+/// The Node.js command `backend` needs, for its own Add Node.js setup step. `None`
+/// means no command can be attributed to it, so the setup step checks both.
+pub fn node_program_for(backend: &str) -> Option<&'static str> {
+    if backend.is_empty() {
+        return None;
+    }
+    if let Some(h) = harness_of(backend) {
+        if workbuddy::runs_on_node(h.id) {
+            return Some("node");
+        }
+        let native = installed_cli(h).is_some() && h.local.is_some();
+        let registry = registry::agents();
+        let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
+        return node_program(h, native, reg);
+    }
+    registry::agents().iter().find(|a| a["id"] == backend).and_then(|a| registry::needs_node(a).then_some("npx"))
 }
 
 /// `program` is some other harness's CLI (not `backend`'s own).

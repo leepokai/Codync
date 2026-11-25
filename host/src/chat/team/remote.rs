@@ -12,6 +12,7 @@ use crate::agent::bot::Cmd;
 use crate::analytics::NetworkStage;
 use crate::hub::Hub;
 use crate::network::Target;
+use crate::network::sessions::Session;
 use crate::store::{BotConfig, EntryKind, Lane};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::truncate;
@@ -31,7 +32,13 @@ struct Waiter {
     quote: String,
     /// How the recipient is shown ("Reviewer on desk").
     peer: String,
+    /// When it stops waiting (Unix ms): a request to an agent that isn't a Codync bot (a coding
+    /// agent's session) may never be answered. `None` for a bot, which always answers.
+    until: Option<i64>,
 }
+
+/// How long a request to an agent that isn't a Codync bot waits for its answer.
+const SESSION_WAIT_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// Where an answer from another computer goes.
 enum ReplyTo {
@@ -50,6 +57,37 @@ impl Waiting {
     fn take(&self, id: &str) -> Option<Waiter> {
         self.0.locked().remove(id)
     }
+
+    /// The requests whose wait is over, taken.
+    fn expired(&self, now: i64) -> Vec<(String, Waiter)> {
+        let mut all = self.0.locked();
+        let over: Vec<String> =
+            all.iter().filter(|(_, w)| w.until.is_some_and(|until| until <= now)).map(|(id, _)| id.clone()).collect();
+        over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect()
+    }
+}
+
+/// Ends the requests that waited their full time for an agent that never answered, as failed.
+fn expire(hub: &Hub) {
+    for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {
+        let m = Message {
+            id: uuid::Uuid::new_v4().to_string(),
+            from: Address { agent: waiter.peer.clone(), computer: String::new() },
+            to: String::new(),
+            body: "No answer within a week: it never read or answered this.".into(),
+            wake: false,
+            reply_to: Some(id.clone()),
+            hops: 0,
+            meta: Some(json!({"codync": RequestStatus::Failed})),
+            access: codync_network::Access::Allow,
+        };
+        replied(hub, &id, waiter, &m);
+    }
+}
+
+/// When a request to `to` stops waiting: never for a Codync bot.
+fn wait_until(hub: &Hub, to: &Target) -> Option<i64> {
+    (!offers_bot(hub, to)).then(|| crate::store::now_ms() + SESSION_WAIT_MS)
 }
 
 /// Where the outcome of a request from another computer goes.
@@ -78,6 +116,9 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
         return Ok(());
     }
     let back = Return { network: network.to_owned(), to: m.from.clone(), request: m.id.clone(), from: m.to.clone() };
+    if let Some(session) = hub.network.sessions.by_address(&hub.store, &m.to) {
+        return to_session(hub, &session, m, &back);
+    }
     let target = hub.network.bot_for(&m.to).ok_or_else(|| anyhow!("no bot called {} here", m.to));
     let target = target.and_then(|bot| visible_bot(hub, &bot)).and_then(|bot| {
         // The cloud assistant asking through another computer: this one's cloud switches decide too.
@@ -101,6 +142,44 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
         }
         Err(error) => Err(error),
     }
+}
+
+/// A letter for a coding agent's session here goes to its mailbox, under its own id: the session
+/// answers it (`replyTo`) with a letter of its own, which reaches the sender's waiting request.
+fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> Result<()> {
+    let request = m.wake && m.reply_to.is_none();
+    // The cloud assistant writing through another computer: this one's cloud switch decides too.
+    // Any `replyTo` here matched none of this computer's requests (`take` ends those first), so
+    // it gets no pass.
+    if m.from.agent == super::assistant::HANDLE
+        && let Err(error) = super::assistant::switched_on(hub)
+    {
+        if request {
+            send_back(hub, back, format!("Couldn't take it: {error:#}"), RequestStatus::Failed, m.hops);
+        }
+        return Err(error);
+    }
+    // Named with its network while this computer is in several, so the session can answer it.
+    let from = hub.network.address_text(&Target { network: back.network.clone(), address: m.from.clone() });
+    super::mailbox::post(hub, session, Some(&m.id), &from, &m.body, m.reply_to.as_deref())?;
+    Ok(())
+}
+
+/// A session here answers letter `reply_to` from another computer: the answer that says how it
+/// ended (`meta`), which that computer takes since it asked, into the asker's chat or mailbox.
+pub(super) fn session_answer(
+    hub: &Arc<Hub>,
+    from: &str,
+    to: &Target,
+    reply_to: &str,
+    body: &str,
+) -> impl Future<Output = Result<Sent>> + Send + 'static {
+    let ready = hub.network.slot(Some(&to.network)).and_then(|slot| hub.network.send_as(from).map(|()| slot.node));
+    let letter = Letter::new(from, to.address.clone(), body)
+        .reply_to(reply_to.to_owned())
+        .meta(json!({"codync": RequestStatus::Completed}));
+    let hub = hub.clone();
+    async move { ready?.send(letter).await.inspect_err(|_| crate::analytics::network_failed(&hub, NetworkStage::Reply)) }
 }
 
 /// How a bot on another computer is shown: its name and computer, from that network's directory.
@@ -152,7 +231,10 @@ async fn send(hub: &Arc<Hub>, node: &Node, source: &BotConfig, to: &Target, lett
     };
     let entry = exchange.notice(hub, &source.id, &heading, false)?;
     let quote = truncate(&letter.body, REQUEST_QUOTE_BYTES);
-    let waiter = Waiter { to: ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() }, quote, peer: peer.clone() };
+    expire(hub);
+    let until = wait_until(hub, to);
+    let waiter =
+        Waiter { to: ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() }, quote, peer: peer.clone(), until };
     hub.waiting.insert(id.clone(), waiter);
     let said = match node.send(letter).await {
         Ok(Sent::Delivered) => {
@@ -192,9 +274,16 @@ pub(super) fn ask_for_replies(
     hub.network.send_as(from)?;
     let letter = Letter::new(from, to.address.clone(), message);
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
-    // Kept before the letter goes, so an outcome as quick as a refusal finds them.
-    hub.assistant.add(super::assistant::Reply::queued(asker, &id, &peer, message));
-    awaits_in_replies(hub, &id, &peer, message);
+    // Kept before the letter goes, so an outcome as quick as a refusal finds them: the route first,
+    // so the reply record that may push out older ones (and their routes) never outlives its own.
+    expire(hub);
+    awaits_in_replies(hub, &id, &peer, message, wait_until(hub, to));
+    let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
+    // Refused before the letter goes when there's no room to track its reply.
+    if let Err(error) = keep_reply(hub, if offers_bot(hub, to) { reply } else { reply.unlimited() }) {
+        hub.waiting.take(&id);
+        return Err(error);
+    }
     let (hub, request) = (hub.clone(), id.clone());
     tokio::spawn(async move {
         match node.send(letter).await {
@@ -210,10 +299,30 @@ pub(super) fn ask_for_replies(
     Ok((id, peer))
 }
 
+/// Whether `to` is a Codync bot there (as far as this computer heard), which always answers.
+pub(super) fn offers_bot(hub: &Hub, to: &Target) -> bool {
+    let Ok(slot) = hub.network.slot(Some(&to.network)) else { return true };
+    let peer = slot.node.directory().into_iter().find(|p| p.name == to.address.computer);
+    let agent = peer.and_then(|p| p.agents.into_iter().find(|a| a.id == to.address.agent));
+    agent.is_none_or(|a| a.kind == codync_network::AgentKind::Codync)
+}
+
+/// Keeps `reply` in its asker's replies, ending the routes of the running requests it pushes out.
+pub(super) fn keep_reply(hub: &Hub, reply: super::assistant::Reply) -> Result<()> {
+    let forgotten = hub.assistant.add(reply).ok_or_else(|| {
+        anyhow!("too many requests are still running on this computer to track another: try again later")
+    })?;
+    for forgotten in forgotten {
+        hub.waiting.take(&forgotten);
+    }
+    Ok(())
+}
+
 /// The answer to letter `id` goes to its asker's replies.
-pub(super) fn awaits_in_replies(hub: &Hub, id: &str, peer: &str, message: &str) {
+/// `until`: when it stops waiting (`wait_until`).
+pub(super) fn awaits_in_replies(hub: &Hub, id: &str, peer: &str, message: &str, until: Option<i64>) {
     let quote = truncate(message, REQUEST_QUOTE_BYTES);
-    hub.waiting.insert(id.to_owned(), Waiter { to: ReplyTo::Replies, quote, peer: peer.to_owned() });
+    hub.waiting.insert(id.to_owned(), Waiter { to: ReplyTo::Replies, quote, peer: peer.to_owned(), until });
 }
 
 /// Says where a request waits, unless its reply already came (a quick one can beat this).
@@ -328,4 +437,21 @@ fn replied(hub: &Hub, id: &str, waiter: Waiter, m: &Message) {
         entry: None,
     };
     let _ = hub.send_cmd(&sender, Cmd::BotReply(reply));
+}
+
+#[cfg(test)]
+mod waiting_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_wait_that_is_over_is_taken() {
+        let waiting = Waiting::default();
+        let waiter = |until| Waiter { to: ReplyTo::Replies, quote: String::new(), peer: "x".into(), until };
+        waiting.insert("bot".into(), waiter(None));
+        waiting.insert("session".into(), waiter(Some(100)));
+        assert!(waiting.expired(99).is_empty());
+        let over: Vec<String> = waiting.expired(100).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(over, ["session"]);
+        assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
+    }
 }

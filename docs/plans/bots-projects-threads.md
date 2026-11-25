@@ -52,7 +52,7 @@ Three ways work starts:
 
 | | The bot hands it out (`add_task`) | The user starts a thread with a bot | The user starts a thread without a bot |
 | --- | --- | --- | --- |
-| Where it waits | The bot's event box, under `maxThreads` | No wait: starts at once ([§6](#6-a-users-thread-leaves-the-bots-queue)) | The computer's box of threads without a bot (6 at once) |
+| Where it waits | The bot's event box, under `maxThreads` | No wait: starts at once ([§6](#6-a-users-thread-leaves-the-bots-queue)) | No wait: starts at once, no ceiling on the computer |
 | What the thread is told | The bot's brief ([§7](#7-thread-profile-no-fork)) | The bot's profile and memory, then the user's own words ([§7](#a-users-thread-is-the-bot)) | The user's own words, as written, nothing of Codync's |
 | What it has of the bot | Skills, memory (to look up), tools for its source | Name, description, skills, memory opening, the same tools | Nothing: the agent's own tools |
 | Its result | A report the bot turns into a message in the chat | Read in the thread | Read in the thread |

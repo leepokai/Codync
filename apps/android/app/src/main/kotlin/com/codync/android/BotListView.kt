@@ -167,28 +167,16 @@ private class ComputerRoster(private val context: Context, val key: String, priv
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            if (searching) {
-                ListSearchField(query, { query = it }, "Search bots") { searching = false; query = "" }
-            } else {
-                AccountSwitcherButton(app, account)
-                // The list's title over how its computers are connected (iOS `navigationSubtitle`).
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(tr("Bots"), style = Type.body.semibold, color = Palette.text, maxLines = 1)
-                    val summary = connectionSummary(shown)
-                    Text(summary.filled(tr(summary.template)), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                // The desktop list header's buttons: the computers to show, Search and New.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ComputerFilterHeader(states, hidden, setHidden, { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage, options)
-                    HeaderButton("magnifyingglass", "Search") { searching = true }
-                    // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
-                    NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
-                        { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
-                        { online.firstOrNull()?.let { newGroup(it.computer.id) } })
-                }
-            }
+        // The title over how its computers are connected; the desktop list header's buttons: the computers to show, Search and New.
+        val summary = connectionSummary(shown)
+        ListHeader(app, account, "Bots", summary.filled(tr(summary.template)), searching, query, { query = it }, { searching = false; query = "" },
+            Modifier.statusBarsPadding(), prompt = "Search bots") {
+            ComputerFilterHeader(states, hidden, setHidden, { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage, options)
+            HeaderButton("magnifyingglass", "Search") { searching = true }
+            // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
+            NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
+                { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
+                { online.firstOrNull()?.let { newGroup(it.computer.id) } })
         }
     }) {
         // Pull to refresh reconnects every computer and asks the account for its computers again (iOS `refreshable`).

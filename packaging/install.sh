@@ -286,6 +286,8 @@ else
 fi
 
 if [ $OS = linux ] && [ -n "${service_install_failed:-}" ]; then
+  data_dir=${CODYNC_HOME:-$HOME/.codync}
+  mkdir -p "$data_dir" 2>/dev/null && : > "$data_dir/host-install-failed" 2>/dev/null || true
   echo "codync-host is installed, but its background service could not start in this session."
   echo "Run $BIN_DIR/codync-host install from a signed-in desktop session."
   exit 0

@@ -15,10 +15,11 @@ enum ReplySwipe {
     }
 
     /// Only a mostly sideways drag the message's way starts a swipe; anything else stays the list's scroll. Judged on
-    /// the finger's velocity: a pan can be asked at its first move, before any translation. Rightward pulls from the
-    /// screen's left edge stay the navigation back swipe.
-    static func begins(_ velocity: CGPoint, _ direction: Direction, locationX: CGFloat) -> Bool {
-        (direction == .left || locationX > 20) && abs(velocity.x) > abs(velocity.y) && velocity.x * direction.rawValue > 0
+    /// the finger's velocity: a pan can be asked at its first move, before any translation. Rightward pulls that start
+    /// at the screen's left edge stay the navigation back swipe: `startX` is where the finger came down, since a quick
+    /// back swipe can already be past the edge when the pan is asked.
+    static func begins(_ velocity: CGPoint, _ direction: Direction, startX: CGFloat) -> Bool {
+        (direction == .left || startX > 20) && abs(velocity.x) > abs(velocity.y) && velocity.x * direction.rawValue > 0
     }
 
     /// How far the message moves for the finger's `dx`: with it up to the threshold, a quarter as far past it,
@@ -129,7 +130,9 @@ private struct SidewaysPan: UIGestureRecognizerRepresentable {
 
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer, let view = pan.view else { return false }
-            return ReplySwipe.begins(pan.velocity(in: view), direction, locationX: pan.location(in: nil).x)
+            let location = pan.location(in: nil)
+            let startX = location.x - pan.translation(in: nil).x
+            return ReplySwipe.begins(pan.velocity(in: view), direction, startX: startX)
         }
 
         /// The list holding the row and the back swipe wait for this pan; a scroll inside the bubble (a code block's)

@@ -28,12 +28,12 @@ private func message(_ id: String, kind: String, final: Bool? = nil, text: Strin
 }
 
 @Test func onlyASidewaysDragTheMessagesWayStartsASwipe() {
-    #expect(ReplySwipe.begins(CGPoint(x: 124, y: 0), .right, locationX: 100))
-    #expect(ReplySwipe.begins(CGPoint(x: -300, y: 40), .left, locationX: 100))
-    #expect(!ReplySwipe.begins(CGPoint(x: -300, y: 40), .right, locationX: 100), "the other way")
-    #expect(!ReplySwipe.begins(CGPoint(x: 200, y: 260), .right, locationX: 100), "mostly vertical stays the scroll")
-    #expect(!ReplySwipe.begins(CGPoint(x: 200, y: 0), .right, locationX: 10), "the left edge stays the back swipe")
-    #expect(ReplySwipe.begins(CGPoint(x: -200, y: 0), .left, locationX: 10), "own messages can still swipe at the edge")
+    #expect(ReplySwipe.begins(CGPoint(x: 124, y: 0), .right, startX: 100))
+    #expect(ReplySwipe.begins(CGPoint(x: -300, y: 40), .left, startX: 100))
+    #expect(!ReplySwipe.begins(CGPoint(x: -300, y: 40), .right, startX: 100), "the other way")
+    #expect(!ReplySwipe.begins(CGPoint(x: 200, y: 260), .right, startX: 100), "mostly vertical stays the scroll")
+    #expect(!ReplySwipe.begins(CGPoint(x: 200, y: 0), .right, startX: 10), "the left edge stays the back swipe")
+    #expect(ReplySwipe.begins(CGPoint(x: -200, y: 0), .left, startX: 10), "own messages can still swipe at the edge")
 }
 
 @Test func aSwipedMessageFollowsTheFingerThenResistsPastTheThreshold() {

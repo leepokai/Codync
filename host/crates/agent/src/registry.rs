@@ -114,7 +114,9 @@ pub fn launch_kind(agent: &Value) -> Option<Launch> {
     if binary(d).is_some() {
         return Some(Launch::Download);
     }
-    if d["npx"].is_object() && on_path("npx") {
+    // Codync adds its private Node before an npm adapter starts, so a missing system npx doesn't
+    // make the agent unavailable.
+    if d["npx"].is_object() && crate::node::npm_supported() {
         return Some(Launch::Npx);
     }
     if d["uvx"].is_object() && on_path("uvx") {
@@ -206,8 +208,9 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
             })
         }
         Some(Launch::Npx) => {
-            prepare_npx(d["npx"]["package"].as_str().unwrap_or_default(), name, &progress).await?;
-            Ok(npx_cmd(&d["npx"]))
+            let npx = crate::node::prepare("npx", &progress).await?;
+            prepare_npx(&npx, d["npx"]["package"].as_str().unwrap_or_default(), name, &progress).await?;
+            npx_cmd(&npx, &d["npx"])
         }
         Some(Launch::Uvx) => Ok(Cmd {
             program: format!(
@@ -222,15 +225,18 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
     }
 }
 
-fn npx_cmd(npx: &Value) -> Cmd {
-    Cmd {
+fn npx_cmd(npx_path: &Path, npx: &Value) -> Result<Cmd> {
+    let path = crate::node::launch_path(npx_path)?;
+    Ok(Cmd {
         program: format!(
-            "{}npx -y {}",
+            "{}PATH={} {} -y {}",
             env_prefix(&npx["env"]),
+            shell::quote(&path),
+            shell::quote(&npx_path.to_string_lossy()),
             shell::quote(npx["package"].as_str().unwrap_or_default())
         ),
         args: args_of(npx),
-    }
+    })
 }
 
 /// npx installs a package into `<npm cache>/_npx/<hash>` and writes its `package.json` last.
@@ -238,24 +244,26 @@ fn npx_cmd(npx: &Value) -> Cmd {
 /// may) leaves the packages without their bin links, and npx then fails with "command not
 /// found" on every later run. So the download happens here, without the handshake's timeout,
 /// and a half-finished one is started over.
-async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Result<()> {
+async fn prepare_npx(npx: &Path, package: &str, name: &str, progress: &impl Fn(&str)) -> Result<()> {
     static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one_at_a_time = INSTALLING.lock().await;
-    let dir = npm_cache().await?.join("_npx").join(npx_hash(package));
+    let dir = npm_cache(Some(npx)).await?.join("_npx").join(npx_hash(package));
     if tokio::fs::try_exists(dir.join("package.json")).await.unwrap_or(false) {
         return Ok(());
     }
     let _ = tokio::fs::remove_dir_all(&dir).await;
     progress(&format!("Downloading {name}…"));
-    let install = tokio::process::Command::new(shell::program("npm"))
-        // `exit 0`, not `true`: on Windows npm runs `-c` in cmd.exe, which has no `true`.
-        .args(["exec", "--yes", "--package", package, "-c", "exit 0"])
+    let path = crate::node::launch_path(npx)?;
+    let mut install = tokio::process::Command::new(npx);
+    install
+        .env("PATH", path)
+        // `exit 0`, not `true`: on Windows npx runs `-c` in cmd.exe, which has no `true`.
+        .args(["--yes", "--package", package, "-c", "exit 0"])
         // Away from any project, so npx doesn't settle for a local node_modules.
         .current_dir(&super::setup::get().data_dir)
         .stdin(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output();
-    let failure = match tokio::time::timeout(Duration::from_mins(20), install).await {
+        .kill_on_drop(true);
+    let failure = match tokio::time::timeout(Duration::from_mins(20), install.output()).await {
         Ok(Ok(out)) if out.status.success() => return Ok(()),
         Ok(Ok(out)) => npm_error(&String::from_utf8_lossy(&out.stderr)).to_owned(),
         Ok(Err(e)) => format!("{e}"),
@@ -272,24 +280,25 @@ fn npm_error(stderr: &str) -> &str {
 }
 
 /// `npm config get cache`, asked once.
-async fn npm_cache() -> Result<&'static Path> {
-    static DIR: tokio::sync::OnceCell<PathBuf> = tokio::sync::OnceCell::const_new();
-    let dir = DIR
-        .get_or_try_init(|| async {
-            let out = tokio::process::Command::new(shell::program("npm"))
-                .args(["config", "get", "cache"])
-                .stdin(std::process::Stdio::null())
-                .output()
-                .await
-                .context("running npm")?;
-            let dir = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            if !out.status.success() || dir.is_empty() {
-                bail!("npm didn't report its cache directory");
-            }
-            Ok(PathBuf::from(dir))
-        })
-        .await?;
-    Ok(dir)
+async fn npm_cache(npx: Option<&Path>) -> Result<PathBuf> {
+    let (npm, path) = if let Some(npx) = npx {
+        let path = crate::node::launch_path(npx)?;
+        (crate::node::program_for(npx, "npm", &path)?, path)
+    } else {
+        (crate::backends::which("npm").context("npm isn't installed")?, std::env::var("PATH").unwrap_or_default())
+    };
+    let out = tokio::process::Command::new(npm)
+        .env("PATH", path)
+        .args(["config", "get", "cache"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .context("running npm")?;
+    let dir = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if !out.status.success() || dir.is_empty() {
+        bail!("npm didn't report its cache directory");
+    }
+    Ok(PathBuf::from(dir))
 }
 
 /// Codync already has `agent`'s registry build on this computer: its unpacked archive, or its npx package in npm's
@@ -299,7 +308,7 @@ pub(crate) async fn downloaded(agent: &Value) -> Option<bool> {
         Launch::Download => Some(binary_dir(agent).is_ok_and(|dir| dir.is_dir())),
         Launch::Npx => {
             let package = agent["distribution"]["npx"]["package"].as_str()?;
-            let cache = npm_cache().await.ok()?;
+            let cache = npm_cache(None).await.ok()?;
             Some(cache.join("_npx").join(npx_hash(package)).join("package.json").is_file())
         }
         Launch::Uvx => None,
@@ -455,9 +464,58 @@ mod tests {
     #[test]
     fn npx_command_is_quoted() {
         let npx = json!({"package": "@s/x@1.0.0", "args": ["--acp", "a b"], "env": {"K": "v", "BAD;rm": "x"}});
-        let expected =
-            if cfg!(windows) { "K=v npx -y @s/x@1.0.0 --acp \"a b\"" } else { "env K=v npx -y @s/x@1.0.0 --acp 'a b'" };
-        assert_eq!(npx_cmd(&npx).acp(), expected);
+        let npx_path = Path::new("/opt/codync node/bin/npx");
+        let command = npx_cmd(npx_path, &npx).unwrap().acp();
+        if cfg!(unix) {
+            assert!(command.contains("PATH="), "{command}");
+            assert!(command.contains(" '/opt/codync node/bin/npx' -y @s/x@1.0.0 --acp 'a b'"), "{command}");
+        } else {
+            assert!(command.contains("PATH="), "{command}");
+            assert!(command.contains(" \"/opt/codync node/bin/npx\" -y @s/x@1.0.0 --acp \"a b\""), "{command}");
+        }
+    }
+
+    #[test]
+    fn npm_adapters_do_not_need_system_node_to_be_offered() {
+        let adapter =
+            json!({"id": "codex-acp", "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}});
+        assert!(crate::node::npm_supported());
+        assert_eq!(launch_kind(&adapter), Some(Launch::Npx));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn npm_adapter_runs_from_codync_node_without_system_node() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let setup = crate::setup::get();
+        let search = setup.data_dir.join("search");
+        std::fs::create_dir_all(&search).unwrap();
+        let _path = crate::backends::TestSearchPath::set(search);
+        let root = setup.data_dir.join("node/24.21.0");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(root.join(".installed"), "24.21.0").unwrap();
+        let cache = setup.data_dir.join("npm-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let log = setup.data_dir.join("npm-adapter.log");
+        let npx = bin.join("npx");
+        std::fs::write(&npx, format!("#!/bin/sh\nprintf '%s\\n' \"$PATH\" \"$@\" > '{}'\n", log.display())).unwrap();
+        let npm = bin.join("npm");
+        std::fs::write(&npm, format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", cache.display())).unwrap();
+        for path in [&npx, &npm] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let adapter = json!({"id": "codex-acp", "name": "Codex", "distribution": {"npx": {"package": "@s/codex@1"}}});
+        let command = command(&adapter, |_| {}).await.unwrap();
+        assert!(command.acp().contains(&npx.to_string_lossy().into_owned()), "{}", command.acp());
+
+        let mut process = shell::line(&command.acp()).tokio();
+        assert!(process.output().await.unwrap().status.success());
+        let invoked = std::fs::read_to_string(&log).unwrap();
+        assert!(invoked.lines().next().unwrap().starts_with(&bin.to_string_lossy().into_owned()), "{invoked}");
+        assert!(invoked.contains("-y\n@s/codex@1"), "{invoked}");
     }
 
     #[test]

@@ -75,6 +75,7 @@ import com.kyant.shapes.RoundedRectangle
 @Composable internal fun AgentCard(backend: AgentBackend, modifier: Modifier, action: () -> Unit) {
     val status = when {
         backend.needsNode -> "Needs Node.js"
+        backend.installed && !backend.available -> "Not ready"
         !backend.installed && backend.curated -> "Not installed"
         !backend.installed -> "Sets up on first use"
         backend.signedIn == false -> "Not signed in"

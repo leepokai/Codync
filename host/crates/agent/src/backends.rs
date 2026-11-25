@@ -14,11 +14,15 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 mod catalog;
+mod configured;
 mod install_info;
 mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+pub use configured::{
+    clear as clear_cli_path, overridable as cli_path_overridable, path as configured_cli_path, set_path as set_cli_path,
+};
 pub use install_info::install_info;
 #[cfg(any(test, feature = "test-support"))]
 pub use search_path::TestSearchPath;
@@ -137,6 +141,7 @@ pub fn list() -> Vec<Value> {
         if id.is_empty() || HARNESSES.iter().any(|h| h.answers_to(id)) || id == "github-copilot" {
             continue;
         }
+        let node = if registry::needs_node(a) && !node::npm_supported() { Some(node::State::Missing) } else { None };
         out.push(json!({
             "id": id,
             "name": a["name"],
@@ -146,7 +151,7 @@ pub fn list() -> Vec<Value> {
             "description": a["description"],
             "installHint": format!("Codync installs it automatically. Sign in to {} on this computer first if it needs an account.", a["name"].as_str().unwrap_or(id)),
             "signedIn": signed_in(id),
-            "node": node::state().filter(|_| registry::needs_node(a)).map(node::State::name),
+            "node": node.map(node::State::name),
             "command": "",
             "registry": id,
             "curated": false,
@@ -156,8 +161,12 @@ pub fn list() -> Vec<Value> {
     out
 }
 
-/// The Node.js dependency of harness `h`, using the command that harness actually runs.
+/// The Node.js setup a native harness needs before it can start. Registry npm adapters don't
+/// appear here: their launch adds and uses Codync's private Node by itself.
 fn node_state(h: &Harness, native: bool, reg: Option<&Value>) -> Option<node::State> {
+    if !native {
+        return None;
+    }
     node_program(h, native, reg).and_then(node::state_for)
 }
 
@@ -178,16 +187,8 @@ pub fn node_program_for(backend: &str) -> Option<&'static str> {
     if backend.is_empty() {
         return None;
     }
-    if let Some(h) = harness_of(backend) {
-        if workbuddy::runs_on_node(h.id) {
-            return Some("node");
-        }
-        let native = installed_cli(h).is_some() && h.local.is_some();
-        let registry = registry::agents();
-        let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
-        return node_program(h, native, reg);
-    }
-    registry::agents().iter().find(|a| a["id"] == backend).and_then(|a| registry::needs_node(a).then_some("npx"))
+    let h = harness_of(backend)?;
+    workbuddy::runs_on_node(h.id).then_some("node")
 }
 
 /// `program` is some other harness's CLI (not `backend`'s own).
@@ -298,8 +299,9 @@ pub async fn login_command(id: &str) -> anyhow::Result<String> {
 }
 
 /// Where this harness's CLI is installed: on `PATH`, or inside the `WorkBuddy` app.
-fn installed_cli(h: &Harness) -> Option<std::path::PathBuf> {
-    h.bins.iter().find_map(|b| which(b)).or_else(|| (h.id == "workbuddy").then(workbuddy::find).flatten())
+pub(crate) fn installed_cli(h: &Harness) -> Option<std::path::PathBuf> {
+    configured::effective(h.id, h.bins.iter().find_map(|b| which(b)))
+        .or_else(|| (h.id == "workbuddy").then(workbuddy::find).flatten())
 }
 
 /// The installed CLI's own ACP mode, if it has one and it's installed.

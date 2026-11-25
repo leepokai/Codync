@@ -1,6 +1,7 @@
 //! `codync-host`: runs coding-agent bots over ACP and serves the Codync apps.
 
 mod agent;
+mod agent_cli;
 mod analytics;
 mod analytics_cli;
 mod api;
@@ -218,6 +219,8 @@ enum Sub {
         #[arg(long, default_value = "both", value_parser = ["node", "npx", "both"])]
         program: String,
     },
+    /// Find, save or clear the CLI path for an installed coding agent.
+    Agent(agent_cli::AgentArgs),
     /// Keep a Codync Cloud computer's secrets, so its agents can use them but never read them (its own system
     /// service there).
     #[command(hide = true)]
@@ -499,6 +502,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Sub::Node { program } => codync_agent::node::add((program != "both").then_some(program.as_str())).await,
+        Sub::Agent(args) => agent_cli::run(args.backend.as_str(), args.action).await,
         Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(codync_agent::node::npm(&args).await?),
         Sub::Statusline { port, command, wrapped } => {

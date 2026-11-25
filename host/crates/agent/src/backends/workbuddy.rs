@@ -46,16 +46,25 @@ pub fn move_saved_session_aside(id: &str) {
     retire_file(&path);
 }
 
-/// Environment the harness needs in addition to saved sign-in keys. A saved key wins.
+/// Environment the harnesses need in addition to saved sign-in keys. A saved key wins.
 pub fn apply_process_env(id: &str, env: &mut Vec<(String, String)>) {
+    if id == "codex" {
+        let codex = super::harness("codex").and_then(super::installed_cli);
+        set_unless_saved("CODEX_PATH", codex.as_deref(), env);
+    }
     if id != "workbuddy" {
         return;
     }
     for (key, value) in PROCESS_ENV {
-        if env.iter().any(|(name, _)| name == key) {
-            continue;
-        }
-        env.push(((*key).to_owned(), (*value).to_owned()));
+        set_unless_saved(key, Some(Path::new(value)), env);
+    }
+}
+
+fn set_unless_saved(key: &str, value: Option<&Path>, env: &mut Vec<(String, String)>) {
+    if let Some(value) = value
+        && !env.iter().any(|(name, _)| name == key)
+    {
+        env.push((key.to_owned(), value.to_string_lossy().into_owned()));
     }
 }
 

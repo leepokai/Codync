@@ -17,6 +17,7 @@ struct AgentCard: View {
 
     private var status: String {
         if backend.needsNode { return "Needs Node.js" }
+        if backend.installed == true, backend.available == false { return "Not ready" }
         if backend.installed != true, backend.curated == true { return "Not installed" }
         if backend.installed != true { return "Sets up on first use" }
         return backend.signedIn == false ? "Not signed in" : "Installed"

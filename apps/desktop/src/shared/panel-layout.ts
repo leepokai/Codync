@@ -26,6 +26,25 @@ export type PanelView = (typeof PANEL_VIEWS)[number]['id']
 export const TERMINAL_HOST = '2.52.0'
 export const hasTerminal = (hostVersion: string | undefined) => !!hostVersion && !isBelow(hostVersion, TERMINAL_HOST)
 
+/** The views a pane opens a new tab of each time one is picked (several web pages, several shells): `<view>:<id>`. */
+export const MULTI_VIEWS = ['browser', 'terminal'] as const satisfies readonly PanelView[]
+export type MultiView = (typeof MULTI_VIEWS)[number]
+const isMultiView = (view: string): view is MultiView => (MULTI_VIEWS as readonly string[]).includes(view)
+/** The view a tab of a multi view is one of ('browser' for `browser:k3x9`), else null. */
+export const multiView = (tab: string): MultiView | null => MULTI_VIEWS.find((v) => tab.startsWith(`${v}:`) && tab.length > v.length + 1) ?? null
+
+/** The tabs of multi views among `tabs`, each numbered among its view's (`n`: 2 for "Terminal 2"). */
+export function multiTabs(tabs: readonly string[]): { id: string; view: MultiView; n: number }[] {
+  const counts = new Map<MultiView, number>()
+  return tabs.flatMap((id) => {
+    const view = multiView(id)
+    if (!view) return []
+    const n = (counts.get(view) ?? 0) + 1
+    counts.set(view, n)
+    return [{ id, view, n }]
+  })
+}
+
 /** The tab of a task's thread: it opens beside the bot's views, from a row of Details. */
 export const threadTab = (taskId: string) => `thread:${taskId}`
 export const isThreadTab = (tab: string) => tab.startsWith('thread:')
@@ -42,8 +61,10 @@ function without(pane: PanelPane, view: string): PanelPane {
 }
 
 /** Shows `view` in pane `at`, as a new tab after its others unless it has one there. A view has one tab: it leaves the
- * other pane. Without `at`: in the pane that has its tab, else the first. */
-export function showView(layout: PanelLayout, view: string, at?: number): PanelLayout {
+ * other pane. Without `at`: in the pane that has its tab, else the first. A multi view (`MULTI_VIEWS`) always opens a
+ * new tab of its own. */
+export function showView(layout: PanelLayout, picked: string, at?: number): PanelLayout {
+  const view = isMultiView(picked) ? `${picked}:${crypto.randomUUID().slice(0, 8)}` : picked
   const has = layout.findIndex((p) => p.tabs.includes(view))
   const target = at ?? Math.max(has, 0)
   return layout.map((pane, i) => (i === target ? { tabs: pane.tabs.includes(view) ? pane.tabs : [...pane.tabs, view], shown: view } : without(pane, view)))
@@ -64,12 +85,13 @@ export function toggleSplit(layout: PanelLayout): PanelLayout {
 }
 
 /** The layout as stored, made safe to draw: one or two panes, each tab once and only those it `keeps` (a view this
- * computer has no page for, a thread that is gone or another bot's are left out), a pane showing one of its own tabs or
- * its chooser. A pane whose thread was left out shows its first tab instead. */
+ * computer has no page for, a thread that is gone or another bot's are left out; a multi view's tab is kept with its
+ * view, and the bare view is no tab), a pane showing one of its own tabs or its chooser. A pane whose thread was left
+ * out shows its first tab instead. */
 export function panelLayout(raw: unknown, keeps: (tab: string) => boolean): PanelLayout {
   const seen = new Set<string>()
   const panes = (Array.isArray(raw) ? raw : []).slice(0, 2).map((pane: Partial<PanelPane> | null): PanelPane => {
-    const tabs = (Array.isArray(pane?.tabs) ? pane.tabs : []).filter((t) => typeof t === 'string' && keeps(t) && !seen.has(t) && !!seen.add(t))
+    const tabs = (Array.isArray(pane?.tabs) ? pane.tabs : []).filter((t) => typeof t === 'string' && !isMultiView(t) && keeps(multiView(t) ?? t) && !seen.has(t) && !!seen.add(t))
     const gone = typeof pane?.shown === 'string' && isThreadTab(pane.shown)
     return { tabs, shown: tabs.find((t) => t === pane?.shown) ?? (gone ? (tabs[0] ?? null) : null) }
   })

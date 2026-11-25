@@ -190,6 +190,7 @@ MAP = {
     "square.on.square": "content_copy",
     "star": "star",
     "star.fill": "star+",
+    "sidebar.right": "right_panel_open",
     "stop.fill": "stop+",
     "tab": "keyboard_tab",
     "terminal": "terminal",

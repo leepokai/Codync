@@ -48,9 +48,9 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
     // The open chat, on whichever computer it lives (one at a time).
     val open = states.firstOrNull { it.selectedBot != null }
     val workflowDetail = tab == AppTab.Workflows && states.any { it.workflow?.id != null }
-    // A thread of a box without a bot, open over the Threads tab.
-    var loose by remember { mutableStateOf<LooseThread?>(null) }
-    val covering = open != null || workflowDetail || (tab == AppTab.Threads && loose != null)
+    // A thread chat open over the Threads tab.
+    var thread by remember { mutableStateOf<ThreadRef?>(null) }
+    val covering = open != null || workflowDetail || (tab == AppTab.Threads && thread != null)
     // Opening a bot (notification, widget, link) always lands on the Bots tab.
     if (open != null && tab != AppTab.Bots) onTab(AppTab.Bots)
     LaunchedEffect(tab) {
@@ -117,7 +117,7 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
                 }
             }
         }
-        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, loose, active = tab == AppTab.Threads) { loose = it } }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, thread, active = tab == AppTab.Threads) { thread = it } }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
             val shown = states.firstOrNull { it.workflow != null }
                 ?: states.firstOrNull { it.computer.id == app.currentComputerId }

@@ -25,6 +25,8 @@ public enum HostEvent: Sendable {
     case autoOrder(Bool)
     /// Hop-limit review was switched (from any device): its `hello` says it from now on.
     case hopReview(Bool)
+    /// How long the computer keeps ended threads changed (from any device): its `hello` says it from now on.
+    case threadKeepDays(Int)
     case resync
     /// One this app has no use for.
     case skipped
@@ -174,6 +176,9 @@ public struct HostClient: Sendable {
         case "hopReview":
             struct HopReviewWrap: Decodable { var enabled: Bool }
             return (try? d.decode(HopReviewWrap.self, from: data)).map { .hopReview($0.enabled) }
+        case "threadKeepDays":
+            struct KeepWrap: Decodable { var days: Int }
+            return (try? d.decode(KeepWrap.self, from: data)).map { .threadKeepDays($0.days) }
         case "resync":
             return .resync
         case "workflow":
@@ -400,6 +405,20 @@ public extension HostClient {
     /// Whether another bot may review a chain stopped at the hop limit.
     func setHopReview(_ enabled: Bool) async throws {
         let _: Empty = try await self.call("setHopReview", ["enabled": enabled])
+    }
+
+    /// How many days after a thread last finished the computer deletes it (0 never, else 7 to 3650); answers the
+    /// days it keeps now.
+    func setThreadKeepDays(_ days: Int) async throws -> Int {
+        struct Kept: Decodable { var days: Int }
+        let kept: Kept = try await self.call("setThreadKeepDays", ["days": days])
+        return kept.days
+    }
+
+    /// A page of the ended threads of every bot that ended before `before` (the newest when nil), newest first.
+    func olderThreads(before: Int64?) async throws -> OlderThreadsPage {
+        struct Body: Encodable { var before: Int64? }
+        return try await self.call("olderThreads", Body(before: before))
     }
 
     /// The user makes this bot the lead, in place of the one before.

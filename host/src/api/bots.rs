@@ -21,8 +21,12 @@ fn uploads_root(hub: &Hub, bot: &str, task: Option<&str>) -> Result<std::path::P
         Some(task) => work::thread_of(hub, bot, task)?,
         None => bot.to_owned(),
     };
-    let row = hub.store.bot(&id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-    Ok(crate::chat::uploads::root(&row.config))
+    // A thread that ended over a week ago is parked: its files are still read back.
+    let cfg = match hub.store.bot(&id)?.filter(|r| !r.deleted) {
+        Some(row) => row.config,
+        None => hub.store.parked_thread(&id)?.ok_or_else(|| anyhow!("unknown bot"))?,
+    };
+    Ok(crate::chat::uploads::root(&cfg))
 }
 
 /// A message's `attachments`: upload ids.
@@ -184,6 +188,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             // The box a thread without a bot went to is named, so the app can show it.
             json!({"botId": bot, "taskId": id})
         }
+        // Ended threads older than the bots' `work` carries (of `botId`, else of every bot), newest first, a page at a
+        // time: `before` the `endedAt` of the oldest the app has.
+        "olderThreads" => {
+            let (before, only) = (b["before"].as_i64(), b["botId"].as_str().map(str::to_owned));
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || work::archive::older(&hub, only.as_deref(), before)).await??
+        }
         // A thread's transcript, for its details: no chat an app holds has it.
         "threadEntries" => work::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "threadId")?, 500)?,
         "history" => {
@@ -286,6 +297,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 Some(bot) => bot.to_owned(),
                 None => work::plain::owner(hub).await?,
             };
+            // A file for an archived thread's message: the thread comes back first, as the message brings it.
+            if let Some(task) = b["taskId"].as_str() {
+                work::archive::bring_back(hub, &bot, task)?;
+            }
             let root = uploads_root(hub, &bot, b["taskId"].as_str())?;
             let (id, name) = (str_arg(&b, "uploadId")?.to_owned(), str_arg(&b, "name")?.to_owned());
             let data =

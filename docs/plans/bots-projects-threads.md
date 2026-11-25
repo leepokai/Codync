@@ -300,7 +300,7 @@ default choice; **Browse other folders** still picks a project.
 
 - Host: `sources::add_thread` fills `setup.cwd` with it when a thread without a bot has none;
   `workspace::own_folder` counts it as the thread's own, so it never gets a worktree. It goes with the thread bot
-  (seven days after the task ends, as its transcript does).
+  (when the task is deleted with its transcript: [older threads](../features/work.md#older-threads)).
 - Desktop: the folder choice's first item reads **Own folder** instead of the home folder's name; the app stops
   sending `cwd: home` only when `hello` says the host makes the folder (a new flag), so an older host keeps today's.
 - Phones and TUI don't start threads today: nothing to change.
@@ -454,7 +454,7 @@ chat's prompt). A user's thread gets the bot's profile instead ([above](#a-users
 5. **Reported.** Its turn ends: the last message is the report; the bot gets a turn with it and tells the user (a
    user's thread: it stays in the thread). Its worktree is removed or kept (§4).
 6. **Next or gone.** A task that follows it (`after`) goes on in the same thread and session; otherwise the thread
-   ends (its agent stops, its transcript stays), and it is deleted seven days after its last task.
+   ends (its agent stops, its transcript stays), and it is deleted only as the user's Delete old threads says ([older threads](../features/work.md#older-threads)).
 
 ### No fork
 
@@ -553,8 +553,8 @@ Each stage ships on its own, in this order; host-only stages need no client rele
    and clients built, as [work](../features/work.md) says: the desktop's new-thread place menu (Here / New worktree)
    and Own folder, and the Shared folders editor under each git project on the desktop, iPhone, Android and TUI. Beyond the plan: the place is kept in the task's `setup`, so a task
    tried again or replaced keeps it, and `add_task` answers `placeNote` when the place can't apply; the folder of a
-   thread without a bot is made as its task is added and goes when the task leaves the box (dropped, or a week after
-   it ended), which is when its thread bot and transcript go; a shared folder is linked only into worktrees of its
+   thread without a bot is made as its task is added and goes when the task is deleted (dropped, or by Delete old threads:
+   [older threads](../features/work.md#older-threads)), which is when its thread bot and transcript go; a shared folder is linked only into worktrees of its
    project's repository, at the project's place inside it, and the links Codync made don't keep an untouched
    worktree (each link is listed in the repository's `info/exclude`, so a thread can't commit it); `ask_task` takes one question at a time a task, and a task that ends before it answers counts as
    `late`; a late answer is its own host turn (`Cmd::TaskAnswer`). `hello.threadPlace`, `hello.worktreeFill`,

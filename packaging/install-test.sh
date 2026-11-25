@@ -14,7 +14,8 @@ cat > "$tmp/releases/codync-host-linux-x86_64/codync-host" <<'EOF'
 case ${1:-} in
   --version) echo 2.54.0 ;;
   install)
-    [ -z "${FAKE_HOST_READY:-}" ] || : > "$FAKE_HOST_READY"
+    [ -z "${FAKE_HOST_READY:-}" ] ||
+      printf '{"binaryPath":"%s"}\n' "$FAKE_HOST_BINARY_PATH" > "$FAKE_HOST_READY"
     ;;
 esac
 EOF
@@ -41,6 +42,10 @@ cat > "$tmp/stubs/uname" <<'EOF'
 #!/bin/sh
 [ "${1:-}" = -s ] && echo Linux || echo x86_64
 EOF
+cat > "$tmp/stubs/id" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = -u ] && echo 1000 || /usr/bin/id "$@"
+EOF
 cat > "$tmp/stubs/curl" <<'EOF'
 #!/bin/sh
 output=""
@@ -56,7 +61,7 @@ done
 if [ -n "$output" ]; then
   cp "${url#file://}" "$output"
 else
-  [ -f "${url#file://}" ]
+  [ -f "${url#file://}" ] && cat "${url#file://}"
 fi
 EOF
 cat > "$tmp/stubs/gst-inspect-1.0" <<'EOF'
@@ -79,43 +84,81 @@ cat > "$tmp/stubs/systemctl" <<'EOF'
 #!/bin/sh
 [ "${1:-}" = --user ] && shift
 [ "${1:-}" = cat ] && exit 1
+[ "${1:-}" = show ] &&
+  printf 'path=%s ;\n' "${FAKE_SERVICE_PATH:-}/codync-host"
 exit 0
 EOF
 cat > "$tmp/stubs/apt-get" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*"
 EOF
+for command in apt-cache update-desktop-database gtk-update-icon-cache xdg-mime gsettings; do
+  cat > "$tmp/stubs/$command" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+done
 chmod 755 "$tmp/stubs/"*
 
 install() {
   case_name=$1
-  shift
+  app=$2
+  shift 2
   home=$tmp/$case_name
   mkdir -p "$home"
+  bin_dir=${CODYNC_TEST_BIN_DIR:-$home/bin}
+  if [ -d "$bin_dir" ]; then
+    physical_bin_dir=$(CDPATH= cd -- "$bin_dir" && pwd -P)
+  else
+    physical_parent=$(CDPATH= cd -- "$(dirname "$bin_dir")" && pwd -P)
+    physical_bin_dir=$physical_parent/$(basename "$bin_dir")
+  fi
+  binary_path=$physical_bin_dir/codync-host
+  display=DISPLAY=
+  [ "$app" = desktop ] && display=WAYLAND_DISPLAY=wayland-0
+  [ "$app" = desktop ] && app_arg=--app || app_arg=
+  if [ -z "${FAKE_HOST_BINARY_PATH:-}" ]; then fake_binary_path=$binary_path; else fake_binary_path=$FAKE_HOST_BINARY_PATH; fi
   env -i HOME="$home" USER=test LOGNAME=test SHELL=/bin/sh \
-    PATH="$tmp/stubs:/usr/bin:/bin" WAYLAND_DISPLAY=wayland-0 XDG_DATA_HOME="$home/data" XDG_CONFIG_HOME="$home/config" \
-    CODYNC_RELEASES_URL="file://$tmp/releases" CODYNC_BIN_DIR="$home/bin" CODYNC_HOME="$home/.codync" \
+    PATH="$tmp/stubs:/usr/bin:/bin" "$display" XDG_DATA_HOME="$home/data" XDG_CONFIG_HOME="$home/config" \
+    CODYNC_RELEASES_URL="file://$tmp/releases" CODYNC_BIN_DIR="$bin_dir" CODYNC_HOME="$home/.codync" \
+    FAKE_SERVICE_PATH="$physical_bin_dir" \
+    FAKE_HOST_BINARY_PATH="$fake_binary_path" \
     CODYNC_INSTALL_READY_TRIES=1 CODYNC_INSTALL_READY_DELAY=0 DEBIAN_FRONTEND=noninteractive "$@" \
-    sh "$root/packaging/install.sh" --app
+    sh "$root/packaging/install.sh" $app_arg
 }
 
-mkdir -p "$tmp/all_plugins/config" "$tmp/missing_webrtc/config" "$tmp/not_ready/config"
+mkdir -p "$tmp/all_plugins/config" "$tmp/missing_webrtc/config" "$tmp/not_ready/config" \
+  "$tmp/no_display/config" "$tmp/symlink_bin/config"
 touch "$tmp/webrtc" "$tmp/pipewire"
-install all_plugins GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
+install all_plugins desktop GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/all_ready" FAKE_HOST_READY="$tmp/all_ready" > "$tmp/all.out"
 ! grep -q "gstreamer1.0-plugins-bad" "$tmp/all.out" ||
   { echo "installer added webrtcbin when it was present"; exit 1; }
 
-install missing_webrtc GST_WEBRTC="$tmp/absent-webrtc" GST_PIPEWIRE="$tmp/pipewire" \
+install missing_webrtc desktop GST_WEBRTC="$tmp/absent-webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/missing_ready" FAKE_HOST_READY="$tmp/missing_ready" > "$tmp/missing.out"
 grep -Fq "libgstreamer-plugins-bad1.0-0 gstreamer1.0-plugins-bad" "$tmp/missing.out" ||
   { echo "installer missed webrtcbin"; exit 1; }
 grep -Fq "gstreamer1.0-tools" "$tmp/missing.out" ||
   { echo "installer could not inspect the missing plugin"; exit 1; }
 
-install not_ready GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
+install not_ready desktop GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/never-ready" > "$tmp/not-ready.out"
 test -f "$tmp/not_ready/.codync/host-install-failed"
 ! grep -q 'Next: open Codync' "$tmp/not-ready.out"
+
+install no_display none GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
+  CODYNC_INSTALL_HEALTH_URL="file://$tmp/no_display_ready" FAKE_HOST_READY="$tmp/no_display_ready" > "$tmp/no-display.out"
+grep -Fq "Next: run $tmp/no_display/bin/codync-host pair" "$tmp/no-display.out"
+! test -f "$tmp/no_display/data/applications/codync.desktop"
+
+mkdir -p "$tmp/symlink_bin/physical"
+ln -s physical "$tmp/symlink_bin/bin"
+CODYNC_TEST_BIN_DIR="$tmp/symlink_bin/bin" install symlink_bin desktop \
+  GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
+  CODYNC_INSTALL_HEALTH_URL="file://$tmp/symlink_ready" FAKE_HOST_READY="$tmp/symlink_ready" \
+  > "$tmp/symlink.out"
+! test -f "$tmp/symlink_bin/.codync/host-install-failed"
+grep -Fq 'Next: open Codync' "$tmp/symlink.out"
 
 echo "installer checks passed"

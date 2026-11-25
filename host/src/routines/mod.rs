@@ -1,6 +1,6 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
 mod check;
-pub use check::Checked;
+pub use check::{Checked, Folder};
 mod editor;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 mod follow_up;
@@ -57,6 +57,9 @@ pub struct Routine {
     /// Where its runs stand, for the next one (`progress.rs`).
     #[serde(default)]
     pub progress: Option<String>,
+    /// The folder its runs work in, an absolute path; none: the bot's. A run with one always works in a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -250,7 +253,7 @@ impl Routines {
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
         let row = agent_bot(hub, bot)?;
-        let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
+        let Checked { name, instruction, triggers, timeout, folder } = Checked::parse(body)?;
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
         let updated = body["id"].is_string();
@@ -282,6 +285,7 @@ impl Routines {
                     .unwrap_or_else(|| old.as_ref().map_or_else(default_timeout, |r| r.timeout_seconds)),
                 last_error: None,
                 progress: old.as_ref().and_then(|r| r.progress.clone()),
+                folder: folder.applied(old.as_ref().and_then(|r| r.folder.clone()))?,
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -450,7 +454,7 @@ fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
 }
 fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
-        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
+        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"folder":r.folder,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {

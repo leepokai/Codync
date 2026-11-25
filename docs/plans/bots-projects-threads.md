@@ -11,7 +11,7 @@ the separate "bot home and projects" and "thread profile" plans. Answers part of
 | [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Decided**, not built |
 | [Worktrees counted per repository](#count-side-by-side-per-repository) | **Decided**, not built |
 | [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
-| [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Decided**, not built |
+| [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
 | [A task names its place](#a-task-names-its-place) (`add_task` `place`) | Proposed |
 | [Filling a new worktree](#filling-a-new-worktree) (`.worktreeinclude`, shared folders) | Proposed |
 | [Threads without a bot get a folder of their own](#5-threads-without-a-bot-get-a-folder-of-their-own) | Proposed |
@@ -535,8 +535,10 @@ Each stage ships on its own, in this order; host-only stages need no client rele
 1. **Recap on a folder change.** Built (`a5fccdbf7`).
 2. **Thread profile and no fork** (§7). Host only. Built: a routine's run and another bot's request are told who the
    bot is, as a user's thread is (they act as the bot, not on a brief the bot wrote), with only their own paragraph.
-3. **A user's thread leaves the queue** (§6). Host only.
-4. **Routine `folder`.** Host + clients (the routine editor).
+3. **A user's thread leaves the queue** (§6). Host only. Built; `waitedMs` went on `work_finished` (there is no start
+   event).
+4. **Routine `folder`.** Host + clients (the routine editor). Built: any existing folder for now (projects come in 5);
+   a run with one always works in a thread, and a folder that went fails the run.
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
    the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client.
 6. **Migration** (§3). Needs 4 and 5.

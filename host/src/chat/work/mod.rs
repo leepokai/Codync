@@ -422,6 +422,9 @@ fn finished_properties(task: &Task, agent: Option<&str>) -> serde_json::Map<Stri
         "minutes": (now_ms() - task.started_at.unwrap_or(task.created_at)) / 60_000,
         "source": task.source.kind(), "worktree": task.worktree.is_some(),
     });
+    if let Some(started) = task.started_at {
+        properties["waitedMs"] = (started - task.created_at).max(0).into();
+    }
     if let Some(agent) = agent {
         properties["agent"] = agent.into();
     }
@@ -640,9 +643,12 @@ mod tests {
             (&told["outcome"], &told["error"], &told["agent"]),
             (&json!("failed"), &json!("dispatch"), &json!("claude"))
         );
+        assert_eq!(told["waitedMs"], json!(1), "from added to started");
         let never = end(&mut tasks, "t2", Outcome::not_started(&error)).expect("ended");
         let told = finished_properties(&never, None);
         assert_eq!((told["error"].as_str(), told.get("agent")), (Some("start"), None), "no thread, no agent");
+        let unstarted = Task { started_at: None, ..never };
+        assert_eq!(finished_properties(&unstarted, None).get("waitedMs"), None, "it never started");
     }
 
     #[test]

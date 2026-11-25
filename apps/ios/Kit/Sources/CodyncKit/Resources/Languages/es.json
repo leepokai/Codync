@@ -2482,5 +2482,9 @@
   "Context handed off": "Contexto transferido",
   "Switched": "Cambiado",
   "No threads right now": "No hay hilos ahora",
-  "Tasks your bots work on show up here.": "Las tareas en las que trabajan tus bots aparecen aquí."
+  "Tasks your bots work on show up here.": "Las tareas en las que trabajan tus bots aparecen aquí.",
+  "Folder": "Carpeta",
+  "Bot's folder": "Carpeta del bot",
+  "Use the bot's folder": "Usar la carpeta del bot",
+  "Each run works here in a thread of its own.": "Cada ejecución trabaja aquí en un thread propio."
 }

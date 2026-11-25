@@ -714,6 +714,69 @@ async fn said(host: &Host, bot: &str, kind: &str, prefix: &str) -> Vec<Value> {
 }
 
 #[tokio::test]
+async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let folder = std::env::temp_dir().join(format!("codync-routine-folder-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let relative = json!({"botId": bot, "name": "Nope", "instruction": "PASS", "triggers": [{"type": "webhook"}],
+        "folder": "relative/path"});
+    assert_eq!(host.refused("saveRoutine", relative).await, "folder must be the full path of an existing folder");
+    let body = json!({"botId": bot, "name": "Elsewhere", "instruction": "PASS", "triggers": [{"type": "webhook"}],
+        "folder": folder});
+    let saved = host.call("saveRoutine", body).await;
+    assert_eq!(saved["routine"]["folder"], json!(folder));
+    let id = saved["routine"]["id"].as_str().unwrap().to_owned();
+
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    run(&host, &bot, &id, "succeeded").await;
+    let there = logged(&folder, "prompts.jsonl");
+    assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
+
+    std::fs::remove_dir_all(&folder).unwrap();
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    let failed = run(&host, &bot, &id, "failed").await;
+    assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
+    // Gone, it is kept by a save that leaves it out or sends it unchanged (a drive not mounted); a new one must exist.
+    let edit = |folder: Option<Value>| {
+        let mut body = json!({"botId": bot, "id": id, "name": "Elsewhere", "instruction": "PASS",
+            "triggers": [{"type": "webhook"}]});
+        if let Some(folder) = folder {
+            body["folder"] = folder;
+        }
+        body
+    };
+    assert_eq!(host.call("saveRoutine", edit(None)).await["routine"]["folder"], json!(folder));
+    assert_eq!(host.call("saveRoutine", edit(Some(json!(folder)))).await["routine"]["folder"], json!(folder));
+    let elsewhere = folder.with_extension("other");
+    let refused = host.refused("saveRoutine", edit(Some(json!(elsewhere)))).await;
+    assert_eq!(refused, "folder must be the full path of an existing folder");
+    // Cleared, it runs in the bot's folder again.
+    assert_eq!(host.call("saveRoutine", edit(Some(Value::Null))).await["routine"]["folder"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routines_in_its_chat() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
+    let folder = std::env::temp_dir().join(format!("codync-routine-folder-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let body = json!({"botId": bot, "name": "Team elsewhere", "instruction": "PASS",
+        "triggers": [{"type": "webhook"}], "folder": folder});
+    let id = host.call("saveRoutine", body).await["routine"]["id"].as_str().unwrap().to_owned();
+
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    run(&host, &bot, &id, "succeeded").await;
+    let there = logged(&folder, "prompts.jsonl");
+    assert!(
+        there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
+        "{there:?}"
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+}
+
+#[tokio::test]
 async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in_the_chat() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
@@ -1696,6 +1759,24 @@ async fn what_waited_in_a_thread_goes_with_a_task_that_gives_way() {
     assert_eq!(prompts.len(), 2);
     let again = prompts[1]["text"].as_str().unwrap();
     assert!(again.contains("[The user said since: «mind the cache»]"), "{again}");
+}
+
+#[tokio::test]
+async fn a_users_thread_starts_past_the_ceiling_and_the_bot_never_sees_it() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Busy|HOLD:busy").await;
+    task(&host, &bot, "Busy", "working").await;
+    // The bot's one seat is taken; the user's thread starts anyway.
+    host.call("startThread", json!({"botId": bot, "text": "Mine HOLD:mine"})).await;
+    task(&host, &bot, "Mine HOLD:mine", "working").await;
+    host.reply(&bot, "STATUS").await;
+    let status = reply(&host, &bot, "Status:").await;
+    assert!(status.contains("Busy") && !status.contains("Mine"), "{status}");
+    release(&host, &bot, "busy");
+    release(&host, &bot, "mine");
+    task(&host, &bot, "Busy", "done").await;
+    task(&host, &bot, "Mine HOLD:mine", "done").await;
 }
 
 #[tokio::test]

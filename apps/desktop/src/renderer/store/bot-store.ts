@@ -255,6 +255,11 @@ export class BotStore extends BotSync {
     return this.hello?.threadFiles === true
   }
 
+  /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
+  get routinesHaveFolders() {
+    return this.hello?.routineFolder === true
+  }
+
   /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
    *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
    *  and the task's. */

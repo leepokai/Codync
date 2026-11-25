@@ -2482,5 +2482,9 @@
   "Context handed off": "Контекст передан",
   "Switched": "Переключено",
   "No threads right now": "Сейчас нет тредов",
-  "Tasks your bots work on show up here.": "Здесь появятся задачи, над которыми работают ваши боты."
+  "Tasks your bots work on show up here.": "Здесь появятся задачи, над которыми работают ваши боты.",
+  "Folder": "Папка",
+  "Bot's folder": "Папка бота",
+  "Use the bot's folder": "Использовать папку бота",
+  "Each run works here in a thread of its own.": "Каждый запуск работает здесь в собственном thread."
 }

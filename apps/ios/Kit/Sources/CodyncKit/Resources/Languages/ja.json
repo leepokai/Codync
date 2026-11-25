@@ -2482,5 +2482,9 @@
   "Context handed off": "コンテキストを引き継ぎました",
   "Switched": "切り替えました",
   "No threads right now": "現在スレッドはありません",
-  "Tasks your bots work on show up here.": "ボットが取り組んでいるタスクがここに表示されます。"
+  "Tasks your bots work on show up here.": "ボットが取り組んでいるタスクがここに表示されます。",
+  "Folder": "フォルダ",
+  "Bot's folder": "Bot のフォルダ",
+  "Use the bot's folder": "Bot のフォルダを使う",
+  "Each run works here in a thread of its own.": "各実行はここで専用の thread で動きます。"
 }

@@ -4,7 +4,7 @@ import Foundation
 /// tables and fenced code. Pure parsing, apart from the views, so it's tested on its own.
 /// `MarkdownText` renders these (the desktop app ports the same parser).
 enum MarkdownBlocks {
-    enum Block: Hashable {
+    enum Block: Hashable, Sendable {
         case paragraph(String)
         case heading(String, level: Int)
         case bullet(String, marker: String, depth: Int = 0)
@@ -12,6 +12,11 @@ enum MarkdownBlocks {
         case code(String, language: String)
         case table(header: [String], rows: [[String]])
         case rule
+    }
+
+    static func parse(_ source: String, isStreaming: Bool) -> [Block] {
+        guard isStreaming else { return parse(source) }
+        return parse(StreamingTailRepair.repair(source))
     }
 
     static func parse(_ source: String) -> [Block] {

@@ -157,12 +157,16 @@ extension BotStore {
                 bump(e.rev)
                 break
             }
+            let existing = entries[e.botId]?.first { $0.id == e.id }
             upsert(e)
+            recordLiveArrivalIfNeeded(before: existing, after: e)
             if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .threadEntry(thread, e):
+            let existing = threadEntries[thread]?.first { $0.id == e.id }
             putThreadEntry(e, thread: thread)
+            recordLiveArrivalIfNeeded(before: existing, after: e)
             bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
@@ -212,6 +216,8 @@ extension BotStore {
         bots = [:]
         entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }.filter { !$0.value.isEmpty }
         threadEntries = [:]
+        liveArrivalIDs.removeAll()
+        revealedTextByID.removeAll()
         selection = nil
         onRosterChanged?()
         rev = 0
@@ -316,5 +322,37 @@ extension BotStore {
         usage = u
         storage.usage[computer.id] = u
         onUsageChanged?(computer.id, u)
+    }
+
+    private func recordLiveArrivalIfNeeded(before existing: Entry?, after incoming: Entry) {
+        guard streamCaughtUp else { return }
+        guard incoming.kind == "agent" || incoming.kind == "thought" else { return }
+        guard incoming.data.artifact == nil,
+              incoming.data.voiceNoteFile == nil,
+              (incoming.data.files?.isEmpty ?? true) else { return }
+        let nextText = incoming.data.text ?? ""
+        guard !nextText.isEmpty else { return }
+
+        if let existing {
+            guard incoming.rev >= existing.rev else { return }
+            let prevText = existing.data.text ?? ""
+            guard prevText != nextText else { return }
+            if !liveArrivalIDs.contains(incoming.id) {
+                revealedTextByID[incoming.id] = Self.commonPrefixCharacterCount(prevText, nextText)
+            }
+            liveArrivalIDs.insert(incoming.id)
+        } else {
+            revealedTextByID.removeValue(forKey: incoming.id)
+            liveArrivalIDs.insert(incoming.id)
+        }
+    }
+
+    private static func commonPrefixCharacterCount(_ a: String, _ b: String) -> Int {
+        var count = 0
+        for (ca, cb) in zip(a, b) {
+            if ca != cb { break }
+            count += 1
+        }
+        return count
     }
 }

@@ -238,7 +238,7 @@ struct AgentBubble: View {
                     } else if let voiceNote = entry.data.voiceNoteFile {
                         VoiceNoteBubble(entry: entry, file: voiceNote)
                     } else {
-                        MarkdownText(entry.data.text ?? "").equatable()
+                        StreamingMarkdownBody(entry: entry)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -480,5 +480,118 @@ extension ChatRow: @MainActor Equatable {
     static func == (a: Self, b: Self) -> Bool {
         a.entry == b.entry && a.groupStart == b.groupStart && a.chat?.isGroup == b.chat?.isGroup
             && a.chat?.isWorking == b.chat?.isWorking && (a.reply == nil) == (b.reply == nil)
+    }
+}
+
+/// Renders an agent entry smoothly when it arrives live over SSE, converging immediately under
+/// Reduced Motion or background scene phases and never replaying cached or historical text.
+struct StreamingMarkdownBody: View {
+    let entry: Entry
+    @Environment(BotStore.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var pacer: StreamTextController?
+    @State private var trackedID: String?
+
+    private var rawText: String { entry.data.text ?? "" }
+    private var isLiveFromHost: Bool { entry.data.final != true }
+
+    var body: some View {
+        let eligible = !reduceMotion && scenePhase == .active && model.shouldRevealLiveText(for: entry)
+        let displayedText: String
+        let isStreaming: Bool
+        if let pacer {
+            displayedText = (eligible || pacer.needsTick) ? pacer.displayedText : rawText
+            isStreaming = eligible && pacer.isStreamingActive
+        } else if eligible {
+            let initial = min(max(0, model.initialRevealedCount(for: entry) ?? 0), rawText.count)
+            let end = rawText.index(rawText.startIndex, offsetBy: initial)
+            displayedText = String(rawText[..<end])
+            isStreaming = true
+        } else {
+            displayedText = rawText
+            isStreaming = false
+        }
+
+        MarkdownText(displayedText, isStreaming: isStreaming, fadeKey: entry.id)
+            .equatable()
+            .onAppear {
+                reconcilePacer()
+            }
+            .onChange(of: entry.id) { _, _ in
+                reconcilePacer()
+            }
+            .onChange(of: rawText) { _, _ in
+                reconcilePacer()
+            }
+            .onChange(of: entry.data.final) { _, _ in
+                reconcilePacer()
+            }
+            .onChange(of: reduceMotion) { _, _ in
+                reconcilePacer()
+            }
+            .onChange(of: scenePhase) { _, _ in
+                reconcilePacer()
+            }
+            .onDisappear {
+                pacer?.stop()
+            }
+    }
+
+    private func reconcilePacer() {
+        if trackedID != entry.id {
+            pacer?.stop()
+            pacer = nil
+            trackedID = entry.id
+        }
+
+        let hidden = reduceMotion || scenePhase != .active
+        guard model.shouldRevealLiveText(for: entry), !hidden else {
+            if let existing = pacer {
+                existing.converge()
+                pacer = nil
+            }
+            if hidden {
+                model.completeLiveReveal(id: entry.id)
+            }
+            return
+        }
+
+        let entryID = entry.id
+        let isFinal = entry.data.final == true
+        let progressHandler: (Int) -> Void = { count in
+            model.noteLiveRevealProgress(id: entryID, count: count)
+        }
+        let completionHandler: (Int) -> Void = { total in
+            if isFinal {
+                model.completeLiveReveal(id: entryID)
+            } else {
+                model.noteLiveRevealProgress(id: entryID, count: total)
+            }
+        }
+
+        if let existing = pacer {
+            existing.sync(
+                text: rawText,
+                live: isLiveFromHost,
+                hidden: false,
+                onProgress: progressHandler,
+                onComplete: completionHandler
+            )
+        } else {
+            let controller = StreamTextController(
+                text: rawText,
+                live: isLiveFromHost,
+                arrivalReveal: true,
+                hidden: false,
+                initialShownCount: model.initialRevealedCount(for: entry),
+                onProgress: progressHandler,
+                onComplete: completionHandler
+            )
+            pacer = controller
+            if !controller.needsTick, isFinal {
+                model.completeLiveReveal(id: entryID)
+            }
+        }
     }
 }

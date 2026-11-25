@@ -56,11 +56,13 @@ extension View {
 
 struct TraceRow: View {
     let entry: Entry
+    private let allowsLiveReveal: Bool
     @State private var expanded: Bool
 
     /// The running turn's thoughts start unfolded, so its reasoning reads as it comes in.
     init(entry: Entry, unfolded: Bool) {
         self.entry = entry
+        self.allowsLiveReveal = unfolded
         _expanded = State(initialValue: unfolded)
     }
 
@@ -73,11 +75,11 @@ struct TraceRow: View {
         case "agent":
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.tr(d.final == true ? "Reply" : "Said")).font(.caption2.bold()).foregroundStyle(Palette.tertiary)
-                MarkdownText(d.text ?? "")
+                StreamingMarkdownBody(entry: entry)
             }
         case "thought":
             Disclosure(isExpanded: $expanded) {
-                Text(d.text ?? "").font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+                StreamingThoughtBody(entry: entry, allowsLiveReveal: allowsLiveReveal, expanded: expanded)
             } label: {
                 Label { Text(L10n.tr("Thinking")) } icon: {
                     ThinkingOrb(size: 16, color: Palette.secondary, animated: false)
@@ -104,6 +106,180 @@ struct TraceRow: View {
                 .foregroundStyle(Palette.secondary)
         default:
             Text(L10n.tr(d.text ?? "")).font(.footnote).foregroundStyle(Palette.tertiary)
+        }
+    }
+}
+
+@MainActor
+private final class ThoughtTailFadeHolder {
+    var chunkCount = 0
+    var state = TailFadeSweepState()
+
+    func sync(pieces: [String], isStreaming: Bool, hidden: Bool, now: TimeInterval) {
+        guard isStreaming, !hidden, let tail = pieces.last else {
+            if state.isAnimating {
+                state.settle(at: now, hidden: hidden)
+            }
+            return
+        }
+        if pieces.count != chunkCount {
+            chunkCount = pieces.count
+            state = TailFadeSweepState(
+                text: tail,
+                isStreaming: true,
+                hidden: false,
+                now: now,
+                animateInitial: true
+            )
+        } else {
+            state.sync(text: tail, isStreaming: true, hidden: false, now: now)
+        }
+    }
+
+    func settle(hidden: Bool = true, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        if state.isAnimating {
+            state.settle(at: now, hidden: hidden)
+        }
+    }
+}
+
+private struct StreamingThoughtBody: View {
+    let entry: Entry
+    let allowsLiveReveal: Bool
+    let expanded: Bool
+
+    @Environment(BotStore.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var pacer: StreamTextController?
+    @State private var fadeHolder = ThoughtTailFadeHolder()
+
+    private var rawText: String { entry.data.text ?? "" }
+    private var isBotWorking: Bool { model.bots[entry.botId]?.isWorking(in: entry.botId) == true }
+
+    var body: some View {
+        let eligible = allowsLiveReveal && expanded && !reduceMotion && scenePhase == .active && model.shouldRevealLiveText(for: entry)
+        let displayedText: String
+        let isAnimating: Bool
+        if let pacer {
+            displayedText = (eligible || pacer.needsTick) ? pacer.displayedText : rawText
+            isAnimating = eligible && pacer.isStreamingActive
+        } else if eligible {
+            let initial = min(max(0, model.initialRevealedCount(for: entry) ?? 0), rawText.count)
+            let end = rawText.index(rawText.startIndex, offsetBy: initial)
+            displayedText = String(rawText[..<end])
+            isAnimating = true
+        } else {
+            displayedText = rawText
+            isAnimating = false
+        }
+
+        let pieces = ThoughtChunking.pieces(of: displayedText)
+        let now = ProcessInfo.processInfo.systemUptime
+        let _ = fadeHolder.sync(pieces: pieces, isStreaming: isAnimating, hidden: !eligible, now: now)
+
+        Group {
+            if eligible, isAnimating, fadeHolder.state.isAnimating {
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
+                    let frameNow = ProcessInfo.processInfo.systemUptime
+                    let _ = fadeHolder.state.prune(now: frameNow)
+                    piecesStack(pieces, fadeState: fadeHolder.state, now: frameNow)
+                }
+            } else {
+                piecesStack(pieces, fadeState: nil, now: now)
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(Palette.secondary)
+        .textSelection(.enabled)
+        .onAppear {
+            reconcile()
+        }
+        .onChange(of: rawText) { _, _ in
+            reconcile()
+        }
+        .onChange(of: expanded) { _, _ in
+            reconcile()
+        }
+        .onChange(of: isBotWorking) { _, _ in
+            reconcile()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            reconcile()
+        }
+        .onChange(of: scenePhase) { _, _ in
+            reconcile()
+        }
+        .onDisappear {
+            pacer?.stop()
+            fadeHolder.settle(hidden: true)
+        }
+    }
+
+    @ViewBuilder
+    private func piecesStack(_ pieces: [String], fadeState: TailFadeSweepState?, now: TimeInterval) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(pieces.enumerated()), id: \.offset) { index, piece in
+                let isTail = index == pieces.count - 1
+                let displayPiece = !isTail && piece.hasSuffix("\n") ? String(piece.dropLast()) : piece
+                if isTail, let fadeState, fadeState.isAnimating {
+                    Text(faded(displayPiece, state: fadeState, now: now))
+                } else {
+                    Text(displayPiece)
+                }
+            }
+        }
+    }
+
+    private func faded(_ text: String, state: TailFadeSweepState, now: TimeInterval) -> AttributedString {
+        var attributed = AttributedString(text)
+        TailFadeSweepState.applyFade(to: &attributed, state: state, at: now, baseColor: Palette.secondary)
+        return attributed
+    }
+
+    private func reconcile() {
+        let hidden = reduceMotion || scenePhase != .active || !expanded
+        guard allowsLiveReveal, model.shouldRevealLiveText(for: entry), !hidden else {
+            pacer?.converge()
+            pacer = nil
+            fadeHolder.settle(hidden: true)
+            if !allowsLiveReveal || reduceMotion || scenePhase != .active || !isBotWorking {
+                model.completeLiveReveal(id: entry.id)
+            }
+            return
+        }
+
+        let entryID = entry.id
+        let working = isBotWorking
+        let progressHandler: (Int) -> Void = { count in
+            model.noteLiveRevealProgress(id: entryID, count: count)
+        }
+        let completionHandler: (Int) -> Void = { total in
+            if working {
+                model.noteLiveRevealProgress(id: entryID, count: total)
+            } else {
+                model.completeLiveReveal(id: entryID)
+            }
+        }
+
+        if let existing = pacer {
+            existing.sync(
+                text: rawText,
+                live: working,
+                hidden: false,
+                onProgress: progressHandler,
+                onComplete: completionHandler
+            )
+        } else {
+            pacer = StreamTextController(
+                text: rawText,
+                live: working,
+                arrivalReveal: true,
+                hidden: false,
+                initialShownCount: model.initialRevealedCount(for: entry),
+                onProgress: progressHandler,
+                onComplete: completionHandler
+            )
         }
     }
 }

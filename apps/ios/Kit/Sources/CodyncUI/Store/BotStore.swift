@@ -182,6 +182,10 @@ public final class BotStore {
 
     /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
+    /// Live SSE agent/thought entry IDs eligible for smooth text reveal (never populated from cache, catch-up, or history paging).
+    @ObservationIgnored var liveArrivalIDs: Set<String> = []
+    /// Character reveal progress for active live entries so recycled cells resume instead of replaying from zero.
+    @ObservationIgnored var revealedTextByID: [String: Int] = [:]
 
     /// Loads this context's `DeviceIdentity` itself.
     public convenience init(computer: Computer, storage: SharedStore.Context) {
@@ -377,5 +381,27 @@ public final class BotStore {
         guard c != computer else { return }
         computer = c
         onComputerChanged?(c)
+    }
+
+    /// True only when `entry` arrived via live SSE after stream catch-up completed and has plain/Markdown text to pace.
+    func shouldRevealLiveText(for entry: Entry) -> Bool {
+        guard liveArrivalIDs.contains(entry.id) else { return false }
+        guard entry.kind == "agent" || entry.kind == "thought" else { return false }
+        guard entry.data.artifact == nil, entry.data.voiceNoteFile == nil, (entry.data.files?.isEmpty ?? true) else { return false }
+        return !(entry.data.text ?? "").isEmpty
+    }
+
+    func initialRevealedCount(for entry: Entry) -> Int? {
+        revealedTextByID[entry.id]
+    }
+
+    func noteLiveRevealProgress(id: String, count: Int) {
+        guard liveArrivalIDs.contains(id) else { return }
+        revealedTextByID[id] = max(revealedTextByID[id] ?? 0, count)
+    }
+
+    func completeLiveReveal(id: String) {
+        liveArrivalIDs.remove(id)
+        revealedTextByID.removeValue(forKey: id)
     }
 }

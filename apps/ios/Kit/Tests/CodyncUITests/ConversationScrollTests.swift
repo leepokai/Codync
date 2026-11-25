@@ -130,6 +130,130 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     }
 }
 
+@MainActor @Test func lightUpwardScrollWithinNearEndSuppressesAutoFollowForWindow() {
+    var currentTime: TimeInterval = 100.0
+    let view = ConversationCollectionView(frame: CGRect(x: 0, y: 0, width: 320, height: 600),
+                                          collectionViewLayout: TallConversationLayout())
+    view.clock = { currentTime }
+    view.layoutIfNeeded()
+    view.contentSize = TallConversationLayout().collectionViewContentSize
+    let end = view.endOffset
+    view.contentOffset.y = end
+
+    // Scroll up lightly by 16 pt (< 32 pt nearEnd): must pause following and arm 0.25s suppression.
+    view.contentOffset.y = end - 16
+    view.following = view.followingAfterScroll(from: end)
+    #expect(!view.following)
+    #expect(view.isAutoScrollSuppressed)
+
+    // Inside the 0.25s window, moving slightly toward the end does not snap back down.
+    currentTime = 100.12
+    view.contentOffset.y = end - 4
+    #expect(!view.followingAfterScroll(from: end - 16))
+    #expect(!view.followingAfterInteraction())
+
+    // Once the suppression window expires, scrolling near the end restores following.
+    currentTime = 100.26
+    #expect(!view.isAutoScrollSuppressed)
+    view.contentOffset.y = end - 4
+    #expect(view.followingAfterScroll(from: end - 8))
+    #expect(view.followingAfterInteraction())
+}
+
+@MainActor @Test func contentGrowthFollowsSmoothlyAndStopsDisplayLinkWhenSettled() async throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let layout = DynamicConversationLayout(height: 1_200)
+    let view = ConversationCollectionView(frame: window.bounds, collectionViewLayout: layout)
+    controller.view.addSubview(view)
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true; view.removeFromSuperview() }
+
+    view.layoutIfNeeded()
+    view.pinToEnd()
+    view.animatesContentGrowth = true
+
+    // Simulate a streaming reply growing height monotonically across consecutive updates.
+    layout.height = 1_600
+    view.contentSize = layout.collectionViewContentSize
+    view.followContentGrowth()
+    #expect(view.followingContentGrowth)
+    #expect(view.hasActiveDisplayLink)
+
+    // Retarget while still moving without dropping followingContentGrowth.
+    try await Task.sleep(for: .milliseconds(32))
+    layout.height = 1_900
+    view.contentSize = layout.collectionViewContentSize
+    view.followContentGrowth()
+    #expect(view.followingContentGrowth)
+    #expect(view.contentOffset.y <= view.endOffset + 0.5)
+
+    // Wait for critically damped motion to settle; CADisplayLink must tear down automatically.
+    for _ in 0..<80 where view.hasActiveDisplayLink {
+        try await Task.sleep(for: .milliseconds(25))
+    }
+    #expect(!view.hasActiveDisplayLink)
+    #expect(!view.followingContentGrowth)
+    #expect(abs(view.contentOffset.y - view.endOffset) < 1)
+}
+
+@MainActor @Test func displayLinkStopsWhenRemovedFromWindowOrDragBegins() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let layout = DynamicConversationLayout(height: 1_200)
+    let view = ConversationCollectionView(frame: window.bounds, collectionViewLayout: layout)
+    controller.view.addSubview(view)
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true; view.removeFromSuperview() }
+
+    view.layoutIfNeeded()
+    view.pinToEnd()
+    view.animatesContentGrowth = true
+    layout.height = 1_800
+    view.contentSize = layout.collectionViewContentSize
+    view.followContentGrowth()
+    #expect(view.hasActiveDisplayLink)
+
+    view.removeFromSuperview()
+    #expect(!view.hasActiveDisplayLink)
+    #expect(!view.followingContentGrowth)
+
+    controller.view.addSubview(view)
+    view.layoutIfNeeded()
+    layout.height = 2_200
+    view.contentSize = layout.collectionViewContentSize
+    view.followContentGrowth()
+    #expect(view.hasActiveDisplayLink)
+
+    // Drag start / explicit cancel stops the active display link immediately.
+    view.cancelScrollingToEnd()
+    #expect(!view.hasActiveDisplayLink)
+    #expect(!view.followingContentGrowth)
+}
+
+@MainActor @Test func contentShrinkageDuringGrowthFollowClampsWithoutOvershoot() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let layout = DynamicConversationLayout(height: 1_800)
+    let view = ConversationCollectionView(frame: window.bounds, collectionViewLayout: layout)
+    controller.view.addSubview(view)
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true; view.removeFromSuperview() }
+
+    view.layoutIfNeeded()
+    view.pinToEnd()
+    view.animatesContentGrowth = true
+
+    layout.height = 1_400
+    view.contentSize = layout.collectionViewContentSize
+    view.followContentGrowth()
+    #expect(!view.hasActiveDisplayLink)
+    #expect(abs(view.contentOffset.y - view.endOffset) < 1)
+}
+
 @MainActor private final class InteractingConversationView: ConversationCollectionView {
     var phase: String?
     override var isTracking: Bool { phase == "tracking" }
@@ -144,5 +268,17 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
 
 @MainActor private final class ShortConversationLayout: UICollectionViewLayout {
     override var collectionViewContentSize: CGSize { CGSize(width: 320, height: 200) }
+    override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? { [] }
+}
+
+@MainActor private final class DynamicConversationLayout: UICollectionViewLayout {
+    var height: CGFloat
+    init(height: CGFloat) {
+        self.height = height
+        super.init()
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override var collectionViewContentSize: CGSize { CGSize(width: 320, height: height) }
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? { [] }
 }

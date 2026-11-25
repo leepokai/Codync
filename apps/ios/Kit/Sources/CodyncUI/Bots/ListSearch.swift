@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// A list's search field (the Bots and Threads tabs): shown under the bar only once the header's Search opens it,
+/// A list's search field (the Bots, Threads and Workflows tabs): shown under the bar only once the header's Search opens it,
 /// and gone again with Cancel.
 public struct ListSearch: ViewModifier {
     @Binding var searching: Bool

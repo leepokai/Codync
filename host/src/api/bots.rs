@@ -26,6 +26,17 @@ fn uploads_root(hub: &Hub, bot: &str, task: Option<&str>) -> Result<std::path::P
 }
 
 /// A message's `attachments`: upload ids.
+/// The app's terminal tab `tab` names (`terminal:<id>`), when given: short, of letters, digits, `:`, `-` and `_`.
+fn tab_arg(b: &Value) -> Result<Option<&str>> {
+    let tab = b["tab"].as_str();
+    if tab.is_some_and(|t| {
+        t.is_empty() || t.len() > 64 || !t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_'))
+    }) {
+        bail!("not a terminal tab");
+    }
+    Ok(tab)
+}
+
 fn attachment_ids(b: &Value) -> Vec<&str> {
     b["attachments"].as_array().into_iter().flatten().filter_map(Value::as_str).collect()
 }
@@ -225,13 +236,18 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         // A terminal where the bot's code work is (its default project, else its own folder): the user's own shell there (`termInput` / `termResize` / `termClose` and
-        // `/term/<id>` as for a setup terminal). Opening it again while it runs returns the same one.
+        // `/term/<id>` as for a setup terminal), one per app tab (`tab`, optional). Opening it again while it runs returns the same one.
         "botTerminal" => {
             let bot_id = str_arg(&b, "botId")?;
             let cfg = hub.store.bot(bot_id)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
             let (cols, rows) = super::host::term_size(&b);
             let folder = std::path::Path::new(crate::agent::workspace::work_folder(&cfg));
-            json!({"term": hub.terms.shell(bot_id, folder, cols, rows)?})
+            json!({"term": hub.terms.shell(bot_id, tab_arg(&b)?, folder, cols, rows)?})
+        }
+        // The app closed terminal tab `tab`: its shells end, on every bot it was shown for.
+        "botTerminalClose" => {
+            hub.terms.close_shells(tab_arg(&b)?.context("`tab` is required")?);
+            json!({})
         }
         // The apps name a dev server, and never send a command.
         "devServerStop" => {

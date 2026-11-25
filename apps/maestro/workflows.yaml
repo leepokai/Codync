@@ -33,6 +33,16 @@ onFlowComplete:
     visible: ".*${output.workflow.title}.*"
     timeout: 20000
 - assertNotVisible: "New workflow"
+# Search, in its header, finds workflows by title; Close (Cancel on Android) brings the list back.
+- tapOn: "Search"
+- inputText: "no such workflow"
+- extendedWaitUntil:
+    visible: "No results"
+    timeout: 10000
+- tapOn: "(Close|Cancel)"
+- extendedWaitUntil:
+    visible: ".*${output.workflow.title}.*"
+    timeout: 10000
 - tapOn: ".*${output.workflow.title}.*"
 - extendedWaitUntil:
     visible: "Run history"

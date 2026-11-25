@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The Threads tab, the desktop's Threads list: every task of the bots on the computers the Bots tab shows, in its
 /// order, laid out as its filter menu says. A tap opens the bot's chat (on the Bots tab) at its card, its details on
-/// the task's thread, or its details. Its header, the desktop's: the filter menu, Search (threads by title or bot, flat
+/// the task's thread, or its details. Its header, the Bots tab's: the account, the title over how the computers are
+/// connected, then the desktop's buttons: the filter menu, Search (threads by title or bot, flat
 /// and newest first) and New thread, with no bot where a computer can start one so, else with a bot.
 struct ThreadsTab: View {
     let roster: [RosterItem]
@@ -50,7 +51,9 @@ struct ThreadsTab: View {
             .looseThread($looseThread, store: { accounts.store(for: $0.ref.computerId) })
             .navigationTitle(L10n.tr("Threads"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationSubtitle(accounts.connectionSummary(hidden: hiddenComputers))
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers, manage: { app.showComputers = true }) {
                         group(.folder, "Group by folder", .folder)

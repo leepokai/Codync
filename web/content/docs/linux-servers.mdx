@@ -42,7 +42,7 @@ codync-host status
 
 ## Pair your phone
 
-With the host running, run `codync-host pair` over SSH. It prints a QR code and a short code like `QRTX-4821`. On the iPhone, scan the QR code during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer) or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). Signed in, you can type the short code into the field under the scanner instead.
+With the host running, run `codync-host pair` over SSH. It prints a QR code and a short code like `QRTX-4821`. On the iPhone, scan the QR code during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer) or later from **Manage computers → Pair a computer** (tap the filter button at the top right of the Bots tab). Signed in, you can type the short code into the field under the scanner instead.
 
 A server that isn't in an account asks in the terminal whether to let the phone in and, for a signed-in phone, whether to join its account: check the phone shows the same 6-digit code, then answer within 90 seconds. Without joining, the phone connects only over Wi-Fi or Tailscale. With `codync-host pair --json`, or SSH without a terminal, answer with `codync-host access approve <code>` (add `--phone-only` to stay out of the account). To join later, tap **Add to account** on the signed-in phone and answer the same way. `codync-host cloud` says which account the server is in, and `codync-host cloud --leave` takes the server out of it: every phone paired with it loses access and pairs again with a new code.
 

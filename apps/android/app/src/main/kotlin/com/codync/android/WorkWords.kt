@@ -70,6 +70,17 @@ internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
     }
 }
 
+/** Where a bot stands when the roster is sorted by status (desktop `rosterRank`): needs you, working, waiting work, the rest. */
+internal fun statusRank(bot: Bot): Int = when {
+    bot.status == "needsInput" || bot.work.any { it.status == WorkStatus.NeedsYou } -> 0
+    bot.status == "working" -> 1
+    bot.work.any { it.status == WorkStatus.Working || it.status == WorkStatus.Waiting } -> 2
+    else -> 3
+}
+
+/** [roster] sorted by [statusRank], keeping its order within each rank. */
+internal fun sortedByStatus(roster: List<Bot>): List<Bot> = roster.sortedBy(::statusRank)
+
 /**
  * A bot's line outside the chat (the ongoing notification), in the roster row's order: `Needs you` when a task waits
  * on the user, else the chat's own activity, else how many tasks work and wait; empty when there is none to say (its

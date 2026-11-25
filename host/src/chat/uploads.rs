@@ -72,6 +72,11 @@ pub fn resolve(root: &Path, upload: &str) -> Result<(PathBuf, Value)> {
     Ok((file.path(), json!({"id": upload, "name": name, "size": size})))
 }
 
+/// The chat metadata of each of a message's uploads (`resolve`): each must be there.
+pub fn resolve_all(root: &Path, uploads: &[impl AsRef<str>]) -> Result<Vec<Value>> {
+    uploads.iter().map(|upload| resolve(root, upload.as_ref()).map(|(_, meta)| meta)).collect()
+}
+
 /// Where a sent attachment (`{id, name}` chat metadata) lives, without touching the disk.
 pub fn path_of(root: &Path, meta: &Value) -> Option<PathBuf> {
     let name = clean_name(meta["name"].as_str()?).ok()?;
@@ -88,6 +93,18 @@ pub fn read(root: &Path, upload: &str, offset: u64, len: usize) -> Result<(Vec<u
     let mut data = Vec::with_capacity(len);
     file.take(len as u64).read_to_end(&mut data).context("reading the upload")?;
     Ok((data, size))
+}
+
+/// Copies a sent attachment (`{id, name}` chat metadata) from one root to another, as the same upload there.
+pub fn copy(from: &Path, to: &Path, meta: &Value) -> Result<()> {
+    let (Some(source), Some(target)) = (path_of(from, meta), path_of(to, meta)) else { bail!("invalid upload") };
+    // A thread working in its bot's own folder has the bot's uploads.
+    if source != target {
+        std::fs::create_dir_all(target.parent().context("an upload has a folder")?)
+            .context("creating the upload folder")?;
+        std::fs::copy(&source, &target).context("copying the upload")?;
+    }
+    Ok(())
 }
 
 /// Deletes an upload and its folder.

@@ -28,6 +28,7 @@ import { DetailsPanel } from './DetailsPanel'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { AgentBubble, ChatRow, TimeSeparator } from './ChatRows'
 import { Composer } from './Composer'
+import { PanelBarButtons } from './PanelBarButtons'
 import { PanelPane } from './PanelPane'
 import { RequestRun } from './PermissionCard'
 import { workingSteps } from './trace-turns'
@@ -78,6 +79,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   }, [store, bot.id, task.id, task.status])
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [panelFilled, setPanelFilled] = useState(false)
   const [pane, setPane] = useState<Pane>(NEW_PANE)
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [panelWidth, setPanelWidth] = usePref(prefs.detailsPanelWidth)
@@ -89,6 +91,12 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   const dock = useRef<HTMLDivElement>(null)
   useDockHeight(root, dock)
   const readOnly = readOnlyReason(task)
+  // An artifact opens over the conversation, so the panel stops covering it.
+  const openArtifact = (id: string) => {
+    setArtifactId(id)
+    setPanelFilled(false)
+    if (!panel.beside) setPanelOpen(false)
+  }
 
   const row = (it: ChatItem) => {
     if (it.kind === 'separator') return <TimeSeparator date={it.date} />
@@ -123,7 +131,8 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   )
   return (
     <div className="chat-view thread-chat" data-work-thread={task.id} ref={view}>
-      <div className="conversation" ref={root}>
+      {/* Covered by the panel, it leaves the keyboard's reach too. */}
+      <div className="conversation" ref={root} inert={panelOpen && (panelFilled || !panel.beside)}>
         <div className="top-chrome">
           <div className="top-fade" />
           {bar.title ? createPortal(<>
@@ -135,7 +144,14 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
             </div>
             {status}
           </>, bar.title) : <div className="thread-chat-status">{status}</div>}
-          {bar.end ? createPortal(<IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={() => setPanelOpen((o) => !o)} />, bar.end) : null}
+          {/* The bot's chat's buttons, in its order; a thread without a bot has no template and one pane, so only Maximize. */}
+          {bar.end ? createPortal(<PanelBarButtons
+            open={panelOpen}
+            filled={panelFilled}
+            setFilled={panel.beside ? setPanelFilled : undefined}
+            share={bot.plain ? undefined : () => setTemplateDraft(draftOf(bot))}
+            toggle={() => setPanelOpen((o) => !o)}
+          />, bar.end) : null}
         </div>
         <ChatLog
           items={all}
@@ -186,7 +202,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
         </div>
         {artifactId ? <ArtifactView botId={bot.id} artifactId={artifactId} close={() => setArtifactId(null)} /> : null}
       </div>
-      <ChatSidePanel open={panelOpen} filled={!panel.beside} width={panel.width} max={panel.max} onResize={(w) => setPanelWidth(panel.fit(w))}>
+      <ChatSidePanel open={panelOpen} filled={!panel.beside || panelFilled} width={panel.width} max={panel.max} onResize={(w) => setPanelWidth(panel.fit(w))}>
         {bot.plain ? <div className="details-panel"><div className="details-page"><div className="details-panes">
           <PanelPane
             pane={pane}
@@ -196,7 +212,6 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
             show={(id) => setPane((p) => ({ tabs: p.tabs.includes(id) ? p.tabs : [...p.tabs, id], shown: id }))}
             close={(id) => setPane((p) => { const tabs = p.tabs.filter((t) => t !== id); return { tabs, shown: p.shown === id ? (tabs[0] ?? null) : p.shown } })}
             choose={() => setPane((p) => ({ ...p, shown: null }))}
-            actions={<IconButton title="Close details" icon="xmark" size={26} onClick={() => setPanelOpen(false)} />}
           >
             {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} /> : pane.shown === 'terminal' ? <TerminalTab key={threadId} bot={bot} thread={threadId} /> : null}
           </PanelPane>
@@ -204,11 +219,11 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
           <DetailsPanel
             botId={bot.id}
             routineId={null}
-            docked={false}
+            docked={bar.end !== null}
             thread={task}
-            sideChat={<SideChat botId={bot.id} openArtifact={setArtifactId} />}
+            sideChat={<SideChat botId={bot.id} openArtifact={openArtifact} />}
             editGroup={() => {}}
-            openArtifact={setArtifactId}
+            openArtifact={openArtifact}
             openCard={openChat}
             share={() => setTemplateDraft(draftOf(bot))}
             close={() => setPanelOpen(false)}

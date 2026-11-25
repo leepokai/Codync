@@ -24,6 +24,8 @@ pub(super) fn call(hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
     let now = now_ms();
     all.retain(|i| i.ended_at.is_none_or(|at| tasks::within_past(at, now)));
     all.extend(tasks::past(&hub.store, bot, now));
+    // The user's own threads are theirs: the bot doesn't look back at them (`tasks::seen_by_bot`).
+    all.retain(|i| !i.source.is_user());
     let (by, recalled) = if let Some(id) = text("task") {
         ("task", one(&hub.store, &all, id, args["before"].as_i64().unwrap_or(i64::MAX)))
     } else {

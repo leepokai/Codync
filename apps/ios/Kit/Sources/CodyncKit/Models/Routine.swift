@@ -13,6 +13,8 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var nextRunAt: Int64?
     public var timeoutSeconds: Int?
     public var lastError: String?
+    /// The folder its runs work in, each in a thread of its own; nil = the bot's folder.
+    public var folder: String?
 
     /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
     public static func timeoutText(_ text: String, locale: Locale = .autoupdatingCurrent) -> String {
@@ -126,23 +128,5 @@ extension HostClient {
     public func routineWebhook(botId: String, id: String, rotate: Bool = false) async throws -> RoutineWebhook {
         struct Body: Encodable { let botId: String; let id: String; let rotate: Bool }
         return try await call("routineWebhook", Body(botId: botId, id: id, rotate: rotate))
-    }
-}
-
-extension HostClient {
-    public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
-                            triggers: [RoutineTrigger], timeoutSeconds: Int) async throws -> Routine {
-        struct Body: Encodable {
-            let botId: String
-            let id: String?
-            let name: String
-            let instruction: String
-            let triggers: [RoutineTrigger]
-            let timeoutSeconds: Int
-        }
-        struct Response: Decodable { let routine: Routine }
-        let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
-            instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds))
-        return response.routine
     }
 }

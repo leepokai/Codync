@@ -135,6 +135,15 @@ fn settings_routines_screen_and_devices() {
 }
 
 #[test]
+fn a_saved_routine_reports_whether_it_has_a_folder_of_its_own_kept_or_set() {
+    // A phone leaves `folder` out when it didn't change it: the saved routine tells.
+    let (event, p) = observe(&Caller::Local, "saveRoutine", &json!({"name": "Digest"})).expect("tracked");
+    let folder = |answer: Value| answered(event, p.clone(), &answer).expect("reported")["folder"].clone();
+    assert_eq!(folder(json!({"routine": {"folder": "/work/site"}})), true);
+    assert_eq!(folder(json!({"routine": {"folder": null}})), false);
+}
+
+#[test]
 fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     use crate::market::connector_update::EditFailure;
     let edit = json!({"id": "mine", "command": "/Users/me/bin/server", "env": {"API_KEY": "secret"}});

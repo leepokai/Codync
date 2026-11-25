@@ -77,6 +77,8 @@ data class Bot(
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
+    /** The computer's box of threads started without a bot (desktop "No bot"): hidden, never a row in the roster. */
+    val plain: Boolean = false,
     val unread: Int = 0,
     /** How many of [unread] are cards waiting on the user: the badge turns amber. 0 from an older host. */
     val waiting: Int = 0,

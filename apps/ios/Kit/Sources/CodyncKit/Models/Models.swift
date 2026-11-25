@@ -370,6 +370,10 @@ public struct Hello: Codable, Sendable {
     public var autoOrder: Bool?
     /// This host serves workflows. Missing on older hosts, which is the same as false.
     public var workflows: Bool?
+    /// This host starts a thread the user asks for (`startThread`). Missing on older hosts: it doesn't.
+    public var startThread: Bool?
+    /// A routine can name the folder its runs work in (`folder`). Missing on older hosts: it can't.
+    public var routineFolder: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

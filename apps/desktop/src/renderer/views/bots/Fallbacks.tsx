@@ -166,17 +166,20 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
           />
         </VStack>
         {inUse ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
-        <DropdownMenu
-          className="icon-button fallback-menu"
-          title={tr('More')}
-          items={() => [
-            ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
-            ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
-            { title: 'Remove', icon: 'trash', destructive: true, divider: true, action: remove },
-          ]}
-        >
-          <Icon name="ellipsis" size={14} weight="medium" />
-        </DropdownMenu>
+        {/* Alone, it can only go: its Remove shows as it is, without a menu holding just that. */}
+        {count === 1 ? <IconButton title="Remove" icon="trash" className="fallback-menu" onClick={remove} /> : (
+          <DropdownMenu
+            className="icon-button fallback-menu"
+            title={tr('More')}
+            items={() => [
+              ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
+              ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
+              { title: 'Remove', icon: 'trash', destructive: true, divider: true, action: remove },
+            ]}
+          >
+            <Icon name="ellipsis" size={14} weight="medium" />
+          </DropdownMenu>
+        )}
       </HStack>
       {rest ? <Text size="caption" tone="secondary" className="fallback-rest">{tr(restLine(rest, now))}</Text> : null}
     </VStack>

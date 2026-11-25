@@ -2100,7 +2100,6 @@
   "A follow-up is the bot's own: x cancels it": "Un suivi appartient au bot : x l’annule",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Démarrez un ordinateur cloud sur votre propre compte Boat ou InstaBox, pour que vos bots travaillent même quand votre ordinateur est éteint.",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Connectez un agent à plusieurs comptes ou ajoutez des clés API sous « Profils de connexion » dans sa configuration, puis choisissez celui que chaque bot utilise.",
-  "Picking up from the chat…": "Reprise à partir de la conversation…",
   "Stop this task?": "Arrêter cette tâche ?",
   "What it already changed stays.": "Ce qui a déjà été modifié est conservé.",
   "No work": "Aucun travail",
@@ -2356,7 +2355,7 @@
   "Skipped": "Skipped",
   "Retry": "Retry",
   "Approve": "Approve",
-  "Reject": "Reject",
+  "Reject": "Rejeter",
   "Show output": "Show output",
   "Hide output": "Hide output",
   "Show input": "Afficher l'entrée",
@@ -2480,5 +2479,11 @@
   "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Il ne répond à rien et ne dépense rien tant que vous ne le reprenez pas : les nouveaux messages sont refusés et les exécutions de routines en attente sont annulées.",
   "Context handoff pending": "Transmission du contexte en attente",
   "Context handed off": "Contexte transmis",
-  "Switched": "Changé"
+  "Switched": "Changé",
+  "No threads right now": "Aucun fil pour le moment",
+  "Tasks your bots work on show up here.": "Les tâches sur lesquelles travaillent vos bots s’affichent ici.",
+  "Folder": "Dossier",
+  "Bot's folder": "Dossier du bot",
+  "Use the bot's folder": "Utiliser le dossier du bot",
+  "Each run works here in a thread of its own.": "Chaque exécution travaille ici dans son propre thread."
 }

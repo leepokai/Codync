@@ -409,7 +409,8 @@ pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: 
         Ok(crate::network::Recipient::Here(bot)) => bot,
         _ => to.to_owned(),
     };
-    let alive = |bot: &str| visible_bot(hub, bot).is_ok();
+    // Still there, hidden or not: a hidden bot still runs and takes its replies.
+    let alive = |bot: &str| hub.store.bot(bot).ok().flatten().is_some();
     let waiter = match hub.waiting.answer(reply_to, &session.key, &named, to, alive) {
         Answer::Ends(waiter) => waiter,
         // Sent again after it went through (a retry): delivered already, not a new request.

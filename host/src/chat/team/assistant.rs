@@ -193,6 +193,7 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
                 Some(me) => sessions_here(hub, Some(&me.key)).await?,
                 None => Vec::new(),
             };
+            let sessions: Vec<_> = sessions.into_iter().filter(|s| !super::names_bot(hub, &s.address)).collect();
             let remote = hub.network.directory().await;
             directory::list(hub, &asker.id, args, &remote, &sessions, |bot| asker.reaches(bot))
         }
@@ -229,8 +230,9 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     {
         return Ok(json!({"to": to, "status": "delivered"}));
     }
-    // A bot's exact id names that bot, never a session or an agent elsewhere.
-    let exact_bot = visible_bot(hub, to).is_ok();
+    // A bot's id or address name names that bot, never a session (as for bots, `team::names_bot`);
+    // sessions whose address does are left out of `list_bots`.
+    let exact_bot = super::names_bot(hub, to);
     if let Some(me) = &asker.session
         && !exact_bot
         && let Some(to) = hub.network.sessions.by_address(&hub.store, to)
@@ -244,7 +246,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
         }
         Ok(())
     };
-    let to = match if exact_bot { Recipient::Here(to.to_owned()) } else { hub.network.recipient(to)? } {
+    let to = match hub.network.recipient(to)? {
         Recipient::Here(bot) => bot,
         Recipient::There(address) => {
             // A session answering a letter from another computer.

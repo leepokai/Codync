@@ -379,9 +379,13 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
     local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
     assert_eq!(hook(hub, Codex, "t1").unwrap(), json!({}), "no mail");
     assert_eq!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
-    local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
-        .await
-        .unwrap();
+    let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    assert_eq!(listed["bots"][0]["tier"], "turn", "{listed}");
+    let sent =
+        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
+            .await
+            .unwrap();
+    assert_eq!(sent["tier"], "turn");
     let told = hook(hub, Codex, "t1").unwrap();
     assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "{told}");
     assert!(!told.to_string().contains("did the API"), "a count, never the text");

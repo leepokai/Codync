@@ -71,17 +71,12 @@ internal val Entry.takesOwnWords: Boolean
 /** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
  *  numbered rows, in one tone. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
+    if (entry.isStoredStub) return StoredApproval(entry, hostName)
     val d = entry.data
     val pending = d.text("status") == "pending"
     var expanded by remember { mutableStateOf(false) }
     var chosen by remember { mutableStateOf<String?>(null) }
-    val headline = when (d.text("toolKind")) {
-        "execute" -> "Wants to run a command"
-        "edit", "delete", "move" -> "Wants to change files"
-        "fetch" -> "Wants to access the web"
-        "read", "search" -> "Wants to read files"
-        else -> "Wants to use a tool"
-    }
+    val headline = approvalHeadline(d.text("toolKind"))
     val diffs = (d["diffs"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
     val hasDetail = !d.text("command").isNullOrEmpty() || !d.text("detail").isNullOrEmpty() || diffs.isNotEmpty()
     Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(vertical = 16.dp, horizontal = 8.dp),
@@ -145,6 +140,28 @@ internal val Entry.takesOwnWords: Boolean
             }
         } else Text(outcome(d), Modifier.padding(horizontal = 8.dp), style = Type.caption.medium, color = Palette.secondary)
     }
+}
+
+/**
+ * An approval the window could not keep whole: its row is gone from this phone, so its answers aren't here. It says
+ * that instead of claiming the request expired, which the card would otherwise read from the missing status.
+ */
+@Composable private fun StoredApproval(entry: Entry, hostName: String) {
+    Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent)
+        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(tr(approvalHeadline(entry.data.text("toolKind"))), style = Type.headline, color = Palette.text)
+        Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", ""), style = Type.caption, color = Palette.tertiary)
+        Text(entry.text, style = Type.subheadline, color = Palette.secondary)
+    }
+}
+
+/** What an approval asks for, in Codync's words. */
+private fun approvalHeadline(kind: String?): String = when (kind) {
+    "execute" -> "Wants to run a command"
+    "edit", "delete", "move" -> "Wants to change files"
+    "fetch" -> "Wants to access the web"
+    "read", "search" -> "Wants to read files"
+    else -> "Wants to use a tool"
 }
 
 /** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */

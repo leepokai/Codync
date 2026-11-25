@@ -12,7 +12,6 @@ import com.codync.android.core.PendingSend
 import com.codync.android.core.SendStatus
 import com.codync.android.core.WireJson
 import java.io.File
-import java.util.IdentityHashMap
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -295,48 +294,56 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     private fun pending(db: SQLiteDatabase, order: String = "") =
         rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
 
-    /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows, until the shared preview budget is spent. */
+    /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows, while the shared preview budget has room. */
     private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> {
         val resident = mutableListOf<Entry>()
-        val previews = LinkedHashMap<String, List<KeptRow>>()
-        for (bot in botIds(db)) {
-            if (bot in residency.full) resident += residentEntries(db, bot, residency.limit(bot))
-            else {
-                val rows = previewEntries(db, bot, residency.preview)
-                if (rows.isNotEmpty()) previews[bot] = rows
-            }
+        val chats = botIds(db)
+        for (bot in chats) if (bot in residency.full) resident += residentEntries(db, bot, residency.limit(bot))
+        val previewed = previewOrder(residency.previewPriority, chats.filter { it !in residency.full }).let { order ->
+            previewsWithin(order, AGGREGATE_PREVIEW_BYTES) { bot -> previewEntries(db, bot, residency.preview) }
         }
-        val seen = HashSet<String>()
-        val ordered = mutableListOf<Pair<String, List<Entry>>>()
-        val costs = IdentityHashMap<Entry, Int>()
-        for (rows in previews.values) for (row in rows) costs[row.entry] = row.cost
-        for (id in residency.previewPriority) if (id in previews && seen.add(id)) ordered += id to previews.getValue(id).map { it.entry }
-        for (id in previews.keys) if (seen.add(id)) ordered += id to previews.getValue(id).map { it.entry }
-        return (resident + capPreviews(ordered, AGGREGATE_PREVIEW_BYTES) { costs[it] ?: 0 }).sortedBy { it.seq }
+        return (resident + previewed).sortedBy { it.seq }
     }
 
     /** A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table; the budget grows with the window, up to a fixed ceiling. */
     private fun residentEntries(db: SQLiteDatabase, bot: String, target: Int): List<Entry> {
         val budget = (target * BYTES_PER_SHOWN).coerceIn(RESIDENT_BYTES, RESIDENT_BYTES_MAX)
-        return newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { windowRows(it, target, budget).map { row -> row.entry } }
+        return answerable(db, newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { windowRows(it, target, budget) }).map { it.entry }
     }
 
     /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large. */
     private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<KeptRow> =
-        newestPayloads(db, bot, limit.toLong()) { windowRows(it, limit, PREVIEW_BYTES) }
+        answerable(db, newestPayloads(db, bot, limit.toLong()) { windowRows(it, limit, PREVIEW_BYTES) })
+
+    /**
+     * [rows] with each kept approval read whole: its options and status sit past the head, so a card the computer still
+     * waits on could not be answered from its stub. One row at a time, and the row stays for as long as its card does,
+     * so an approval may take a chat past its window budget by its own size. An approval whose row is gone stays a stub.
+     */
+    private fun answerable(db: SQLiteDatabase, rows: List<KeptRow>): List<KeptRow> = rows.map { row ->
+        if (!row.entry.isApprovalStub) return@map row
+        val payload = storedPayload(row.entry.botId, row.entry.id) ?: return@map row
+        val entry = runCatching { WireJson.decodeFromString<Entry>(payload) }.getOrNull() ?: return@map row
+        KeptRow(entry, payload.length)
+    }
 
     /**
      * [bot]'s newest [limit] stored payloads, newest first, read while the cursor is open.
-     * A payload longer than [PER_MESSAGE_CHARS] comes back as its first [PAYLOAD_HEAD_CHARS] only, with its full length.
+     * A payload longer than [PER_MESSAGE_CHARS] comes back as its first [PAYLOAD_HEAD_CHARS] and last [PAYLOAD_TAIL_CHARS],
+     * with its full length.
      */
     private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<StoredRow>) -> T): T =
         db.rawQuery(
-            "SELECT length(payload), CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN payload ELSE substr(payload, 1, $PAYLOAD_HEAD_CHARS) END FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
+            "SELECT length(payload), " +
+                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN payload ELSE substr(payload, 1, $PAYLOAD_HEAD_CHARS) END, " +
+                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN NULL ELSE substr(payload, -$PAYLOAD_TAIL_CHARS) END " +
+                "FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
             arrayOf(bot),
         ).use { cursor ->
             read(generateSequence {
-                if (!cursor.moveToNext()) null
-                else StoredRow(cursor.getString(1).orEmpty(), cursor.getLong(0))
+                if (!cursor.moveToNext()) return@generateSequence null
+                val chars = cursor.getLong(0)
+                StoredRow(cursor.getString(1).orEmpty(), chars, if (chars > PER_MESSAGE_CHARS) cursor.getString(2).orEmpty() else null)
             })
         }
 

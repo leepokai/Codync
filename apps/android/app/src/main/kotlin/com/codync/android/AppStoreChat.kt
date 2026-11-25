@@ -29,11 +29,28 @@ fun AppStore.openBot(id: String?) {
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
-/** The full text of one stored row. Call off the main thread. Does not change the resident snapshot. */
-internal fun AppStore.storedMessageText(entry: Entry): String? = runCatching {
-    val payload = database?.storedPayload(entry.botId, entry.id) ?: return@runCatching null
-    WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText().takeIf { it.isNotBlank() }
-}.getOrNull()
+/**
+ * The full text of one stored row, for the sheet its stub opens. Call off the main thread. Does not change the
+ * resident snapshot. Throws when the row is gone or can't be read, so the tap says so instead of doing nothing.
+ */
+internal fun AppStore.storedMessageText(entry: Entry): String {
+    val payload = try {
+        database?.storedPayload(entry.botId, entry.id)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        throw IOException("Couldn't open the stored message.", error)
+    } ?: throw IOException("That message is no longer on this phone.")
+    val text = try {
+        WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        throw IOException("Couldn't read the stored message.", error)
+    }
+    if (text.isBlank()) throw IOException("That message has no text on this phone.")
+    return text
+}
 
 /**
  * Starts a call in [botId]'s open chat once this computer is connected (iOS `requestVoiceCall`); the chat takes it

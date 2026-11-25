@@ -11,9 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
@@ -66,7 +65,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,10 +84,19 @@ import kotlinx.coroutines.withContext
 @Composable private fun ChatView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
     val storedScope = rememberCoroutineScope()
     var storedSheetText by remember { mutableStateOf<String?>(null) }
+    var storedRead by remember { mutableStateOf<Job?>(null) }
+    // One read at a time: a second tap takes over from the first, so a slow row can't land after a newer one.
     val openStoredMessage: (Entry) -> Unit = { entry ->
-        storedScope.launch {
-            val text = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
-            if (text != null) storedSheetText = text
+        storedRead?.cancel()
+        storedSheetText = null
+        storedRead = storedScope.launch {
+            try {
+                storedSheetText = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                store.showError(error)
+            }
         }
     }
     CompositionLocalProvider(LocalShowStoredMessage provides openStoredMessage) {
@@ -224,12 +234,40 @@ import kotlinx.coroutines.withContext
 
 /** One stored payload, opened from a stub. The string leaves memory when the sheet closes. */
 @Composable private fun StoredMessageSheet(text: String) {
+    // A very large message is laid out a few thousand characters at a time, not as one block.
+    val ranges = remember(text) { text.storedChunkRanges() }
     Column {
         ModalHeader("Stored message")
-        Box(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            SelectionContainer { Text(text, style = Type.body, color = Palette.text) }
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            items(ranges) { range -> SelectionContainer { Text(text.substring(range), style = Type.body, color = Palette.text) } }
         }
     }
+}
+
+/** Characters of one stored message the sheet lays out together. */
+internal const val STORED_CHUNK_CHARS = 4_000
+
+/**
+ * The ranges of [this] the sheet lays out one at a time: pieces of about [size] characters, each ending at a line break
+ * where one comes in its second half. Only the piece on screen is copied out of the message.
+ */
+internal fun String.storedChunkRanges(size: Int = STORED_CHUNK_CHARS): List<IntRange> {
+    require(size > 0) { "A chunk needs a size." }
+    if (length <= size) return listOf(0 until length)
+    val ranges = mutableListOf<IntRange>()
+    var start = 0
+    while (start < length) {
+        if (length - start <= size) {
+            ranges += start until length
+            break
+        }
+        var end = start + size
+        val lineBreak = lastIndexOf('\n', end - 1)
+        if (lineBreak >= start + size / 2) end = lineBreak + 1
+        ranges += start until end
+        start = end
+    }
+    return ranges
 }
 
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */

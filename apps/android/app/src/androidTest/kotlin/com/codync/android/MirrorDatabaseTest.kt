@@ -258,6 +258,36 @@ class MirrorDatabaseTest {
 
     private fun notedLength(text: String) = text.substringAfter("(", "").substringBefore(" ", "").toLongOrNull() ?: 0L
 
+    @Test fun anOversizedRowKeepsItsTimeSoItStaysWhereItWasWritten() {
+        val filler = "F".repeat(PER_MESSAGE_CHARS + 1)
+        val big = Entry("big", 1, "bot", rev = 1, kind = "user", createdAt = 1_700_000_000_000, updatedAt = 1_700_000_001_000,
+            data = buildJsonObject { put("text", filler) })
+        mirror.receive(listOf(big))
+        val kept = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries.single()
+        assertTrue(kept.isStoredStub)
+        assertEquals(1_700_000_000_000, kept.createdAt)
+        assertEquals(1_700_000_001_000, kept.updatedAt)
+    }
+
+    @Test fun anOversizedApprovalComesBackWholeSoItsAnswersStayOnThePhone() {
+        val filler = "D".repeat(PER_MESSAGE_CHARS + 1)
+        val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
+            put("title", "Edit docs/design/bot-memory.md")
+            put("toolKind", "edit")
+            put("detail", filler)
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+                add(buildJsonObject { put("optionId", "deny"); put("name", "Deny"); put("kind", "reject_once") })
+            })
+        })
+        mirror.receive(listOf(approval))
+        val kept = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries.single()
+        assertFalse("the card answers from its own row, not its head", kept.isStoredStub)
+        assertEquals("pending", kept.status)
+        assertEquals(listOf("allow", "deny"), (kept.data["options"] as JsonArray).map { (it as JsonObject).text("optionId") })
+    }
+
     private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
         data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })
 

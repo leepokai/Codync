@@ -95,18 +95,64 @@ class HistoryPagingTest {
         assertEquals(listOf(4L), newestWindow(sequenceOf(broken, older), 10, Long.MAX_VALUE).map { it.seq })
     }
 
-    @Test fun `capPreviews keeps the priority bot and drops a later one that does not fit`() {
-        val priority = listOf(row(1, "user"), row(2, "user"))
-        val later = listOf(row(3, "user"))
-        assertEquals(listOf(1L, 2L), capPreviews(listOf("p" to priority, "q" to later), 2) { 1 }.map { it.seq })
-        assertTrue(capPreviews(emptyList(), 10) { 1 }.isEmpty())
+    @Test fun `an oversized row keeps its times so it stays where it was written`() {
+        val filler = "F".repeat(PER_MESSAGE_CHARS + 1)
+        val huge = WireJson.encodeToString(row(10, "user").copy(createdAt = 1_700_000_000_000, updatedAt = 1_700_000_001_000,
+            data = buildJsonObject { put("text", filler) }))
+        val kept = newestWindow(sequenceOf(huge), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertTrue(kept.isStoredStub)
+        assertEquals(1_700_000_000_000, kept.createdAt)
+        assertEquals(1_700_000_001_000, kept.updatedAt)
     }
 
-    @Test fun `capPreviews omits a bot entirely and still keeps a later one that fits`() {
-        val tooBig = listOf(row(1, "user"), row(2, "user"))
-        val small = listOf(row(3, "user"))
-        assertTrue(capPreviews(listOf("a" to tooBig), 3) { 2 }.isEmpty())
-        assertEquals(listOf(3L), capPreviews(listOf("a" to tooBig, "b" to small), 3) { 2 }.map { it.seq })
+    @Test fun `a normal row keeps the times it was stored with`() {
+        val kept = newestWindow(sequenceOf(WireJson.encodeToString(row(3, "user").copy(createdAt = 42))), 10, Long.MAX_VALUE).single()
+        assertFalse(kept.isStoredStub)
+        assertEquals(42, kept.createdAt)
+    }
+
+    @Test fun `a stubbed approval is marked so its whole row is read before it is answered`() {
+        val filler = "D".repeat(PER_MESSAGE_CHARS + 1)
+        val approval = WireJson.encodeToString(row(2, "permission").copy(data = buildJsonObject { put("title", "Edit"); put("detail", filler) }))
+        val kept = newestWindow(sequenceOf(approval), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertTrue(kept.isStoredStub)
+        assertTrue(kept.isApprovalStub)
+        assertFalse(row(3, "user").isApprovalStub)
+    }
+
+    @Test fun `a preview that does not fit is dropped whole and a later one still joins`() {
+        val rows = mapOf(
+            "priority" to listOf(KeptRow(row(1, "user"), 1), KeptRow(row(2, "user"), 1)),
+            "later" to listOf(KeptRow(row(3, "user"), 1)),
+        )
+        assertEquals(listOf(1L, 2L), previewsWithin(listOf("priority", "later"), 2) { rows.getValue(it) }.map { it.seq })
+        assertTrue(previewsWithin(emptyList(), 10) { rows.getValue(it) }.isEmpty())
+    }
+
+    @Test fun `an unopened chat whose preview does not fit is left out and a smaller one still joins`() {
+        val rows = mapOf(
+            "tooBig" to listOf(KeptRow(row(1, "user"), 2), KeptRow(row(2, "user"), 2)),
+            "small" to listOf(KeptRow(row(3, "user"), 2)),
+        )
+        assertTrue(previewsWithin(listOf("tooBig"), 3) { rows.getValue(it) }.isEmpty())
+        assertEquals(listOf(3L), previewsWithin(listOf("tooBig", "small"), 3) { rows.getValue(it) }.map { it.seq })
+    }
+
+    @Test fun `a preview the budget refuses is left out of the kept ones`() {
+        val rows = mapOf(
+            "first" to listOf(KeptRow(row(1, "user"), 3)),
+            "second" to listOf(KeptRow(row(2, "user"), 3)),
+        )
+        val asked = mutableListOf<String>()
+        val kept = previewsWithin(listOf("first", "second"), 3) { asked += it; rows.getValue(it) }
+        assertEquals("each chat's rows are read as its turn comes", listOf("first", "second"), asked)
+        assertEquals(listOf(1L), kept.map { it.seq })
+    }
+
+    @Test fun `the chats the reader opened come first in the preview order`() {
+        assertEquals(listOf("c", "a", "b"), previewOrder(listOf("c", "gone"), listOf("a", "b", "c")))
+        assertEquals(listOf("a", "c"), previewOrder(listOf("a", "a", "c"), listOf("a", "c", "a")))
+        assertEquals(listOf("a"), previewOrder(emptyList(), listOf("a")))
     }
 
     @Test fun `a page that failed is asked for again once the row shows anew, never in a loop`() {

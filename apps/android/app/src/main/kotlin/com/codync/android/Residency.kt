@@ -19,6 +19,9 @@ internal const val AGGREGATE_PREVIEW_BYTES = 480_000L
 /** Characters read from the front of an oversized payload. Enough for its id and seq, not its body. */
 internal const val PAYLOAD_HEAD_CHARS = 2_048
 
+/** Characters read from the end of an oversized payload: its times sit after the body. */
+internal const val PAYLOAD_TAIL_CHARS = 128
+
 /**
  * How much of each chat [MirrorDatabase.snapshot] loads. The open chat keeps its
  * newest [window] chat rows ([com.codync.android.core.Entry.isChat]), more while the reader pages back
@@ -54,8 +57,11 @@ data class Residency(
     }
 }
 
-/** One stored payload. [text] is the whole row, or only its first [PAYLOAD_HEAD_CHARS] when [chars] exceeds [PER_MESSAGE_CHARS]. */
-internal class StoredRow(val text: String, val chars: Long)
+/**
+ * One stored payload. [text] is the whole row, or only its first [PAYLOAD_HEAD_CHARS] when [chars] exceeds
+ * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null.
+ */
+internal class StoredRow(val text: String, val chars: Long, val tail: String? = null)
 
 /** A row the window kept, and the characters it counted toward the budget. */
 internal class KeptRow(val entry: Entry, val cost: Int)
@@ -68,7 +74,8 @@ internal class KeptRow(val entry: Entry, val cost: Int)
 internal fun newestWindow(newestFirst: Sequence<String>, target: Int, budget: Long): List<Entry> =
     windowRows(newestFirst.map { payload ->
         val chars = payload.length.toLong()
-        StoredRow(if (chars > PER_MESSAGE_CHARS) payload.take(PAYLOAD_HEAD_CHARS) else payload, chars)
+        if (chars > PER_MESSAGE_CHARS) StoredRow(payload.take(PAYLOAD_HEAD_CHARS), chars, payload.takeLast(PAYLOAD_TAIL_CHARS))
+        else StoredRow(payload, chars)
     }, target, budget).map { it.entry }
 
 /**
@@ -94,7 +101,8 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
         }
         // A row already in the window means a normal row that does not fit is the budget's edge.
         if (decoded.isNotEmpty() && !oversized) break
-        val entry = boundedEntry(row.text.take(PAYLOAD_HEAD_CHARS), row.chars)?.threadNamed() ?: continue
+        val entry = boundedEntry(row.text.take(PAYLOAD_HEAD_CHARS), row.tail ?: row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars)
+            ?.threadNamed() ?: continue
         val cost = entry.text.length
         if (decoded.isNotEmpty() && bytes + cost > budget) break
         decoded += KeptRow(entry, cost)
@@ -106,26 +114,42 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
 }
 
 /**
- * Whole preview bots, in [ordered] order, while their counted cost fits in [budget]. A bot that does not fit is left
- * out entirely. A later bot that does fit is still kept.
+ * The chats to preview, in order: those the reader opened ([priority]) first, then the rest.
  */
-internal fun capPreviews(ordered: List<Pair<String, List<Entry>>>, budget: Long, cost: (Entry) -> Int): List<Entry> {
+internal fun previewOrder(priority: List<String>, chats: List<String>): List<String> {
+    val known = chats.toSet()
+    val ordered = LinkedHashSet<String>(chats.size)
+    for (id in priority) if (id in known) ordered += id
+    ordered += chats
+    return ordered.toList()
+}
+
+/**
+ * Previews for [order]'s chats while their counted cost fits in [budget]. [read] builds one chat's rows when it is
+ * asked for them, and one that does not fit is dropped at once: no preview the budget refused is held with the ones
+ * it kept, so what the previews cost together stays the budget plus one chat's preview.
+ */
+internal fun previewsWithin(order: List<String>, budget: Long, read: (String) -> List<KeptRow>): List<Entry> {
     val kept = mutableListOf<Entry>()
     var spent = 0L
-    for ((_, entries) in ordered) {
-        var botCost = 0L
-        for (entry in entries) botCost += cost(entry).toLong()
-        if (spent + botCost > budget) continue
-        kept += entries
-        spent += botCost
+    for (chat in order) {
+        val rows = read(chat)
+        val cost = rows.sumOf { it.cost.toLong() }
+        if (spent + cost > budget) continue
+        spent += cost
+        for (row in rows) kept += row.entry
     }
     return kept
 }
 
-/** [head] is at most [PAYLOAD_HEAD_CHARS] of a payload. [fullLength] is the stored row, which is not copied. */
-private fun boundedEntry(head: String, fullLength: Long): Entry? {
+/**
+ * [head] is at most [PAYLOAD_HEAD_CHARS] of a payload, [tail] its last [PAYLOAD_TAIL_CHARS] where its times sit.
+ * [fullLength] is the stored row, which is not copied.
+ */
+private fun boundedEntry(head: String, tail: String, fullLength: Long): Entry? {
     val fields = headFields(head)
     val seq = fields["seq"]?.toLongOrNull() ?: return null
+    val times = tailTimes(tail)
     return Entry(
         id = fields["id"].orEmpty(),
         seq = seq,
@@ -137,7 +161,23 @@ private fun boundedEntry(head: String, fullLength: Long): Entry? {
             put("text", storedStubText(fullLength))
             put("storedOnly", true)
         },
+        createdAt = times["createdAt"] ?: 0L,
+        updatedAt = times["updatedAt"] ?: 0L,
     )
+}
+
+/** The times a payload's last [PAYLOAD_TAIL_CHARS] hold, written after its body. Each is taken from its last mention. */
+private fun tailTimes(tail: String): Map<String, Long> {
+    val times = HashMap<String, Long>()
+    for (key in listOf("createdAt", "updatedAt")) {
+        val at = tail.lastIndexOf("\"$key\":")
+        if (at < 0) continue
+        val start = at + key.length + 3
+        var end = start
+        while (end < tail.length && tail[end].isDigit()) end++
+        if (end > start) tail.substring(start, end).toLongOrNull()?.let { times[key] = it }
+    }
+    return times
 }
 
 /** The sentence a resident stub shows. The full payload stays in SQLite. */
@@ -146,6 +186,13 @@ internal fun storedStubText(fullLength: Long) = "Large message kept in storage (
 /** True only for a row this process built instead of decoding. Never written back to SQLite. */
 internal val Entry.isStoredStub: Boolean
     get() = data["storedOnly"]?.jsonPrimitive?.booleanOrNull == true
+
+/**
+ * An approval the chat kept as a stub. Its options and status sit past the head, so the card must read the row whole
+ * (`MirrorDatabase.answerable`) before anything answers it.
+ */
+internal val Entry.isApprovalStub: Boolean
+    get() = isStoredStub && kind == "permission"
 
 /** Text to show for one decoded payload: the message, or a tool row's output. */
 internal fun Entry.storedDisplayText(): String {

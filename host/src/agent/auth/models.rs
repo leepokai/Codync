@@ -145,6 +145,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_finished_lookup_does_not_drop_the_one_that_replaced_it() {
+        use std::future::Future;
+
         let lists = Arc::new(InFlight::default());
         let (release, wait) = tokio::sync::oneshot::channel();
         let old_started = Arc::new(tokio::sync::Notify::new());
@@ -162,13 +164,14 @@ mod tests {
         });
         old_started.notified().await;
         lists.clear("imate");
+        let (release_fresh, hold_fresh) = tokio::sync::oneshot::channel();
         let fetching = Arc::clone(&lists);
         let entered = Arc::clone(&fresh_entered);
         let fresh = tokio::spawn(async move {
             fetching
                 .get("imate", None, async move {
                     entered.notify_one();
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    let _ = hold_fresh.await;
                     Ok(json!({"id": "fresh"}))
                 })
                 .await
@@ -177,16 +180,25 @@ mod tests {
         release.send(()).expect("release");
         assert_eq!(old.await.expect("old task").expect("old list")["id"], "old");
         let started = std::sync::atomic::AtomicUsize::new(0);
-        let again = lists
-            .get("imate", None, async {
-                started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(json!({"id": "again"}))
-            })
-            .await
-            .expect("joined");
-        assert_eq!(again["id"], "fresh");
-        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0, "the replacement lookup was still running");
+        let again = lists.get("imate", None, async {
+            started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(json!({"id": "again"}))
+        });
+        tokio::pin!(again);
+        let waker = std::task::Waker::noop();
+        let mut cx = std::task::Context::from_waker(waker);
+        assert!(
+            matches!(again.as_mut().poll(&mut cx), std::task::Poll::Pending),
+            "the replacement lookup is still open",
+        );
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0, "joining it does not start another fetch");
+        release_fresh.send(()).expect("release fresh");
         assert_eq!(fresh.await.expect("fresh task").expect("fresh list")["id"], "fresh");
+        match again.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(value) => assert_eq!(value.expect("joined")["id"], "fresh"),
+            std::task::Poll::Pending => panic!("the joined lookup should already have its answer"),
+        }
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

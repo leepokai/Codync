@@ -285,7 +285,8 @@ fn first_line(body: &str) -> &str {
     body.split('\n').next().unwrap_or(body)
 }
 
-/// Writes `body`'s first line when it is a JSON-RPC frame. iMate sometimes appends a framework suffix.
+/// Writes `body`'s first line when it is a JSON-RPC frame. iMate sometimes appends a framework
+/// suffix on the next line (`docs/upstream-agents/imate.md`).
 fn relay_http_body(body: &str) {
     let line = first_line(body).trim();
     if line.is_empty() {

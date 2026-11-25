@@ -21,7 +21,7 @@ export function NewBotView({ computer }: { computer: ComputerChoice | null }) {
   const [draft, setDraft] = useState(newDraft)
 
   const create = async () => {
-    const bot = await store.save(fillDefaults(store, { ...draft, name: draft.name.trim() }))
+    const bot = await store.save(fillDefaults({ ...draft, name: draft.name.trim() }))
     store.setSelection(bot.id)
   }
 

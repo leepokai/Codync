@@ -29,6 +29,7 @@ qwen-code 0.26.5.
 | DeepSeek Harness | [deepseek-harness.md](deepseek-harness.md) |
 | Grok Build | [grok-build.md](grok-build.md) |
 | Hermes | [hermes.md](hermes.md) |
+| iMate | [imate.md](imate.md) |
 | Kilo | [kilo.md](kilo.md) |
 | oh-my-pi | [oh-my-pi.md](oh-my-pi.md) |
 | OpenCode | [opencode.md](opencode.md) |

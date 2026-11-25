@@ -29,9 +29,9 @@ export interface Plugins {
 
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
 
-/** A fresh draft: a random look, Claude, its own folder, the agent's Auto mode asking about the rest. */
+/** A fresh draft: a random look, no agent yet, its own folder, Auto mode asking about the rest. */
 export function newDraft(): BotDraft {
-  return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'ask', mode: AUTO_MODE }
+  return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: '', cwd: '', permission: 'ask', mode: AUTO_MODE }
 }
 
 /** A saved bot keeps a name; only a new one may go without (the host names it after its first conversations). */
@@ -41,18 +41,11 @@ export const isValid = (d: BotDraft) => d.name.trim() !== ''
 export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d : { ...d, command: null })
 
 /**
- * Picks an installed agent we know. A registry agent nobody chose is never the default, and neither
- * is iMate: it is reachable without a local CLI. Empty cwd requests the bot's own folder from the host.
- * Connectors and skills stay unset: the host turns on every one it can run.
+ * A new bot names no agent. The host on the computer it is created on picks one, and skips iMate.
+ * Empty cwd requests the bot's own folder. Connectors and skills stay unset: the host turns on every one it can run.
  */
-export function fillDefaults(store: BotStore, draft: BotDraft): BotDraft {
-  const next = { ...draft }
-  const backends = store.hello?.backends ?? []
-  if (backends.find((b) => b.id === next.backend)?.available === true) return next
-  const usable = backends.filter((b) => b.available && b.curated === true && b.id !== 'imate')
-  const first = usable.find((b) => b.id === 'claude') ?? usable[0]
-  if (first) next.backend = first.id
-  return next
+export function fillDefaults(draft: BotDraft): BotDraft {
+  return { ...draft, backend: '' }
 }
 
 /** The connectors and skills installed on the computer (kit `refreshPlugins`). */

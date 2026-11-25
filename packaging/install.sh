@@ -90,14 +90,11 @@ restart_service() {
 
 host_healthy() {
   target=$2
-  if [ -n "${CODYNC_INSTALL_HEALTH_URL:-}" ]; then
-    curl -fsS --max-time 1 "$CODYNC_INSTALL_HEALTH_URL" >/dev/null 2>&1
-  else
-    health=$(curl -fsS --max-time 1 "http://127.0.0.1:$1/health" 2>/dev/null) || return 1
-    # A different host may already own the port. The loopback health response
-    # includes the path of the process that answered.
-    printf '%s' "$health" | grep -Fq "\"binaryPath\":\"$target\""
-  fi
+  health_url=${CODYNC_INSTALL_HEALTH_URL:-http://127.0.0.1:$1/health}
+  health=$(curl -fsS --max-time 1 "$health_url" 2>/dev/null) || return 1
+  # A different host may already own the port. The loopback health response
+  # includes the path of the process that answered.
+  printf '%s' "$health" | grep -Fq "\"binaryPath\":\"$target\""
 }
 
 # The port an existing user unit was configured with.
@@ -271,6 +268,9 @@ install_linux_dependencies() {
 ensure_host_service() {
   unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
   target=$BIN_DIR/codync-host
+  # The host records the physical path it is running from. Resolve a symlinked
+  # BIN_DIR too, so the health response and service belong to this install.
+  target=$(CDPATH= cd -- "$(dirname "$target")" && pwd -P)/$(basename "$target")
   host_port=19222
   if [ -f "$unit" ] || systemctl --user cat codync-host.service >/dev/null 2>&1; then
     # Keep an existing unit and its custom port, but only finish an interrupted
@@ -296,9 +296,11 @@ if [ $OS = macos ] && [ $HOST_ONLY = 0 ]; then
   echo
   echo "Codync is open and sets up the host on its own. Pair your phone from the menu bar: Pair phone…"
 else
+  desktop_app=0
   install_host
   if [ $OS = linux ] && [ $HOST_ONLY = 0 ] && { [ $FORCE_APP = 1 ] || [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; }; then
     install_linux_app
+    desktop_app=1
   fi
   if [ $OS = linux ]; then
     install_linux_dependencies
@@ -307,7 +309,11 @@ else
   echo
   if [ $HOST_ONLY = 0 ]; then
     if [ -z "${service_install_failed:-}${service_owner:-}" ]; then
-      echo "Next: open Codync, then choose Pair phone"
+      if [ "$desktop_app" = 1 ]; then
+        echo "Next: open Codync, then choose Pair phone"
+      else
+        echo "Next: run $BIN_DIR/codync-host pair"
+      fi
     fi
   else
     echo "Next: run $BIN_DIR/codync-host install, then $BIN_DIR/codync-host pair"

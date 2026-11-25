@@ -77,7 +77,8 @@ impl Waiting {
     /// The session `key` answers request `id`, naming a bot `named` (its id) or `to` (as typed):
     /// what the request is, checked and, when it ends here, taken and remembered as answered, all
     /// under one lock, so two copies of an answer (or one during an expiry) can't both miss it.
-    fn answer(&self, id: &str, key: &str, named: &str, to: &str) -> Answer {
+    /// `alive`: whether the bot that asked is still there to take an answer.
+    fn answer(&self, id: &str, key: &str, named: &str, to: &str, alive: impl FnOnce(&str) -> bool) -> Answer {
         let mut all = self.all.locked();
         let Some(w) = all.get(id) else {
             let ended = self.ended.locked();
@@ -93,9 +94,10 @@ impl Waiting {
         if named != asker && to != signed {
             return Answer::WrongBot(asker.clone());
         }
+        let gone = !alive(asker);
         let waiter = all.remove(id).expect("found above, under the same lock");
-        self.mark_ended(key, id, true);
-        Answer::Ends(waiter)
+        self.mark_ended(key, id, !gone);
+        if gone { Answer::Ended(false) } else { Answer::Ends(waiter) }
     }
 
     /// The request `id`, taken when it went to the session `key` (`None`: to another computer).
@@ -407,12 +409,13 @@ pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: 
         Ok(crate::network::Recipient::Here(bot)) => bot,
         _ => to.to_owned(),
     };
-    let waiter = match hub.waiting.answer(reply_to, &session.key, &named, to) {
+    let alive = |bot: &str| visible_bot(hub, bot).is_ok();
+    let waiter = match hub.waiting.answer(reply_to, &session.key, &named, to, alive) {
         Answer::Ends(waiter) => waiter,
         // Sent again after it went through (a retry): delivered already, not a new request.
         Answer::Ended(true) => return Ok(true),
         Answer::Ended(false) => anyhow::bail!(
-            "request {reply_to} waited a week unanswered and was closed: message the bot again without replyTo if it still matters"
+            "request {reply_to} is closed (it waited a week unanswered, or the bot that asked is gone): your answer wasn't delivered"
         ),
         Answer::OtherSession => {
             anyhow::bail!("letter {reply_to} went to another session: only that session can answer it")
@@ -658,12 +661,24 @@ mod waiting_tests {
         assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
         waiting.mark_ended("codex:t", "late", false);
         waiting.mark_ended("codex:t", "done", true);
-        let ended = |key, id| match waiting.answer(id, key, "b", "b") {
+        let ended = |key, id| match waiting.answer(id, key, "b", "b", |_| true) {
             Answer::Ended(answered) => Some(answered),
             _ => None,
         };
         assert_eq!(ended("codex:t", "late"), Some(false), "a late answer is refused");
         assert_eq!(ended("codex:t", "done"), Some(true), "a retry is delivered already");
         assert_eq!(ended("codex:u", "done"), None);
+        // The bot that asked is gone: the answer isn't taken as delivered, now or on a retry.
+        let to_bot = Waiter {
+            to: ReplyTo::Bot { id: "b".into(), entry: "e".into() },
+            quote: String::new(),
+            peer: "x".into(),
+            session: Some(("codex:t".into(), "b".into(), AgentKind::Codex)),
+            hops: 0,
+            until: None,
+        };
+        waiting.insert("gone".into(), to_bot);
+        assert!(matches!(waiting.answer("gone", "codex:t", "b", "b", |_| false), Answer::Ended(false)));
+        assert_eq!(ended("codex:t", "gone"), Some(false));
     }
 }

@@ -229,7 +229,10 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     {
         return Ok(json!({"to": to, "status": "delivered"}));
     }
+    // A bot's exact id names that bot, never a session or an agent elsewhere.
+    let exact_bot = visible_bot(hub, to).is_ok();
     if let Some(me) = &asker.session
+        && !exact_bot
         && let Some(to) = hub.network.sessions.by_address(&hub.store, to)
     {
         return mail_here(hub, me, &to, message, args["replyTo"].as_str());
@@ -241,7 +244,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
         }
         Ok(())
     };
-    let to = match hub.network.recipient(to)? {
+    let to = match if exact_bot { Recipient::Here(to.to_owned()) } else { hub.network.recipient(to)? } {
         Recipient::Here(bot) => bot,
         Recipient::There(address) => {
             // A session answering a letter from another computer.

@@ -10,6 +10,9 @@ struct RootView: View {
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
     @AppStorage("withoutAccount") private var withoutAccount = false
+    /// The Bots tab's computers left out and its section order, which the Threads tab follows.
+    @AppStorage("hiddenComputers") private var hiddenComputers = ""
+    @AppStorage("rosterSectionOrder") private var sectionOrderData = Data()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
@@ -142,8 +145,9 @@ struct RootView: View {
     /// The system tab bar; every tab stays alive (scroll position, open chat) and the bar hides while a
     /// chat is open.
     private var tabs: some View {
-        TabView(selection: Bindable(app).tab) {
-            Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+        let threads = accounts.threadRoster(hidden: hiddenComputers, sectionOrder: RosterSectionOrder(data: sectionOrderData))
+        return TabView(selection: Bindable(app).tab) {
+            Tab(L10n.tr("Bots"), image: "bot", value: AppTab.bots) {
                 NavigationStack(path: path) {
                     BotListView()
                         .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -152,7 +156,13 @@ struct RootView: View {
                         }
                 }
             }
-            Tab(L10n.tr("Workflows"), systemImage: "flowchart", value: AppTab.workflows) {
+            // Counts what is worked on; no badge at zero.
+            Tab(L10n.tr("Threads"), systemImage: "checklist", value: AppTab.threads) {
+                ThreadsTab(roster: threads)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
+            }
+            .badge(ThreadSections.working(in: threads) { $0.bot })
+            Tab(L10n.tr("Workflows"), image: "workflow", value: AppTab.workflows) {
                 WorkflowsTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
@@ -178,6 +188,7 @@ struct RootView: View {
     private var screen: AnalyticsEvent.Screen {
         switch app.tab {
         case .bots: .bots
+        case .threads: .allWork
         case .workflows: .workflows
         case .settings: .settings
         }
@@ -375,12 +386,23 @@ private struct UsageSheet: View {
 /// A centered icon, title and optional line: what a screen shows when it has nothing yet.
 struct EmptyState: View {
     let title: String
-    let systemImage: String
+    /// A symbol, or a resizable asset (the Workflows mark), shown 40 points high.
+    let image: Image
     var message: String?
+
+    init(title: String, systemImage: String, message: String? = nil) {
+        self.init(title: title, image: Image(systemName: systemImage), message: message)
+    }
+
+    init(title: String, image: Image, message: String? = nil) {
+        self.title = title
+        self.image = image
+        self.message = message
+    }
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
+            image.font(.system(size: 40)).aspectRatio(contentMode: .fit).frame(height: 40).foregroundStyle(Palette.tertiary)
             Text(L10n.tr(title)).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
             if let message {
                 Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)

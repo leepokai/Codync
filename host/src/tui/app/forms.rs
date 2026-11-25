@@ -50,8 +50,13 @@ impl App {
             thread_fallbacks: b.thread_fallbacks.clone().unwrap_or_default(),
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             max_threads: b.max_threads,
-            // A bot's own folder keeps all its work in one place: no switch there.
-            thread_worktrees: b.thread_worktrees.filter(|_| b.git_repo && !b.managed_workspace),
+            // A bot's own folder keeps all its work in one place: no switch there. With projects, the mode instead.
+            thread_worktrees: b.thread_worktrees.filter(|_| b.git_repo && !b.managed_workspace && !self.projects),
+            projects: self.projects.then(|| b.projects.clone()),
+            worktree_mode: b.worktree_mode.unwrap_or_default(),
+            shared_folders: (self.projects && self.worktree_fill).then(|| b.shared_folders.clone()),
+            project: 0,
+            shared_name: Editor::default(),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -101,6 +106,15 @@ impl App {
         if matches!(field, Field::Fallbacks | Field::ThreadFallbacks) && self.fallback_key(&mut f, k) {
             return Some(Overlay::Form(f));
         }
+        if field == Field::Projects && f.project_key(k) {
+            return Some(Overlay::Form(f));
+        }
+        if field == Field::SharedFolders
+            && let Some(project) = self.shared_project(&f).map(str::to_owned)
+            && f.shared_key(&project, k)
+        {
+            return Some(Overlay::Form(f));
+        }
         match k.code {
             KeyCode::Esc => return None,
             KeyCode::Char('s') if ctrl => {
@@ -120,8 +134,21 @@ impl App {
                 f.instructions.insert("\n");
             }
             KeyCode::Char('j') if ctrl && field == Field::Instructions => f.instructions.insert("\n"),
-            KeyCode::Backspace | KeyCode::Delete if field == Field::Folder => f.cwd.clear(),
-            KeyCode::Enter if field == Field::Folder => {
+            // On a host with projects the field is the bot's home: copied, never changed.
+            KeyCode::Char('c') if field == Field::Folder && f.projects.is_some() => {
+                if let Some(b) = self.bots.get(&f.bot_id) {
+                    super::copy(&b.cwd);
+                    self.flash("Copied");
+                }
+            }
+            KeyCode::Backspace | KeyCode::Delete if field == Field::Folder && f.projects.is_none() => f.cwd.clear(),
+            // A project is added with the folder picker (recent, browse, or ^L a path).
+            KeyCode::Enter if field == Field::Projects => {
+                self.overlays.push(Overlay::Form(f));
+                self.open_folder("");
+                return None;
+            }
+            KeyCode::Enter if field == Field::Folder && f.projects.is_none() => {
                 let start = f.cwd.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_folder(&start);
@@ -169,6 +196,7 @@ impl App {
                         | Field::ThreadAgent
                         | Field::MaxThreads
                         | Field::ThreadWorktrees
+                        | Field::WorktreeMode
                         | Field::Approvals
                         | Field::Compaction
                         | Field::Notify
@@ -216,6 +244,7 @@ impl App {
                     }
                     Field::ThreadAgent => self.cycle_thread_agent(&mut f, d),
                     Field::ThreadWorktrees => f.thread_worktrees = f.thread_worktrees.map(|on| !on),
+                    Field::WorktreeMode if !space => f.cycle_worktree_mode(d),
                     Field::MaxThreads if !space => {
                         let step = |n: u8| if d < 0 { n.saturating_sub(1) } else { n + 1 };
                         f.max_threads = f.max_threads.map(|n| step(n).clamp(1, MAX_THREADS));
@@ -343,6 +372,17 @@ impl Form {
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
             "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
         });
+        // Only to a host with projects; it never gets a folder or the old switch, which it would read as a project and
+        // as a mode.
+        if let (Some(projects), Some(fields)) = (&self.projects, body.as_object_mut()) {
+            fields.remove("cwd");
+            fields.remove("threadWorktrees");
+            fields.insert("projects".into(), json!(projects));
+            fields.insert("worktreeMode".into(), json!(self.worktree_mode));
+            if let Some(shared) = &self.shared_folders {
+                fields.insert("sharedFolders".into(), json!(shared));
+            }
+        }
         // Only to a host that has Advisor mode.
         if self.advisor {
             body["threadAgent"] = json!(self.thread_agent);

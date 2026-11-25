@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use super::super::app::{ACTIONS, Action, App, Click, FILTERS, GotoItem, Mark};
+use super::super::app::{ACTIONS, Action, App, Click, FILTERS, GotoItem, Mark, palette_label};
 use super::super::l10n::tr;
 use super::super::md::truncate;
 use super::buffer::{centered, frame_box, hline, put, put_line, restyle, rput};
@@ -78,12 +78,14 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
             GotoItem::Action(a) => {
                 let style = action_row(buf, inner, list_top, &mut y, &mut shown_actions, sel);
                 if let Some((label, key, _)) = ACTIONS.iter().find(|x| x.2 == *a) {
-                    let shown = tr(label);
+                    let shown = palette_label(label, *a);
                     put(buf, inner.x + 2, y, inner.width, &shown, style);
                     let language = super::super::l10n::language_title();
                     let hint = match a {
                         Action::Analytics => on_off(app.analytics),
                         Action::AutoOrder => on_off(app.auto_order),
+                        // The computer's choice now.
+                        Action::ThreadKeep(days) if app.thread_keep_days == Some(*days) => "✓",
                         Action::ComputerName => app.host.as_str(),
                         Action::Language => language.as_ref(),
                         Action::ThinkingDetails => on_off(Some(super::super::details::enabled())),

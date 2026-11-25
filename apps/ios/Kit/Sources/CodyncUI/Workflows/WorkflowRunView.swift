@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// One run: each step's status and output, approval in place, retry on a failure.
+/// One run: each step's status and output, and an approval step answered in place.
 struct WorkflowRunView: View {
     let runId: String
 
@@ -18,11 +18,6 @@ struct WorkflowRunView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let run {
                     overview(run)
-                    if run.summary.isOpen {
-                        Button(L10n.tr("Stop")) { Task { await stop(run) } }
-                            .buttonStyle(RunStopStyle())
-                            .disabled(busy || run.status == "stopping" || model.isOffline)
-                    }
                     if let error {
                         Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled)
                     }
@@ -112,13 +107,8 @@ struct WorkflowRunView: View {
                 }
                 .disabled(busy || model.isOffline)
             }
-            if step.status == "failed" {
-                if let message = step.error, !message.isEmpty {
-                    Text(L10n.tr(message)).font(.caption).foregroundStyle(Palette.danger)
-                }
-                Button(L10n.tr("Retry")) { Task { await retry(step) } }
-                    .buttonStyle(.secondary)
-                    .disabled(busy || model.isOffline)
+            if step.status == "failed", let message = step.error, !message.isEmpty {
+                Text(L10n.tr(message)).font(.caption).foregroundStyle(Palette.danger)
             }
             if !step.input.isEmpty {
                 disclosure(L10n.tr(inputOpen ? "Hide input" : "Show input"), open: inputOpen) {
@@ -222,36 +212,12 @@ struct WorkflowRunView: View {
         }
     }
 
-    private func stop(_ run: WorkflowRunDetail) async {
-        guard let client = model.client else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            try await client.stopWorkflowRun(run.id)
-            await reload()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
     private func decide(_ step: WorkflowStep, approved: Bool) async {
         guard let client = model.client else { return }
         busy = true
         defer { busy = false }
         do {
             try await client.decideWorkflowStep(step.id, approved: approved)
-            await reload()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func retry(_ step: WorkflowStep) async {
-        guard let client = model.client else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            _ = try await client.retryWorkflowStep(step.id)
             await reload()
         } catch {
             self.error = error.localizedDescription
@@ -337,26 +303,6 @@ private enum RunTone {
         case "approval": "exclamationmark.circle.fill"
         default: nil
         }
-    }
-}
-
-/// Stop, in the danger color. Light mode fills it; dark mode uses the pale danger ink on a wash, which stays readable.
-private struct RunStopStyle: ButtonStyle {
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let dark = scheme == .dark
-        configuration.label
-            .font(.body.weight(.medium))
-            .foregroundStyle(dark ? Palette.danger : Color.white)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 11)
-            .background(dark ? Palette.danger.opacity(0.18) : Palette.danger, in: Capsule())
-            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
-            .animation(Motion.press, value: configuration.isPressed)
-            .contentShape(Capsule())
     }
 }
 

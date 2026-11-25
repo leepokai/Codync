@@ -50,10 +50,13 @@ textarea.routine-input {
   font-size: var(--text-body);
   font-weight: 400;
 }
-.routine-form {
+/* The scroll box wraps the fieldset: Chromium doesn't scroll a fieldset's own overflow. */
+.routine-form-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+.routine-form {
   border: none;
   margin: 0;
   padding: 0;
@@ -93,6 +96,16 @@ textarea.routine-input {
 }
 .routine-chevron.open {
   transform: rotate(180deg);
+}
+/* A routine's folder: its name, the full path as its tooltip. */
+.routine-folder {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  text-align: start;
 }
 .routine-retry {
   align-self: flex-start;

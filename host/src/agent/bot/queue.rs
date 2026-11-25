@@ -29,6 +29,7 @@ impl Actor {
                 self.queue.retain(|q| !matches!(q, Queued::Watchdog(s) if s.thread() == stuck.thread()));
                 self.enqueue(Queued::Watchdog(stuck), done_tx).await;
             }
+            Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
             Cmd::Send { lane, entry_id, mut text } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
@@ -142,6 +143,9 @@ impl Actor {
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
                 self.switched_by_user(&cfg);
+                if cfg.cwd != self.cfg.cwd && !self.cfg.is_thread() {
+                    self.moved_folder();
+                }
                 self.cfg = cfg;
                 if threshold_changed {
                     self.threshold_changed();
@@ -394,6 +398,18 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::TaskAnswer { .. }) => {
+                    let Some(Queued::TaskAnswer { prompt, hops }) = self.queue.pop_front() else {
+                        unreachable!("front is a thread's answer")
+                    };
+                    self.host_turn = Some(HostTurn::TaskAnswer);
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                        // A task this turn adds carries the chain on, as a report's turn does.
+                        Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
+                        Err(e) => self.start_error(e, done_tx).await,
+                    }
+                    continue;
+                }
                 Some(Queued::Prompt { .. }) => {
                     let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
@@ -521,7 +537,7 @@ impl Actor {
         match ended {
             Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
             Some(HostTurn::TaskReport) => self.reports_over(answered),
-            Some(HostTurn::Opening | HostTurn::Watchdog) | None => {}
+            Some(HostTurn::Opening | HostTurn::Watchdog | HostTurn::TaskAnswer) | None => {}
         }
         ended
     }

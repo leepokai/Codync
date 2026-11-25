@@ -634,6 +634,68 @@ async fn a_command_right_after_the_users_switch_leaves_the_recap_for_the_next_me
     wait_for(&host, &bot, "handed-off line", |e| state(e, "handedOff")).await;
 }
 
+/// The host moves `bot`, which works in a project, to its own folder (`hub::projects::migrate`, at a host start):
+/// its store is set back to before projects, and the host starts again.
+async fn moved_home(host: &mut Host, bot: &str) {
+    let project = host.home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    host.restart(|home| {
+        let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
+        let old = "UPDATE bots SET config = json_set(config, '$.cwd', ?2, '$.projects', json('[]')) WHERE id = ?1";
+        db.execute(old, rusqlite::params![bot, project.to_string_lossy()]).unwrap();
+        db.execute("DELETE FROM kv WHERE k = 'projects.migrated'", []).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_move_to_its_own_folder_carries_the_conversation_once() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    // The agent starts again in its own folder, in a new session: the next message carries the chat.
+    moved_home(&mut host, &bot).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("in another working folder") && !prompt.contains("another agent"), "{prompt}");
+    host.reply(&bot, "Thanks").await;
+    assert!(!last_prompt(&host, &bot, "primary").contains("<handoff>"), "carried once");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(manual), "a move shows no switch line: {history}");
+}
+
+#[tokio::test]
+async fn a_switch_after_a_move_to_its_own_folder_says_so_and_names_the_agent_left() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    moved_home(&mut host, &bot).await;
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    wait_for(&host, &bot, "pending line", manual).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "standin");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("another agent") && !prompt.contains("another working folder"), "{prompt}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| manual(e)).count(), 1, "{history}");
+}
+
+#[tokio::test]
+async fn a_new_session_after_a_move_to_its_own_folder_carries_nothing() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    moved_home(&mut host, &bot).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "Fresh start").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(!prompt.contains("<handoff>") && !prompt.contains("Fix the login tests"), "{prompt}");
+}
+
 async fn relay_bot(host: &Host) -> String {
     let bot =
         json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});

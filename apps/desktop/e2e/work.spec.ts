@@ -380,6 +380,28 @@ test("a routine's next runs wait for the one under way without keeping a free th
   }
 })
 
+test("a thread the user started never gives way: the cut-in ask lists only the bot's own working tasks", async () => {
+  const { browser, page } = await attach()
+  const name = `Work cut-in seat e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name, 1)
+    await api(page, 'startThread', { botId, text: `Mine ${HOLD}` })
+    await addWork(page, botId, 'Long job', HOLD)
+    await addWork(page, botId, 'Urgent job', HOLD)
+    await expect.poll(() => statuses(page, botId!)).toEqual({ [`Mine ${HOLD}`]: 'working', 'Long job': 'working', 'Urgent job': 'waiting' })
+
+    const details = await openDetails(page)
+    await row(details, 'Event box', 'Urgent job').getByRole('button', { name: 'Cut in' }).click()
+    const ask = page.getByRole('alertdialog')
+    await expect(ask.locator('.cut-in-pick')).toHaveText([/Long job/])
+    await ask.getByRole('button', { name: 'Cancel' }).click()
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('the first in line cuts in once the working task to give way is picked', async () => {
   const { browser, page } = await attach()
   const name = `Work cut-in e2e ${Date.now()}`
@@ -660,10 +682,51 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
     await page.keyboard.press('Escape')
     await start.getByRole('textbox').fill('Count the files')
     await start.getByRole('textbox').press('Enter')
-    // The bot's one place is taken (Next job works): the new thread waits for it, picked, its title beside the list.
+    // The bot's one place is taken (Next job works), but a thread the user starts takes none: it runs at once (and,
+    // told nothing that holds it, is done), picked, its thread beside the list.
     await expect(thread('Count the files')).toHaveClass(/selected/)
-    await expect(thread('Count the files')).toHaveAttribute('data-work-status', 'waiting')
-    await expect(page.locator('.empty-detail')).toContainText('Count the files')
+    await expect(thread('Count the files')).toHaveAttribute('data-work-status', 'done')
+    await expect(header).toContainText('Count the files')
+  } finally {
+    await openPage(page, 'Bots').catch(() => {})
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('a new thread starts with a picture: it opens with the file, read from the thread', async () => {
+  const { browser, page } = await attach()
+  const name = `Thread files e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await openPage(page, 'Threads')
+    await page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true }).click()
+    const start = page.locator('.new-thread')
+    const chip = start.locator('.file-chips').getByRole('button', { name: 'Remove shot.png' })
+    // With No bot (where it starts) the box's + is there, as in a chat; a dropped picture waits in it as a chip.
+    await expect(start.getByRole('button', { name: 'Add files', exact: true })).toBeVisible()
+    await start.locator('.composer').evaluate((box, pixel) => {
+      const data = new DataTransfer()
+      data.items.add(new File([Uint8Array.from(atob(pixel), (c) => c.charCodeAt(0))], 'shot.png', { type: 'image/png' }))
+      box.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+    }, PIXEL)
+    await expect(chip).toBeVisible()
+    // Picking a bot after it keeps the picture.
+    await start.locator('.thread-option[title="Choose a bot"]').click()
+    await page.getByRole('menuitemradio', { name, exact: true }).click()
+    await expect(start).toContainText(`New thread with ${name}`)
+    await expect(chip).toBeVisible()
+    await start.getByRole('textbox').fill('Look at the picture')
+    await start.getByRole('textbox').press('Enter')
+    // Sent, the thread opens with the message and its picture.
+    const thread = page.locator('.thread-chat')
+    await expect(thread).toContainText('Look at the picture')
+    await expect(thread.locator('.work-thread-mine .attachment-image-button img')).toBeVisible()
+    // Sent, the picture is gone from the next new thread's box.
+    await page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true }).click()
+    await expect(start.getByRole('button', { name: 'Add files', exact: true })).toBeVisible()
+    await expect(chip).toHaveCount(0)
   } finally {
     await openPage(page, 'Bots').catch(() => {})
     await cleanUp(page, botId)
@@ -829,6 +892,60 @@ test('the bot looks back at a finished task: its status, result and thread steps
     const recalled = page.locator('.transcript .message.agent', { hasText: 'Recalled' })
     await expect(recalled).toContainText('Recalled Quick look: done | Report Quick look:')
     await expect(recalled).toContainText(/\| [1-9]\d* steps/)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("a thread the user starts runs at once past the bot's ceiling, stays out of its work_status, and is theirs to write to and stop", async () => {
+  const { browser, page } = await attach()
+  const name = `Work user thread e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // The bot's one seat is taken by its own task.
+    botId = await openBot(page, name, 1)
+    await addWork(page, botId, 'Busy job', HOLD)
+
+    // A thread started from the Threads page doesn't wait for that seat: it works at once.
+    await openPage(page, 'Threads')
+    await page.locator('aside.sidebar .sidebar-header-action[aria-label="New thread"]').click()
+    const start = page.locator('.new-thread')
+    const chooser = start.locator('.thread-option[title="Choose a bot"]')
+    if (await chooser.isEnabled()) {
+      await chooser.click()
+      await page.getByRole('menuitemradio', { name, exact: true }).click()
+    }
+    await expect(start).toContainText(`New thread with ${name}`)
+    await start.getByRole('textbox').fill(`Mine ${HOLD}`)
+    await start.getByRole('textbox').press('Enter')
+    await expect.poll(() => statuses(page, botId!)).toEqual({ 'Busy job': 'working', [`Mine ${HOLD}`]: 'working' })
+
+    // The user still writes to it and stops it, from its page.
+    const thread = page.locator('main')
+    const box = thread.getByRole('textbox', { name: 'Message this thread' })
+    await box.fill('also check the tests')
+    await box.press('Enter')
+    await expect(thread.locator('.work-thread-mine', { hasText: 'also check the tests' })).toBeVisible()
+
+    // The bot's own work_status lists its task, not the user's thread.
+    await api(page, 'send', { botId, text: 'STATUS' })
+    await openPage(page, 'Bots')
+    await page.locator('.roster-row', { hasText: name }).click()
+    const chat = page.locator('.transcript:not(.thread-chat .transcript)')
+    await expect(chat).toContainText('Status:')
+    const said = (await chat.locator('.chat-row', { hasText: 'Status:' }).last().innerText())
+    expect(said).toContain('Busy job')
+    expect(said).not.toContain('Mine')
+
+    await openPage(page, 'Threads')
+    await page.locator('aside.sidebar .thread-row', { hasText: `Mine ${HOLD}` }).first().click()
+    await box.fill('')
+    await thread.getByRole('button', { name: 'Stop', exact: true }).click()
+    const ask = page.getByRole('alertdialog')
+    if (await ask.isVisible().catch(() => false)) await ask.getByRole('button', { name: 'Stop' }).click()
+    await expect.poll(async () => (await statuses(page, botId!))[`Mine ${HOLD}`]).toBe('stopped')
+    expect((await statuses(page, botId!))['Busy job']).toBe('working')
   } finally {
     await cleanUp(page, botId)
     await browser.close()

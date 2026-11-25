@@ -107,8 +107,12 @@ impl Inner {
         let name = |id: &EndpointId| roster.as_ref().map_or_else(|| "local".into(), |r| r.name(id));
         // This computer's rules, for letters from the others that don't answer one of its own.
         let answers = self.answers(peer, &envelope);
+        let known = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
         let access = if peer == self.me() {
             Access::Allow
+        } else if matches!(known, Some(Reach::Mailbox { .. })) && !answers {
+            // A session's mailbox is open only to the senders a rule names it for.
+            rules::mailbox_access(&locked(&self.rules), &name(&peer), &envelope.from, &envelope.to)
         } else {
             let default = *locked(&self.default_access);
             rules::access(&locked(&self.rules), default, &name(&peer), &envelope.from, &envelope.to)
@@ -121,8 +125,7 @@ impl Inner {
             Access::Deny => Access::Ask,
             access => access,
         };
-        let reach = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
-        let reach = match reach {
+        let reach = match known {
             Some(reach) => reach,
             // An answer to an agent that has since been renamed, gone or kept off the network: the
             // app knows its request by id and still takes it. Only a real answer: one this
@@ -131,8 +134,10 @@ impl Inner {
             None => return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to)),
         };
         // Only the app can hold an agent to a ceiling: a session the network knocks on acts as it likes.
-        // An answer too: it is text from that computer like a request.
-        if access.is_ceiling() && reach != Reach::App {
+        // An answer too: it is text from that computer like a request. An answer the app keeps for a
+        // session that asked (its mailbox) is only read, like an answer to the app's own agents.
+        let held_by_app = reach == Reach::App || (answers && reach.by_app());
+        if access.is_ceiling() && !held_by_app {
             return refuse(format!(
                 "{} can't be held to asking its user, so it doesn't take messages from {}@{}",
                 envelope.to,
@@ -170,7 +175,7 @@ impl Inner {
     }
 
     async fn hand_over(&self, reach: &Reach, message: Message) -> Result<()> {
-        if *reach == Reach::App {
+        if reach.by_app() {
             return self.inbox.try_send(message).map_err(|_| anyhow!("too many unread messages; try again later"));
         }
         if !message.wake {
@@ -256,5 +261,74 @@ mod tests {
         node.shutdown().await;
         std::fs::remove_dir_all(dir).expect("remove isolated state");
         assert_eq!(delivered_hops, Some(3), "an immediately woken reader must retain the reply chain");
+    }
+
+    #[tokio::test]
+    async fn a_mailbox_takes_letters_only_where_a_rule_allows_them() {
+        use crate::rules::Rule;
+        use crate::wire::{Agent, AgentKind};
+        let root = std::env::temp_dir().join(format!("codync-network-mailbox-{}", wire::random_hex(8)));
+        let (desk, mut inbox) = Node::start(&root.join("desk"), &Connector::Private).await.expect("start desk");
+        desk.create("desk").expect("create");
+        // A host's default: letters come in under a ceiling, which a session can't be held to.
+        desk.set_default_access(Access::Auto);
+        let session = Agent {
+            id: "api-claude".into(),
+            name: "Fix login".into(),
+            about: String::new(),
+            kind: AgentKind::ClaudeCode,
+        };
+        desk.set_agents([(session, Reach::Mailbox { session: "claude-code:s1".into() })]);
+        let (laptop, _) = Node::start(&root.join("laptop"), &Connector::Private).await.expect("start laptop");
+        laptop.set_agents([agent("lead")]);
+        laptop.join(&desk.invite().expect("invite"), "laptop").await.expect("join");
+        laptop.peers().await.expect("hear desk");
+        let to = laptop.resolve("api-claude@desk").expect("offered");
+        let refused = laptop.send(Letter::new("lead", to.clone(), "hi")).await.expect_err("under a ceiling");
+        // No rule names it: the default (a ceiling, or anything else) never opens a mailbox.
+        assert!(format!("{refused:#}").contains("doesn't take messages"), "{refused:#}");
+        desk.set_rules(vec![Rule::new(Access::Allow, "lead@laptop", "api-claude").expect("a rule")]).expect("rules");
+        assert_eq!(laptop.send(Letter::new("lead", to, "hi again")).await.expect("allowed"), Sent::Delivered);
+        let taken = inbox.recv().await.expect("the app takes it");
+        assert_eq!((taken.to.as_str(), taken.body.as_str()), ("api-claude", "hi again"));
+        for node in [&desk, &laptop] {
+            node.shutdown().await;
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn a_mailbox_takes_the_answer_to_its_own_request_under_a_ceiling() {
+        use crate::wire::{Agent, AgentKind};
+        let root = std::env::temp_dir().join(format!("codync-network-answer-{}", wire::random_hex(8)));
+        let (desk, mut inbox) = Node::start(&root.join("desk"), &Connector::Private).await.expect("start desk");
+        desk.create("desk").expect("create");
+        desk.set_default_access(Access::Auto);
+        let session = Agent {
+            id: "api-claude".into(),
+            name: "api-claude".into(),
+            about: String::new(),
+            kind: AgentKind::ClaudeCode,
+        };
+        desk.set_agents([(session, Reach::Mailbox { session: "claude-code:s1".into() })]);
+        let (laptop, mut laptop_inbox) =
+            Node::start(&root.join("laptop"), &Connector::Private).await.expect("start laptop");
+        laptop.set_agents([agent("lead")]);
+        laptop.join(&desk.invite().expect("invite"), "laptop").await.expect("join");
+        laptop.peers().await.expect("hear desk");
+        desk.peers().await.expect("hear laptop");
+        let lead = desk.resolve("lead@laptop").expect("offered");
+        let question = Letter::new("api-claude", lead, "status?");
+        let id = question.id.clone();
+        assert_eq!(desk.send(question).await.expect("asked"), Sent::Delivered);
+        laptop_inbox.recv().await.expect("the lead's app takes it");
+        let to = laptop.resolve("api-claude@desk").expect("offered");
+        let answer = Letter::new("lead", to, "all green").reply_to(id);
+        assert_eq!(laptop.send(answer).await.expect("an answer it asked for"), Sent::Delivered);
+        assert_eq!(inbox.recv().await.expect("kept for the session").body, "all green");
+        for node in [&desk, &laptop] {
+            node.shutdown().await;
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 }

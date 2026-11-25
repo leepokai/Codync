@@ -422,7 +422,7 @@ async fn a_session_the_network_knocks_on_is_offered_as_its_kind() {
     assert_eq!(peers[1].agents[0].kind, AgentKind::ClaudeCode, "its reach says what it is");
     // A computer from before kinds says nothing, and a kind this version doesn't know reads as other.
     let old: Agent = serde_json::from_str(r#"{"id": "x", "name": "x"}"#).unwrap();
-    let newer: Agent = serde_json::from_str(r#"{"id": "x", "name": "x", "kind": "gemini"}"#).unwrap();
+    let newer: Agent = serde_json::from_str(r#"{"id": "x", "name": "x", "kind": "someday"}"#).unwrap();
     assert_eq!((old.kind, newer.kind), (AgentKind::Other, AgentKind::Other));
     for dir in [desk_dir, laptop_dir] {
         let _ = std::fs::remove_dir_all(dir);

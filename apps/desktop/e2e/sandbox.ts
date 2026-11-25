@@ -98,6 +98,22 @@ export async function setPref(page: Page, key: string, value: unknown) {
   }, [key, JSON.stringify(value)] as const)
 }
 
+/** Sets `prefs` for the test; the function it returns puts back what the sandbox had. */
+export async function withPrefs(page: Page, prefs: Record<string, unknown>) {
+  const keys = Object.keys(prefs)
+  const saved = await page.evaluate((keys) => keys.map((key) => localStorage.getItem(key)), keys)
+  for (const key of keys) await setPref(page, key, prefs[key])
+  return async () => {
+    for (const [i, key] of keys.entries()) {
+      await page.evaluate(([key, value]) => {
+        if (value === null) localStorage.removeItem(key)
+        else localStorage.setItem(key, value)
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue: value }))
+      }, [key, saved[i] ?? null] as const).catch(() => {})
+    }
+  }
+}
+
 /** A bot on the scripted agent, which waits up to `seconds` for a steered message. */
 export async function steerBot(page: Page, name: string, seconds: number) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
@@ -106,10 +122,11 @@ export async function steerBot(page: Page, name: string, seconds: number) {
   return bot
 }
 
-/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
-export async function echoBot(page: Page, name: string, cwd?: string) {
-  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd, connectors: [], skills: [], notify: false,
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, with `project` as its
+ * default project when given. Its chat runs in the bot's own folder (`cwd`), where the agent logs its calls to calls.jsonl. */
+export async function echoBot(page: Page, name: string, project?: string) {
+  const { bot } = await api<{ bot: { id: string; cwd: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd: project, connectors: [], skills: [], notify: false,
   })
   return bot
 }
@@ -122,6 +139,12 @@ export async function workBot(page: Page, name: string, backend = 'custom') {
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot
+}
+
+/** Has a `workBot` add the task `title`, whose thread works until it is stopped (`stopWork`), and waits for it. */
+export async function holdTask(page: Page, botId: string, title: string) {
+  await api(page, 'send', { botId, text: `ADD ${title}|HOLD:e2e` })
+  await expect.poll(async () => (await api<{ bot: { work: { title: string }[] } }>(page, 'updateBot', { id: botId })).bot.work.some((t) => t.title === title)).toBe(true)
 }
 
 type LoginProfile = { id: string; kind: 'account' | 'apiKey'; name: string | null; signedIn: boolean; vars: string[] }

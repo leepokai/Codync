@@ -13,8 +13,9 @@
 //!   notice, waits for its next turn. `reply_to` links letters and `meta` carries an app's own
 //!   structure, so requests and replies, rooms or task boards are built on letters, and the
 //!   network never reads them.
-//! - **Reach** ([`Reach`]): how a letter gets into the agent. The app delivers to its own agents;
-//!   the network knocks on Claude Code sessions and Codex threads itself.
+//! - **Reach** ([`Reach`]): how a letter gets into the agent. The app delivers to its own agents
+//!   and keeps mail for sessions that read it themselves; the network knocks on Claude Code
+//!   sessions and Codex threads itself. [`sessions`] says which session an MCP server serves.
 //! - **Budgets** ([`guard`]): nothing reaches an agent unless an agent sends a letter or someone
 //!   asks who is around, and the receiving computer refuses long chains, bursts and repeats.
 //! - **Rules** ([`rules`]): the receiving computer decides which agents elsewhere may write to
@@ -25,6 +26,7 @@ mod node;
 mod reach;
 mod roster;
 pub mod rules;
+pub mod sessions;
 mod types;
 mod wire;
 

@@ -3,13 +3,14 @@ import { useListFlip } from '../lib/slide'
 import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
-import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
+import { detailMinWidth, frameInset, railWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
 import { isLive, threadSections } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
 import { AnchoredMenu, type MenuItem } from '../components/Menu'
+import { Icon } from '../components/Icon'
 import { HStack, Spacer } from '../components/Stack'
 import { noVisits, step, visit } from '../lib/visits'
 import { NO_BAR_SLOTS, WindowBar, WindowBarSlots } from './WindowBar'
@@ -22,8 +23,9 @@ import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
+import { withOlderThreads } from '../store/older-threads'
 import { BotRoster } from './BotRoster'
-import { NavRail, OpenExtensions, type AppPage } from './NavRail'
+import { NavRail, OpenExtensions, pageIcon, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
 import { botItems, threadItems, workflowItems } from './search-items'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
@@ -270,7 +272,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - detailMinWidth)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - frameInset - detailMinWidth)))
     }
     // A window opened narrow starts with a list that fits it.
     onResize()
@@ -291,8 +293,8 @@ function ChatSplitView() {
   const visibleRoster = roster.items
   // The Model Manager ignores the sidebar's computer filter: it always sees every computer's bots.
   const fullRoster = useComputerRoster(app, new Set(app.computers.map((c) => c.id)))
-  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
-  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
+  const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
   const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
@@ -450,7 +452,7 @@ function ChatSplitView() {
 
   // The list's edge drags its width; dragged most of the way shut, it folds away.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - railWidth - detailMinWidth)
+  const sidebarMax = Math.min(420, window.innerWidth - railWidth - frameInset - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
     const hide = proposed < 120
     if (hide !== listHidden) setListHidden(hide)
@@ -568,12 +570,14 @@ function ChatSplitView() {
         setEnd={setBarEnd}
       />
       <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={!!workflowStore} />
+      <div className="page-frame">
       {list ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
             {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
             <div className="sidebar-content" style={{ width: sidebarWidth }}>
               <div className="sidebar-header drag">
+                <Icon name={pageIcon(page)} size={18} weight="semibold" className="sidebar-title crowded" />
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
@@ -667,6 +671,7 @@ function ChatSplitView() {
           )}
         </main>
       )}
+      </div>
 
       {context ? (
         <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContext(null)}>

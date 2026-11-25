@@ -85,10 +85,6 @@ class AppStore internal constructor(
     @Volatile internal var published: Residency? = null
     /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */
     private val refreshes = Mutex()
-    /** Workflow ids whose graph the phone has edited and not saved. Events must not replace those graphs. */
-    internal val dirtyWorkflows = mutableSetOf<String>()
-    /** The unsaved graph, so Run can finish the save before it starts. */
-    internal var heldWorkflow: HeldWorkflow? = null
 
     /** How much of each chat the next snapshot loads. Never every row: the phone's heap is fixed. */
     internal fun residency(): Residency = Residency(residents.full(state.value.selectedBot), windows = windows.toMap())
@@ -141,8 +137,6 @@ class AppStore internal constructor(
         pendingRemovals.clear()
         pluginsRefreshAgain = false
         rewoundFor = null
-        dirtyWorkflows.clear()
-        heldWorkflow = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
         published = null; windows.clear(); floors.clear()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
@@ -202,6 +196,10 @@ class AppStore internal constructor(
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mirrorBots = snapshot.bots
         mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
+            // An ended thread that leaves its bot's work stays among the older threads listed.
+            olderThreads = current.olderThreads?.let { older ->
+                snapshot.bots.fold(older) { o, bot -> o.keep(bot.id, current.bots.firstOrNull { it.id == bot.id }?.work.orEmpty(), bot.work) }
+            },
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
             historyEnd = if (stranded) current.historyEnd - open!! else current.historyEnd,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }

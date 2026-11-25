@@ -1,19 +1,18 @@
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { api, attach, echoBot } from './sandbox.ts'
 
 test("New session in a bot's menu starts its agent on a fresh session once confirmed, not when cancelled; the chat stays; a group has none", async () => {
   const { browser, page } = await attach()
   const name = `New session e2e ${Date.now()}`
-  const cwd = mkdtempSync(join(tmpdir(), 'codync-new-session-'))
-  // The scripted agent logs each session it opens to calls.jsonl in the bot's folder.
+  let cwd = ''
+  // The scripted agent logs each session it opens to calls.jsonl in the bot's own folder.
   const opened = () => readFileSync(join(cwd, 'calls.jsonl'), 'utf8').split('\n').filter((l) => l.includes('"session/new"')).length
   let botId: string | undefined
   let groupId: string | undefined
   try {
-    botId = (await echoBot(page, name, cwd)).id
+    ;({ id: botId, cwd } = await echoBot(page, name))
     // A session's first answer repeats the bot's instructions, so the messages are words those never hold.
     await api(page, 'send', { botId, text: 'ns-one' })
     const row = page.locator('.roster-row', { hasText: name })
@@ -49,7 +48,6 @@ test("New session in a bot's menu starts its agent on a fresh session once confi
   } finally {
     if (groupId) await api(page, 'deleteBot', { botId: groupId }).catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
-    rmSync(cwd, { recursive: true, force: true })
     await browser.close()
   }
 })

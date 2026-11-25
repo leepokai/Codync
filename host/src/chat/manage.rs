@@ -8,7 +8,7 @@ use crate::agent::bot::Cmd;
 use crate::chat::naming::MAX_NAME_CHARS;
 use crate::chat::profile::{MAX_INSTRUCTIONS_CHARS, checked_instructions, checked_name};
 use crate::hub::Hub;
-use crate::routines::Trigger;
+use crate::routines::{Folder, Trigger};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
@@ -46,7 +46,7 @@ const FIELDS: [(&str, &str); 13] = [
     ("model", "Model"),
     ("modelOptions", "Model settings"),
     ("fallbacks", "Fallbacks"),
-    ("cwd", "Folder"),
+    ("cwd", "Project"),
     ("permission", "Approvals"),
     ("mode", "Mode"),
     ("manageTeam", "Manage the team"),
@@ -103,7 +103,7 @@ pub fn tools() -> Value {
     });
     let mut create = setup.clone();
     create["agent"] = json!({"type": "string", "description": "The agent that runs it (claude, codex…), as list_team shows; leave out for this computer's default."});
-    create["folder"] = json!({"type": "string", "description": "Absolute path of a project folder it starts in; leave out for a workspace of its own."});
+    create["folder"] = json!({"type": "string", "description": "Absolute path of a project folder: its default project, where its tasks work (the bot itself lives in a folder of its own). Leave out for none."});
     setup["botId"] = json!({"type": "string", "description": "The bot's id from list_team."});
     setup["hidden"] = json!({"type": "boolean", "description": "Hide it from the user's bot list, or show it again."});
     json!([
@@ -293,11 +293,10 @@ fn agent_bot(hub: &Hub, id: &str) -> Result<BotConfig> {
 
 /// A bot's setup and routines, as `list_team` and the changes return it.
 fn setup(hub: &Hub, cfg: &BotConfig) -> Value {
-    let folder = (!crate::agent::workspace::is_managed(cfg)).then_some(&cfg.cwd);
     json!({
         "id": cfg.id, "name": cfg.name, "instructions": cfg.description, "agent": cfg.backend, "model": cfg.model,
         "modelOptions": cfg.model_options, "fallbacks": crate::chat::fallbacks::wire(&cfg.fallbacks), "avatarColor": cfg.avatar_color, "avatarShape": cfg.avatar_shape,
-        "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
+        "projects": cfg.projects, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
         "routines": hub.routines.list(&cfg.id)["routines"],
     })
 }
@@ -394,7 +393,12 @@ fn routines(hub: &Hub, bot: &str, args: &Value) -> Result<(Vec<Value>, Vec<Strin
         .map(|r| {
             let routine = hub.routines.check(bot, r)?;
             let when: Vec<String> = routine.triggers.iter().map(Trigger::description).collect();
-            Ok(format!("• {} ({}): {}", routine.name, when.join("; "), routine.instruction))
+            let folder = match &routine.folder {
+                Folder::Keep => String::new(),
+                Folder::Bots => " in the bot's folder".to_owned(),
+                Folder::Path(path) => format!(" in {path}"),
+            };
+            Ok(format!("• {} ({}){folder}: {}", routine.name, when.join("; "), routine.instruction))
         })
         .collect::<Result<_>>()?;
     Ok((list, lines))

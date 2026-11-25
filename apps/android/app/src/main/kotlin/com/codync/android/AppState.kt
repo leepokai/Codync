@@ -11,7 +11,7 @@ import kotlinx.serialization.json.longOrNull
 enum class LinkPage { Bots, Usage, Computers, Extensions, Workflows }
 
 /** The workflow stack item between the roster and a chat. A null id is the list. */
-data class WorkflowRoute(val id: String? = null, val runId: String? = null, val nodeId: String? = null, val stepId: String? = null)
+data class WorkflowRoute(val id: String? = null, val runId: String? = null)
 
 /**
  * The active account as the UI renders it (iOS `AccountStore`): its computers, each with its own
@@ -130,6 +130,8 @@ data class AppState(
     val threadEntries: Map<String, List<Entry>> = emptyMap(),
     /** The user's messages to a thread on their way or refused, by task id, until the thread's transcript has them; in memory only, like the transcript. */
     val threadSends: Map<String, List<PendingSend>> = emptyMap(),
+    /** The computer's ended threads past the day its bots' `work` keeps, as far as the Threads list has read them; null until it does. */
+    val olderThreads: OlderThreads? = null,
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
@@ -153,7 +155,21 @@ data class AppState(
     /** The computer is online and its hello offered workflows. */
     internal val offersWorkflows: Boolean
         get() = workflowsSupported && hello?.get("workflows")?.jsonPrimitive?.booleanOrNull == true
+    /** The user can start a thread with a bot here (`startThread`). */
+    internal val startsThreads: Boolean get() = hello?.get("startThread")?.jsonPrimitive?.booleanOrNull == true
+    /** A thread may start here without a bot, on an agent it names (`threadsWithoutBot`). */
+    internal val startsThreadsWithoutBot: Boolean get() = startsThreads && hello?.get("threadsWithoutBot")?.jsonPrimitive?.booleanOrNull == true
+    /** A routine here can name the folder its runs work in (`routineFolder`). */
+    internal val routineFolders: Boolean get() = hello?.get("routineFolder")?.jsonPrimitive?.booleanOrNull == true
+    /** Bots have projects and a worktree mode, and live in their own folder (`hello.projects`). */
+    internal val botProjects: Boolean get() = hello?.get("projects")?.jsonPrimitive?.booleanOrNull == true
+    /** A bot's git projects can list shared folders, linked into each new worktree (`hello.worktreeFill`). */
+    internal val worktreeFill: Boolean get() = hello?.get("worktreeFill")?.jsonPrimitive?.booleanOrNull == true
+    /** The computer's name, as its hello gives it. */
+    internal val computerName: String get() = hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer"
     /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */
+    /** A thread without a bot gets a folder of its own when none is sent (`hello.threadFolders`). */
+    internal val threadFolders: Boolean get() = hello?.get("threadFolders")?.jsonPrimitive?.booleanOrNull == true
     internal val home: String get() = hello?.get("home")?.jsonPrimitive?.contentOrNull.orEmpty()
 
     /** Connection alone cannot make a cached roster current before event catch-up. */

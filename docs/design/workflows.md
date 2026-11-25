@@ -2,7 +2,7 @@
 
 A workflow on one computer is both a canvas graph and a script. This file is the spec of what the host and the four clients do. The canvas follows the same kind of workflow editor as OpenBot. The script follows the same idea as Claude Code dynamic workflows: a literal `meta`, an `agent()` call whose text can be checked against a schema, and a replay that returns cached calls. A run is one workflow task that coordinates those agent turns. It is not a second runtime, and Codync does not embed another product's session graph.
 
-A workflow belongs to **one computer**. The graph is triggers, prompts, agents, conditions, approvals and outputs, joined by typed edges. The script is a restricted JavaScript program the host stores and runs. The desktop app (one codebase for macOS, Linux and Windows) draws the graph and can open the script. The iPhone and Android apps edit an outline when the graph is a list, and edit settings only when it is not. The terminal uses that same list. Saving, validation, schedules, webhooks and execution stay in the host.
+A workflow belongs to **one computer**. The graph is triggers, prompts, agents, conditions, approvals and outputs, joined by typed edges. The script is a restricted JavaScript program the host stores and runs. The desktop app (one codebase for macOS, Linux and Windows) draws the graph and can open the script. The terminal edits an outline when the graph is a list, and edits settings only when it is not. The iPhone and Android apps only view workflows and answer approvals. Saving, validation, schedules, webhooks and execution stay in the host.
 
 Routines stay as they are. A routine is one instruction plus triggers on one bot (`host/src/routines/`, `docs/features/routines.md`). A workflow can call more than one bot on this computer in one run. The two are not merged, and nothing is migrated between them.
 
@@ -12,9 +12,9 @@ The behavior page is [docs/features/workflows.md](../features/workflows.md).
 
 On the desktop, a computer's workflow opens onto a dotted canvas. An empty canvas offers a trigger. After nodes are added, a trigger, an agent and an output sit left to right and are joined by wires. The trigger card chooses manual, schedule or webhook. The agent card chooses one bot on this computer; the task is on the card; the model name is that bot's current model and is read-only. The output card targets a notification or a chat. The bottom bar selects, pans, draws, and adds a note, a shape, text or a node. Zoom runs from 25% to 200%, with fit and a minimap. The minimap stays collapsed until its button is pressed. The zoom bar ends in Collapse, which folds both bottom bars into one Tools button (kept on the device); on a canvas narrowed by the chat the tools stand over the zoom, and History and Run show only their icons. Opening a workflow fits the canvas once. History lists the latest result and each run (number, time, duration). A workflow opens with the pan tool, so a drag looks around; V picks select. The window's list beside the canvas is the Threads list's (`WorkflowList.tsx`): each computer the computer filter shows, under its name (a click folds its workflows away, on this device, the heading then marking a run under way; starting or opening a workflow there unfolds it), and its workflows below, a run under way marked at the row's end (working pulses, an approval amber); an offline computer says so in its place. The list's header holds the computer filter, Search (the workflows by title or computer, `search-items.tsx`) and `+` (a new workflow; with more than one computer, a menu of them picks where). The workflow's title above the canvas opens its versions, rename, duplicate, pin and delete. A port's arrow stands just off its card, and a click on an output port opens the add menu beside the card and puts the new step to its right. Beside the canvas is a chat (open until the window bar's toggle hides it; its edge drags it from 300 points wide, the canvas keeping 320; a page too narrow for both is covered by the chat) where the workflow is built by talking: a thread started there, with no bot unless one is picked, carries `setup.workflow` (`BotConfig::workflow` on the thread), so its `workflows` tools (given to it even without a bot) read, save and run that workflow only, whoever owns it. `read_workflow` lists the bots on this computer, a step may name any of them, and `save_workflow` refuses a script the canvas can't draw and asks on a card naming the bots the steps message. Each save is a version, so the canvas's history undoes it. A chat without a picked folder works in the workflow's own folder, `~/.codync/workflows/<id>`, beside the bots' own. The chats of each workflow are remembered on the device, newest first: Previous chats goes back to one, New chat starts another. `hello.workflowThreads` gates it.
 
-On the phone, Workflows is a tab; with more than one computer, a computer menu leads its header. Each row is a name and the latest status. The detail page runs, edits, and lists steps in reading order, the trigger, run history, and delete. A new workflow is a form: title, trigger, then numbered steps. The editor uses the same cards. Each step shows its own short id (8 characters) and its parent's id so the outline is readable. The step sheet uses the app's light and dark tokens: a caption in the secondary color, a full-width surface row (value leading, chevron trailing, no border), multiline text on a surface card with the caption inside and the field on the user-bubble color, and a full-width primary Run button. Source on that sheet moves the step so it reads from a node, the Yes branch, the No branch, or both. Same target is a no-op. A condition's source only splits the main line. The kind is Agent, with `person.fill`. There is no model node.
+On the phone, Workflows is a tab (the desktop's Lucide `workflow` mark: the iOS asset `workflow`, Android's `workflow` drawable); with more than one computer, a computer menu leads its header. The phone is **view only, plus approvals**: the list (each row a name and the latest status; touch and hold pins it on the bot list), a workflow's detail (its steps in reading order with the Mode menu for how much of each step shows, its triggers, its run history, the version line as text), its runs, and one run, where an approval step's **Approve** and **Reject** are the one action. No create, edit, run, stop, retry, pause, rename, delete, version restore or webhook rotation: those are the desktop's and the terminal's. A notification with a `runId` opens that run, else the workflow's detail.
 
-The four clients show one workflow, one run, and the same copy. A shape the phone cannot edit (more than one condition, a loop, or a canvas annotation) keeps its edges and annotations; the phone edits step settings only. A script that expands while it runs is not rearranged on the phone.
+The four clients show one workflow, one run, and the same copy. A shape the terminal's outline cannot edit (more than one condition, a loop, or a canvas annotation) keeps its edges and annotations; the terminal edits step settings only. A script that expands while it runs is not rearranged in the outline.
 
 ## Decisions
 
@@ -42,7 +42,7 @@ The four clients show one workflow, one run, and the same copy. A shape the phon
 
 ## This version, and later
 
-Shipped with the host and the four clients: the graph, the script, runs, schedules, webhooks, approvals, notifications, version history, the desktop canvas, and the phone outline, including create, edit, source and the step sheet.
+Shipped with the host and the four clients: the graph, the script, runs, schedules, webhooks, approvals, notifications, version history, the desktop canvas, the terminal outline (create, edit, source), and the phones' read-only screens with approvals.
 
 Not in this version:
 
@@ -53,7 +53,7 @@ Not in this version:
 | A message trigger | Codync has no separate "place a message arrived" model for this. |
 | Output to an external channel or a file | Output is a notification or a bot chat. |
 | Condition `ask` | A bot judging yes or no would be a new step, after the agent session path stays stable. |
-| A canvas on the phone | The outline covers the phone flow. |
+| A canvas, or editing, on the phone | The phone views and approves; building is the desktop's and the terminal's. |
 | One graph across computers | The product is one computer. Bots on another computer are not in the agent picker. |
 | A script calling another workflow | One run freezes one script. Nesting would open another workflow's run. |
 | A token budget, or a git worktree per step | Usage still comes from each bot's harness. |
@@ -148,9 +148,9 @@ The built-in workflows MCP server stays attached. Its tools see only workflows w
 
 Every `agent()` in a bot-saved script must name that bot. An empty id, a dynamic id, or another bot's id is `Name your own bot in agent()`. A person can still put any bot on a graph. The host frames that step when it runs (below).
 
-### Canvas and phone
+### Canvas and outline
 
-Desktop wires are the graph. The phone outline is `outline.rs`. Source retargeting (`source.rs`) moves a step onto a node, Yes, No, or both (`*yes`, `*no`, `*both`). A draft trigger uses `*trigger`. Outputs and prompts are not sources. A condition does not grow a Yes/No source of its own, because composing the outline folds those into the following step. "Both branches" stays.
+Desktop wires are the graph. The terminal's outline is `outline.rs`. Source retargeting (`source.rs`) moves a step onto a node, Yes, No, or both (`*yes`, `*no`, `*both`). A draft trigger uses `*trigger`. Outputs and prompts are not sources. A condition does not grow a Yes/No source of its own, because composing the outline folds those into the following step. "Both branches" stays.
 
 ## Data model
 
@@ -172,7 +172,7 @@ Schema 7 creates `workflows`, `workflow_nodes`, `workflow_edges`, `workflow_vers
 
 SQLite foreign keys are off. Delete removes the child rows explicitly.
 
-Clients share the same JSON shape. Swift, Kotlin and TypeScript decode it. An unknown node kind is not dropped silently on the phone: the outline falls back to settings mode.
+Clients share the same JSON shape. Swift, Kotlin and TypeScript decode it. An unknown node kind is not dropped silently: the terminal's outline falls back to settings mode, and the phones list it in reading order.
 
 ## Save, versions, delete, copy
 
@@ -184,11 +184,11 @@ Deleting a workflow deletes its nodes, edges, versions, triggers, secrets, recei
 
 Copy mints new ids and a new workflow id. The copy is enabled. It does not copy run history.
 
-## Graph rules and the phone outline
+## Graph rules and the outline
 
 A wire goes from an output port to an input port. A condition has Yes and No. Other steps have one main output. Annotations do not take wires that a run follows. `graph::validate` checks degrees, bot ids, field sizes and that a schedule or webhook trigger is well formed. `BotState` is `Ok`, `Missing` or `Group`. A group is not an agent step.
 
-The phone outline is a reading order over the steps. Numbered rows show parent and child. When the graph is not an outline, the phone edits fields and sends the edges back unchanged.
+The outline is a reading order over the steps. Numbered rows show parent and child; the phones show steps in that order too. When the graph is not an outline, the terminal edits fields and sends the edges back unchanged.
 
 ## Execution
 
@@ -240,7 +240,7 @@ A delivery id (`hooks::delivery_id`) is remembered, and a retry of that id retur
 
 ### Notification
 
-An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app.
+An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app (the workflow's detail when there is no `runId`).
 
 ## API and events
 
@@ -276,19 +276,17 @@ Platform differences go through `window.codync.platform` or the main process.
 
 ## iPhone
 
-`apps/ios/Kit/Sources/CodyncKit/Models/Workflow.swift` and `apps/ios/Kit/Sources/CodyncUI/Workflows/`. List, detail, new form, editor, add-step sheet, step sheet, run. Controls are the shared ones (`ChoicePicker`, `.codyncSheet`, `ModalHeader`). A full-width choice row is `ChoicePicker(..., wide: true)`. The default pill is unchanged. Menus stay the system menus.
+`apps/ios/Kit/Sources/CodyncKit/Models/Workflow.swift` and `apps/ios/Kit/Sources/CodyncUI/Workflows/`. List, detail, runs and run, read only but for an approval step's Approve and Reject. Controls are the shared ones; menus stay the system menus.
 
-The step sheet does not pass a `Binding<WorkflowNode>` into its fields. Xcode 26.6's IR generator aborts while lowering that setter. The draft is an `@MainActor` `@Observable` class. Fields call `setString`. The editor receives a `WorkflowNodeEdit` reference from a stamp, not a closure whose parameter is the node.
-
-Deep link: `codync-dev://workflows` in the Dev app. A notification with `workflowId` opens the run and clears an open chat first.
+Deep link: `codync-dev://workflows` in the Dev app. A notification with `workflowId` opens the run (`runId`), else the workflow, and clears an open chat first.
 
 ## Android
 
-The same screens, in `apps/android`, on the `design` module. `ChoicePicker` `wide` uses `fillMaxWidth` and `weight(1f, fill = wide)` so a normal pill still hugs its text. The task caption uses the catalog key `Task`. Run is a full-width primary button. There is no IR-generator workaround to copy. The Android SDK is not required to describe the screen; a change still lands in both phone apps together.
+The same screens, in `apps/android`, on the `design` module. A change still lands in both phone apps together.
 
 ## Terminal
 
-`host/src/tui/`. The list, the outline, and a run. Source is a setting that cycles the same targets as the phone. No canvas and no pixels in the tests. Keys edit the outline and the host methods are the ones the other clients call.
+`host/src/tui/`. The list, the outline, and a run. Source is a setting that cycles the targets `source.rs` offers. No canvas and no pixels in the tests. Keys edit the outline and the host methods are the ones the other clients call.
 
 ## Copy
 
@@ -306,7 +304,7 @@ Android: `WorkflowTest.kt`.
 
 Terminal: key tests in the workflows modules, not pixels.
 
-End to end, after the change, on the computer under test: desktop `npm run dev` through create, connect, run and history; the iPhone simulator through the list, detail and a run; the Android emulator through the same path when the SDK is installed. A canvas check is the flow, not a single screenshot.
+End to end, after the change, on the computer under test: desktop `npm run dev` through create, connect, run and history; the iPhone simulator through the list, detail, a run and an approval; the Android emulator through the same path when the SDK is installed. A canvas check is the flow, not a single screenshot.
 
 ## Next
 
@@ -314,5 +312,5 @@ The implementation order that used to live here is done. What is left:
 
 - Walk the changed flow on the desktop app, the iPhone simulator, and the Android emulator, and record the after-change result. The Android SDK is not on every machine; say so when that pass cannot run.
 - Confirm a webhook `ping` does not start a run, and that a delivery with no id can run again, against a live host.
-- The phone canvas, a model node, image nodes, message triggers, output beyond a notification or a chat, condition `ask`, a script calling another workflow, a token budget, and worktree isolation. Those stay in the table above.
+- A phone canvas or phone editing, a model node, image nodes, message triggers, output beyond a notification or a chat, condition `ask`, a script calling another workflow, a token budget, and worktree isolation. Those stay in the table above.
 - Keep the user manual (`web/content/docs/workflows.mdx`) aligned when a person can see the change. This design file stays the spec.

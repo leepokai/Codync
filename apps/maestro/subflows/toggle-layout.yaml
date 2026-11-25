@@ -1,0 +1,20 @@
+# Opens the Bots tab's filter menu, checks that OPTION is there, toggles it, then toggles it back (the menu opened
+# afresh each time: an option may or may not keep it open), and closes the menu.
+appId: com.pokai.Codync.ios.dev
+---
+- repeat:
+    times: 2
+    commands:
+      - runFlow:
+          when:
+            visible: ${OPTION}
+          file: close-menu.yaml
+      - tapOn: "Computers, .*Filter conversations"
+      - extendedWaitUntil:
+          visible: ${OPTION}
+          timeout: 10000
+      - tapOn: ${OPTION}
+- runFlow:
+    when:
+      visible: ${OPTION}
+    file: close-menu.yaml

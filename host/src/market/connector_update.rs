@@ -372,10 +372,13 @@ mod tests {
         let (hub, dir) = requests::tests::fixture();
         // No actor, as after a panic: listed ahead of the bot below, which must hear of the edit all the same.
         hub.store.save_bot(&bot_using(&hub, "stopped", &dir, &["fixture"])).expect("save");
-        let folder = dir.join("on");
-        std::fs::create_dir_all(&folder).expect("folder");
-        let created = hub.create_bot(bot_using(&hub, "on", &folder, &["fixture"])).expect("create");
+        let project = dir.join("on");
+        std::fs::create_dir_all(&project).expect("folder");
+        let created = hub.create_bot(bot_using(&hub, "on", &project, &["fixture"])).expect("create");
         let on = created["id"].as_str().expect("id");
+        // A new bot lives in its own folder, the one it was given its project: its agent runs at home.
+        let folder = std::path::PathBuf::from(hub.store.bot(on).expect("read").expect("bot").config.cwd);
+        assert_eq!(hub.store.bot(on).expect("read").expect("bot").config.projects, [project.to_string_lossy()]);
         let choice = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.connectors;
         assert_eq!(sessions_after_a_turn(&hub, "bot", &dir).await, 1);
         assert_eq!(sessions_after_a_turn(&hub, on, &folder).await, 1);

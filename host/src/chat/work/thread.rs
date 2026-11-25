@@ -41,7 +41,7 @@ impl std::error::Error for Refused {}
 
 /// Whether `task` takes words at all: the bot's own work does; a routine's run and another bot's request have an
 /// owner for their result already.
-fn writable(task: &Task) -> Result<()> {
+pub(super) fn writable(task: &Task) -> Result<()> {
     let whose = match &task.source {
         Source::Bot | Source::User => return Ok(()),
         Source::Routine { .. } => "a routine's run",
@@ -52,7 +52,7 @@ fn writable(task: &Task) -> Result<()> {
 }
 
 /// The thread that takes the user's messages for `task`, or why it takes none.
-fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+pub(super) fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
     writable(task)?;
     let title = &task.title;
     let Some(thread) = task.thread.as_deref() else {
@@ -138,7 +138,7 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
         kept.left = worktree::Left::InUse;
     } else if !Path::new(&thread.cwd).is_dir() {
         // Its worktree had nothing in it and went: the folder a thread without one works in.
-        thread.cwd.clone_from(task.setup.cwd.as_ref().unwrap_or(&owner.cwd));
+        thread.cwd = task.folder(owner);
         let _g = hub.emit_lock.locked();
         hub.store.save_bot(thread)?;
     }
@@ -152,6 +152,8 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
 /// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
 pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
+    // A thread that ended over a week ago is in the archive: it comes back to be written to.
+    super::archive::bring_back(hub, bot, id)?;
     // Under the box's lock to the end: the task's end and the dispatcher's look at its thread come before all of
     // this or after it, so neither ends a thread a message is on its way to.
     let (entry, reopened, queued) = tasks::change(hub, bot, |tasks| {
@@ -167,10 +169,7 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[Strin
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
         let root = crate::chat::uploads::root(&thread);
-        let attachments = uploads
-            .iter()
-            .map(|upload| crate::chat::uploads::resolve(&root, upload).map(|(_, meta)| meta))
-            .collect::<Result<Vec<_>>>()?;
+        let attachments = crate::chat::uploads::resolve_all(&root, uploads)?;
         let data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
         let (entry, queued) = post_to(hub, &thread, data)?;
         Ok((entry, Some(reopened), Some(queued)))
@@ -184,7 +183,7 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[Strin
 
 /// Posts `data` to `thread`'s chat as a message, its actor started again if it ended. Answers the entry, and whether
 /// it waits behind a running turn.
-fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
+pub(super) fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
     if !hub.has_actor(&thread.id) {
         hub.spawn_bot(thread.clone());
     }

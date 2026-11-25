@@ -34,7 +34,7 @@ private func trigger(_ id: String) -> WorkflowNode {
     #expect(graph.stepRanks() == [["p"], ["a", "b"], ["o"]])
 }
 
-@Test func straightLineOutlineRoundTrips() {
+@Test func straightLineIsAnOutline() {
     let graph = WorkflowGraph(
         nodes: [trigger("t"), node("a", .agent), node("o", .output, fields: ["target": .string("notify")])],
         edges: [edge("t", "a"), edge("a", "o")]
@@ -42,13 +42,9 @@ private func trigger(_ id: String) -> WorkflowNode {
     let outline = WorkflowLayout.outline(of: graph)
     #expect(outline?.main == ["a", "o"])
     #expect(outline?.condition == nil)
-    #expect(WorkflowLayout.editMode(of: graph) == .outline)
-    let again = WorkflowLayout.graph(from: outline!, keeping: graph)
-    #expect(again.edges.map(\.id) == ["t>a:text", "a>o:text"])
-    #expect(WorkflowLayout.outline(of: again)?.main == outline?.main)
 }
 
-@Test func conditionBranchRoundTrips() {
+@Test func conditionBranchIsAnOutline() {
     let graph = WorkflowGraph(
         nodes: [
             trigger("t"),
@@ -63,45 +59,33 @@ private func trigger(_ id: String) -> WorkflowNode {
     #expect(outline?.condition == "c")
     #expect(outline?.yes == ["yes"])
     #expect(outline?.no == ["no"])
-    let again = WorkflowLayout.graph(from: outline!, keeping: graph)
-    #expect(again.edges.map(\.id) == ["t>c:text", "c.yes>yes:text", "c.no>no:text"])
-    let round = WorkflowLayout.outline(of: again)
-    #expect(round?.yes == outline?.yes)
-    #expect(round?.no == outline?.no)
-    #expect(round?.condition == "c")
 }
 
-@Test func promptFeedsTheNextStepAndHasNoIncomingEdge() {
+@Test func promptSitsBeforeTheStepItFeeds() {
     let graph = WorkflowGraph(
         nodes: [trigger("t"), node("p", .prompt, fields: ["text": .string("Look here")]), node("a", .agent)],
         edges: [edge("t", "a"), edge("p", "a")]
     )
     let outline = WorkflowLayout.outline(of: graph)
     #expect(outline?.main == ["p", "a"])
-    let again = WorkflowLayout.graph(from: outline!, keeping: graph)
-    #expect(again.edges.contains { $0.to == "p" } == false)
-    #expect(again.edges.map(\.id).sorted() == ["p>a:text", "t>a:text"])
-    #expect(WorkflowLayout.outline(of: again)?.main == ["p", "a"])
 }
 
-@Test func twoConditionsAndALoopAreFields() {
+@Test func twoConditionsAndALoopAreNoOutline() {
     let two = WorkflowGraph(
         nodes: [trigger("t"), node("c1", .condition), node("c2", .condition)],
         edges: []
     )
     #expect(WorkflowLayout.outline(of: two) == nil)
-    #expect(WorkflowLayout.editMode(of: two) == .fields)
 
     let loop = WorkflowGraph(
         nodes: [trigger("t"), node("a", .agent), node("b", .agent)],
         edges: [edge("t", "a"), edge("a", "b"), edge("b", "a")]
     )
     #expect(WorkflowLayout.outline(of: loop) == nil)
-    #expect(WorkflowLayout.editMode(of: loop) == .fields)
     #expect(WorkflowLayout.loopEdges(in: loop) == Set(["b>a:text"]))
 }
 
-@Test func annotationsAloneStayOutline() {
+@Test func annotationsAloneStayAnOutline() {
     let note = node("n", .note, x: 12, y: 34, fields: ["text": .string("aside")])
     let graph = WorkflowGraph(
         nodes: [trigger("t"), node("a", .agent), note],
@@ -109,39 +93,12 @@ private func trigger(_ id: String) -> WorkflowNode {
     )
     let outline = WorkflowLayout.outline(of: graph)
     #expect(outline?.main == ["a"])
-    #expect(WorkflowLayout.editMode(of: graph) == .outline)
-    let again = WorkflowLayout.graph(from: outline!, keeping: graph)
-    #expect(again.node("n")?.at == note.at)
 
     let linked = WorkflowGraph(
         nodes: [trigger("t"), node("a", .agent), node("n", .note)],
         edges: [edge("t", "a"), WorkflowEdge(id: "n>a:text", from: "n", to: "a")]
     )
     #expect(WorkflowLayout.outline(of: linked) == nil)
-    #expect(WorkflowLayout.editMode(of: linked) == .fields)
-}
-
-@Test func unknownKindIsReadOnly() {
-    let graph = WorkflowGraph(nodes: [trigger("t"), node("x", .unknown("future"))], edges: [])
-    #expect(WorkflowLayout.editMode(of: graph) == .readOnly)
-}
-
-@Test func edgePortRoundTripsAsType() throws {
-    let edge = WorkflowEdge(id: "a.yes>b:text", from: "a", to: "b", branch: "yes")
-    let encoded = try JSONEncoder().encode(edge)
-    let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-    #expect(object["type"] as? String == "text")
-    #expect(object["port"] == nil)
-    #expect(object["branch"] as? String == "yes")
-    let decoded = try JSONDecoder().decode(WorkflowEdge.self, from: encoded)
-    #expect(decoded == edge)
-
-    let bare = try JSONEncoder().encode(WorkflowEdge(id: "a>b:text", from: "a", to: "b"))
-    let bareObject = try #require(JSONSerialization.jsonObject(with: bare) as? [String: Any])
-    #expect(bareObject["branch"] == nil)
-    let node = WorkflowNode.make(.trigger, id: "t")
-    let nodeObject = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(node)) as? [String: Any])
-    #expect(nodeObject["schedule"] == nil)
 }
 
 @Test func helloWorkflowsFlagIsOptional() throws {
@@ -209,7 +166,7 @@ private func trigger(_ id: String) -> WorkflowNode {
         Issue.record("enabled event")
         return
     }
-    #expect(flag.change == .enabled && flag.enabled == false)
+    #expect(flag.change == .enabled)
 
     let badChange = HostClient.parseEvent(Data(#"{"type":"workflow","change":"nope","workflowId":"w"}"#.utf8))
     let missing = HostClient.parseEvent(Data(#"{"type":"workflow","workflowId":"w"}"#.utf8))
@@ -226,48 +183,13 @@ private func trigger(_ id: String) -> WorkflowNode {
     }
 }
 
-@Test func changingASourceMovesTheStepAndKeepsAnOutline() throws {
-    let graph = WorkflowGraph(
-        nodes: [
-            trigger("t"),
-            node("a", .agent),
-            node("b", .agent),
-            node("o", .output, fields: ["target": .string("notify")]),
-        ],
-        edges: [edge("t", "a"), edge("a", "b"), edge("b", "o")]
-    )
-    let outline = try #require(WorkflowLayout.outline(of: graph))
-    let kinds = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.kind) })
-    #expect(outline.sourceTarget(of: "a", kinds: kinds) == .node("t"))
-    #expect(outline.sourceTarget(of: "b", kinds: kinds) == .node("a"))
-    #expect(outline.sourceTarget(of: "o", kinds: kinds) == .node("b"))
-    let moved = try #require(outline.retargeting("o", to: .node("t")))
-    #expect(moved.main == ["o", "a", "b"])
-    let again = WorkflowLayout.graph(from: moved, keeping: graph)
-    #expect(again.parents(of: "o") == ["t"])
-    #expect(again.parents(of: "a") == ["t"])
-    #expect(WorkflowLayout.outline(of: again)?.main == ["o", "a", "b"])
-
-    let branched = WorkflowGraph(
-        nodes: [trigger("t"), node("c", .condition), node("yes", .agent), node("no", .agent)],
-        edges: [edge("t", "c"), edge("c", "yes", branch: "yes"), edge("c", "no", branch: "no")]
-    )
-    let split = try #require(WorkflowLayout.outline(of: branched))
-    let splitKinds = Dictionary(uniqueKeysWithValues: branched.nodes.map { ($0.id, $0.kind) })
-    #expect(split.sourceTarget(of: "yes", kinds: splitKinds) == .yes)
-    #expect(WorkflowOutline.rewired(branched, step: "yes", to: .no) == nil)
-
-    let joined = WorkflowGraph(
-        nodes: [trigger("t"), node("c", .condition), node("yes", .agent), node("no", .agent), node("extra", .agent)],
-        edges: [edge("t", "c"), edge("c", "yes", branch: "yes"), edge("c", "no", branch: "no")]
-    )
-    let both = try #require(WorkflowOutline.rewired(joined, step: "extra", to: .both))
-    #expect(both.edges.filter { $0.from == "c" && $0.branch == "yes" }.map(\.to) == ["yes"])
-    #expect(both.edges.filter { $0.from == "c" && $0.branch == "no" }.map(\.to) == ["no"])
-    #expect(Set(both.parents(of: "extra")) == ["yes", "no"])
-
-    let ontoNo = try #require(split.retargeting("yes", to: .no))
-    #expect(ontoNo.yes == [])
-    #expect(ontoNo.no == ["yes", "no"])
-    #expect(WorkflowLayout.outline(of: WorkflowLayout.graph(from: ontoNo, keeping: branched))?.no == ["yes", "no"])
+@Test func searchFindsWorkflowsByTitleOrIdPrefix() {
+    let list = [
+        WorkflowSummary(id: "a1b2", title: "Nightly build", revision: 1, updatedAt: 0),
+        WorkflowSummary(id: "c3d4", title: "Release notes", revision: 1, updatedAt: 0),
+    ]
+    #expect(WorkflowSummary.matching(list, " ") == list)
+    #expect(WorkflowSummary.matching(list, "BUILD").map(\.id) == ["a1b2"])
+    #expect(WorkflowSummary.matching(list, " c3 ").map(\.id) == ["c3d4"])
+    #expect(WorkflowSummary.matching(list, "b2").isEmpty)
 }

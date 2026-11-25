@@ -1,13 +1,14 @@
-# A bot's own folder on the phones: a new bot works there by default, and its row in the list, its chat's intro and the
-# Workspace pill in its settings call it Own folder. Its settings have no Worktree per thread switch, though Codync keeps
-# the folder a git repository (every agent works in that one folder); a bot on a project folder in a git repository
-# keeps the switch. The phone must already be signed in and paired with the host (a worktree's sandbox,
-# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
-# makes its own bots there, the second in PROJECT_DIR, a git repository:
-#   project=$(mktemp -d) && git -C "$project" init -q
+# A bot's own folder and its projects on the phones: a new bot lives in its own folder, and its row in the list and its
+# chat's intro call it Own folder; its settings show its folder and an empty Projects list, with no Worktree mode. A bot
+# whose default project is a git repository shows that project's name in the list, the project as Default in its
+# settings and the Worktree mode, which switches, and goes once the project is removed. The phone must already be signed
+# in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
+# `welcome`, whose clearState undoes that; the flow makes its own bots there, the second with PROJECT_DIR, a git
+# repository, as its project, and ADD_DIR, another inside it, for the folder picker to add:
+#   project=$(mktemp -d) && git -C "$project" init -q && added="$project/added-repo" && git init -q "$added"
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
 #     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
-#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" -e PROJECT_DIR="$project" apps/maestro
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" -e PROJECT_DIR="$project" -e ADD_DIR="$added" apps/maestro
 appId: com.pokai.Codync.ios.dev
 tags:
   - bot-settings
@@ -21,19 +22,18 @@ onFlowComplete:
 - runFlow:
     file: subflows/bot-list.yaml
 - assertVisible: ".*· Own folder.*"
+- assertVisible: ".*· ${output.project.folder}.*"
 - tapOn: ${output.bot.name}
 - extendedWaitUntil:
     visible: ".* · Own folder"
     timeout: 10000
 - tapOn: "${output.bot.name}, view details"
 - tapOn: "Settings"
-# The place rows end with Threads at once, where a Worktree per thread switch would follow. The iPhone reads a switch row
-# as one element (its title, then its detail), hence the `.*`.
 - scrollUntilVisible:
-    element: "Threads at once"
+    element: "(?s)Bot's folder.*"
     centerElement: true
-- assertVisible: "Own folder"
-- assertNotVisible: "Worktree per thread.*"
+- assertVisible: "(?s)Projects.*"
+- assertNotVisible: "Worktree mode.*"
 - takeScreenshot: own-folder-settings
 - tapOn: "Close details"
 - runFlow:
@@ -42,8 +42,36 @@ onFlowComplete:
 - tapOn: "${output.project.name}, view details"
 - tapOn: "Settings"
 - scrollUntilVisible:
-    element: "Threads at once"
+    element: "Worktree mode.*"
     centerElement: true
 - assertVisible: ${output.project.folder}
-- assertVisible: "Worktree per thread.*"
+- assertVisible: "Default"
 - takeScreenshot: project-folder-settings
+# The mode's pill reads its choice (Android: "Worktree mode: Side by side"), and its line follows the choice.
+- tapOn: ".*Side by side"
+- tapOn: "Always"
+- assertVisible: ".*Every thread works in a worktree of its own.*"
+# Another repository (ADD_DIR, inside PROJECT_DIR) added with the folder picker goes under the default; Make default
+# puts it first, and the host keeps that order. The picker opens in the default project on both phones, so ADD_DIR is a
+# folder there.
+- tapOn: "Add project"
+- tapOn:
+    text: "Browse other folders"
+    optional: true
+- scrollUntilVisible:
+    element: ${output.added}
+- tapOn: ${output.added}
+- tapOn: "Use this folder"
+- scrollUntilVisible:
+    element: "Make default"
+    centerElement: true
+- tapOn: "Make default"
+- runScript:
+    file: own-folder.js
+    env:
+      DEFAULT_IS: ${ADD_DIR}
+- tapOn: "Remove project"
+# Without a project in a git repository there is no worktree to make.
+- tapOn: "Remove project"
+- assertNotVisible: "Worktree mode.*"
+- assertNotVisible: ${output.project.folder}

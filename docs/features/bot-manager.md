@@ -25,7 +25,7 @@ checked bot, which every computer allows.
 
 ## Choosing the bots
 
-The list is every bot on every computer the account reaches - the sidebar's computer filter, hidden
+The list is every bot on every computer the account reaches — the sidebar's computer filter, hidden
 computers and bots hidden from the roster don't limit it; a bot's computer is named under it when the
 account has more than one. Groups are not listed: they carry members, not a model of their own.
 Under each bot's name is what it runs, in the app's muted small text: the agent as the model picker
@@ -39,7 +39,7 @@ model isn't readable, shows no line rather than a wrong one.
 The search field filters by name, description and last message, through the same word list and
 rule the window's search uses (`botWords` over `matchWords`, extracted from the search palette's
 own bot rows). Beside it, the `Search models too` switch (on to begin with) adds each bot's agent,
-login profile and model path to the words a row is matched by - the whole path, each part of it,
+login profile and model path to the words a row is matched by — the whole path, each part of it,
 and the model id read as words, so `deepseek`, `opendesign` or `deepseek v4.1 flash` finds the
 bots that run it. Off, the field searches names, descriptions and last messages alone, exactly as
 the window's search does; the shared word list is extended, never forked, so the palette's bot

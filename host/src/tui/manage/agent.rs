@@ -20,6 +20,17 @@ pub fn agent_setup_label(agent: &Value) -> Option<&'static str> {
     }
 }
 
+/// How an agent row in Extensions describes what the user can do now.
+pub fn agent_market_status(agent: &Value) -> &'static str {
+    match (agent_setup_label(agent), agent["signedIn"].as_bool()) {
+        (Some(status), _) => status,
+        (None, Some(true)) => "signed in",
+        (None, Some(false)) => "not signed in",
+        (None, None) if agent["installed"] == true => "installed",
+        (None, None) => "sets up on first use",
+    }
+}
+
 impl App {
     /// What the user calls agent `id` on this computer ("Claude Code").
     pub fn agent_name(&self, id: &str) -> String {
@@ -439,6 +450,8 @@ mod tests {
         assert_eq!(label(json!({"available": true, "node": "missing"})), Some("needs Node.js"));
         assert_eq!(label(json!({"installed": true, "available": false})), Some("not ready"));
         assert_eq!(label(json!({"installed": false, "available": false})), Some("not installed"));
+        assert_eq!(agent_market_status(&json!({"available": true, "installed": false})), "sets up on first use");
+        assert_eq!(agent_market_status(&json!({"available": true, "installed": true})), "installed");
     }
 
     #[test]

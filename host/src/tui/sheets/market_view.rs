@@ -2,7 +2,7 @@
 
 use super::{App, Buffer, Rect, centered, footer, frame_box, put, row, rput, s, theme, truncate, u, window};
 use crate::tui::l10n::tr;
-use crate::tui::manage::agent::agent_setup_label;
+use crate::tui::manage::agent::agent_market_status;
 use crate::tui::manage::{Market, Row, TABS, Tab};
 use crate::tui::view::field_line;
 
@@ -48,13 +48,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                 String::new(),
             ),
             Row::Agent(b) => {
-                let status = match (agent_setup_label(b), b["signedIn"].as_bool()) {
-                    (Some(status), _) => status,
-                    (None, Some(true)) => "signed in",
-                    (None, Some(false)) => "not signed in",
-                    (None, None) => "installed",
-                };
-                let status = tr(status);
+                let status = tr(agent_market_status(b));
                 let mark = if b["signedIn"] == true || b["installed"] == true { "✓" } else { "↓" };
                 (mark, s(b, "name").into(), s(b, "description").into(), status.into_owned())
             }

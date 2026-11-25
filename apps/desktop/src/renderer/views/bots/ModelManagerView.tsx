@@ -20,7 +20,7 @@ import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, ro
 import '../search-palette.css'
 import './model-manager.css'
 
-type Selection = { backend: string; loginProfile: string | null; model: string | null; modelOptions: Record<string, string> }
+type Selection = { backend: string; model: string | null; modelOptions: Record<string, string> }
 type Outcome = { ok: boolean; text: string }
 
 /** What the bot is for, plus its computer when the roster spans more than one. */
@@ -156,8 +156,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const backends = store.hello?.backends ?? []
   const initialFromBot = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom'
   const initialBackend = initialFromBot ? first.bot.backend : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
-  const initialLogin = initialFromBot && typeof first.bot.loginProfile === 'string' ? first.bot.loginProfile : null
-  const [pick, setPick] = useState<Selection>({ backend: initialBackend, loginProfile: initialLogin, model: null, modelOptions: {} })
+  const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
@@ -166,19 +165,23 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const alive = useRef(true)
   const run = useRef(0)
   useEffect(() => () => { alive.current = false }, [])
-  const models = useAgentModels(pick.backend, pick.loginProfile)
-  // The same seats every picker shows (loginSeats): each agent and its logins. A custom command
-  // needs the editor's command field, which a batch apply can't supply, so it is not offered.
+  const models = useAgentModels(pick.backend)
+  // A custom command needs the editor's command field, which a batch apply can't supply, so it is not
+  // offered. The rail is the one every picker shows (loginSeats), but one seat per agent — its default
+  // login — because a batch writes no login profile: each computer keeps its own profiles, so a
+  // profile named here would not exist on the others. Every bot keeps the login it already has.
   const seats = loginSeats({
     backends,
-    on: pick,
+    on: { backend: pick.backend, loginProfile: null },
+    logins: () => [null],
     tr,
-    // The editor's own rule (@shared/fallbacks' withBackend, which shapes a whole BotDraft): a login on
-    // the same agent keeps the model, another agent starts fresh — keep the two in step.
-    pick: (b, loginProfile) => {
+    pick: (b) => {
+      // The editor's own rule (@shared/fallbacks' withBackend, which shapes a whole BotDraft): a seat on
+      // the same agent keeps the model, another agent starts fresh — keep the two in step.
+      if (b.id === pick.backend) return
       run.current++
       setOutcomes({})
-      setPick((p) => (p.backend === b.id ? { ...p, loginProfile } : { backend: b.id, loginProfile, model: null, modelOptions: {} }))
+      setPick({ backend: b.id, model: null, modelOptions: {} })
     },
   })
   // The window search's own match — search-items builds each bot's words, palette-items matches
@@ -210,7 +213,6 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     if (!chosen.length || busy.current) return
     const myRun = run.current
     const backend = pick.backend
-    const loginProfile = pick.loginProfile
     const model = pick.model?.trim() || null
     const options = { ...pick.modelOptions }
     busy.current = true
@@ -259,8 +261,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           // profile that doesn't fit it; the custom command is cleared here, as the bot editor's
           // agent change does. The patch sends no fallback list — the host's own fallback tidy may
           // still drop a step that duplicates the new primary agent, as on any agent change.
-          // The seat's login goes with the patch: the agent's default, or the profile the user picked.
-          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, loginProfile, model: model || null, modelOptions: { ...options } }
+          // No login profile goes with the patch: each computer stores its own profiles, so each bot
+          // keeps the login it already has and a check and a write can never name different ones.
+          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
           if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()

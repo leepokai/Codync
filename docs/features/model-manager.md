@@ -30,7 +30,11 @@ The search field filters by name, description and last message, reusing the side
 
 Each checked bot is saved one at a time, in roster order, as a **minimal patch**: only the bot's id,
 backend, model and model options (plus `command: null` when the target is a listed agent, as the bot
-editor's agent change does — a stale custom command would otherwise keep launching). The host merges
+editor's agent change does — a stale custom command would otherwise keep launching). **No login
+profile goes with the patch**: every computer stores its own profiles, so a profile named here would
+not exist on the others — each bot keeps the login it already has, and the picker's rail shows one
+seat per agent (its default login) because that is the only seat a batch could name everywhere.
+The host merges
 the patch over the bot's state as it is at that moment under one lock (`updateBot`'s patched merge),
 so an unrelated change that landed while the batch ran is never written back, and on another agent
 the bot moves to that agent's Auto mode on the host's own rule while a login profile that doesn't

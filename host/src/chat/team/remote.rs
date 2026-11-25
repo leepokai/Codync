@@ -36,8 +36,10 @@ pub struct Waiting {
     ended: Mutex<std::collections::VecDeque<Ended>>,
 }
 
-/// A request to a session here that ended: `(session key, id, (asking bot, signed address) if answered)`.
-type Ended = (String, String, Option<(String, String)>);
+/// A request to a session here that ended: `(session key, id, the names its answer may give if
+/// answered)`: the asking bot's id, the address its letter was signed with, and the one the
+/// accepted answer named (the bot may be renamed before a retry).
+type Ended = (String, String, Option<Vec<String>>);
 
 /// How many ended requests to sessions `Waiting` remembers.
 const ANSWERED_KEPT: usize = 256;
@@ -90,7 +92,9 @@ impl Waiting {
                 None => Answer::Unknown,
                 Some((.., None)) => Answer::Ended(false),
                 // A retry counts as delivered only to the bot it went to.
-                Some((.., Some((asker, signed)))) if named != asker && to != signed => Answer::WrongBot(asker.clone()),
+                Some((.., Some(usable))) if !usable.iter().any(|n| n == named || n == to) => {
+                    Answer::WrongBot(usable[0].clone())
+                }
                 Some(_) => Answer::Ended(true),
             };
         };
@@ -105,7 +109,7 @@ impl Waiting {
             return Answer::WrongBot(asker.clone());
         }
         let gone = !alive(asker);
-        let answered = (!gone).then(|| (asker.clone(), signed.clone()));
+        let answered = (!gone).then(|| vec![asker.clone(), signed.clone(), to.to_owned()]);
         let waiter = all.remove(id).expect("found above, under the same lock");
         self.mark_ended(key, id, answered);
         if gone { Answer::Ended(false) } else { Answer::Ends(waiter) }
@@ -119,7 +123,7 @@ impl Waiting {
     }
 
     /// Request `id` to the session `key` ended, answered or not. Called with `all` locked.
-    fn mark_ended(&self, key: &str, id: &str, answered: Option<(String, String)>) {
+    fn mark_ended(&self, key: &str, id: &str, answered: Option<Vec<String>>) {
         let mut ended = self.ended.locked();
         ended.push_back((key.to_owned(), id.to_owned(), answered));
         if ended.len() > ANSWERED_KEPT {
@@ -672,7 +676,11 @@ mod waiting_tests {
         assert_eq!(over, ["session"]);
         assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
         waiting.mark_ended("codex:t", "late", None);
-        waiting.mark_ended("codex:t", "done", Some(("b".into(), "b".into())));
+        waiting.mark_ended("codex:t", "done", Some(vec!["b".into(), "b".into(), "reviewer".into()]));
+        assert!(
+            matches!(waiting.answer("done", "codex:t", "x", "reviewer", |_| true), Answer::Ended(true)),
+            "the name it used"
+        );
         assert!(
             matches!(waiting.answer("done", "codex:t", "other", "other", |_| true), Answer::WrongBot(_)),
             "a retry naming another bot isn't confirmed"

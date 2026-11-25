@@ -47,18 +47,56 @@ Changing the agent or the model starts a new agent session. The chat history sta
 
 When a computer's bots use more than one agent, the bot list shows each bot's agent logo at the bottom-left of its avatar (the agent it runs on right now, a fallback included), so you can tell your Claude Code bots from your Codex ones at a glance. To hide the logos, turn off **Show agent logos** in Settings, under **Appearance** (desktop: **Settings → General**). It only changes the device you set it on. The terminal UI doesn't show agent logos.
 
-## Workspace: its own folder or a project
+## Workspace: its own folder and its projects
 
-The **Workspace** setting is the folder the bot starts in.
+Every bot lives in a folder of its own, and sends work to your folders, its projects. Both are under **Workspace** in the bot's **Settings**.
 
-- **Own folder** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session. When Git is installed, Codync keeps a version of it before and after each turn, so you can ask the bot to show or undo what a turn changed: see [versions of its own folder](/docs/working-folders#versions-of-a-bots-own-folder).
-- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients; older hosts support browsing without recent history. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
+### The bot's own folder
 
-Either way, the bot can work in other folders when you ask it to. A working folder isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them. One bot's own [threads](/docs/conversations#work) do get a worktree each when they run side by side in a project folder: when that folder is in a Git repository, the bot's **Settings** show **Worktree per thread** under **Workspace**, on unless you turn it off. In its own folder they all work in that one folder. Codync never merges or deletes a branch that has work on it. Under the folder, **Settings** say whether it is a Git repository; what that changes, and what to do without one, is in [Working folders and git](/docs/working-folders).
+**Bot's folder** shows where the bot lives: a folder Codync makes for it inside its data folder, `~/.codync/bots/`. Its chat, routines and files live there. You can't change it; the button beside it copies its path (**Copy path**). It stays when you rename the bot, change its model, restart the computer or start a new session. When Git is installed, Codync keeps a version of it before and after each turn, so you can ask the bot to show or undo what a turn changed: see [versions of its own folder](/docs/working-folders#versions-of-a-bots-own-folder). Terminal UI: the field is **Own folder**; press `c` to copy its path.
 
-Changing the folder starts a new agent session there. Your next message carries a summary of the conversation, so the bot picks up where you left off.
+The chat always works in this folder, and so do routine runs (unless the routine names a folder), group chats, calls and other bots' requests. The bot keeps your projects' files apart from its own: what it writes for itself, and the files you send it, stay here.
 
-When there are no recent workspaces, **Browse other folders** appears first. After you choose a folder, recent workspaces and their search appear on your next visit.
+### Projects
+
+**Projects** lists your folders the bot works on, such as a project's Git repository. The first one is its default: [threads](/docs/conversations#work) start there, the ones the bot starts for its own work and the ones you start with it. The bot can still work in other folders when you ask, and it reads a project's files from the chat by their full path.
+
+- **Add a project:** **Add project** (**+**) opens the folder picker, and the folder goes at the end of the list. A bot with no projects gets it as its default.
+- **Make another the default:** **Make default** (the star) on its row moves it first. The first row reads **Default**.
+- **Remove one:** **Remove project** on its row. Nothing in the folder changes.
+- **Terminal UI:** on the **Projects** field, ←/→ picks a project, Enter adds one with the folder picker, `d` makes the picked one the default and `x` removes it.
+
+The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients. Linked folders (symlinks, junctions, mounted drives) show up like any other folder. When there are no recent workspaces, **Browse other folders** appears first; after you choose a folder, recent workspaces and their search appear on your next visit.
+
+Adding, removing or reordering projects doesn't restart the bot's session.
+
+A project in a Git repository shows a branch icon on its row, others a folder icon.
+
+### Worktree mode
+
+**Worktree mode** shows under the projects once one of them is in a Git repository. It decides when a thread gets a Git worktree of its own, a separate checkout on a branch of its own, so threads and you don't change the same files:
+
+- **Off:** threads work in the project itself.
+- **Side by side** (the default): a thread gets its own worktree when another thread works in the same repository. The first one works in the project itself.
+- **Always:** every thread works in a worktree of its own, the first one included, so your checkout is never touched.
+
+Terminal UI: ←/→ on the **Worktree mode** field. Routine runs, other bots' requests and threads in the bot's own folder never get a worktree. Codync never merges or deletes a branch that has work on it. What it keeps and removes, and what to do without Git, is in [Working folders and git](/docs/working-folders).
+
+### What the chat no longer loads
+
+Because the chat works in the bot's own folder, its agent doesn't load what a project folder gives an agent that starts there: the project's `CLAUDE.md` or `AGENTS.md`, its `.mcp.json` connectors, its project skills, and the agent's own memory for that folder. Threads in the project still load all of these. Ask about the code in the chat and the bot reads the files it needs; for real work in the code, it starts a thread in the project, or you start one.
+
+A working folder isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project can get in each other's way: Codync makes worktrees only between one bot's own threads.
+
+### Bots that worked in a project
+
+Before this version a bot could live in a project folder. The first time Codync starts on a computer after the update, each such bot moves to its own folder:
+
+- The project becomes its first project, its default, so threads still work there.
+- Its routines keep running in the project, each run in a thread of its own. A bot with [computer use](/docs/computer-use) or **Manage the team** on runs its routines in its chat instead, in its own folder.
+- Your next message carries a summary of the conversation, so the bot picks up where you left off in its new folder.
+- **Use what your bots share** stays off for it, as it was in the project (see [Memory](/docs/memory#two-layers)). The files you had sent it move into its own folder.
+- Nothing in the project changes, and a thread that was already working there finishes in it.
 
 ## Permissions
 

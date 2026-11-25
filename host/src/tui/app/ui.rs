@@ -29,11 +29,11 @@ pub enum TraceMode {
 pub enum Width {
     /// < 80 columns: roster and chat are separate pages.
     Narrow,
-    /// 80–99: compact roster.
+    /// 80â€“99: compact roster.
     Mid,
-    /// 100–149.
+    /// 100â€“149.
     Wide,
-    /// ≥ 150.
+    /// â‰¥ 150.
     Huge,
 }
 
@@ -71,27 +71,27 @@ pub enum Action {
 }
 
 pub const ACTIONS: [(&str, &str, Action); 23] = [
-    ("New bot…", "n", Action::NewBot),
-    ("New group chat…", "m", Action::NewGroup),
-    ("Extensions: agents, connectors, skills…", "A", Action::Market),
-    ("Memory of this bot…", "M", Action::Memory),
-    ("Details of this bot…", "R", Action::Details),
-    ("Library of this bot: artifacts and files…", "L", Action::Library),
-    ("New session for this bot…", "", Action::NewSession),
+    ("New botâ€¦", "n", Action::NewBot),
+    ("New group chatâ€¦", "m", Action::NewGroup),
+    ("Extensions: agents, connectors, skillsâ€¦", "A", Action::Market),
+    ("Memory of this botâ€¦", "M", Action::Memory),
+    ("Details of this botâ€¦", "R", Action::Details),
+    ("Library of this bot: artifacts and filesâ€¦", "L", Action::Library),
+    ("New session for this botâ€¦", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Computer name", "", Action::ComputerName),
-    ("Pair phone…", "P", Action::Pair),
-    ("Network: your other computers…", "N", Action::Network),
+    ("Pair phoneâ€¦", "P", Action::Pair),
+    ("Network: your other computersâ€¦", "N", Action::Network),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
-    ("About usage analytics…", "", Action::AboutAnalytics),
-    ("Reset saved credentials…", "", Action::ResetCredentials),
+    ("About usage analyticsâ€¦", "", Action::AboutAnalytics),
+    ("Reset saved credentialsâ€¦", "", Action::ResetCredentials),
     ("Appearance: System", "", Action::Appearance(super::super::appearance::Appearance::System)),
     ("Appearance: Light", "", Action::Appearance(super::super::appearance::Appearance::Light)),
     ("Appearance: Dark", "", Action::Appearance(super::super::appearance::Appearance::Dark)),
-    ("App language…", "", Action::Language),
+    ("App languageâ€¦", "", Action::Language),
     ("Show thinking details", "", Action::ThinkingDetails),
     ("Keys", "?", Action::Keys),
 ];
@@ -205,6 +205,11 @@ pub enum Field {
     ThreadAgent,
     /// In Advisor mode, the threads' fallbacks.
     ThreadFallbacks,
+    /// The folders its threads work in, the first its default; only on a host with projects (`hello.projects`).
+    Projects,
+    /// When a thread gets a worktree; only on a host with projects, for a bot with a project in a git repository.
+    WorktreeMode,
+    /// Its project folder or its own (an older host); on a host with projects, its home, read only.
     Folder,
     /// The most threads it runs at once; only on a host that sends `maxThreads`.
     MaxThreads,
@@ -225,7 +230,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 27] = [
+pub const FIELDS: [Field; 29] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -239,6 +244,8 @@ pub const FIELDS: [Field; 27] = [
     Field::ThreadAgent,
     Field::ThreadFallbacks,
     Field::Compaction,
+    Field::Projects,
+    Field::WorktreeMode,
     Field::Folder,
     Field::MaxThreads,
     Field::ThreadWorktrees,
@@ -270,7 +277,7 @@ pub struct Form {
     /// The login profile it runs on; `None`: the computer's own sign-in.
     pub login_profile: Option<String>,
     pub model: Editor,
-    /// Model settings (effort, fast…) and the model they were picked for.
+    /// Model settings (effort, fastâ€¦) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
     pub fast: bool,
     /// Agents that carry on, in order, when the bot's own can't answer.
@@ -284,8 +291,12 @@ pub struct Form {
     pub cwd: String,
     /// The most threads it runs at once; `None`: the host has no event box.
     pub max_threads: Option<u8>,
-    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository, or the
+    /// host has projects (`worktree_mode` then).
     pub thread_worktrees: Option<bool>,
+    /// Its projects, the first its default; `None`: the host has no projects.
+    pub projects: Option<Vec<String>>,
+    pub worktree_mode: crate::store::WorktreeMode,
     /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,

@@ -1,13 +1,14 @@
-//! A git worktree for a thread that starts while another thread of its bot works in the same repository, so the two
-//! don't write over each other: `~/.codync/worktrees/<bot>/<task>`, on a branch `codync/<title>` from the
-//! workspace's HEAD. When its task is over, a worktree with no changes and no commits of its own goes, with its
-//! branch; anything else stays, and the task's report says where, until the user has merged its commits (looked at
-//! again at each host start). Codync never merges, rebases or resets, and forces nothing that held work (only a
-//! worktree it made a moment ago and can't use is taken back): work on a branch is the user's to take.
+//! A git worktree for a thread, by its bot's worktree mode (`BotConfig::worktree_mode`, [`beside`]): one that starts
+//! while another thread of its bot works in the same checkout, or every one, so they and the user don't write over
+//! each other: `~/.codync/worktrees/<bot>/<task>`, on a branch `codync/<title>` from the folder's HEAD. When its task
+//! is over, a worktree with no changes and no commits of its own goes, with its branch; anything else stays, and the
+//! task's report says where, until the user has merged its commits (looked at again at each host start and in the
+//! hourly look at a box). Codync never merges, rebases or resets, and forces nothing that held work (only a worktree
+//! it made a moment ago and can't use is taken back): work on a branch is the user's to take.
 
 use super::tasks::{Status, Task};
 use crate::hub::Hub;
-use crate::store::BotConfig;
+use crate::store::{BotConfig, WorktreeMode};
 use anyhow::{Context as _, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -80,9 +81,9 @@ impl Worktree {
                               your folder doesn't have, and was removed with its branch.]"
                 .to_owned(),
             Left::Kept | Left::Settling => format!(
-                "[Codync: it worked in a git worktree of its own, because other work of yours ran in the same \
-                 repository: branch {branch}, in {path}. Its changes are there, not in your folder, and nothing \
-                 was merged: tell the user the branch, and merge it when they ask.]"
+                "[Codync: it worked in a git worktree of its own, away from the user's checkout: branch {branch}, \
+                 in {path}. Its changes are there, not in the project folder, and nothing was merged: tell the user \
+                 the branch, and merge it when they ask.]"
             ),
             Left::InUse => format!(
                 "[Codync: it worked in a git worktree of its own: branch {branch}, in {path}. The work that follows \
@@ -94,10 +95,10 @@ impl Worktree {
     /// What a thread that starts in it is told.
     pub fn brief(&self) -> String {
         format!(
-            "[Codync: other work of yours runs in this repository now, so you work in a git worktree of your own: \
-             {}, on branch {}, started from the folder's current commit. Uncommitted changes of the main folder \
-             aren't here. Commit what you want kept; don't merge, and don't change the main folder's branch: your \
-             report tells the chat where the work is.]",
+            "[Codync: you work in a git worktree of your own, away from the user's checkout: {}, on branch {}, \
+             started from the folder's current commit. Uncommitted changes of the main folder aren't here. Commit \
+             what you want kept; don't merge, and don't change the main folder's branch: your report tells where \
+             the work is.]",
             self.cwd, self.branch
         )
     }
@@ -113,9 +114,27 @@ pub fn is_worktree(cwd: &str) -> bool {
     Path::new(cwd).starts_with(root())
 }
 
+/// The top folder of the checkout `cwd` is in (`git rev-parse --show-toplevel`: a repository's own, or one of its
+/// worktrees), as far as its folders say: no git is run, so the dispatcher can ask under its lock.
+pub fn top(cwd: &str) -> Option<&Path> {
+    (!cwd.is_empty()).then(|| Path::new(cwd).ancestors().find(|dir| dir.join(".git").exists())).flatten()
+}
+
 /// Whether `cwd` is inside a git repository, as far as its folders say (no git is run).
 pub fn in_repo(cwd: &str) -> bool {
-    !cwd.is_empty() && Path::new(cwd).ancestors().any(|dir| dir.join(".git").exists())
+    top(cwd).is_some()
+}
+
+/// Whether a thread that starts in `cwd` gets a worktree of its own under the bot's `mode`, `others` the checkouts
+/// ([`top`]) the bot's other threads work in now: never outside a repository; side by side, only beside another
+/// thread in the same checkout.
+pub(super) fn beside(mode: WorktreeMode, cwd: &str, others: &[PathBuf]) -> bool {
+    let Some(checkout) = top(cwd) else { return false };
+    match mode {
+        WorktreeMode::Off => false,
+        WorktreeMode::SideBySide => others.iter().any(|other| other == checkout),
+        WorktreeMode::Always => true,
+    }
 }
 
 /// A branch name's last part from a task's title: lowercase letters and digits, the rest dashes.
@@ -269,9 +288,22 @@ pub(super) fn claim(tasks: &mut [Task], id: &str) -> Option<Worktree> {
 
 /// At host start: the worktrees the last process kept (the user may have merged one since), or didn't finish
 /// looking over, each with its task, taken to be looked over again as [`claim`] takes one.
-// ponytail: only at host start (updates restart it); on a timer if merged worktrees pile up between restarts.
 pub(super) fn recheck(tasks: &mut [Task]) -> Vec<(String, Worktree)> {
-    let again = |left: Left| matches!(left, Left::Kept | Left::Settling);
+    retake(tasks, |left| matches!(left, Left::Kept | Left::Settling))
+}
+
+/// In the hourly look at a box (`sweep`): the worktrees kept, taken to be looked over again (one being looked over
+/// now is that look's).
+pub(super) fn kept(tasks: &mut [Task]) -> Vec<(String, Worktree)> {
+    retake(tasks, |left| left == Left::Kept)
+}
+
+/// Whether `tasks` keep a worktree the user may still merge.
+pub(super) fn any_kept(tasks: &[Task]) -> bool {
+    tasks.iter().any(|i| i.worktree.as_ref().is_some_and(|w| w.left == Left::Kept))
+}
+
+fn retake(tasks: &mut [Task], again: impl Fn(Left) -> bool + Copy) -> Vec<(String, Worktree)> {
     let ids: Vec<String> =
         tasks.iter().filter(|i| i.worktree.as_ref().is_some_and(|w| again(w.left))).map(|i| i.id.clone()).collect();
     ids.into_iter().filter_map(|id| take(tasks, &id, again).map(|worktree| (id, worktree))).collect()
@@ -410,6 +442,29 @@ pub async fn enter(hub: &Arc<Hub>, cfg: &BotConfig) -> Option<Worktree> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn side_by_side_counts_threads_in_the_same_checkout_only() {
+        use WorktreeMode::{Always, Off, SideBySide};
+        let base = std::env::temp_dir().join(format!("codync-checkouts-{}", uuid::Uuid::new_v4()));
+        let (a, b, plain) = (base.join("a"), base.join("b"), base.join("plain"));
+        for repo in [&a, &b] {
+            std::fs::create_dir_all(repo.join(".git")).expect("a repository");
+        }
+        std::fs::create_dir_all(a.join("web")).expect("a folder");
+        std::fs::create_dir_all(&plain).expect("a folder");
+        let path = |p: &Path| p.to_string_lossy().into_owned();
+        let web = path(&a.join("web"));
+        assert_eq!(top(&web), Some(a.as_path()), "a subfolder's checkout is its repository's");
+
+        assert!(beside(SideBySide, &web, std::slice::from_ref(&a)), "another thread in the same repository");
+        assert!(!beside(SideBySide, &web, std::slice::from_ref(&b)), "one in another repository doesn't count");
+        assert!(!beside(SideBySide, &web, &[]), "the first thread works in the folder");
+        assert!(beside(Always, &web, &[]), "always: the first one too");
+        assert!(!beside(Off, &web, std::slice::from_ref(&a)));
+        assert!(!beside(Always, &path(&plain), &[]), "never outside a repository");
+        std::fs::remove_dir_all(base).ok();
+    }
+
     const BOT: &str = "5f0c7a52-0000-4000-8000-0000000000b1";
 
     /// A repository with one commit and a `web/` folder, or none where git isn't installed.
@@ -454,6 +509,12 @@ mod tests {
             assert_eq!(recheck(&mut tasks).len(), again, "{then:?}");
         }
         assert_eq!(left(&tasks), Some(Left::InUse), "one in use is left as it is");
+
+        // The hourly look takes a kept one again, and leaves one being looked over to that look.
+        for (then, again) in [(Left::Settling, 0), (Left::Kept, 1), (Left::Removed, 0)] {
+            tasks[0].worktree.as_mut().expect("a worktree").left = then;
+            assert_eq!((any_kept(&tasks), kept(&mut tasks).len()), (then == Left::Kept, again), "{then:?}");
+        }
     }
 
     #[test]

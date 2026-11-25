@@ -2485,5 +2485,17 @@
   "Folder": "Папка",
   "Bot's folder": "Папка бота",
   "Use the bot's folder": "Использовать папку бота",
-  "Each run works here in a thread of its own.": "Каждый запуск работает здесь в собственном thread."
+  "Each run works here in a thread of its own.": "Каждый запуск работает здесь в собственном thread.",
+  "Projects": "Проекты",
+  "Threads start in the default project. The bot can work elsewhere when you ask.": "Thread начинается в проекте по умолчанию. Если попросите, бот может работать и в другом месте.",
+  "Add project": "Добавить проект",
+  "Make default": "Сделать основным",
+  "Remove project": "Удалить проект",
+  "Worktree mode": "Режим worktree",
+  "Side by side": "Параллельно",
+  "Always": "Всегда",
+  "Threads work in the project itself": "Thread работают прямо в проекте",
+  "A thread gets its own worktree when another thread works in the same repository": "Thread получает свой worktree, когда в том же репозитории работает другой thread",
+  "Every thread works in a worktree of its own; your checkout is never touched": "Каждый thread работает в своём worktree; ваш checkout не затрагивается",
+  "Its chat, routines and files live here.": "Здесь хранятся его чат, рутины и файлы."
 }

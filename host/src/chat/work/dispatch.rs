@@ -277,8 +277,8 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
         let before = tasks.iter().find(|i| i.id == id).and_then(|i| i.after.clone());
         let before = before.and_then(|id| tasks.iter().position(|i| i.id == id));
         let began = before.is_some_and(|at| tasks[at].began);
-        // Another thread of the bot works in its folder now: a new one beside it gets a worktree, in a repository.
-        let side_by_side = tasks::working(tasks) > 0;
+        // The checkouts the bot's other threads work in now: a new one in the same checkout may get a worktree.
+        let others = if matches!(standing, Standing::Join(_)) { Vec::new() } else { checkouts(hub, tasks, &id) };
         let Some(at) = tasks.iter().position(|i| i.id == id) else { continue };
         match sources::begin(hub, &cfg.id, &mut tasks[at])? {
             Begin::Go => {}
@@ -306,18 +306,15 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
             task.worktree = inherited.or(task.worktree.take());
             plan.join.push((thread, task.clone()));
         } else {
-            let thread = thread_bot(cfg, &task.setup);
+            let thread = thread_bot(cfg, task);
             task.began = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             task.worktree.take_if(|w| !worktree::usable(w));
-            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
-            // ponytail: "beside" counts the bot's threads wherever they work, so a thread in a folder of its own may
-            // get a worktree no other thread called for. Count by folder if that ever costs something.
-            let beside = cfg.thread_worktrees
+            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`); a routine's
+            // run and another bot's request work where the bot said.
+            let beside = task.source.own()
                 && crate::agent::workspace::own_folder(&thread).is_none()
-                && task.source.own()
-                && side_by_side
-                && worktree::in_repo(&thread.cwd);
+                && worktree::beside(cfg.worktree_mode, &thread.cwd, &others);
             task.place = if task.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             task.thread = Some(thread.id.clone());
             {
@@ -393,11 +390,21 @@ fn handed(
     Ok(files.to_vec())
 }
 
-/// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what its task's `setup`
-/// changes, without what stays with the chat.
-fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
+/// The checkouts (`worktree::top`) the threads of `tasks` other than `except` work in now, outside a worktree.
+fn checkouts(hub: &Hub, tasks: &[Task], except: &str) -> Vec<std::path::PathBuf> {
+    let threads = tasks.iter().filter(|i| i.id != except && i.status.live() && !i.in_worktree());
+    let folders = threads.filter_map(|i| hub.store.bot(i.thread.as_deref()?).ok().flatten()).map(|row| row.config.cwd);
+    folders.filter_map(|cwd| worktree::top(&cwd).map(std::path::Path::to_path_buf)).collect()
+}
+
+/// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what `task`'s `setup`
+/// changes, without what stays with the chat: it works in `task.folder(cfg)` and has no projects.
+fn thread_bot(cfg: &BotConfig, task: &Task) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
+        cwd: task.folder(cfg),
+        // Its folder is its own: the bot's projects are the bot's to send work to.
+        projects: Vec::new(),
         thread_of: Some(cfg.id.clone()),
         created_at: now_ms(),
         // Its alerts are its bot's: the cards it raises in the chat, and the turn its report starts there.
@@ -418,7 +425,7 @@ fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
         // A thread runs no threads of its own.
         thread_agent: None,
         thread_fallbacks: Vec::new(),
-        ..setup.over(&fallback::threads(cfg))
+        ..task.setup.over(&fallback::threads(cfg))
     }
 }
 

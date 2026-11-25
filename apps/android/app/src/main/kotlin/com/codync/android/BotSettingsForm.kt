@@ -81,7 +81,7 @@ import androidx.compose.ui.semantics.semantics
     }
     CodyncSheet(folders, { folders = false }) {
         FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.computerName, store::listDirs, store::selectWorkspace) {
-            change(draft.copy(cwd = it)); folders = false
+            change(if (state.botProjects) draft.withProject(it) else draft.copy(cwd = it)); folders = false
         }
     }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
@@ -167,6 +167,24 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 /** Where the bot works, how many of its threads work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
+    if (state.botProjects) projectRows(state.bots.firstOrNull { it.id == draft.id }, draft, change, chooseFolder) else workspaceRows(state, draft, change, chooseFolder)
+    // Only from a host that has the box (its bots say).
+    draft.maxThreads?.let { count ->
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }
+    }
+    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
+    // place) and the host has it.
+    if (!state.botProjects) draft.threadWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
+        row {
+            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
+                { change(draft.copy(threadWorktrees = it)) })
+        }
+    }
+    row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
+}
+
+/** A host before projects: the one folder the bot works in, its own or a project. */
+private fun CardRows.workspaceRows(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
     row {
         Column {
             ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
@@ -187,19 +205,6 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
             state.bots.firstOrNull { it.id == draft.id }?.let(::gitState)?.let { GitLine(it) }
         }
     }
-    // Only from a host that has the box (its bots say).
-    draft.maxThreads?.let { count ->
-        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }
-    }
-    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
-    // place) and the host has it.
-    draft.threadWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
-        row {
-            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
-                { change(draft.copy(threadWorktrees = it)) })
-        }
-    }
-    row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }
 
 /** Under the folder: whether it is a git repository, and the manual's page on what threads working at once do with and without git. */

@@ -76,6 +76,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Android parity and acceptance](plans/android-app.md)
 - [Event box](plans/event-box.md) (a bot's long work as tasks in a box, taken by a bounded number of its threads; the host and the apps being built, other sources and the rest in its stages)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
+- [Agent sessions](plans/agent-sessions.md) (per coding agent: where its session id, title and busy state come from, its hooks, plugins and MCP config; research for a Network mailbox per session)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
 - [Codync Cloud](plans/codync-cloud.md) (a cloud computer Codync runs on the user's own cloud provider account, Boat or InstaBox, bring your own cloud; phase 1 built), its [provider survey](plans/codync-cloud-providers.md), [Boat trial log](plans/codync-cloud-boat-trial.md) and a not-adopted alternative for [updates](plans/codync-cloud-updates.md)

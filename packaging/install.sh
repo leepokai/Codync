@@ -78,11 +78,15 @@ install_host() {
 
 # Restarts the background host if its service runs the binary at $1.
 restart_service() {
+  target=$1
+  # The service records the physical path, so a symlinked BIN_DIR must resolve
+  # to the same path before it can find and restart its own service.
+  target=$(CDPATH= cd -- "$(dirname "$target")" && pwd -P)/$(basename "$target")
   if [ $OS = linux ]; then
     unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
-    grep -qF "$1" "$unit" 2>/dev/null && systemctl --user restart codync-host && say "Restarted the codync-host service"
+    grep -qF "$target" "$unit" 2>/dev/null && systemctl --user restart codync-host && say "Restarted the codync-host service"
   else
-    grep -qF "$1" "$HOME/Library/LaunchAgents/com.pokai.codync.host.plist" 2>/dev/null &&
+    grep -qF "$target" "$HOME/Library/LaunchAgents/com.pokai.codync.host.plist" 2>/dev/null &&
       launchctl kickstart -k "gui/$(id -u)/com.pokai.codync.host" && say "Restarted the codync-host service"
   fi
   return 0
@@ -312,7 +316,7 @@ else
       if [ "$desktop_app" = 1 ]; then
         echo "Next: open Codync, then choose Pair phone"
       else
-        echo "Next: run $BIN_DIR/codync-host pair"
+        echo "Next: run $BIN_DIR/codync-host pair --port ${host_port:-19222}"
       fi
     fi
   else

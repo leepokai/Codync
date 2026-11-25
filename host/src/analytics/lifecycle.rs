@@ -34,7 +34,11 @@ pub fn host_started(hub: &Hub, service: bool, loopback: bool) {
 /// `host_install_failed`, once after an installer couldn't start the service. The
 /// marker carries no content and is removed after it is queued.
 pub fn host_install_failed(hub: &Hub) {
-    let marker = crate::service::data_dir().join("host-install-failed");
+    report_install_failure_at(hub, &crate::service::data_dir().join("host-install-failed"));
+}
+
+/// [`host_install_failed`], with the marker path given by the caller.
+fn report_install_failure_at(hub: &Hub, marker: &std::path::Path) {
     if !marker.exists() {
         return;
     }
@@ -42,7 +46,7 @@ pub fn host_install_failed(hub: &Hub) {
         return;
     }
     capture(hub, Event::HostInstallFailed, Map::new());
-    if let Err(e) = std::fs::remove_file(&marker) {
+    if let Err(e) = std::fs::remove_file(marker) {
         tracing::warn!(error = format!("{e:#}"), "couldn't remove the host install failure marker");
     }
 }
@@ -248,17 +252,18 @@ mod tests {
 
     #[test]
     fn an_install_failure_is_reported_once() {
-        let data = crate::service::data_dir();
-        std::fs::create_dir_all(&data).unwrap();
-        let marker = data.join("host-install-failed");
+        let dir = std::env::temp_dir().join(format!("codync-install-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("host-install-failed");
         std::fs::write(&marker, b"").unwrap();
         let sent = queued(|hub| {
-            host_install_failed(hub);
-            host_install_failed(hub);
+            report_install_failure_at(hub, &marker);
+            report_install_failure_at(hub, &marker);
         });
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0]["event"], "host_install_failed");
         assert!(!marker.exists());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// The events `report` queued on a throwaway host.

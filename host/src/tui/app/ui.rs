@@ -29,11 +29,11 @@ pub enum TraceMode {
 pub enum Width {
     /// < 80 columns: roster and chat are separate pages.
     Narrow,
-    /// 80â€“99: compact roster.
+    /// 80–99: compact roster.
     Mid,
-    /// 100â€“149.
+    /// 100–149.
     Wide,
-    /// â‰¥ 150.
+    /// ≥ 150.
     Huge,
 }
 
@@ -71,27 +71,27 @@ pub enum Action {
 }
 
 pub const ACTIONS: [(&str, &str, Action); 23] = [
-    ("New botâ€¦", "n", Action::NewBot),
-    ("New group chatâ€¦", "m", Action::NewGroup),
-    ("Extensions: agents, connectors, skillsâ€¦", "A", Action::Market),
-    ("Memory of this botâ€¦", "M", Action::Memory),
-    ("Details of this botâ€¦", "R", Action::Details),
-    ("Library of this bot: artifacts and filesâ€¦", "L", Action::Library),
-    ("New session for this botâ€¦", "", Action::NewSession),
+    ("New bot…", "n", Action::NewBot),
+    ("New group chat…", "m", Action::NewGroup),
+    ("Extensions: agents, connectors, skills…", "A", Action::Market),
+    ("Memory of this bot…", "M", Action::Memory),
+    ("Details of this bot…", "R", Action::Details),
+    ("Library of this bot: artifacts and files…", "L", Action::Library),
+    ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Computer name", "", Action::ComputerName),
-    ("Pair phoneâ€¦", "P", Action::Pair),
-    ("Network: your other computersâ€¦", "N", Action::Network),
+    ("Pair phone…", "P", Action::Pair),
+    ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
-    ("About usage analyticsâ€¦", "", Action::AboutAnalytics),
-    ("Reset saved credentialsâ€¦", "", Action::ResetCredentials),
+    ("About usage analytics…", "", Action::AboutAnalytics),
+    ("Reset saved credentials…", "", Action::ResetCredentials),
     ("Appearance: System", "", Action::Appearance(super::super::appearance::Appearance::System)),
     ("Appearance: Light", "", Action::Appearance(super::super::appearance::Appearance::Light)),
     ("Appearance: Dark", "", Action::Appearance(super::super::appearance::Appearance::Dark)),
-    ("App languageâ€¦", "", Action::Language),
+    ("App language…", "", Action::Language),
     ("Show thinking details", "", Action::ThinkingDetails),
     ("Keys", "?", Action::Keys),
 ];
@@ -277,7 +277,7 @@ pub struct Form {
     /// The login profile it runs on; `None`: the computer's own sign-in.
     pub login_profile: Option<String>,
     pub model: Editor,
-    /// Model settings (effort, fastâ€¦) and the model they were picked for.
+    /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
     pub fast: bool,
     /// Agents that carry on, in order, when the bot's own can't answer.

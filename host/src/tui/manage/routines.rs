@@ -17,7 +17,13 @@ impl App {
         };
         let bot = b.id.clone();
         self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
-        self.overlays.push(Overlay::Details(DetailsPage { bot, ..Default::default() }));
+        // A host that keeps threads past a week lists the older ones (`hello.threadKeepDays`).
+        let loading = self.thread_keep_days.is_some();
+        if loading {
+            self.sheet("olderThreads", json!({"botId": bot}), Reply::OlderThreads(bot.clone()));
+        }
+        let older = Box::new(super::OlderThreads { loading, ..Default::default() });
+        self.overlays.push(Overlay::Details(DetailsPage { bot, older, ..Default::default() }));
     }
 
     /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
@@ -51,7 +57,10 @@ impl App {
             (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(DetailRow::FollowUp(_))) => {
                 self.flash("A follow-up is the bot's own: x cancels it");
             }
-            (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
+            (KeyCode::Down | KeyCode::Char('j'), _) => {
+                l.cursor = (l.cursor + 1).min(n.saturating_sub(1));
+                self.more_older(&mut l, n);
+            }
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {
                 self.overlays.push(Overlay::Details(l));

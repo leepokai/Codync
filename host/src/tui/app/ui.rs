@@ -62,6 +62,8 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    /// "Delete old threads" set to these days (0: keep forever).
+    ThreadKeep(u32),
     ComputerName,
     ResetCredentials,
     Language,
@@ -70,7 +72,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 23] = [
+pub const ACTIONS: [(&str, &str, Action); 27] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -80,6 +82,11 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
+    // Each choice its own row, as the apps' menus offer them: nothing changes on the way to another.
+    ("Delete old threads: Keep forever", "", Action::ThreadKeep(0)),
+    ("Delete old threads: After 7 days", "", Action::ThreadKeep(7)),
+    ("Delete old threads: After 30 days", "", Action::ThreadKeep(30)),
+    ("Delete old threads: After 90 days", "", Action::ThreadKeep(90)),
     ("Computer name", "", Action::ComputerName),
     ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),

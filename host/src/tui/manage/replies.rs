@@ -99,6 +99,7 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::OlderThreads(bot) => self.older_threads(&bot, Some(&v)),
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::Gear(backend) => {
                 let lists = super::gear::GearLists {
@@ -277,6 +278,8 @@ impl App {
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
         match r {
+            // The page keeps what it has; the next try comes when the page opens again.
+            Reply::OlderThreads(bot) => self.older_threads(bot, None),
             Reply::Models(key) => {
                 self.models.insert(key.clone(), Some(vec![]));
             }

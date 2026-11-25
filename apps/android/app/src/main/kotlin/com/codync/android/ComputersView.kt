@@ -146,6 +146,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
         if (state.screen != null) row { RowLabel("Screen", "display", chevron = true, modifier = Modifier.plainButton(action = actions.screen)) }
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
+        threadKeepDays(state.hello)?.let { days -> row { DeleteOldThreadsRow(days, store::setThreadKeepDays) } }
     }
     if (state.connection !is LinkState.Ready && state.offersWorkflows) row { WorkflowsComputerRow(state, online = false, action = {}) }
     if (BuildConfig.PUSH_CONFIGURED) row {
@@ -264,6 +265,25 @@ private const val NETWORK_ICON = "codync.network"
     DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(routeTitle(route, computer.cloud), icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
         Modifier.fillMaxWidth(), label = "Connection") {
         ConnectionRowContent(computer.route, computer.cloud, chevron = true)
+    }
+}
+
+/** How long the computer keeps a thread after it last finished (iOS `ThreadKeepRow`): never, or so many days. */
+@Composable private fun DeleteOldThreadsRow(days: Int, choose: (Int) -> Unit) {
+    val choices = threadKeepChoices(days)
+    val current = choices.first { it.first == days }.second
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        DropdownMenu({ choices.map { (value, title) -> MenuItem(title, selected = value == days) { choose(value) } } }, Modifier.fillMaxWidth(),
+            label = "Delete old threads") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol("clock.arrow.circlepath", size = 20.dp, tint = Palette.text) }
+                Text(tr("Delete old threads"), Modifier.weight(1f), style = Type.body, color = Palette.text)
+                Text(tr(current), style = Type.body, color = Palette.secondary, maxLines = 1)
+                Symbol("chevron.down", size = 13.dp, tint = Palette.tertiary)
+            }
+        }
+        Text(tr("Counts from when a thread last finished. Its chat and its own folder are deleted with it."), Modifier.padding(start = 38.dp),
+            style = Type.footnote, color = Palette.secondary)
     }
 }
 

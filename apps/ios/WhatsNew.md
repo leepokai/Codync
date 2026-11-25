@@ -8,6 +8,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ## 2.54.0
 ### zh-Hant
+- Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。
 - 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
 - Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾（「Bot 的資料夾」，可以複製路徑），聊天、例行任務和檔案都在那裡；你的資料夾改列為專案，可以新增專案、設為預設或移除專案，第一個就是預設，thread 從預設專案開始。專案是 git 儲存庫時可以選「worktree 模式」：關、並行時或一律（每個 thread 都有自己的 worktree，你的 checkout 不會被動到）。原本在專案裡工作的 Bot 更新後會搬回自己的資料夾，那個專案成為它的第一個專案，專案裡的東西不會改動。
 - Bot 設定裡 git 專案的那一列多了「共用資料夾」：列出的資料夾（例如 node_modules）會連結到每個新的 worktree，thread 不必重新安裝套件。專案最上層的 .worktreeinclude 列出的被 git 忽略的檔案（例如 .env）也會複製進新的 worktree。Bot 交派工作時可以替每個工作選擇在專案本身或自己的 worktree 進行，也能在工作進行中直接問 thread 問題、拿到回答。
@@ -22,6 +23,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
+- Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
 - Bot settings' Workspace now has Projects. A bot always lives in its own folder (Bot's folder, with a button to copy its path), where its chat, routines and files are; the folders it works on are its projects: add one, make another the default or remove one. Threads start in the default project. With a project in a git repository, Worktree mode picks Off, Side by side or Always (every thread gets its own worktree, so your checkout is never touched). A bot that worked in a project moves to its own folder, with that project as its first; nothing in the project changes.
 - A git project's row in bot settings adds Shared folders: the folders listed (node_modules, say) are linked into each new worktree, so a thread doesn't install packages again. Ignored files listed in a .worktreeinclude file at the top of the project (such as .env) are copied in too. A bot can choose, for each task it hands out, the project itself or a worktree of its own, and ask a thread a question while it works and get its answer.

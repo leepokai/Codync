@@ -209,11 +209,18 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             _ => None,
         };
         let tier = (s["tier"] == "pull").then(|| tr("Checks its mail"));
-        let detail: Vec<String> = [title.map(|_| address.into()), state.map(Into::into), tier.map(Into::into)]
+        let mut detail: Vec<String> = [title.map(|_| address.into()), state.map(Into::into), tier.map(Into::into)]
             .into_iter()
             .flatten()
             .collect();
         let name = if s["older"] == true { t.dim } else { t.text };
+        // The dot and its space, two between title and details: the address goes in whole first, then
+        // the state and the mail text as room allows, and the title gets what is left (12 to 34).
+        let fixed = 2 + 1 + 2 + 12;
+        let width = |d: &[String]| u16::try_from(d.join(" · ").chars().count()).unwrap_or(u16::MAX);
+        while detail.len() > 1 && fixed + width(&detail) > body.width {
+            detail.pop();
+        }
         let detail = detail.join(" · ");
         // No state, no dot: unknown isn't offline.
         let dot = if s["state"].is_null() {
@@ -224,9 +231,8 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             "○"
         };
         let x = put(buf, body.x, y, 2, dot, if runs { t.text } else { t.dim }.patch(t.panel)) + 1;
-        // The address and the rest go in whole where they can: the title gives way first (down to 12).
-        let rest = u16::try_from(detail.chars().count()).unwrap_or(u16::MAX);
-        let room = body.width.saturating_sub(2 + 2 + rest).clamp(12, 34);
+        let rest = width(std::slice::from_ref(&detail));
+        let room = body.width.saturating_sub(2 + 1 + 2 + rest).clamp(12, 34);
         let x =
             put(buf, x, y, room + 2, &md::truncate(title.unwrap_or(address), usize::from(room)), name.patch(t.panel));
         let x = x + 2;
@@ -389,5 +395,18 @@ mod tests {
         let short = text(SHORT);
         assert!(short.contains("Fix refunds") && short.contains("More sessions: 2"), "{short}");
         assert!(short.contains("Cloud assistants"), "the switch keeps its row: {short}");
+        // Narrow: the address stays whole, the mail text gives way first.
+        let address = "a-very-long-repository-name-claude-40ch";
+        let narrow = {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": address, "title": "A title long enough to be cut", "state": "working", "runs": true, "tier": "pull"},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, 64, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+        };
+        assert!(narrow.contains(address), "{narrow}");
     }
 }

@@ -311,7 +311,10 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     let address = renamed["address"].as_str().unwrap().to_owned();
     assert_ne!(address, "b", "{renamed}");
     hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
-    let listed = crate::chat::team::call_async(hub, "b", "b", "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    let listed = crate::chat::team::call_async(hub, "b", "b", "list_bots", &json!({"kind": "codex", "query": address}))
+        .await
+        .unwrap();
+    // As the desktop e2e asks: narrowed to its address, with the same shape.
     assert_eq!(listed["bots"][0]["id"], *address, "{listed}");
     let sent = crate::chat::team::call_async(
         hub,

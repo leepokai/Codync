@@ -72,7 +72,7 @@ pub fn tools() -> Value {
         },
         {
             "name": "message_bot",
-            "description": "Send a self-contained request to another Codync bot and return as soon as it is queued. The recipient works with its own tools, folder and permissions; its final reply (or why it couldn't finish) comes back to you later as a new turn in your own chat, with replies that arrive while you are busy taken together. Don't wait or poll for it. Stopping you does not cancel accepted requests; stopping the recipient does, and you hear so. After a host restart a request that hadn't started is sent again, and one that was running comes back as failed (check its partial work before asking again).",
+            "description": "Send a self-contained request to another Codync bot and return as soon as it is queued. The recipient works with its own tools, folder and permissions; its final reply (or why it couldn't finish) comes back to you later as a new turn in your own chat, with replies that arrive while you are busy taken together. Don't wait or poll for it. Stopping you does not cancel accepted requests; stopping the recipient does, and you hear so. After a host restart a request that hadn't started is sent again, and one that was running comes back as failed (check its partial work before asking again); a request to a coding agent's session (it reads its mail itself) isn't sent again: its notice ends, the letter stays in that session's inbox, and an answer after the restart reaches you as a new request.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

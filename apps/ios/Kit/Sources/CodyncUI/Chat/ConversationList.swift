@@ -148,6 +148,9 @@ private struct ConversationCollection: UIViewRepresentable {
             let rows = parent.rows.filter { seen.insert($0.id).inserted }
             contents = Dictionary(rows.map { ($0.id, $0.content) }, uniquingKeysWith: { a, _ in a })
 
+            let first = lastId == nil
+            view.animatesContentGrowth = !reduceMotion && !first && context.environment.scenePhase == .active
+
             // Reserve the offset before any snapshot or inset update can lay out the list.
             // Otherwise enabling following pins it to the end before the animation starts.
             let sent = lastId != nil && (rows.last.map { $0.id != lastId && $0.isUserMessage } ?? false)
@@ -176,7 +179,6 @@ private struct ConversationCollection: UIViewRepresentable {
             // Rows that stay re-render with their new content (SwiftUI skips what didn't change).
             let kept = Set(old)
             snapshot.reconfigureItems(ids.filter(kept.contains))
-            let first = lastId == nil
             lastId = rows.last?.id
 
             if old == ids || first || view.scrollingToEnd || jump || sent {
@@ -244,11 +246,13 @@ private struct ConversationCollection: UIViewRepresentable {
         // MARK: scrolling
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            guard scrollView === view else { return }
             view.cancelScrollingToEnd()
             lastOffset = scrollView.contentOffset.y
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard scrollView === view else { return }
             let y = scrollView.contentOffset.y
             defer { lastOffset = y }
             trackPull(scrollView)
@@ -262,6 +266,7 @@ private struct ConversationCollection: UIViewRepresentable {
 
         func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
                                        targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+            guard scrollView === view else { return }
             guard let parent, let refresh = parent.refresh, pulled >= 1, !refreshing,
                   let container = view.superview as? ConversationContainer else { return }
             // The chat eases back to just below the indicator and stays there while it turns. UIKit's
@@ -284,25 +289,30 @@ private struct ConversationCollection: UIViewRepresentable {
         }
 
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            guard scrollView === view else { return }
             // Past the top isn't a resting place: the bounce (or a refresh) settles it.
             if !decelerate, scrollView.contentOffset.y >= -scrollView.adjustedContentInset.top { settle() }
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            guard scrollView === view else { return }
             settle()
         }
 
         func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+            guard scrollView === view else { return true }
             view.cancelScrollingToEnd()
             setFollowing(false)
             return true
         }
 
         func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+            guard scrollView === view else { return }
             parent?.nearTop?()
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+            guard scrollView === view else { return }
             settle()
         }
 

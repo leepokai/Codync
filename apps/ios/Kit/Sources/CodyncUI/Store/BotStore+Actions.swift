@@ -184,6 +184,25 @@ extension BotStore {
             if connection == .online { markRead(botId) }
         } else {
             readingViews[token] = nil
+            if !readingViews.values.contains(botId), let list = entries[botId] {
+                clearLiveReveals(for: list)
+            }
+        }
+    }
+
+    /// Thread views register while visible in an active scene so closed task threads never stage delayed reveals.
+    func setReadingThread(_ token: UUID, threadId: String?, active: Bool) {
+        let previous = readingThreads[token]
+        if active, let threadId {
+            readingThreads[token] = threadId
+        } else {
+            readingThreads[token] = nil
+        }
+        if let previous,
+           previous != (active ? threadId : nil),
+           !readingThreads.values.contains(previous),
+           let list = threadEntries[previous] {
+            clearLiveReveals(for: list)
         }
     }
 
@@ -413,7 +432,9 @@ extension BotStore {
     public func delete(_ bot: Bot) {
         removeComposerDrafts(for: bot.id)
         bots[bot.id] = nil
-        entries[bot.id] = nil
+        if let removed = entries.removeValue(forKey: bot.id) {
+            clearLiveReveals(for: removed)
+        }
         perform(replay: true) { try await $0.deleteBot(bot.id) }
     }
 

@@ -4,15 +4,40 @@ import UIKit
 class ConversationCollectionView: UICollectionView {
     let keyboardDismissTapDelegate = ConversationBackgroundTapDelegate()
     static let nearEnd: CGFloat = 32
+    static let autoScrollSuppressionWindow: TimeInterval = 0.25
+    var animatesContentGrowth = false {
+        didSet {
+            if !animatesContentGrowth, followingContentGrowth {
+                cancelScrollingToEnd()
+                if following { pinToEnd() }
+            }
+        }
+    }
     var following = true {
-        didSet { if !following { needsViewportFollow = false } }
+        didSet {
+            if !following {
+                needsViewportFollow = false
+                if followingContentGrowth { cancelScrollingToEnd() }
+            }
+        }
     }
     private(set) var updatingViewport = false
     private var needsViewportFollow = false
     private(set) var scrollingToEnd = false
+    private(set) var followingContentGrowth = false
     private var displayLink: CADisplayLink?
     private var lastFrame: TimeInterval?
     private var motion = ConversationScrollMotion()
+    private var motionPosition: CGFloat?
+    var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    private var autoScrollSuppressedUntil: TimeInterval = -.infinity
+
+    var isAutoScrollSuppressed: Bool { clock() < autoScrollSuppressedUntil }
+    var hasActiveDisplayLink: Bool { displayLink != nil }
+
+    func clearAutoScrollSuppression() {
+        autoScrollSuppressedUntil = -.infinity
+    }
 
     @objc func dismissComposerKeyboard() {
         // The composer is a sibling of the collection, not one of its descendants.
@@ -35,6 +60,7 @@ class ConversationCollectionView: UICollectionView {
         guard self.frame != frame || contentInset != insets else { return }
         updatingViewport = true
         defer { updatingViewport = false }
+        if followingContentGrowth { cancelScrollingToEnd() }
         if following { needsViewportFollow = true }
         self.frame = frame
         contentInset = insets
@@ -45,12 +71,19 @@ class ConversationCollectionView: UICollectionView {
     }
 
     func followingAfterInteraction() -> Bool {
-        (following && needsViewportFollow) || endOffset - contentOffset.y < Self.nearEnd
+        if following && needsViewportFollow { return true }
+        if isAutoScrollSuppressed { return false }
+        return endOffset - contentOffset.y < Self.nearEnd
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if following { pinToEnd() }
+        guard following else { return }
+        if animatesContentGrowth, !updatingViewport, !scrollingToEnd, window != nil {
+            followContentGrowth()
+        } else {
+            pinToEnd()
+        }
     }
 
     override func didMoveToWindow() {
@@ -67,19 +100,50 @@ class ConversationCollectionView: UICollectionView {
         if abs(contentOffset.y - end) > 0.5 { contentOffset.y = end }
     }
 
+    /// Smoothly tracks growing message content toward `endOffset` without resetting velocity on
+    /// repeated retargets, while cancelling cleanly if content shrinks or the reader holds the list.
+    func followContentGrowth() {
+        guard following, animatesContentGrowth, !updatingViewport, !scrollingToEnd, window != nil else { return }
+        guard !isTracking, !isDragging, !isDecelerating else {
+            if followingContentGrowth { cancelScrollingToEnd() }
+            return
+        }
+        needsViewportFollow = false
+        let end = endOffset
+        if contentOffset.y > end + 0.5 {
+            if followingContentGrowth { cancelScrollingToEnd() }
+            contentOffset.y = end
+            return
+        }
+        if end - contentOffset.y > 0.5 {
+            followingContentGrowth = true
+            startFrames()
+        }
+    }
+
     func followingAfterScroll(from previousOffset: CGFloat) -> Bool {
-        // Returning from overscroll moves upward too, but is not reading older messages.
-        if endOffset - contentOffset.y < Self.nearEnd { return true }
-        // Neither is pulling down past the top to refresh. Flipping here re-renders the list
-        // mid-pull, and every snapshot applied during a drag snaps the pull back.
+        let distanceFromEnd = endOffset - contentOffset.y
+        // Pulling down past the top to refresh keeps the current following state intact.
         if contentOffset.y < -adjustedContentInset.top { return following }
-        if contentOffset.y < previousOffset - 0.5 { return false }
+        let movedUp = contentOffset.y < previousOffset - 0.5
+        if movedUp, contentOffset.y < endOffset - 0.5 {
+            if distanceFromEnd < Self.nearEnd {
+                autoScrollSuppressedUntil = clock() + Self.autoScrollSuppressionWindow
+                cancelScrollingToEnd()
+            }
+            return false
+        }
+        if isAutoScrollSuppressed { return false }
+        // Returning from overscroll moves upward too, but is not reading older messages.
+        if distanceFromEnd < Self.nearEnd { return true }
         return following
     }
 
     /// Called before enabling following, applying a snapshot, or updating keyboard insets.
     func prepareToScrollToEnd(animated: Bool) {
+        clearAutoScrollSuppression()
         if animated {
+            followingContentGrowth = false
             scrollingToEnd = true
             // A jump can be tapped while a previous swipe is still coasting.
             if isDecelerating { setContentOffset(contentOffset, animated: false) }
@@ -89,10 +153,12 @@ class ConversationCollectionView: UICollectionView {
     }
 
     func scrollToEnd(animated: Bool) {
+        clearAutoScrollSuppression()
         guard animated, window != nil else {
             cancelScrollingToEnd()
             return pinToEnd()
         }
+        followingContentGrowth = false
         scrollingToEnd = true
         startFrames()
     }
@@ -101,6 +167,7 @@ class ConversationCollectionView: UICollectionView {
         // Repeated requests retarget the existing motion; they never rewind or restart it.
         guard displayLink == nil else { return }
         motion = ConversationScrollMotion()
+        motionPosition = nil
         lastFrame = nil
         let link = CADisplayLink(target: ConversationScrollFrames(self), selector: #selector(ConversationScrollFrames.tick(_:)))
         displayLink = link
@@ -110,30 +177,39 @@ class ConversationCollectionView: UICollectionView {
     func cancelScrollingToEnd() {
         displayLink?.invalidate()
         displayLink = nil
+        motionPosition = nil
         lastFrame = nil
         scrollingToEnd = false
+        followingContentGrowth = false
     }
 
     fileprivate func advance(_ link: CADisplayLink) {
         // A stationary touch has no drag-end callback. Resume viewport following once UIKit
         // releases it, without moving the content while a touch or deceleration owns it.
-        if !scrollingToEnd {
+        if !scrollingToEnd && !followingContentGrowth {
             guard following, needsViewportFollow else { return cancelScrollingToEnd() }
             pinToEnd()
             if !needsViewportFollow { cancelScrollingToEnd() }
             return
         }
-        guard following, !isTracking, !isDecelerating else { return cancelScrollingToEnd() }
+        guard following, window != nil, !isTracking, !isDragging, !isDecelerating else { return cancelScrollingToEnd() }
         // Measure only the current viewport. Do not jump offscreen to pre-size estimated rows.
         layoutIfNeeded()
         let elapsed = lastFrame.map { link.timestamp - $0 } ?? (link.targetTimestamp - link.timestamp)
         lastFrame = link.timestamp
         let target = endOffset
-        let next = motion.step(from: contentOffset.y, to: target, elapsed: elapsed)
-        UIView.performWithoutAnimation { contentOffset.y = next }
-        if motion.isSettled(at: contentOffset.y, target: endOffset) {
+        if followingContentGrowth, !scrollingToEnd, contentOffset.y >= target - 0.5 {
+            UIView.performWithoutAnimation { contentOffset.y = target }
             cancelScrollingToEnd()
-            pinToEnd()
+            return
+        }
+        let current = motionPosition.flatMap { abs($0 - contentOffset.y) < 1.0 ? $0 : nil } ?? contentOffset.y
+        let next = motion.step(from: current, to: target, elapsed: elapsed)
+        motionPosition = next
+        UIView.performWithoutAnimation { contentOffset.y = next }
+        if motion.isSettled(at: next, target: target) {
+            UIView.performWithoutAnimation { contentOffset.y = target }
+            cancelScrollingToEnd()
         }
     }
 }

@@ -10,6 +10,7 @@ extension BotStore {
     }
 
     func dropThreadEntry(_ id: String, thread: String) {
+        completeLiveReveal(id: id)
         threadEntries[thread]?.removeAll { $0.id == id }
     }
 

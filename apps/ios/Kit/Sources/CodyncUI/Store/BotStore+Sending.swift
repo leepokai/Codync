@@ -319,6 +319,7 @@ extension BotStore {
     }
 
     public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
+        completeLiveReveal(id: entry.id)
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
         if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         entries[entry.botId]?.removeAll { $0.id == entry.id }

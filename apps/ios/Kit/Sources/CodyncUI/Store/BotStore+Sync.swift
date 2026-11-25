@@ -23,6 +23,7 @@ extension BotStore {
                 if refetched != nil { refetchAll() }
                 requestedSince = rev
                 windowFloors = [:]
+                hasKnownCatchUpBoundary = false
                 var catchUpLeft = 0
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
@@ -33,6 +34,7 @@ extension BotStore {
                     guard !Task.isCancelled else { return }
                     if case let .hello(_, _, _, _, _, catchUp) = event {
                         // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
+                        hasKnownCatchUpBoundary = catchUp != nil
                         catchUpLeft = catchUp ?? 0
                     } else if catchUpLeft > 0 {
                         catchUpLeft -= 1
@@ -52,7 +54,11 @@ extension BotStore {
                 }
             }
             // Waiting for the next stream, the roster can fall behind. A cancelled task's stream is already replaced.
-            if !Task.isCancelled { streamCaughtUp = false }
+            if !Task.isCancelled {
+                streamCaughtUp = false
+                hasKnownCatchUpBoundary = false
+                clearAllLiveReveals()
+            }
             try? await Task.sleep(for: .seconds(backoff))
             backoff = min(backoff * 2, 20)
         }
@@ -147,7 +153,9 @@ extension BotStore {
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil
-            entries[id] = nil
+            if let removed = entries.removeValue(forKey: id) {
+                clearLiveReveals(for: removed)
+            }
             dropEndedThreads()
             windowFloors[id] = nil
             bump(r)
@@ -158,12 +166,16 @@ extension BotStore {
                 bump(e.rev)
                 break
             }
+            let existing = entries[e.botId]?.first { $0.id == e.id }
             upsert(e)
+            recordLiveArrivalIfNeeded(before: existing, after: e, isVisible: isChatVisible(e.botId))
             if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .threadEntry(thread, e):
+            let existing = threadEntries[thread]?.first { $0.id == e.id }
             putThreadEntry(e, thread: thread)
+            recordLiveArrivalIfNeeded(before: existing, after: e, isVisible: isThreadVisible(thread))
             bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
@@ -216,6 +228,7 @@ extension BotStore {
         bots = [:]
         entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }.filter { !$0.value.isEmpty }
         threadEntries = [:]
+        clearAllLiveReveals()
         selection = nil
         onRosterChanged?()
         rev = 0
@@ -243,6 +256,11 @@ extension BotStore {
     private func finishRefetch() {
         guard let kept = refetched else { return }
         refetched = nil
+        for list in entries.values {
+            for entry in list where !entry.id.hasPrefix("local-") && !kept.contains(entry.id) {
+                completeLiveReveal(id: entry.id)
+            }
+        }
         entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") || kept.contains($0.id) } }
             .filter { !$0.value.isEmpty }
     }
@@ -290,6 +308,9 @@ extension BotStore {
     private func dropEndedThreads() {
         guard !threadEntries.isEmpty else { return }
         let named = Set(bots.values.flatMap(\.work).compactMap(\.thread))
+        for (thread, list) in threadEntries where !named.contains(thread) {
+            clearLiveReveals(for: list)
+        }
         threadEntries = threadEntries.filter { named.contains($0.key) }
     }
 
@@ -320,5 +341,46 @@ extension BotStore {
         usage = u
         storage.usage[computer.id] = u
         onUsageChanged?(computer.id, u)
+    }
+
+    private func recordLiveArrivalIfNeeded(before existing: Entry?, after incoming: Entry, isVisible: Bool) {
+        let now = revealClock()
+        pruneExpiredLiveReveals(now: now)
+        guard isActive, streamCaughtUp, hasKnownCatchUpBoundary, isVisible else { return }
+        guard incoming.data.removed != true else {
+            completeLiveReveal(id: incoming.id)
+            return
+        }
+        guard incoming.kind == "agent" || incoming.kind == "thought" else { return }
+        guard incoming.data.artifact == nil,
+              incoming.data.voiceNoteFile == nil,
+              (incoming.data.files?.isEmpty ?? true) else { return }
+        let nextText = incoming.data.text ?? ""
+        guard !nextText.isEmpty else { return }
+
+        let deadline = now + Self.liveArrivalTTL
+        if let existing {
+            guard incoming.rev >= existing.rev else { return }
+            let prevText = existing.data.text ?? ""
+            guard prevText != nextText else { return }
+            if !liveArrivalIDs.contains(incoming.id) {
+                revealedTextByID[incoming.id] = Self.commonPrefixCharacterCount(prevText, nextText)
+            }
+            liveArrivalIDs.insert(incoming.id)
+            liveArrivalDeadlines[incoming.id] = deadline
+        } else {
+            revealedTextByID.removeValue(forKey: incoming.id)
+            liveArrivalIDs.insert(incoming.id)
+            liveArrivalDeadlines[incoming.id] = deadline
+        }
+    }
+
+    private static func commonPrefixCharacterCount(_ a: String, _ b: String) -> Int {
+        var count = 0
+        for (ca, cb) in zip(a, b) {
+            if ca != cb { break }
+            count += 1
+        }
+        return count
     }
 }

@@ -34,6 +34,13 @@ export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error
  * doesn't offer the model is skipped with a reason, and so is a computer whose catalog could not be
  * read or was not loaded — an unverifiable model is not written. Only the agent's default (no
  * model) and a custom command, which have nothing to check against, are left to the host.
+ *
+ * Known gap, left visible on purpose: `catalogFor` is keyed by computer alone, so the catalog read
+ * carries no login and is therefore the computer's DEFAULT login. The patch this plan builds
+ * deliberately omits `loginProfile`, so each bot keeps its own — which means a bot running a named
+ * login can pass this check against a catalog it cannot actually run, and the host then refuses the
+ * save. The two halves disagree: the check promises a row the save cannot deliver. The fix is to key
+ * the check by (computer, agent, the bot's own login) rather than one catalog per computer.
  */
 export const planRows = (plan: ApplyPlan, catalogFor: (computerId: string) => CatalogCheck): PlanRow[] => {
   const model = plan.model?.trim() ?? ''

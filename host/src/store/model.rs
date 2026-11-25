@@ -141,6 +141,12 @@ pub struct BotConfig {
     pub workflow: Option<String>,
     /// Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed. New
     /// messages are refused with a notice, queued routine runs are cancelled, and no turn of its starts.
+    ///
+    /// The switch ships in the desktop Bot Manager and the terminal UI only. The phone apps receive and
+    /// render this state (they keep the lead's star) but have no control of their own yet, so pausing a bot
+    /// is not possible from a phone. That is a deliberate scope limit, not an oversight: the repository's
+    /// cross-platform rule makes adding the phone controls a maintainer decision, and they cannot be built
+    /// or tested on this machine (no Xcode toolchain).
     #[serde(default)]
     pub paused: bool,
     /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).

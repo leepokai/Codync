@@ -41,7 +41,7 @@ message can be put into the session. Checked on macOS on 2026-11-24.
 | Antigravity | `antigravity-client` (ran) | none (ran) | `antigravity.google/conversation_id`, `…/root_conversation_id` (ran) | unverified |
 | pi | `pi` (ran) | `PI_CODING_AGENT=true`, no id (ran) | none (ran) | no hooks; an extension knows the session (ref) |
 | opencode | `opencode` (ran) | `OPENCODE=1`, `OPENCODE_PID`, no id (ran) | `ai.opencode/sessionID` on 2.x (ref); 1.x unverified (no `tools/call` ran) | no hooks; a plugin knows the session (ref) |
-| Grok CLI | unverified | `GROK_SESSION_ID` (ref) | unverified | `session_id` (ref) |
+| Grok CLI | `grok-shell-<server name>` (ran) | `GROK_SESSION_ID` (ran) | none needed | `session_id`, the same id (ran) |
 | Gemini CLI | — | none; `GEMINI_SESSION_ID` only in hook env (ref) | — | `session_id` (ref) |
 | Amp | — | — | — | plugin (ref) |
 
@@ -81,10 +81,10 @@ cooperation. No agent was found with a supported way to rename a session from ou
 | Agent | Where | Events seen | Inject at the next tool call / at stop |
 |---|---|---|---|
 | Claude Code | `~/.claude/settings.json` | (not needed: push through the inbox socket, already built in `reach.rs`) | — |
-| Codex | `~/.codex/hooks.json` | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` fired in `codex exec` (ran) | `PostToolUse` `additionalContext`, `Stop` `decision:block` (ref); hooks need a one-time approval in `/hooks` (ref) |
+| Codex | `~/.codex/hooks.json` | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` fired in `codex exec` (ran); `session_id` = the MCP `_meta.sessionId` (ran) | `PostToolUse` `hookSpecificOutput.additionalContext` (a top-level field makes Codex drop the whole answer), `Stop` `decision:block` + `reason` (ran); hooks need a one-time approval in `/hooks` (`--dangerously-bypass-hook-trust` for a test run) |
 | Cursor | `~/.cursor/hooks.json`, project `.cursor/hooks.json` | `sessionStart`, `postToolUse` fired in `-p`; `beforeSubmitPrompt` and `stop` were configured but did not fire in `-p` (ran) | `postToolUse` `additional_context`, `stop` `followup_message` (ref) |
-| Copilot CLI | `~/.copilot/hooks/*.json` (project `.github/hooks/` only in a trusted folder, ran) | `sessionStart`, `userPromptSubmitted`, `postToolUse`, `agentStop`, `sessionEnd` (ran) | `postToolUse` `additionalContext`, `agentStop` block (ref) |
-| Grok CLI | `~/.grok/hooks/*.json` (file) | `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`, `StopFailure` configured (file) | `PostToolUse` `additionalContext`, `Stop` block; SessionStart and prompt-submit output dropped (ref) |
+| Copilot CLI | `~/.copilot/hooks/*.json` (project `.github/hooks/` only in a trusted folder, ran) | `sessionStart`, `userPromptSubmitted`, `postToolUse`, `agentStop`, `sessionEnd` (ran); PascalCase names (`PostToolUse`, `Stop`) get Claude-style stdin with `session_id` = `COPILOT_AGENT_SESSION_ID` (ran) | top-level `additionalContext` (not `hookSpecificOutput`), `Stop` `decision:block` + `reason` (ran) |
+| Grok CLI | `~/.grok/hooks/*.json` (file) | `SessionStart`, `PostToolUse`, `Stop` fired in `grok -p`, with both `hook_event_name` and `hookEventName` (ran) | `PostToolUse` `hookSpecificOutput.additionalContext`, `Stop` `decision:block` + `reason` (ran); SessionStart and prompt-submit output dropped (ref) |
 | Gemini CLI | `~/.gemini/settings.json` `hooks` | — | `BeforeAgent` / `AfterTool` `additionalContext`, `AfterAgent` deny (ref) |
 | Antigravity | unverified (`~/.gemini/settings.json` holds Gemini CLI's hooks, not `agy`'s) | — | native hooks per ref, unverified |
 
@@ -133,7 +133,7 @@ so this only matters if a bot's conversation title is ever shown.
 |---|---|
 | push (wakes idle) | Claude Code (inbox socket): can wake an idle session or be read mid-turn, but it may hold a message from an outside sender, and a successful socket write confirms neither; pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
 | queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
-| turn (next tool call or stop) | Cursor and Copilot CLI (hook events observed; delivery through hook output unverified; Cursor's `stop` did not fire in `-p`); Grok and Gemini CLI (not verified: follow-up) |
+| turn (next tool call or stop) | Codex, Copilot CLI and Grok: built (`codync-host network hook`), checked end to end on aimock. Cursor: its MCP calls carry no session id, so a hook can't find the mailbox (follow-up); Gemini CLI and Antigravity not installed / unverified (follow-up) |
 | pull (`check_inbox` + an unread notice, built in phase 1) | any MCP client, including the above before their hooks or plugins are installed |
 
 ## Open design questions

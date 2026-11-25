@@ -304,7 +304,7 @@ fn mail_here(hub: &Hub, me: &Session, to: &Session, message: &str, reply_to: Opt
     }
     let id = super::mailbox::post(hub, to, None, &me.address, message, reply_to)?;
     Ok(json!({
-        "letterId": id, "to": to.address, "status": "delivered", "tier": "pull",
+        "letterId": id, "to": to.address, "status": "delivered", "tier": to.tier(),
         "note": "In its inbox: it reads its mail itself (check_inbox), and answers, if it does, come to yours.",
     }))
 }

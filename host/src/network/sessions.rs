@@ -44,10 +44,15 @@ pub struct Caller {
     pub hint: Option<String>,
 }
 
+/// The key of `kind`'s session `id`.
+pub fn session_key(kind: AgentKind, id: &str) -> String {
+    format!("{}:{id}", kind.as_str())
+}
+
 impl Caller {
     pub fn key(&self) -> String {
         match &self.session {
-            Some(id) => format!("{}:{id}", self.kind.as_str()),
+            Some(id) => session_key(self.kind, id),
             None => format!("process:{}", self.process),
         }
     }
@@ -80,9 +85,38 @@ pub struct Session {
     #[serde(default)]
     pub named: Option<String>,
     pub seen: i64,
+    /// Its agent ran our hook (`codync-host network hook`): it hears of its mail at its next step.
+    #[serde(default)]
+    pub hooked: bool,
+    /// The newest letter a hook already told it of.
+    #[serde(default)]
+    pub announced: Option<String>,
+}
+
+/// How a session hears of its mail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    /// It reads its mail when it calls `check_inbox`; every tool result says how many wait.
+    Pull,
+    /// Its hook tells it at its next tool call or when its turn ends.
+    Turn,
+}
+
+/// What a hook of a session finds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Hooked {
+    /// The letters waiting, when one came since the last hook told of them; else 0.
+    pub unread: usize,
+    /// The session's first hook: it has the turn tier now.
+    pub first: bool,
 }
 
 impl Session {
+    pub fn tier(&self) -> Tier {
+        if self.hooked { Tier::Turn } else { Tier::Pull }
+    }
+
     /// The agent's own id for it; `None` for a temporary one.
     pub fn id(&self) -> Option<&str> {
         if self.temporary { None } else { self.key.split_once(':').map(|(_, id)| id) }
@@ -148,6 +182,8 @@ impl Sessions {
                 temporary: caller.session.is_none(),
                 named: None,
                 seen: now,
+                hooked: false,
+                announced: None,
             },
         };
         let retitled = title.is_some() && title != session.title;
@@ -220,6 +256,28 @@ impl Sessions {
     pub fn unread(&self, store: &Store, key: &str) -> usize {
         let _one = self.lock.locked();
         load_mail(store).get(key).map_or(0, Vec::len)
+    }
+
+    /// What a hook of the session at `key` tells it: how many letters wait, once for each newest
+    /// letter, so a hook that runs at every step says it once. `None` for a session not registered
+    /// (a hook never registers one: only its MCP server knows the session the same way).
+    pub fn hook(&self, store: &Store, key: &str) -> Result<Option<Hooked>> {
+        let _one = self.lock.locked();
+        let mut all = load(store);
+        let Some(session) = all.get_mut(key) else { return Ok(None) };
+        let mail = load_mail(store);
+        let waiting = mail.get(key).map_or(&[][..], Vec::as_slice);
+        let newest = waiting.last().map(|m| m.id.clone());
+        let tell = newest.is_some() && newest != session.announced;
+        let first = !session.hooked;
+        if first || tell {
+            session.hooked = true;
+            if tell {
+                session.announced = newest;
+            }
+            save(store, &all)?;
+        }
+        Ok(Some(Hooked { unread: if tell { waiting.len() } else { 0 }, first }))
     }
 
     /// The waiting mail of the session at `key`, oldest first; it counts as read once taken.

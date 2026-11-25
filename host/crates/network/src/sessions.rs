@@ -1,7 +1,7 @@
 //! Which session of a coding agent an MCP server serves, and what the agent itself says about it.
 //!
 //! An agent starts its MCP servers as children, so a server finds its session the way that agent
-//! tells it: Claude Code and Copilot CLI in the environment, Codex and Antigravity with each tool
+//! tells it: Claude Code, Copilot CLI and Grok in the environment, Codex and Antigravity with each tool
 //! call (`_meta`). The kind comes from the client's own name, never from the environment alone: an
 //! agent started from a Claude Code shell inherits that session's variables.
 //! ([agent sessions](../../../docs/plans/agent-sessions.md))
@@ -26,6 +26,8 @@ impl AgentKind {
             "antigravity-client" => Self::Antigravity,
             "pi" => Self::Pi,
             "opencode" => Self::Opencode,
+            // Grok names each server's client after it: `grok-shell-<server>`.
+            name if name.starts_with("grok-shell-") => Self::Grok,
             _ => Self::Other,
         }
     }
@@ -44,6 +46,7 @@ pub fn session_id(kind: AgentKind, env: impl Fn(&str) -> Option<String>, meta: &
             now.or_else(|| env("CLAUDE_CODE_SESSION_ID"))
         }
         AgentKind::Copilot => env("COPILOT_AGENT_SESSION_ID"),
+        AgentKind::Grok => env("GROK_SESSION_ID"),
         AgentKind::Codex => text("sessionId").or_else(|| text("threadId")),
         AgentKind::Antigravity => {
             text("antigravity.google/root_conversation_id").or_else(|| text("antigravity.google/conversation_id"))
@@ -134,12 +137,15 @@ mod tests {
         let env = |key: &str| match key {
             "CLAUDE_CODE_SESSION_ID" => Some("parent-claude".to_owned()),
             "COPILOT_AGENT_SESSION_ID" => Some("copilot-1".to_owned()),
+            "GROK_SESSION_ID" => Some("grok-1".to_owned()),
             _ => None,
         };
         let meta = json!({"sessionId": "thread-1", "antigravity.google/conversation_id": "conv-1"});
         assert_eq!(AgentKind::of_mcp_client("copilot-cli"), AgentKind::Copilot);
         assert_eq!(session_id(AgentKind::Copilot, env, &meta).as_deref(), Some("copilot-1"));
         assert_eq!(session_id(AgentKind::Codex, env, &meta).as_deref(), Some("thread-1"));
+        assert_eq!(AgentKind::of_mcp_client("grok-shell-codync"), AgentKind::Grok);
+        assert_eq!(session_id(AgentKind::Grok, env, &meta).as_deref(), Some("grok-1"));
         assert_eq!(session_id(AgentKind::Antigravity, env, &meta).as_deref(), Some("conv-1"));
         // pi started from a Claude Code shell carries that session's id: it isn't pi's.
         assert_eq!(AgentKind::of_mcp_client("pi"), AgentKind::Pi);

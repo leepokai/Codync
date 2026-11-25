@@ -1,9 +1,13 @@
 //! `codync-host network`: this computer's network of the user's computers (codync-network).
 
-use crate::local_api::local_call;
+use crate::local_api::{local_call, local_call_for};
 use anyhow::Result;
 use clap::Subcommand;
+use codync_network::AgentKind;
+use codync_network::hooks::{hook_input, hook_output};
 use serde_json::{Value, json};
+use std::io::Read;
+use std::time::Duration;
 
 #[derive(clap::Args)]
 pub struct NetworkArgs {
@@ -54,6 +58,26 @@ enum Action {
     Promote { computer: String },
     /// Make this computer the owner with the network's recovery code.
     Recover { code: String },
+    /// Run by a coding agent's hook: tells its session, at its next step, that letters wait for it.
+    Hook { agent: HookAgent },
+}
+
+/// The agents whose hooks name their sessions the way their MCP servers do (checked against each).
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum HookAgent {
+    Codex,
+    Copilot,
+    Grok,
+}
+
+impl HookAgent {
+    fn kind(self) -> AgentKind {
+        match self {
+            Self::Codex => AgentKind::Codex,
+            Self::Copilot => AgentKind::Copilot,
+            Self::Grok => AgentKind::Grok,
+        }
+    }
 }
 
 pub async fn run(args: NetworkArgs) -> Result<()> {
@@ -95,12 +119,37 @@ pub async fn run(args: NetworkArgs) -> Result<()> {
             local_call(port, "networkPromote", json!({"computer": computer, "network": network})).await?;
             println!("{computer} is an admin.");
         }
+        Action::Hook { agent } => hook(port, agent.kind()).await,
         Action::Recover { code } => {
             local_call(port, "networkRecover", json!({"code": code, "network": network})).await?;
             println!("This computer is the owner now. Remove the lost one with `codync-host network remove <name>`.");
         }
     }
     Ok(())
+}
+
+/// The longest a hook holds up its agent's step.
+const HOOK_WAIT: Duration = Duration::from_secs(2);
+/// The most of a hook's stdin read (a tool's whole output can be on it).
+const HOOK_STDIN_MAX: u64 = 4 << 20;
+
+/// Prints what the agent reads, or nothing. Never fails the agent's step: a host that's down, an
+/// event it doesn't answer or stdin it can't read all print nothing.
+async fn hook(port: u16, kind: AgentKind) {
+    // A bot's own agent: its mail comes through the host, not this.
+    if std::env::var_os(crate::mcp::BOT_ENV).is_some() {
+        return;
+    }
+    let mut stdin = String::new();
+    if std::io::stdin().take(HOOK_STDIN_MAX).read_to_string(&mut stdin).is_err() {
+        return;
+    }
+    let Some((session, event)) = serde_json::from_str(&stdin).ok().as_ref().and_then(hook_input) else { return };
+    let body = json!({"kind": kind, "session": session});
+    let Ok(answer) = local_call_for(port, "networkHook", body, HOOK_WAIT).await else { return };
+    if let Some(notice) = answer["notice"].as_str() {
+        println!("{}", hook_output(kind, event, notice));
+    }
 }
 
 fn print_status(v: &Value) {

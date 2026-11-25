@@ -102,3 +102,23 @@ fn a_session_unseen_for_long_is_forgotten_unless_mail_waits() {
     assert!(left.contains(&waiting.key), "its mail keeps it: {left:?}");
     assert_eq!(sessions.unread(&store, &temporary.key), 0, "a forgotten session's mail goes with it");
 }
+
+#[test]
+fn a_hook_tells_of_new_mail_once_and_never_registers() {
+    let store = store();
+    let sessions = Sessions::default();
+    assert_eq!(sessions.hook(&store, "codex:unknown").unwrap(), None, "a hook doesn't register");
+    let (s, _) = sessions
+        .register(&store, &caller(AgentKind::Codex, Some("t1"), "/tmp"), None, || Ok("api-codex".into()))
+        .unwrap();
+    assert_eq!(s.key, session_key(AgentKind::Codex, "t1"));
+    assert_eq!(s.tier(), Tier::Pull);
+    let letter = |id: &str| Mail { id: id.into(), from: "x".into(), body: "hi".into(), reply_to: None, at: 0 };
+    assert_eq!(sessions.hook(&store, &s.key).unwrap(), Some(Hooked { unread: 0, first: true }));
+    sessions.post(&store, &s.key, letter("1")).unwrap();
+    assert_eq!(sessions.hook(&store, &s.key).unwrap(), Some(Hooked { unread: 1, first: false }));
+    assert_eq!(sessions.hook(&store, &s.key).unwrap(), Some(Hooked { unread: 0, first: false }), "told once");
+    sessions.post(&store, &s.key, letter("2")).unwrap();
+    assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(2), "a new letter: told again");
+    assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier(), Tier::Turn);
+}

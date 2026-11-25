@@ -1,4 +1,6 @@
 {
+  "Here": "這裡",
+  "New worktree": "新的 worktree",
   "About usage analytics": "關於用量分析",
   "Access": "訪問",
   "Account": "賬戶",
@@ -7,7 +9,9 @@
   "Add a widget": "新增小元件",
   "Add a key to choose from {name}'s models.": "新增金鑰後即可選擇 {name} 的模型。",
   "{name} wants to: {title}": "{name} 想要：{title}",
+  "Folder name": "資料夾名稱",
   "in {path}": "位於 {path}",
+  "Linked into each new worktree, so installed packages don't have to be installed again.": "連結到每個新的 worktree，已安裝的套件不必再裝一次。",
   "N reject + say why": "N 拒絕並說明原因",
   "Add account": "新增賬戶",
   "Appearance": "外觀",
@@ -55,6 +59,7 @@
   "Connecting…": "正在連線…",
   "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "如果 Codync 幫你省下了來回走動的時間，在 GitHub 上點個星標，能幫助更多人找到它。",
   "No answer — the bot moved on": "沒有回答，機器人已繼續",
+  "Shared folders": "共用資料夾",
   "Suggested": "建議",
   "Something else": "其他答案",
   "Updating…": "正在更新…",
@@ -2498,5 +2503,7 @@
   "Threads work in the project itself": "thread 直接在專案裡工作",
   "A thread gets its own worktree when another thread works in the same repository": "同一個儲存庫裡已有其他 thread 在工作時，thread 會有自己的 worktree",
   "Every thread works in a worktree of its own; your checkout is never touched": "每個 thread 都在自己的 worktree 裡工作，你的 checkout 永遠不會被動到",
-  "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。"
+  "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。",
+  "Add folder": "新增資料夾",
+  "Remove folder": "移除資料夾"
 }

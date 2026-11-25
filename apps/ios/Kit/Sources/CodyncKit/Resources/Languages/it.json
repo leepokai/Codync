@@ -1,4 +1,6 @@
 {
+  "Here": "Qui",
+  "New worktree": "Nuovo worktree",
   " (optional)": " (opzionale)",
   " Sections: {list}": " Sezioni: {list}",
   "%d connected": "%d connessi",
@@ -64,7 +66,9 @@
   "Add a widget": "Aggiungi un widget",
   "Add a key to choose from {name}'s models.": "Aggiungi una chiave per scegliere tra i modelli di {name}.",
   "{name} wants to: {title}": "{name} vuole: {title}",
+  "Folder name": "Nome della cartella",
   "in {path}": "in {path}",
+  "Linked into each new worktree, so installed packages don't have to be installed again.": "Collegata in ogni nuovo worktree, così i pacchetti installati non vanno reinstallati.",
   "N reject + say why": "N rifiuta + spiega perché",
   "Add account": "Aggiungi account",
   "Add connector": "Aggiungi connettore",
@@ -388,6 +392,7 @@
   "Ask: {from} → {to}": "Chiedi: {from} → {to}",
   "Ask": "Chiedi",
   "Its requests run as the bot is set.": "Le sue richieste vengono eseguite secondo le impostazioni del bot.",
+  "Shared folders": "Cartelle condivise",
   "The bot does by itself only what its agent judges safe, and asks you about the rest.": "Il bot fa da solo soltanto ciò che il suo agente ritiene sicuro e ti chiede per il resto.",
   "Every change and command the bot makes for it waits for your approval.": "Ogni modifica e ogni comando del bot per lui attende la tua approvazione.",
   "Its messages are refused.": "I suoi messaggi vengono rifiutati.",
@@ -2498,5 +2503,7 @@
   "Threads work in the project itself": "I thread lavorano nel progetto stesso",
   "A thread gets its own worktree when another thread works in the same repository": "Un thread riceve un worktree tutto suo quando un altro thread lavora nello stesso repository",
   "Every thread works in a worktree of its own; your checkout is never touched": "Ogni thread lavora in un worktree tutto suo; il tuo checkout non viene mai toccato",
-  "Its chat, routines and files live here.": "Qui vivono la sua chat, le sue routine e i suoi file."
+  "Its chat, routines and files live here.": "Qui vivono la sua chat, le sue routine e i suoi file.",
+  "Add folder": "Aggiungi cartella",
+  "Remove folder": "Rimuovi cartella"
 }

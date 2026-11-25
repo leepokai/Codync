@@ -190,9 +190,10 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
         // for a session the other sessions here.
         "list_bots" => {
             let sessions = match &asker.session {
-                Some(me) => others(hub, me).await?,
+                Some(me) => sessions_here(hub, Some(&me.key), args).await?,
                 None => Vec::new(),
             };
+            let sessions: Vec<_> = sessions.into_iter().filter(|s| !super::names_bot(hub, &s.address)).collect();
             let remote = hub.network.directory().await;
             directory::list(hub, &asker.id, args, &remote, &sessions, |bot| asker.reaches(bot))
         }
@@ -205,10 +206,17 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
     }
 }
 
-/// The sessions on this computer other than `me`, each with whether it is busy now.
-async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
-    let mut others: Vec<Session> =
-        hub.network.sessions.all(&hub.store).into_iter().filter(|s| s.key != me.key).collect();
+/// The coding agents' sessions on this computer (but the one keyed `except`), each with whether it is busy now.
+/// `args`: `list_bots`'s, whose `kind` leaves the others out before any agent's files are read.
+pub(super) async fn sessions_here(hub: &Hub, except: Option<&str>, args: &Value) -> Result<Vec<Session>> {
+    let kind = directory::kind_of(args);
+    let mut others: Vec<Session> = hub
+        .network
+        .sessions
+        .all(&hub.store)
+        .into_iter()
+        .filter(|s| Some(s.key.as_str()) != except && kind.is_none_or(|k| k == s.kind))
+        .collect();
     // ponytail: reads each session's agent files on every listing; cache briefly if listings get slow.
     let others = tokio::task::spawn_blocking(move || {
         for s in &mut others {
@@ -222,7 +230,18 @@ async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
 async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let (to, message) = message_args(args)?;
     check_message(message)?;
+    // An answer to one of this computer's bots that asked this session.
     if let Some(me) = &asker.session
+        && let Some(reply_to) = args["replyTo"].as_str()
+        && remote::session_replied(hub, me, reply_to, to, message)?
+    {
+        return Ok(json!({"to": to, "status": "delivered"}));
+    }
+    // A bot's id or address name names that bot, never a session (as for bots, `team::names_bot`);
+    // sessions whose address does are left out of `list_bots`.
+    let exact_bot = super::names_bot(hub, to);
+    if let Some(me) = &asker.session
+        && !exact_bot
         && let Some(to) = hub.network.sessions.by_address(&hub.store, to)
     {
         return mail_here(hub, me, &to, message, args["replyTo"].as_str());

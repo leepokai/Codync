@@ -10,27 +10,29 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ### zh-Hant
 - 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
 - Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾（「Bot 的資料夾」，可以複製路徑），聊天、例行任務和檔案都在那裡；你的資料夾改列為專案，可以新增專案、設為預設或移除專案，第一個就是預設，thread 從預設專案開始。專案是 git 儲存庫時可以選「worktree 模式」：關、並行時或一律（每個 thread 都有自己的 worktree，你的 checkout 不會被動到）。原本在專案裡工作的 Bot 更新後會搬回自己的資料夾，那個專案成為它的第一個專案，專案裡的東西不會改動。
-- 新增 Threads 分頁：列出 Bot 所有的 thread，需要你處理的排最上面，接著是分組和最近的 thread。右上角的篩選按鈕可以「依資料夾分組」、「依 Bot 分組」或「依電腦分組」，也能「依狀態排序」或「依最近活動排序」；旁邊的搜尋可以用標題或 Bot 名稱找 thread，+ 可以選一個 Bot、寫下第一則訊息開新的 thread；長按 thread 可以停止、插隊、重試、複製標題或移除。分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
+- Bot 設定裡 git 專案的那一列多了「共用資料夾」：列出的資料夾（例如 node_modules）會連結到每個新的 worktree，thread 不必重新安裝套件。專案最上層的 .worktreeinclude 列出的被 git 忽略的檔案（例如 .env）也會複製進新的 worktree。Bot 交派工作時可以替每個工作選擇在專案本身或自己的 worktree 進行，也能在工作進行中直接問 thread 問題、拿到回答。
+- 新增 Threads 分頁：列出 Bot 所有的 thread，需要你處理的排最上面，接著是分組和最近的 thread。右上角的篩選按鈕可以「依資料夾分組」、「依 Bot 分組」或「依電腦分組」，也能「依狀態排序」或「依最近活動排序」；旁邊的搜尋可以用標題或 Bot 名稱找 thread，+ 和電腦版一樣預設開一個不使用 Bot 的 thread（可以選 agent 和模型），也可以改選一個 Bot，寫下第一則訊息就開始；長按 thread 可以停止、插隊、重試、複製標題或移除。分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
 - Bot 分頁的篩選選單新增「依電腦分組」和「依狀態排序」；「將有新動態的機器人移到最前面」改成這裡的「依最近活動排序」，不再放在管理電腦裡。
 - Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方；列表捲動時頂端改成柔和的模糊。
 - 換 Bot 的 agent 或登入設定檔後，新的 agent 不再從零開始：下一則訊息會帶上目前對話的摘要。送出前聊天裡會出現「脈絡交接待進行」的分隔線，標出從哪個 agent 換到哪個，送出後可以點開看帶了什麼。
 - 新增 Workflows 分頁（圖示和電腦版相同）：查看這台電腦的 workflow、它的步驟、觸發條件和執行紀錄，並直接核准或拒絕等待你核准的步驟。在 Bot 列表的電腦標題上點 workflow 圖示也能打開。Workflow 在電腦版建立和編輯；長按 workflow 可以釘選到 Bot 列表上方。
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
-- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型就能直接換 agent、登入設定檔、模型和推理強度，不必進 Bot 設定。
+- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開和電腦版一樣的模型面板：左邊是 agent，右邊直接列出模型可以搜尋，下面是推理強度和快速模式，不必進 Bot 設定。
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
 - Bot settings' Workspace now has Projects. A bot always lives in its own folder (Bot's folder, with a button to copy its path), where its chat, routines and files are; the folders it works on are its projects: add one, make another the default or remove one. Threads start in the default project. With a project in a git repository, Worktree mode picks Off, Side by side or Always (every thread gets its own worktree, so your checkout is never touched). A bot that worked in a project moves to its own folder, with that project as its first; nothing in the project changes.
-- A new Threads tab lists every thread of your bots: what needs you on top, then groups, then recent ones. Its filter button groups them by folder, bot or computer and sorts them by status or last active; Search beside it finds threads by title or bot, and + starts a new thread with a bot from its first message; touch and hold a thread to stop it, let it cut in, try it again, copy its title or drop it. Its badge counts what is being worked on. The Work button at the top of the bot list is gone.
+- A git project's row in bot settings adds Shared folders: the folders listed (node_modules, say) are linked into each new worktree, so a thread doesn't install packages again. Ignored files listed in a .worktreeinclude file at the top of the project (such as .env) are copied in too. A bot can choose, for each task it hands out, the project itself or a worktree of its own, and ask a thread a question while it works and get its answer.
+- A new Threads tab lists every thread of your bots: what needs you on top, then groups, then recent ones. Its filter button groups them by folder, bot or computer and sorts them by status or last active; Search beside it finds threads by title or bot, and + starts a new thread from its first message, like the desktop's: without a bot by default (pick its agent and model), or with a bot you choose; touch and hold a thread to stop it, let it cut in, try it again, copy its title or drop it. Its badge counts what is being worked on. The Work button at the top of the bot list is gone.
 - The Bots tab's filter menu adds Group by computer and Sort by status. Move active bots to the top is now Sort by last active there, no longer in Manage computers.
 - The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, the connection status sits under the title, and the list now fades softly under the top bar as it scrolls.
 - Changing a bot's agent or login profile no longer starts it from nothing: your next message carries a summary of the conversation. Until then a divider in the chat reads Context handoff pending with both agents; afterwards tap it to see what was carried.
 - A Workflows tab, with the desktop's icon: see a computer's workflows, their steps, triggers and run history, and approve or reject a step that waits for you. The workflow icon on a computer's heading in the bot list opens them too. Workflows are built and edited in the desktop app. Long-press a workflow to pin it above the bots.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
-- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model to switch the agent, login profile, model or effort without opening the bot's settings.
+- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the same model panel as on the desktop: the agents on the left, their models listed right away with a search, then effort and Fast mode, without opening the bot's settings.
 - Push notifications now reach phones and computers in mainland China.
 
 ## 2.53.0

@@ -108,6 +108,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "routineFolder": true,
                 // Bots have `projects` and `worktreeMode`, and `add_task` takes a folder.
                 "projects": true,
+                // `startThread`'s `setup.place` (`here` | `worktree`) picks where a thread works over its bot's worktree mode.
+                "threadPlace": true,
+                // A new worktree gets the main checkout's `.worktreeinclude` files and the bot's `sharedFolders` linked.
+                "worktreeFill": true,
+                // A thread without a bot and no folder picked works in a folder of its own: the app sends no `cwd`.
+                "threadFolders": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).

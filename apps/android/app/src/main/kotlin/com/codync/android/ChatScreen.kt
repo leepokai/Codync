@@ -82,24 +82,7 @@ import kotlinx.coroutines.withContext
 }
 
 @Composable private fun ChatView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
-    val storedScope = rememberCoroutineScope()
-    var storedSheetText by remember { mutableStateOf<String?>(null) }
-    var storedRead by remember { mutableStateOf<Job?>(null) }
-    // One read at a time: a second tap takes over from the first, so a slow row can't land after a newer one.
-    val openStoredMessage: (Entry) -> Unit = { entry ->
-        storedRead?.cancel()
-        storedSheetText = null
-        storedRead = storedScope.launch {
-            try {
-                storedSheetText = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                store.showError(error)
-            }
-        }
-    }
-    CompositionLocalProvider(LocalShowStoredMessage provides openStoredMessage) {
+    StoredMessages(store) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     // The bot's details sheet and the page it opens on.
@@ -227,7 +210,34 @@ import kotlinx.coroutines.withContext
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
-    CodyncSheet(storedSheetText != null, { storedSheetText = null }) { StoredMessageSheet(storedSheetText.orEmpty()) }
+    }
+}
+
+/**
+ * The stored-message reader both the chat and a thread's own chat give their rows ([LocalShowStoredMessage]): a tap
+ * reads that one row and opens it in a sheet. One read at a time, so a second tap takes over from the first and a slow
+ * row cannot land after a newer one; a row that cannot be read says why instead of doing nothing.
+ */
+@Composable internal fun StoredMessages(store: AppStore, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf<String?>(null) }
+    var read by remember { mutableStateOf<Job?>(null) }
+    val open: (Entry) -> Unit = { entry ->
+        read?.cancel()
+        text = null
+        read = scope.launch {
+            try {
+                text = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                store.showError(error)
+            }
+        }
+    }
+    CompositionLocalProvider(LocalShowStoredMessage provides open) {
+        content()
+        CodyncSheet(text != null, { text = null }) { StoredMessageSheet(text.orEmpty()) }
     }
 }
 

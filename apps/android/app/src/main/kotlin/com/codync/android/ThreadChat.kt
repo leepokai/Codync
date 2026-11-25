@@ -122,6 +122,8 @@ import kotlinx.coroutines.CancellationException
     val talks = task.talk && threadId != null
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
+    // A thread's chat shows the bot's own rows too (what it put there), so a stored stub opens here as it does there.
+    StoredMessages(store) {
     Column(Modifier.fillMaxSize().background(Palette.background).semantics { testTagsAsResourceId = true }) {
         ThreadHeader(bot, task, state, showsWhere = !talks, back, openDetails?.takeIf { !inDetails })
         GlassStage(Modifier.weight(1f).fillMaxWidth(), chrome = {
@@ -164,6 +166,7 @@ import kotlinx.coroutines.CancellationException
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
+    }
 }
 
 /**

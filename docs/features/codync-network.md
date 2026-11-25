@@ -186,7 +186,8 @@ that was off learns of a removal.
 - **Turn tier** (`codync-host network hook <codex|copilot|grok>`, local API `networkHook`, loopback only): the
   agent's `PostToolUse` and `Stop` hooks run it with the hook's JSON on stdin (`hook_event_name`, `session_id`,
   the same id its MCP server gives). It tells the session how many letters wait (a count, never their text) and, once it printed that,
-  confirms with a second call (`told`: the newest letter's id, kept as `announced`), so a hook that runs at every
+  confirms with a second call (`told`: the newest letter's id, kept as `announced` unless a newer one is; a `Stop`
+  prints its block only once confirmed, so a host that can't save it lets the turn end), so a hook that runs at every
   step doesn't repeat it and a `Stop` that keeps the turn going (`decision: block`) can't loop, while a notice the
   hook never got (a timeout) is told again; a hook also counts as the session being seen (saved once a day); the agent reads them with
   `check_inbox` as before. It never registers a session (only its MCP server does) and prints nothing when the host

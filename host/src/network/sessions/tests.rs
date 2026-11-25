@@ -123,5 +123,12 @@ fn a_hook_tells_of_new_mail_once_and_never_registers() {
     assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(0), "told once");
     sessions.post(&store, &s.key, letter("2")).unwrap();
     assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(2), "a new letter: told again");
+    sessions.told(&store, &s.key, "2").unwrap();
+    sessions.told(&store, &s.key, "1").unwrap();
+    assert_eq!(
+        sessions.hook(&store, &s.key).unwrap().map(|h| h.unread),
+        Some(0),
+        "a late older confirmation undoes nothing"
+    );
     assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier(), Tier::Turn);
 }

@@ -4,7 +4,7 @@ use crate::local_api::{local_call, local_call_for};
 use anyhow::Result;
 use clap::Subcommand;
 use codync_network::AgentKind;
-use codync_network::hooks::{hook_input, hook_output};
+use codync_network::hooks::{HookEvent, hook_input, hook_output};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
@@ -150,10 +150,22 @@ async fn hook(port: u16, kind: AgentKind) {
     };
     let Ok(Some((session, event, answer))) = tokio::time::timeout(HOOK_WAIT, ask).await else { return };
     let (Some(notice), Some(letter)) = (answer["notice"].as_str(), answer["letter"].as_str()) else { return };
-    println!("{}", hook_output(kind, event, notice));
-    // Printed: later hooks keep quiet about these letters. Unconfirmed, the next one tells them again.
     let told = json!({"kind": kind, "session": session, "told": letter});
-    let _ = local_call_for(port, "networkHook", told, HOOK_WAIT).await;
+    let confirm = local_call_for(port, "networkHook", told, HOOK_WAIT);
+    match event {
+        // A `Stop` that blocks keeps the turn going: only once the host has the notice as told, so a
+        // host that can't save it lets the turn end instead of blocking on the same letter again.
+        HookEvent::Stop => {
+            if confirm.await.is_ok() {
+                println!("{}", hook_output(kind, event, notice));
+            }
+        }
+        // After a tool: told first; unconfirmed, the next hook tells it again, which costs nothing.
+        HookEvent::PostToolUse => {
+            println!("{}", hook_output(kind, event, notice));
+            let _ = confirm.await;
+        }
+    }
 }
 
 fn print_status(v: &Value) {

@@ -287,6 +287,12 @@ impl Sessions {
         let _one = self.lock.locked();
         let mut all = load(store);
         let Some(session) = all.get_mut(key) else { return Ok(()) };
+        // An older hook's late confirmation doesn't undo a newer one.
+        let mail = load_mail(store);
+        let newest = mail.get(key).and_then(|waiting| waiting.last()).map(|m| m.id.as_str());
+        if newest != Some(letter) || session.announced.as_deref() == Some(letter) {
+            return Ok(());
+        }
         session.announced = Some(letter.to_owned());
         save(store, &all)
     }

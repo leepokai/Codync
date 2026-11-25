@@ -79,6 +79,10 @@ test('the crown and the pause mark follow the icon size, and lead + paused keeps
     await expect(row(plain).locator('.avatar-paused')).toHaveCount(0)
     await expect(row(lead).locator('.avatar-paused')).toHaveCount(0)
   } finally {
+    // Put the icon size back to the app's default, as roster-icon-size.spec.ts does: the sandbox
+    // keeps the choice on this device, so leaving it at 44 fails that spec's "the default is 30"
+    // when the two share a sandbox.
+    await setPref(page, 'rosterIconSize', 30).catch(() => {})
     for (const id of made.reverse()) await call(page, 'deleteBot', { botId: id }).catch(() => {})
     await browser.close()
   }

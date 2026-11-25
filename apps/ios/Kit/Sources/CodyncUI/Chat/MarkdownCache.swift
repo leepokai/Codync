@@ -130,6 +130,7 @@ struct RenderedMarkdownBlock: Equatable {
     let block: MarkdownBlocks.Block
     let content: Content
 
+    @MainActor
     static func build(from block: MarkdownBlocks.Block, inlineCache: MarkdownInlineCache) -> Self {
         switch block {
         case let .paragraph(text):

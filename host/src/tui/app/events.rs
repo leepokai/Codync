@@ -88,6 +88,7 @@ impl App {
                 }
             }
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
+            Some("threadKeepDays") => self.thread_keep_days = super::thread_keep::days(&v["days"]),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
@@ -274,6 +275,7 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.thread_keep_days = super::thread_keep::days(&v["threadKeepDays"]);
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.routine_folder = v["routineFolder"].as_bool().unwrap_or(false);
@@ -286,6 +288,7 @@ impl App {
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::ThreadKeep => self.thread_keep_set(&v),
             After::CredentialsReset => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Saved credentials reset. Enter them again where you use them.");

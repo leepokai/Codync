@@ -68,7 +68,7 @@ pub struct WorkTask {
 
 impl WorkTask {
     /// A task with an id and a status this terminal knows; any other is left out.
-    fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let text = |key: &str| v[key].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),

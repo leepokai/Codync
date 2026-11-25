@@ -117,7 +117,7 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
                 }
             }
         }
-        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, loose) { loose = it } }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, loose, active = tab == AppTab.Threads) { loose = it } }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
             val shown = states.firstOrNull { it.workflow != null }
                 ?: states.firstOrNull { it.computer.id == app.currentComputerId }

@@ -35,11 +35,22 @@ public struct AgentModels: Decodable, Sendable {
     public let defaultModelOptions: Bool?
     /// The agent's modes, its Auto mode first and listed as `auto` (nil from older hosts).
     public let modes: [AgentMode]?
+    /// The model id that is the unset choice. Nil: a model whose name starts with "Default" (older hosts).
+    /// Empty: none, so a colleague named Default stays selectable by its id.
+    public let defaultModelId: String?
 }
 
 public extension AgentModels {
     /// The agent's own "Default (recommended)" entry: the same choice as leaving the model unset.
-    var agentDefault: Model? { models.first { $0.name.lowercased().hasPrefix("default") } }
+    /// `defaultModelId` empty: none, so a colleague named Default stays selectable by its id.
+    /// Nil: a model whose name starts with "Default" (older hosts).
+    var agentDefault: Model? {
+        return switch defaultModelId {
+        case nil: models.first { $0.name.lowercased().hasPrefix("default") }
+        case "": nil
+        case let id?: models.first { $0.id == id }
+        }
+    }
 
     /// What a model picker lists (Android's `AgentModels.options`): Default first (id "", the model left unset, the
     /// agent's own default folded into it), the agent's other models, then `selection` when the agent doesn't list it.

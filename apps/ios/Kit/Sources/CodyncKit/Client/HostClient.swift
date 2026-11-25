@@ -577,10 +577,6 @@ public extension HostClient {
     }
 
     /// iMate stores one personal token on the host, including when asked from a phone.
-    func imateStatus() async throws -> ImateStatus {
-        try await call("imateStatus", [String: String]())
-    }
-
     func imateSetToken(_ token: String) async throws -> ImateStatus {
         try await call("imateSetToken", ["token": token], timeout: 60)
     }

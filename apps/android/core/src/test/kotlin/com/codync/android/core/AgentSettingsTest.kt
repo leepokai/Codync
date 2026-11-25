@@ -23,6 +23,14 @@ class AgentSettingsTest {
         assertTrue(catalog.copy(fastMode = true).showsFast("codex", on = false, bot = null))
     }
 
+    @Test fun `a colleague named Default stays selectable when the host marks no folded default`() {
+        val catalog = WireJson.decodeFromString<AgentModels>("""{"models":[{"id":"support","name":"Default Support"},{"id":"zoe","name":"Zoe"}],"currentModelId":"support","defaultModelId":""}""")
+        val choices = catalog.options(null)
+        assertEquals(listOf(null, "support", "zoe"), choices.map { it.id })
+        assertEquals("Default Support", choices[1].name)
+        assertEquals("support", catalog.normalize("support"))
+    }
+
     @Test fun `new bot defaults preserve host connectors and a nullable notification toggle turns off`() {
         val draft = BotDraft(command = "stale custom command")
         assertFalse("an unnamed bot is only created, never saved", draft.isValid)

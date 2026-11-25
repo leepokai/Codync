@@ -38,7 +38,7 @@ use agent::start;
 pub(crate) use agent::{Started, authenticate_account, start_with};
 pub use codync_agent::acp::auth::{Method, MethodKind};
 use codync_agent::acp::auth::{methods, reported_login};
-pub use models::{InFlight, models, shared_models};
+pub use models::{InFlight, shared_models};
 
 /// What the last check found for one backend.
 #[derive(Clone, Debug, Default, Serialize)]

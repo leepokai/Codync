@@ -92,7 +92,6 @@ async function scriptedTurn(backend, mode) {
   };
   try {
     for (const dir of [home, data, folder]) mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
     const base = { ...withoutCredentials(process.env), HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev" };
     const env = { ...base, ...pointAtMock(backend, { url: mock.url, home, env: base }) };
     host = spawn(hostBin, ["serve", "--bind", "127.0.0.1", "--port", port], { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -106,13 +105,16 @@ async function scriptedTurn(backend, mode) {
       await sleep(2000);
     }
     const { bot } = await api("createBot", { name: "Upstream check", backend, cwd: folder, ...(mode ? { mode } : {}) });
+    // The chat runs in the bot's own folder. The folder passed as cwd is a project, so the shell command lands here.
+    if (typeof bot.cwd !== "string" || bot.cwd === "") throw new Error("createBot returned no working folder");
+    writeFileSync(path.join(bot.cwd, "notes.txt"), "alpha\n");
     const approving = approveCards(api, bot.id);
     const sent = await run(hostBin, ["send", "--port", port, "--bot", bot.id, "--wait", "--timeout", String(TURN_TIMEOUT_SECONDS), "--json", PROMPT], { env })
       .catch((error) => error);
     approving.stop();
     const answer = JSON.parse(sent.stdout || "{}");
     const { entries } = await api("history", { botId: bot.id });
-    const failed = verdict({ answer, entries, file: readFileSync(path.join(folder, "notes.txt"), "utf8"), cards: await approving.done });
+    const failed = verdict({ answer, entries, file: readFileSync(path.join(bot.cwd, "notes.txt"), "utf8"), cards: await approving.done });
     if (failed) throw new Error(failed);
     const leftover = await stopHost(host);
     if (leftover) throw new Error(`agent processes outlived the host: ${leftover}`);

@@ -19,8 +19,10 @@ const TOKEN: &str = "IMATE_API_TOKEN";
 const BASE: &str = "https://imate.woa.com/server/web-api";
 /// A colleague list. Short enough that the next ask starts its own lookup instead of waiting on this one.
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
-/// Checking a token before it replaces the one already saved. The phone waits 60 seconds for `imateSetToken`.
+/// Checking a token before it replaces the one already saved.
 const TOKEN_CHECK: Duration = Duration::from_secs(20);
+/// Unlock plus the check. The phone gives up at 60 seconds, so a save past this never starts.
+const SAVE_BUDGET: Duration = Duration::from_secs(45);
 
 /// What the phone needs to show iMate's token field and sign-in state.
 pub async fn status(hub: Arc<Hub>) -> Result<Value> {
@@ -39,12 +41,25 @@ pub async fn set_token(hub: Arc<Hub>, token: &str) -> Result<Value> {
     if token.is_empty() {
         bail!("token is empty");
     }
-    crate::market::vault::unlock(hub.clone()).await?;
-    match fetch_colleagues(token, TOKEN_CHECK).await {
-        Ok(_) => listed(&hub, "success", None, "save"),
-        Err(error) => {
+    let checked = tokio::time::timeout(SAVE_BUDGET, async {
+        crate::market::vault::unlock(hub.clone()).await?;
+        fetch_colleagues(token, TOKEN_CHECK).await
+    })
+    .await;
+    match checked {
+        Ok(Ok(_)) => listed(&hub, "success", None, "save"),
+        Ok(Err(error)) => {
             listed(&hub, "failed", Some(failure_category(&error)), "save");
-            return Err(error.context("iMate rejected this token"));
+            return Err(if failure_category(&error) == "auth" {
+                error.context("iMate rejected this token")
+            } else {
+                error
+            });
+        }
+        Err(_) => {
+            let error = anyhow::anyhow!("the iMate token check timed out");
+            listed(&hub, "failed", Some(failure_category(&error)), "save");
+            return Err(error);
         }
     }
     super::save_env(&hub.store, "agent-env:imate", &[(TOKEN.to_owned(), Some(token.to_owned()))])?;
@@ -152,6 +167,8 @@ async fn list_colleagues(store: &Store, login_profile: Option<&str>) -> Result<V
         "models": models,
         "currentModelId": models.first().and_then(|m| m["id"].as_str()).unwrap_or_default(),
         "defaultModelOptions": false,
+        // Empty: no colleague is the unset "Default" row. A name that starts with Default stays selectable by id.
+        "defaultModelId": "",
         "fastMode": false,
         "modes": [],
     }))
@@ -200,7 +217,7 @@ fn colleagues_from(status: u16, body: &str) -> Result<Vec<Value>> {
     if value["code"] != 0 {
         bail!("iMate agent list failed: {}", value["message"].as_str().unwrap_or("unknown error"));
     }
-    Ok(value["data"].as_array().cloned().unwrap_or_default())
+    value["data"].as_array().cloned().context("iMate agent list response is missing a data array")
 }
 
 fn first_line(body: &str) -> &str {
@@ -209,10 +226,14 @@ fn first_line(body: &str) -> &str {
 
 fn failure_category(error: &anyhow::Error) -> &'static str {
     let text = format!("{error:#}").to_lowercase();
-    if text.contains("token") || text.contains("401") || text.contains("403") {
-        "auth"
-    } else if text.contains("timed out") || text.contains("timeout") {
+    if text.contains("timed out") || text.contains("timeout") {
         "timeout"
+    } else if text.contains("401")
+        || text.contains("403")
+        || text.contains("invalid token")
+        || text.contains("rejected")
+    {
+        "auth"
     } else if text.contains("decode") || text.contains("parse") {
         "protocol"
     } else {
@@ -237,11 +258,14 @@ mod tests {
         assert!(rejected.unwrap_err().to_string().contains("invalid token"));
         let accepted = colleagues_from(200, "{\"code\":0,\"data\":[{\"clientUuid\":\"a\"}]}").expect("colleagues");
         assert_eq!(accepted[0]["clientUuid"], "a");
+        assert_eq!(colleagues_from(200, "{\"code\":0,\"data\":[]}").expect("an empty list"), Vec::<Value>::new());
+        assert!(colleagues_from(200, "{\"code\":0}").is_err(), "a missing data array is not an empty list");
     }
 
     #[test]
     fn failure_categories_never_include_the_error_text() {
         assert_eq!(failure_category(&anyhow::anyhow!("iMate token rejected: secret")), "auth");
+        assert_eq!(failure_category(&anyhow::anyhow!("the iMate token check timed out")), "timeout");
         assert_eq!(failure_category(&anyhow::anyhow!("request timed out")), "timeout");
         assert_eq!(failure_category(&anyhow::anyhow!("connection refused")), "network");
     }

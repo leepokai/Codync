@@ -366,11 +366,10 @@ function ImateTokenForm({ back }: { back: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const save = async () => {
-    const client = store.client
-    if (!client) return
+    if (!store.client) return
     setSaving(true)
     try {
-      await market.imateSetToken(client, token.trim())
+      await store.imateSetToken(token.trim())
       back()
     } catch (e) {
       setError(errorText(e))

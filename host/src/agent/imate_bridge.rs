@@ -31,7 +31,8 @@ async fn connect(what: &'static str, request: impl Fn() -> reqwest::RequestBuild
     for attempt in 0..2 {
         match request().send().await {
             Ok(response) => return Ok(response),
-            Err(error) if attempt == 0 && (error.is_connect() || error.is_timeout()) => {
+            // A timeout can mean iMate already has the frame. Sending it again would start a second turn.
+            Err(error) if attempt == 0 && error.is_connect() => {
                 tracing::info!(error = %error, "{what} failed to connect; trying once more");
                 tokio::time::sleep(Duration::from_millis(400)).await;
                 failed = Some(error);
@@ -216,13 +217,8 @@ pub async fn run() -> Result<()> {
             respond_error(&id, INTERNAL_ERROR, "iMate ACP tunnel is not open")?;
             continue;
         }
-        if method == "session/close" {
-            match client.close(&uuid, &connection).await {
-                Ok(()) => respond(&id, &json!({}))?,
-                Err(error) => respond_error(&id, INTERNAL_ERROR, &format!("{error:#}"))?,
-            }
-            continue;
-        }
+        // `session/close` is one session on the tunnel, not the tunnel. Deleting the connection would drop every
+        // other session that still uses it, so the frame goes to iMate like any other.
         if let Err(error) = client.send(&uuid, &connection, &raw).await {
             respond_error(&id, INTERNAL_ERROR, &format!("{error:#}"))?;
         }
@@ -301,8 +297,24 @@ fn relay_http_body(body: &str) {
     let Ok(value) = serde_json::from_str::<Value>(line) else { return };
     let rpc = value.get("id").is_some() && (value.get("result").is_some() || value.get("error").is_some());
     if rpc || value.get("method").is_some() {
-        let _ = write_line(line);
+        let _ = write_line(&outward(line));
     }
+}
+
+/// What the host is allowed to see. iMate has one tunnel for every session, so a `session/close` capability would
+/// make the host drop that tunnel while other sessions still use it.
+fn outward(frame: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(frame) else { return frame.to_owned() };
+    let Some(session) = value
+        .get_mut("result")
+        .and_then(|result| result.get_mut("agentCapabilities"))
+        .and_then(|caps| caps.get_mut("sessionCapabilities"))
+        .and_then(|session| session.as_object_mut())
+    else {
+        return frame.to_owned();
+    };
+    session.remove("close");
+    serde_json::to_string(&value).unwrap_or_else(|_| frame.to_owned())
 }
 
 fn respond(id: &Value, result: &Value) -> Result<()> {
@@ -399,6 +411,7 @@ fn dispatch_event(data: &str, tunnel: &Mutex<Tunnel>) {
 
 fn print_frame(frame: &Value) {
     let Ok(line) = serde_json::to_string(frame) else { return };
+    let line = outward(&line);
     let mut out = io::stdout().lock();
     let _ = writeln!(out, "{line}");
     let _ = out.flush();
@@ -407,6 +420,19 @@ fn print_frame(frame: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_initialize_result_does_not_offer_closing_one_session() {
+        let frame =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"sessionCapabilities":{"close":{},"load":{}}}}}"#;
+        let shown: Value = serde_json::from_str(&outward(frame)).expect("frame");
+        assert!(shown["result"]["agentCapabilities"]["sessionCapabilities"].get("close").is_none());
+        assert!(shown["result"]["agentCapabilities"]["sessionCapabilities"].get("load").is_some());
+        assert_eq!(
+            outward(r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"a"}}"#),
+            r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"a"}}"#
+        );
+    }
 
     #[test]
     fn first_line_ignores_framework_suffix() {

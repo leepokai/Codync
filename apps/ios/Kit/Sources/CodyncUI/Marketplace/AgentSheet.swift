@@ -278,19 +278,6 @@ struct AgentSheet: View {
 
     private func check() async {
         guard let client = model.client, !checking else { return }
-        if backend.id == "imate" {
-            checking = true
-            defer { checking = false }
-            do {
-                let status = try await client.imateStatus()
-                auth = try Self.agentAuth(signedIn: status.signedIn)
-                error = nil
-            } catch {
-                self.error = error.localizedDescription
-            }
-            await model.refreshBackends()
-            return
-        }
         checking = true
         defer { checking = false }
         do {
@@ -300,11 +287,6 @@ struct AgentSheet: View {
             self.error = error.localizedDescription
         }
         await model.refreshBackends()
-    }
-
-    private static func agentAuth(signedIn: Bool) throws -> AgentAuth {
-        let json = #"{"signedIn": \#(signedIn), "methods": [], "savedEnv": [], "login": false}"#
-        return try JSONDecoder().decode(AgentAuth.self, from: Data(json.utf8))
     }
 
     private func checkLoginProfile(_ loginProfile: String) async {

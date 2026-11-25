@@ -23,6 +23,8 @@ export interface AgentModels {
   defaultModelOptions?: boolean
   /** The agent's modes, its Auto mode first and listed as `auto` (absent on older hosts). */
   modes?: AgentMode[]
+  /** The model id that is the unset choice. Absent: a model whose name starts with "Default". Empty: none. */
+  defaultModelId?: string | null
 }
 
 /** What the agent behind `backend` offers, loaded from the selected computer. */
@@ -39,7 +41,11 @@ export interface AgentModelsState {
  * `modelOptions` its own settings.
  */
 export function modelChoices(catalog: AgentModels | null, selection: string | null | undefined, tr: (text: string) => string) {
-  const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
+  const agentDefault = catalog?.defaultModelId === ''
+    ? undefined
+    : catalog?.defaultModelId
+      ? catalog.models.find((m) => m.id === catalog.defaultModelId)
+      : catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
   const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
   const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
   const value = selection === agentDefault?.id ? '' : (selection ?? '')

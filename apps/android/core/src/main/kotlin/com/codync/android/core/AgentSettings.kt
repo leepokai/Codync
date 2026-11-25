@@ -11,8 +11,14 @@ import kotlinx.serialization.Serializable
 /** `fastMode`: the agent offers Fast mode (absent on older hosts). `modes`: its modes, Auto first and listed as `auto`
  *  (absent on older hosts). */
 @Serializable data class AgentModels(val models: List<AgentModel>, val currentModelId: String? = null, val fastMode: Boolean? = null, val defaultModelOptions: Boolean? = null,
-    val modes: List<AgentMode>? = null) {
-    val agentDefault: AgentModel? get() = models.firstOrNull { it.name.lowercase().startsWith("default") }
+    val modes: List<AgentMode>? = null, val defaultModelId: String? = null) {
+    /** The model's id the host says is the unset choice. Absent: a model whose name starts with "Default" (older hosts).
+     *  Empty: none, so a colleague named Default stays selectable by its id. */
+    val agentDefault: AgentModel? get() = when (defaultModelId) {
+        null -> models.firstOrNull { it.name.lowercase().startsWith("default") }
+        "" -> null
+        else -> models.firstOrNull { it.id == defaultModelId }
+    }
     fun options(selected: String?): List<ModelChoice> {
         val default = agentDefault
         val available = models.filter { it.id != default?.id }

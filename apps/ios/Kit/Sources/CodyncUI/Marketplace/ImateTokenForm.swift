@@ -37,13 +37,11 @@ struct ImateTokenForm: View {
     }
 
     private func save() {
-        guard let client = model.client else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
-                _ = try await client.imateSetToken(token.trimmingCharacters(in: .whitespacesAndNewlines))
-                await model.refreshBackends()
+                try await model.imateSetToken(token.trimmingCharacters(in: .whitespacesAndNewlines))
                 back()
             } catch {
                 self.error = error.localizedDescription

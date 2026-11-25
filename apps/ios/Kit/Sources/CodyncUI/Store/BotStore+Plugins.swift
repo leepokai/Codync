@@ -131,6 +131,12 @@ extension BotStore {
         try await ready().loginShellVariables()
     }
 
+    /// Saves iMate's personal token on the computer and refreshes the agent list. The host checks the token first.
+    public func imateSetToken(_ token: String) async throws {
+        _ = try await ready().imateSetToken(token)
+        await refreshBackends()
+    }
+
     /// Re-detects agents on the computer (after an install or sign-in).
     public func refreshBackends() async {
         guard let client, let backends = try? await client.refreshBackends() else { return }

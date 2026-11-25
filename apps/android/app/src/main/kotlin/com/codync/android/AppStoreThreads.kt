@@ -7,7 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
 // A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
@@ -101,3 +103,29 @@ internal fun AppState.receivingThreadEntry(entry: Entry): AppState {
     val held = threadEntries[entry.botId] ?: return this
     return copy(threadEntries = threadEntries + (entry.botId to mergeThreadEntries(held, listOf(entry))))
 }
+
+/**
+ * Reads the computer's next page of older threads (`olderThreads`): the newest first, then the ones before the oldest held.
+ * Nothing on a host without them, off the link, while a page loads or once none are left. A page that lands after the
+ * list was dropped (a new hello, another Delete old threads) is let go.
+ */
+internal fun AppStore.loadOlderThreads() {
+    val now = state.value
+    if (threadKeepDays(now.hello) == null || now.actualConnection !is LinkState.Ready) return
+    val held = now.olderThreads
+    if (held?.more == false) return
+    val host = now.hello?.text("hostId")
+    action("olderThreads") {
+        val reply = hostQuery("olderThreads", buildJsonObject { held?.before?.let { put("before", it) } })
+        val page = OlderThreads.decode(reply.jsonObject)
+        // Dropped meanwhile (a new hello, another Delete old threads): the page is let go.
+        mutableState.update {
+            if (it.hello?.text("hostId") != host || (held != null && it.olderThreads == null)) it
+            else it.copy(olderThreads = (it.olderThreads ?: OlderThreads(more = true)) + page)
+        }
+    }
+}
+
+/** [bot] with its computer's older threads it doesn't hold among its `work`, as the Threads list and a thread's page show them. */
+internal fun AppState.withOlder(bot: Bot): Bot =
+    olderThreads?.of(bot.id)?.takeIf { it.isNotEmpty() }?.let { bot.copy(work = mergedWork(bot.work, it)) } ?: bot

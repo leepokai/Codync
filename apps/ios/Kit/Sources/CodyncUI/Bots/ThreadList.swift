@@ -17,6 +17,8 @@ public struct ThreadList: View {
     let openChat: (RosterItem, WorkTask) -> Void
     /// The bot's details, on the thread of `task`.
     let openThread: (RosterItem, WorkTask) -> Void
+    /// The list reached its end: older threads load from there.
+    let loadMore: (() -> Void)?
     /// Group headings folded on this device, by key, one per line.
     @AppStorage("foldedThreadSections") private var foldedKeys = ""
     @State private var showsAll = false
@@ -29,7 +31,9 @@ public struct ThreadList: View {
 
     public init(sections: ThreadSections<RosterItem>, found: [ThreadSections<RosterItem>.Item]? = nil, store: @escaping (RosterItem) -> BotStore?,
                 openDetails: @escaping (RosterItem) -> Void, openChat: @escaping (RosterItem, WorkTask) -> Void,
-                openThread: @escaping (RosterItem, WorkTask) -> Void, looseThread: Binding<LooseThread?>) {
+                openThread: @escaping (RosterItem, WorkTask) -> Void, looseThread: Binding<LooseThread?>,
+                loadMore: (() -> Void)? = nil) {
+        self.loadMore = loadMore
         self.sections = sections
         _looseThread = looseThread
         self.found = found
@@ -81,6 +85,15 @@ public struct ThreadList: View {
                 .buttonStyle(.plain)
             }
         }
+        // Not while Recent hides rows behind Show more. A new id each time rows come, so an end still in view asks
+        // again. ponytail: rows landing in folded groups keep the end in view and page on; fine at 30 a page.
+        if let loadMore, recent.count == sections.recent.count {
+            Color.clear.frame(height: 1).onAppear(perform: loadMore).id(rowCount)
+        }
+    }
+
+    private var rowCount: Int {
+        sections.needsYou.count + sections.groups.reduce(0) { $0 + $1.rows.count } + sections.recent.count
     }
 
     private func title(_ kind: ThreadSections<RosterItem>.Group.Kind) -> String {

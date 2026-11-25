@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
 import { taskLine, threadSections, type WorkTask } from '@shared/work'
 import { BotAvatar, NoBotAvatar } from '../components/Avatar'
@@ -79,6 +79,9 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   )
   const label = (title: string) => <Text as="div" size="caption" tone="tertiary" className="thread-label">{tr(title)}</Text>
   const shownRecent = more ? recent : recent.slice(0, SHOWN_RECENT)
+  // Older threads: each computer's first page once the list shows, the next as its end scrolls into view.
+  const stores = [...new Set(roster.map((r) => r.store))]
+  useEffect(() => stores.forEach((s) => s.loadFirstOlderThreads()))
   return (
     <>
       {needsYou.length ? <section aria-label={tr('Needs you')}>{label('Needs you')}{needsYou.map((r) => row(r))}</section> : null}
@@ -127,6 +130,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
           ) : null}
         </section>
       ) : null}
+      {recent.length > shownRecent.length ? null : <ListEnd reached={() => stores.forEach((s) => s.loadOlderThreads())} />}
       {asking ? (
         <StoreContext.Provider value={asking.of.store}>
           <StopWorkDialog botId={asking.of.bot.id} taskId={asking.kind === 'stop' ? asking.task.id : null} onClose={() => setAsking(null)} />
@@ -135,6 +139,17 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
       ) : null}
     </>
   )
+}
+
+/** The list's end: `reached` while it is in view (watched again on each render, so a page that leaves it in view asks for the next). */
+function ListEnd({ reached }: { reached: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const seen = new IntersectionObserver((at) => at.some((e) => e.isIntersecting) && reached())
+    if (end.current) seen.observe(end.current)
+    return () => seen.disconnect()
+  }, [reached])
+  return <div ref={end} aria-hidden />
 }
 
 /** How a thread stands, at the end of its row: working, needs the user, went wrong, waits; nothing once it is done. */

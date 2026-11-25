@@ -328,6 +328,19 @@ extension BotStore {
         Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
     }
 
+    /// How many days after a thread last finished this computer deletes it, 0 never; the older threads listed start
+    /// over, as the computer deletes the ones past it.
+    public func setThreadKeepDays(_ days: Int) {
+        let before = hello?.threadKeepDays
+        hello?.threadKeepDays = days
+        Task {
+            await attempt(replay: true, undo: { self.hello?.threadKeepDays = before }) {
+                self.hello?.threadKeepDays = try await $0.setThreadKeepDays(days)
+            }
+            resetOlderThreads()
+        }
+    }
+
     /// Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud.
     public var canRename: Bool {
         connection == .online && supportsComputerName && hello.map { $0.device != "cloud" } == true
@@ -468,6 +481,7 @@ extension BotStore {
 
     /// A waiting task, or one that ended, leaves the box.
     public func dropWork(_ botId: String, task: String) {
+        olderThreads.remove(task, of: botId)
         perform(replay: true) { try await $0.work("dropWork", botId: botId, taskId: task) }
     }
 

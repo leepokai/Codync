@@ -73,8 +73,8 @@ What this means for registration:
 | Gemini CLI, Amp | — | — | — |
 
 Every title above is readable as a file or SQLite row, so the host can read it and cache it; none needs the agent's
-cooperation. No agent was found with a supported way to rename a session from outside, so naming a mailbox (a
-proposed tool, not built) would change only the Network address, never the agent's own title.
+cooperation. No agent was found with a supported way to rename a session from outside, so naming a mailbox
+(`set_name`, built in phase 1) changes only the Network address, never the agent's own title.
 
 ## Hooks (turn tier)
 
@@ -134,9 +134,13 @@ so this only matters if a bot's conversation title is ever shown.
 | push (wakes idle) | Claude Code (inbox socket): can wake an idle session or be read mid-turn, but it may hold a message from an outside sender, and a successful socket write confirms neither; pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
 | queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
 | turn (next tool call or stop) | Cursor and Copilot CLI (hook events observed; delivery through hook output unverified; Cursor's `stop` did not fire in `-p`); Grok and Gemini CLI (not verified: follow-up) |
-| pull (a proposed `check_inbox` tool + an unread notice) | any MCP client, including the above before their hooks or plugins are installed |
+| pull (`check_inbox` + an unread notice, built in phase 1) | any MCP client, including the above before their hooks or plugins are installed |
 
 ## Open design questions
+
+Phase 1 settled the first three as proposed ([feature](../features/codync-network.md#coding-agents-sessions)):
+`whoami` and an address in every tool result, temporary sessions keyed by the MCP server's process (`process:<pid>-<nonce>`),
+and a registry keyed by `(kind, session id)` per call.
 
 1. **"The server tells the agent its address when it connects."** Only Claude Code and Copilot CLI have their session
    id at `initialize`. Codex and Antigravity show it with the first tool call, Cursor only through hooks, pi not at

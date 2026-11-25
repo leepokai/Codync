@@ -187,6 +187,8 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
+    /// The task threads on screen, by the view showing each.
+    @ObservationIgnored var readingThreads: [UUID: String] = [:]
 
     /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
@@ -445,5 +447,9 @@ public final class BotStore {
 
     func isChatVisible(_ botId: String) -> Bool {
         isActive && (readingViews.values.contains(botId) || selection == botId)
+    }
+
+    func isThreadVisible(_ threadId: String) -> Bool {
+        isActive && readingThreads.values.contains(threadId)
     }
 }

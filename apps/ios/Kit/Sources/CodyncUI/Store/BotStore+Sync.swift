@@ -167,14 +167,14 @@ extension BotStore {
             }
             let existing = entries[e.botId]?.first { $0.id == e.id }
             upsert(e)
-            recordLiveArrivalIfNeeded(before: existing, after: e, requiresVisibleChat: true)
+            recordLiveArrivalIfNeeded(before: existing, after: e, isVisible: isChatVisible(e.botId))
             if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .threadEntry(thread, e):
             let existing = threadEntries[thread]?.first { $0.id == e.id }
             putThreadEntry(e, thread: thread)
-            recordLiveArrivalIfNeeded(before: existing, after: e, requiresVisibleChat: false)
+            recordLiveArrivalIfNeeded(before: existing, after: e, isVisible: isThreadVisible(thread))
             bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
@@ -339,13 +339,10 @@ extension BotStore {
         onUsageChanged?(computer.id, u)
     }
 
-    private func recordLiveArrivalIfNeeded(before existing: Entry?, after incoming: Entry, requiresVisibleChat: Bool) {
+    private func recordLiveArrivalIfNeeded(before existing: Entry?, after incoming: Entry, isVisible: Bool) {
         let now = revealClock()
         pruneExpiredLiveReveals(now: now)
-        guard isActive, streamCaughtUp, hasKnownCatchUpBoundary else { return }
-        if requiresVisibleChat, !isChatVisible(incoming.botId) {
-            return
-        }
+        guard isActive, streamCaughtUp, hasKnownCatchUpBoundary, isVisible else { return }
         guard incoming.data.removed != true else {
             completeLiveReveal(id: incoming.id)
             return

@@ -190,6 +190,22 @@ extension BotStore {
         }
     }
 
+    /// Thread views register while visible in an active scene so closed task threads never stage delayed reveals.
+    func setReadingThread(_ token: UUID, threadId: String?, active: Bool) {
+        let previous = readingThreads[token]
+        if active, let threadId {
+            readingThreads[token] = threadId
+        } else {
+            readingThreads[token] = nil
+        }
+        if let previous,
+           previous != (active ? threadId : nil),
+           !readingThreads.values.contains(previous),
+           let list = threadEntries[previous] {
+            clearLiveReveals(for: list)
+        }
+    }
+
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
         guard connection == .online else { return }
         guard readingViews.values.contains(botId), entry?.isChat != false else { return }

@@ -242,6 +242,21 @@ import Testing
     #expect(store.shouldRevealLiveText(for: leaveEntry))
     store.setReading(openToken, botId: "b1", active: false)
     #expect(!store.shouldRevealLiveText(for: leaveEntry))
+
+    // Closed task thread replies must not replay when opened later; open task threads clear on leave.
+    await remote.emit(#"{"type":"threadEntry","thread":"thread-closed","entry":{"id":"tc-1","seq":1,"botId":"b1","rev":4,"kind":"agent","turn":1,"data":{"text":"Finished in closed thread","final":true},"createdAt":4,"updatedAt":4}}"#)
+    #expect(await until { store.threadEntries["thread-closed"]?.contains { $0.id == "tc-1" } == true })
+    let closedThreadEntry = try #require(store.threadEntries["thread-closed"]?.first { $0.id == "tc-1" })
+    #expect(!store.shouldRevealLiveText(for: closedThreadEntry))
+
+    let threadToken = UUID()
+    store.setReadingThread(threadToken, threadId: "thread-open", active: true)
+    await remote.emit(#"{"type":"threadEntry","thread":"thread-open","entry":{"id":"to-1","seq":2,"botId":"b1","rev":5,"kind":"agent","turn":2,"data":{"text":"Visible thread reply","final":true},"createdAt":5,"updatedAt":5}}"#)
+    #expect(await until { store.threadEntries["thread-open"]?.contains { $0.id == "to-1" } == true })
+    let openThreadEntry = try #require(store.threadEntries["thread-open"]?.first { $0.id == "to-1" })
+    #expect(store.shouldRevealLiveText(for: openThreadEntry))
+    store.setReadingThread(threadToken, threadId: "thread-open", active: false)
+    #expect(!store.shouldRevealLiveText(for: openThreadEntry))
 }
 
 @MainActor @Test func deletedEntriesAndDisconnectClearRevealProgress() async throws {

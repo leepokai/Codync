@@ -217,3 +217,10 @@ extension Bot {
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt
     }
 }
+
+extension String {
+    /// A folder path's name: its last component (`/` or `\` separated), or the path itself.
+    public var folderName: String {
+        split { $0 == "/" || $0 == "\\" }.last.map(String.init) ?? self
+    }
+}

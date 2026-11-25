@@ -105,6 +105,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // A thread may start with files (`startThread` with `attachments`, uploaded without `botId` for one
                 // without a bot).
                 "threadFiles": true,
+                "routineFolder": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).

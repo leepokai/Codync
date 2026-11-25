@@ -22,9 +22,13 @@ A saved webhook routine's form shows its public URL and key (copy, reveal, repla
 with confirmation; TUI `w` copies a curl command and `W` replaces the
 key). Creation/update notices open the routine.
 
+## Folder
+
+A routine may name a folder its runs work in (`Routine::folder`, `folder` on the wire and in `save_routine`; `hello.routineFolder: true`). Without one a run works where the bot does. With one, every run works in a thread of its own in that folder, even for a bot that otherwise runs routines in its chat (computer use or Manage the team on: that thread has neither), and `sources::begin` hands the folder to the thread (`Task::setup.cwd`). A folder gone by the time a run starts fails the run with "its folder … is gone" rather than running elsewhere. Every client sends the folder whole on each save; the host keeps a path equal to the one the routine has even while it is gone (a drive not mounted), and a new one must exist. `routine_saved` says whether the saved routine has one (`folder`), never the path.
+
 ## Apple setup interface
 
-The editor keeps task fields first, then a When to run type menu and its settings.
+The editor keeps task fields first (Name, Instruction, then Folder, on a host that has it: the folder's name, the x back to the bot's folder, the picker on tap), then a When to run type menu and its settings.
 Inputs use the shared palette with a visible filled surface. New recurring schedules
 default to Daily at 09:00 in the device's time zone; Custom takes a typed cron. The
 host describes the schedule and shows the next run. Run timeout is under an animated Run settings
@@ -252,7 +256,7 @@ All normal methods use the existing authenticated host API / authorized E2E chan
 |---|---|
 | `routines` | `botId` |
 | `routineSchedule` | `triggers` + preferred `timeZone` to load, or `draft` to preview; returns hydrated form, validated triggers, summary, warning, next run |
-| `saveRoutine` | `botId`, optional `id`, `name`, `instruction`, `schedule` form or `triggers`, optional `enabled`, `timeoutSeconds` |
+| `saveRoutine` | `botId`, optional `id`, `name`, `instruction`, `schedule` form or `triggers`, optional `enabled`, `timeoutSeconds`, `folder` (a full path of an existing folder; null or empty clears it; omitted keeps it) |
 | `setRoutineEnabled` | `botId`, `id`, `enabled` |
 | `deleteRoutine` | `botId`, `id` |
 | `runRoutine` | `botId`, `id` (a waiting retry runs now instead) |

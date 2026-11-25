@@ -151,3 +151,37 @@ import Testing
     #expect(RoutineSchedulePreview(draft: draft, triggers: [cron], summary: "").cronExpression == "0 9 * * 1-5")
     #expect(RoutineSchedulePreview(draft: draft, triggers: [RoutineTrigger(type: "webhook")], summary: "").cronExpression == nil)
 }
+
+private struct SaveRecorder: HostTransport {
+    actor Bodies {
+        var last = Data()
+        func keep(_ body: Data) { last = body }
+    }
+    let bodies = Bodies()
+    func call(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
+        await bodies.keep(body)
+        return Data(#"{"routine":{"id":"r","botId":"b","name":"N","instruction":"I","triggers":[],"enabled":true,"createdAt":0,"updatedAt":0,"triggerDescriptions":[],"folder":"/srv/app"}}"#.utf8)
+    }
+    func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error> { AsyncThrowingStream { $0.finish() } }
+    func states() -> AsyncStream<LinkState> { AsyncStream { $0.finish() } }
+}
+
+@Test func savingARoutineSetsOrClearsItsFolder() async throws {
+    let transport = SaveRecorder()
+    let client = HostClient(transport: transport)
+    func save(_ folder: String?) async throws -> (Routine, [String: Any]) {
+        let routine = try await client.saveRoutine(botId: "b", id: "r", name: "N", instruction: "I",
+                                                   schedule: RoutineScheduleDraft(), timeoutSeconds: "3600", folder: folder)
+        let body = try #require(JSONSerialization.jsonObject(with: await transport.bodies.last) as? [String: Any])
+        return (routine, body)
+    }
+    let (routine, set) = try await save("/srv/app")
+    #expect(routine.folder == "/srv/app")
+    #expect(set["folder"] as? String == "/srv/app")
+    #expect(try await save(nil).1["folder"] is NSNull)
+}
+
+@Test func aFolderIsNamedByItsLastComponent() {
+    #expect("/Users/me/code/app".folderName == "app")
+    #expect(#"C:\code\app"#.folderName == "app")
+}

@@ -2101,7 +2101,6 @@
   "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Запустите облачный компьютер в собственном аккаунте Boat или InstaBox, чтобы боты работали, пока ваш компьютер выключен.",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Войдите агентом в несколько аккаунтов или добавьте API-ключи в разделе «Профили входа» в его настройках, а затем выберите профиль для каждого бота.",
-  "Picking up from the chat…": "Продолжаем из чата…",
   "Stop this task?": "Остановить эту задачу?",
   "What it already changed stays.": "Уже внесённые изменения останутся.",
   "No work": "Нет работы",
@@ -2483,5 +2482,9 @@
   "Context handed off": "Контекст передан",
   "Switched": "Переключено",
   "No threads right now": "Сейчас нет тредов",
-  "Tasks your bots work on show up here.": "Здесь появятся задачи, над которыми работают ваши боты."
+  "Tasks your bots work on show up here.": "Здесь появятся задачи, над которыми работают ваши боты.",
+  "Folder": "Папка",
+  "Bot's folder": "Папка бота",
+  "Use the bot's folder": "Использовать папку бота",
+  "Each run works here in a thread of its own.": "Каждый запуск работает здесь в собственном thread."
 }

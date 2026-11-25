@@ -46,6 +46,11 @@ cat > "$tmp/stubs/id" <<'EOF'
 #!/bin/sh
 [ "${1:-}" = -u ] && echo 1000 || /usr/bin/id "$@"
 EOF
+cat > "$tmp/stubs/sudo" <<'EOF'
+#!/bin/sh
+path=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+PATH=$path:/usr/bin:/bin exec "$@"
+EOF
 cat > "$tmp/stubs/curl" <<'EOF'
 #!/bin/sh
 output=""
@@ -145,12 +150,18 @@ grep -Fq "gstreamer1.0-tools" "$tmp/missing.out" ||
 install not_ready desktop GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/never-ready" > "$tmp/not-ready.out"
 test -f "$tmp/not_ready/.codync/host-install-failed"
-! grep -q 'Next: open Codync' "$tmp/not-ready.out"
+if grep -q 'Next: open Codync' "$tmp/not-ready.out"; then
+  echo "installer printed the success hint after the host failed"
+  exit 1
+fi
 
 install no_display none GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/no_display_ready" FAKE_HOST_READY="$tmp/no_display_ready" > "$tmp/no-display.out"
-grep -Fq "Next: run $tmp/no_display/bin/codync-host pair" "$tmp/no-display.out"
-! test -f "$tmp/no_display/data/applications/codync.desktop"
+grep -Fq "Next: run $tmp/no_display/bin/codync-host pair --port 19222" "$tmp/no-display.out"
+if test -f "$tmp/no_display/data/applications/codync.desktop"; then
+  echo "installer created a launcher without a display"
+  exit 1
+fi
 
 mkdir -p "$tmp/symlink_bin/physical"
 ln -s physical "$tmp/symlink_bin/bin"
@@ -158,7 +169,10 @@ CODYNC_TEST_BIN_DIR="$tmp/symlink_bin/bin" install symlink_bin desktop \
   GST_WEBRTC="$tmp/webrtc" GST_PIPEWIRE="$tmp/pipewire" \
   CODYNC_INSTALL_HEALTH_URL="file://$tmp/symlink_ready" FAKE_HOST_READY="$tmp/symlink_ready" \
   > "$tmp/symlink.out"
-! test -f "$tmp/symlink_bin/.codync/host-install-failed"
+if test -f "$tmp/symlink_bin/.codync/host-install-failed"; then
+  echo "installer rejected its own host through a symlinked binary directory"
+  exit 1
+fi
 grep -Fq 'Next: open Codync' "$tmp/symlink.out"
 
 echo "installer checks passed"

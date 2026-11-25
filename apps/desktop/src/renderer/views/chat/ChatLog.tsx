@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Spinner } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
 import { useTr } from '../../lib/use-language'
-import { keptPlace, placesOf, contentTopOf, rowsCanScroll, shiftTo, type Place } from '../../lib/scroll-anchor'
+import { keptPlace, placesOf, contentTopOf, rowsCanScroll, settledPlace, shiftTo, type Place } from '../../lib/scroll-anchor'
 import { entryFrom, indexOfEntry, pageAbove, startShowing, windowStart, type WindowStart } from '../../lib/shown-window'
 import { rowIn, useArrivals, type ChatItem } from './chat-items'
 import { MacChatButton } from './MacChatButton'
@@ -61,6 +61,15 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
   const scroller = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
   const keepPlace = useRef<Place | null>(null)
+  // The page a place was taken for, until that page has committed. The place is armed before the fetch resolves, so
+  // the renders on the way — the "loading" one, a store change, a streaming reply — must not be read as "the hold
+  // is done" and dropped, or the arrival that follows would go unpaid for.
+  const placePending = useRef(false)
+  // The view moving for the place, as opposed to the reader moving it. A shift can land exactly at the end — the
+  // browser clamps it there — and that must not read as the reader arriving at the newest and asking to follow the
+  // chat again: they are in the history on purpose. Holds the scrollTop the shift left the view at, and the scroll
+  // event that value raises consumes it; a shift the browser clamped away raises none and arms nothing.
+  const ownScroll = useRef<number | null>(null)
   const last = items[items.length - 1]
   const jump = usePresence(!following && items.length > 0, 200)
   const arrivals = useArrivals(items.map((i) => i.id), following)
@@ -94,49 +103,70 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     // The row the reader is on, kept for however many rows go in above it. A reader at the newest keeps none: the
     // rows are brought to the bottom after every render there, and a place would only fight that.
     keepPlace.current = el ? keptPlace(placesOf(el), followingRef.current) : null
+    // Armed with it: until the page this request brings has committed, a render that finds nothing to move has not
+    // finished the hold, and dropping it there would leave the arrival unpaid for.
+    placePending.current = keepPlace.current !== null
     // The entry the reader's first row is about, which is what the rebuilt list is asked for. Not the first row's
     // own id: that is often a date separator, and the separator stops existing as soon as rows above it arrive.
     const wasShowing = entryFrom(all, start)
-    if (canLoadOlder) await loadOlder()
-    // Read after the wait: the rows that went in are above everything held, so the row the reader is on sits that
-    // many rows further down. With nothing added, the rows themselves are already held and one page of them is all
-    // there is to show.
-    const list = fresh()
-    const above = indexOfEntry(list, wasShowing)
-    // The reader's own entry is no longer in the list at all: leave the window where it is rather than move it to a
-    // page of the conversation the reader was not reading.
-    if (above === null) {
+    try {
+      if (canLoadOlder) await loadOlder()
+      // Read after the wait: the rows that went in are above everything held, so the row the reader is on sits that
+      // many rows further down. With nothing added, the rows themselves are already held and one page of them is all
+      // there is to show.
+      const list = fresh()
+      const above = indexOfEntry(list, wasShowing)
+      // The reader's own entry is no longer in the list at all: leave the window where it is rather than move it to a
+      // page of the conversation the reader was not reading.
+      if (above !== null) setFirstShown(pageAbove(above, PAGE))
+    } finally {
+      // The request is over: the page it brought is in this list, and the render that shows it is the last one the
+      // place is owed for. Cleared after the sets, never before, so every render up to that one still holds it.
+      placePending.current = false
       setLoadingEarlier(false)
-      return
     }
-    setFirstShown(pageAbove(above, PAGE))
-    setLoadingEarlier(false)
   }
 
   // Rows going in above keep the reader's place; a follower stays at the bottom. This runs after every render, so the
   // place has to survive whatever renders come first: it moves the view only by how far the row itself moved in the
   // content, which is zero for a message arriving below, for the box growing, and for the fetch's own "loading"
-  // render — and it is dropped once nothing more can arrive.
+  // render — and it is dropped once the page it was taken for has committed and paid for.
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
     const place = keepPlace.current
     if (place && !followingRef.current) {
       const row = el.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(place.id)}"]`)
-      // Undone by geometry, not by an id: the row's start in the content is the same number however the view is
-      // scrolled, so applying the shift restores it exactly and applying it twice changes nothing.
-      const moved = row ? shiftTo(place, contentTopOf(el, row)) : 0
-      if (moved !== 0) {
-        el.scrollTop += moved
-        lastScrollTop.current = el.scrollTop
+      if (!row) {
+        // The row the place was taken on is not in these rows at all: there is nothing left to hold.
+        keepPlace.current = null
+        return
       }
-      // Nothing to keep a place on, or the arrival has been paid for and no more rows can come: drop it, so a later
-      // insertion above this row (with the reader long gone from it) is not paid for either.
-      if (!row || (moved === 0 && !loadingEarlier)) keepPlace.current = null
+      const moved = shiftTo(place, contentTopOf(el, row))
+      if (moved !== 0) {
+        const was = el.scrollTop
+        el.scrollTop += moved
+        const now = el.scrollTop
+        // Only a scroll that actually moved the view raises the event to swallow. A shift the browser clamped away
+        // changes nothing and raises nothing, so nothing is armed for the reader's own next scroll to be lost in.
+        if (now !== was) ownScroll.current = now
+        lastScrollTop.current = now
+        // The difference is paid once, and the place becomes where the row is NOW. A difference is never closed by
+        // moving the view — the row's start in the content is the same number however it is scrolled — so a place
+        // left as it was taken reads the same difference next render and pays it again: 0, 2120, 4240, 6360, 8480,
+        // 10600, five renders of a streaming reply that never added a row. Re-anchoring also accepts a view the
+        // browser clamped short of the distance asked for: the row did not reach where it should, so the hold
+        // becomes where it actually got to rather than the rest of a debt.
+        keepPlace.current = settledPlace(place, contentTopOf(el, row))
+      } else if (!loadingEarlier && !placePending.current) {
+        // The request has committed its page and there is nothing left to move: the reader's place is theirs again.
+        keepPlace.current = null
+      }
     } else if (followingRef.current) {
       // Cleared here too: a place that outlived the render which took it would move a reader who has since left
       // the bottom, and the branch above would never see it again.
       keepPlace.current = null
+      placePending.current = false
       toBottom()
     }
   })
@@ -169,6 +199,17 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
         aria-label={tr('Messages')}
         onScroll={(e) => {
           const el = e.currentTarget
+          // The place's own scroll, not the reader's: a clamp can land exactly at the end, and turning following on
+          // there would take the reader's place from them with nobody having asked for it. Consumed at most once —
+          // a scroll that is not the one the shift left raises is the reader's and is handled as one.
+          const mine = ownScroll.current
+          if (mine !== null) {
+            ownScroll.current = null
+            if (Math.abs(el.scrollTop - mine) < 2) {
+              lastScrollTop.current = el.scrollTop
+              return
+            }
+          }
           const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8
           if (el.scrollTop < lastScrollTop.current - 1 && !atEnd) setFollowing(false)
           else if (atEnd) setFollowing(true)

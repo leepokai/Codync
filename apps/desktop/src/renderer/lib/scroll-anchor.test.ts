@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { contentTopOf, keptPlace, placeOf, rowsCanScroll, shiftTo } from './scroll-anchor.ts'
+import { contentTopOf, keptPlace, placeOf, rowsCanScroll, settledPlace, shiftTo } from './scroll-anchor.ts'
 
 /**
  * Rows 60 px tall: the first starts `viewTop` px below the view's top edge (negative: above it) and `scrolled` px
@@ -45,13 +45,27 @@ test('the reader scrolling their own view changes no row\'s start in the content
   assert.equal(contentTopOf(at, { getBoundingClientRect: () => ({ top: -420 }) } as unknown as HTMLElement), 80)
 })
 
-test('a place is applied by geometry, so an effect that runs twice shifts the view once', () => {
+test('a place is paid once: the row\'s start is read back after the move, so a second pass moves nothing', () => {
   const place = placeOf(rows(20, -150, 150))!
-  // 2400 px went in above the row, and the view was moved by that much. Reading the row again now gives the very
-  // number the place was taken at, so a second pass finds nothing left to move.
-  const moved = shiftTo(place, place.top + 2400)
-  const afterMove = place.top + 2400 - moved
-  assert.equal(shiftTo(place, afterMove), 0)
+  // 2400 px went in above the row. Moving the view by that much does NOT change where the row starts in the content
+  // — that is the same number however the view is scrolled — so a place left as it was taken reads 2400 again on the
+  // next render and moves the reader another 2400. That is the reported repeat (0, 2120, 4240, 6360, 8480, 10600).
+  assert.equal(shiftTo(place, place.top + 2400), 2400)
+  // Read back after the move, the place is where the row now is, and a second pass finds nothing left to move.
+  const settled = settledPlace(place, place.top + 2400)
+  assert.equal(shiftTo(settled, place.top + 2400), 0)
+  // And a difference does not have to be closed by one move: a place read back after a short one is short too.
+  assert.deepEqual(settledPlace(place, place.top), { id: place.id, top: place.top })
+})
+
+test('a view clamped short of the distance it was asked for gives up the rest, rather than owing it for ever', () => {
+  // 5000 px went in above the row, but the view could only move 900 before the browser clamped it at the end: the
+  // row never reached where it should, so where it actually got to is the place from now on.
+  const place = { id: 'r7', top: 300 }
+  const settled = settledPlace(place, 1200)
+  assert.equal(shiftTo(settled, 1200), 0)
+  // Not the rest of the debt: the 4100 px the view was short is dropped, not replayed on the next render.
+  assert.equal(settled.top, 1200)
 })
 
 test('a follower keeps no place, because the rows are brought to the bottom after every render', () => {

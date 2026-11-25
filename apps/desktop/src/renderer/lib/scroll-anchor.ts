@@ -55,6 +55,23 @@ export function shiftTo(place: Place, contentTop: number) {
 }
 
 /**
+ * The place as it stands once the view has moved for it: the row's start, read back after the move.
+ *
+ * A place is a difference, and moving the view does not close a difference — the row's start in the content is
+ * the same number however the view is scrolled. So a place left exactly as it was taken reads the same difference
+ * on the next render and pays it again, and the view walks a page further every render there is no new row on.
+ * Measured on the reported bug: 0 → 2120 → 4240 → 6360 → 8480 → 10600, five renders of a streaming reply.
+ *
+ * The place has to be the row's start *as it now is*, and that is what makes a second render find nothing left to
+ * move. A view clamped short of the distance it was asked for lands somewhere the row does not start, and reading
+ * it back is what accepts that: the hold becomes where the row actually is, once, instead of the full distance the
+ * reader was owed.
+ */
+export function settledPlace(place: Place, contentTop: number): Place {
+  return { id: place.id, top: Math.round(contentTop) }
+}
+
+/**
  * Whether the rows can scroll at all. Fewer than a screenful, the view sits at its top permanently, so "the reader
  * is near the top" says nothing and earlier rows are not asked for.
  */

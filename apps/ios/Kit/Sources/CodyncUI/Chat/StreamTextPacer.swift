@@ -10,18 +10,18 @@ struct StreamTextState: Equatable, Sendable {
     static let maxStaticInterval: TimeInterval = 0.090
     static let frameBudget: TimeInterval = 0.012
     static let frameFast: TimeInterval = 0.004
-    static let catchUpTarget: TimeInterval = 0.650
-    static let maxLag: TimeInterval = 0.750
-    static let initialArrivalEstimate: TimeInterval = 0.250
+    static let catchUpTarget: TimeInterval = 0.930
+    static let maxLag: TimeInterval = 1.070
+    static let initialArrivalEstimate: TimeInterval = 0.360
     static let minArrivalSample: TimeInterval = 0.040
-    static let maxArrivalSample: TimeInterval = 0.800
-    static let windowPad: TimeInterval = 0.080
-    static let maxWindow: TimeInterval = 0.950
-    static let baseSteps: Int = 8
+    static let maxArrivalSample: TimeInterval = 1.140
+    static let windowPad: TimeInterval = 0.115
+    static let maxWindow: TimeInterval = 1.360
+    static let baseSteps: Int = 57
     static let arrivalHistoryLimit: Int = 4
-    static let arrivalRevealMin: TimeInterval = 0.250
-    static let arrivalRevealPerChar: TimeInterval = 0.0013
-    static let arrivalRevealMax: TimeInterval = 1.800
+    static let arrivalRevealMin: TimeInterval = 0.360
+    static let arrivalRevealPerChar: TimeInterval = 0.0032
+    static let arrivalRevealMax: TimeInterval = 5.200
 
     struct LagCheckpoint: Equatable, Sendable {
         let count: Int

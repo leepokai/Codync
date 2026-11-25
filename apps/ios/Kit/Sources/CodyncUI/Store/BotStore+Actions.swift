@@ -184,6 +184,9 @@ extension BotStore {
             if connection == .online { markRead(botId) }
         } else {
             readingViews[token] = nil
+            if !readingViews.values.contains(botId), let list = entries[botId] {
+                clearLiveReveals(for: list)
+            }
         }
     }
 
@@ -400,7 +403,9 @@ extension BotStore {
     public func delete(_ bot: Bot) {
         removeComposerDrafts(for: bot.id)
         bots[bot.id] = nil
-        entries[bot.id] = nil
+        if let removed = entries.removeValue(forKey: bot.id) {
+            clearLiveReveals(for: removed)
+        }
         perform(replay: true) { try await $0.deleteBot(bot.id) }
     }
 

@@ -99,3 +99,10 @@ import Testing
     let imageAfterEmoji = "Hi 👨‍👩‍👧‍👦 ![pic](https://x"
     #expect(StreamingTailRepair.repair(imageAfterEmoji) == "Hi 👨‍👩‍👧‍👦")
 }
+
+@Test func streamingTailRepairDoesNotRestylePreviousLineWhenDroppingMarkerOnlyLine() {
+    #expect(StreamingTailRepair.repair("Dangling **bold\n-") == "Dangling **bold\n")
+    #expect(StreamingTailRepair.repair("Dangling *em\n#") == "Dangling *em\n")
+    #expect(StreamingTailRepair.repair("Dangling `code\n>") == "Dangling `code\n")
+    #expect(StreamingTailRepair.repair("Dangling ~~strike\n1.") == "Dangling ~~strike\n")
+}

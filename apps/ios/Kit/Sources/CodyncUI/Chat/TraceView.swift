@@ -111,12 +111,21 @@ struct TraceRow: View {
 }
 
 @MainActor
-private final class ThoughtTailFadeHolder {
+final class ThoughtTailFadeHolder {
     var chunkCount = 0
     var state = TailFadeSweepState()
 
+    var isAnimating: Bool { state.isAnimating }
+    var latestEndTime: TimeInterval? { state.latestBatchEndTime }
+
+    @discardableResult
+    func pruneAndCheckActive(at now: TimeInterval) -> Bool {
+        state.pruneAndCheckActive(now: now)
+    }
+
     func sync(pieces: [String], isStreaming: Bool, hidden: Bool, now: TimeInterval) {
         guard isStreaming, !hidden, let tail = pieces.last else {
+            chunkCount = 0
             if state.isAnimating {
                 state.settle(at: now, hidden: hidden)
             }
@@ -137,6 +146,7 @@ private final class ThoughtTailFadeHolder {
     }
 
     func settle(hidden: Bool = true, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        chunkCount = 0
         if state.isAnimating {
             state.settle(at: now, hidden: hidden)
         }
@@ -153,6 +163,7 @@ private struct StreamingThoughtBody: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var pacer: StreamTextController?
     @State private var fadeHolder = ThoughtTailFadeHolder()
+    @State private var settledDeadline: TimeInterval?
 
     private var rawText: String { entry.data.text ?? "" }
     private var isBotWorking: Bool { model.bots[entry.botId]?.isWorking(in: entry.botId) == true }
@@ -181,7 +192,7 @@ private struct StreamingThoughtBody: View {
     }
 
     private func frameFadeState(at now: TimeInterval) -> TailFadeSweepState {
-        fadeHolder.state.prune(now: now)
+        fadeHolder.pruneAndCheckActive(at: now)
         return fadeHolder.state
     }
 
@@ -189,20 +200,46 @@ private struct StreamingThoughtBody: View {
         let display = resolvedDisplay
         let now = ProcessInfo.processInfo.systemUptime
         let pieces = prepareThoughtPieces(text: display.text, isAnimating: display.isAnimating, eligible: display.eligible, now: now)
+        let activeDeadline = (display.eligible && display.isAnimating) ? fadeHolder.latestEndTime : nil
+        let isActivelyFading = activeDeadline != nil && settledDeadline != activeDeadline
 
         Group {
-            if display.eligible, display.isAnimating, fadeHolder.state.isAnimating {
+            if isActivelyFading {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
                     let frameNow = ProcessInfo.processInfo.systemUptime
-                    piecesStack(pieces, fadeState: frameFadeState(at: frameNow), now: frameNow)
+                    let frameFade = frameFadeState(at: frameNow)
+                    if frameFade.isAnimating {
+                        switch ThoughtDisplaySegments.build(text: display.text, pieces: pieces, isActivelyFading: true) {
+                        case let .chunked(activePieces):
+                            piecesStack(activePieces, fadeState: frameFade, now: frameNow)
+                        case let .unified(fullText):
+                            Text(faded(fullText, state: frameFade, now: frameNow))
+                        }
+                    } else {
+                        Text(display.text)
+                    }
                 }
             } else {
-                piecesStack(pieces, fadeState: nil, now: now)
+                Text(display.text)
             }
         }
         .font(.footnote)
         .foregroundStyle(Palette.secondary)
         .textSelection(.enabled)
+        .task(id: activeDeadline) {
+            guard let deadline = activeDeadline else { return }
+            while !Task.isCancelled {
+                let current = ProcessInfo.processInfo.systemUptime
+                let remaining = deadline - current
+                if remaining <= 0 {
+                    if !fadeHolder.pruneAndCheckActive(at: current) {
+                        settledDeadline = deadline
+                    }
+                    break
+                }
+                try? await Task.sleep(for: .seconds(remaining + 0.002))
+            }
+        }
         .onAppear {
             reconcile()
         }
@@ -224,6 +261,7 @@ private struct StreamingThoughtBody: View {
         .onDisappear {
             pacer?.stop()
             fadeHolder.settle(hidden: true)
+            settledDeadline = nil
         }
     }
 

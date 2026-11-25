@@ -8,6 +8,7 @@ extension BotStore {
         let calls = Array(voiceCalls.values)
         voiceCalls.removeAll()
         isActive = false
+        clearAllLiveReveals()
         stopTransport()
         saveCache()
         retired = true
@@ -34,6 +35,7 @@ extension BotStore {
             // Returning to the foreground must not interrupt a live call's sends.
             if !hasBackgroundWork || streamTask == nil { restartStream() }
         } else {
+            clearAllLiveReveals()
             stopIfIdle()
         }
     }

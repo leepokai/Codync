@@ -149,8 +149,16 @@ public final class BotStore {
     var hostId: String?
     var streamTask: Task<Void, Never>?
     /// Replacing or dropping it clears `streamCaughtUp`: no new stream has caught up yet.
-    var eventsTask: Task<Void, Never>? { didSet { streamCaughtUp = false } }
+    var eventsTask: Task<Void, Never>? {
+        didSet {
+            streamCaughtUp = false
+            hasKnownCatchUpBoundary = false
+            clearAllLiveReveals()
+        }
+    }
     var isActive = true
+    /// True only when the current stream's `.hello` event carried an explicit `catchUp` count (`>= 2.32.0`).
+    @ObservationIgnored var hasKnownCatchUpBoundary = false
     /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
         let hear: @MainActor (CallCue) -> Void
@@ -182,8 +190,13 @@ public final class BotStore {
 
     /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
+    static let liveArrivalTTL: TimeInterval = 20
+    /// Monotonic clock for expiring unmounted live arrival markers; overridable in tests.
+    @ObservationIgnored var revealClock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     /// Live SSE agent/thought entry IDs eligible for smooth text reveal (never populated from cache, catch-up, or history paging).
     @ObservationIgnored var liveArrivalIDs: Set<String> = []
+    /// Monotonic expiration timestamps for pending live arrival markers so closed/unmounted entries never replay later.
+    @ObservationIgnored var liveArrivalDeadlines: [String: TimeInterval] = [:]
     /// Character reveal progress for active live entries so recycled cells resume instead of replaying from zero.
     @ObservationIgnored var revealedTextByID: [String: Int] = [:]
 
@@ -383,9 +396,14 @@ public final class BotStore {
         onComputerChanged?(c)
     }
 
-    /// True only when `entry` arrived via live SSE after stream catch-up completed and has plain/Markdown text to pace.
+    /// True only when `entry` arrived via live SSE after an explicit catch-up boundary, has not expired,
+    /// and has plain/Markdown text to pace.
     func shouldRevealLiveText(for entry: Entry) -> Bool {
         guard liveArrivalIDs.contains(entry.id) else { return false }
+        if let deadline = liveArrivalDeadlines[entry.id], revealClock() > deadline {
+            completeLiveReveal(id: entry.id)
+            return false
+        }
         guard entry.kind == "agent" || entry.kind == "thought" else { return false }
         guard entry.data.artifact == nil, entry.data.voiceNoteFile == nil, (entry.data.files?.isEmpty ?? true) else { return false }
         return !(entry.data.text ?? "").isEmpty
@@ -402,6 +420,30 @@ public final class BotStore {
 
     func completeLiveReveal(id: String) {
         liveArrivalIDs.remove(id)
+        liveArrivalDeadlines.removeValue(forKey: id)
         revealedTextByID.removeValue(forKey: id)
+    }
+
+    func clearLiveReveals(for list: [Entry]) {
+        for entry in list {
+            completeLiveReveal(id: entry.id)
+        }
+    }
+
+    func clearAllLiveReveals() {
+        liveArrivalIDs.removeAll()
+        liveArrivalDeadlines.removeAll()
+        revealedTextByID.removeAll()
+    }
+
+    func pruneExpiredLiveReveals(now: TimeInterval? = nil) {
+        let current = now ?? revealClock()
+        for (id, deadline) in liveArrivalDeadlines where current > deadline {
+            completeLiveReveal(id: id)
+        }
+    }
+
+    func isChatVisible(_ botId: String) -> Bool {
+        isActive && (readingViews.values.contains(botId) || selection == botId)
     }
 }

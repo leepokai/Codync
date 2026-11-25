@@ -28,10 +28,16 @@ import Testing
 }
 
 @Test func arrivalRevealBoundsShortAndLongCompletions() {
+    #expect(StreamTextState.arrivalRevealMin == 0.360)
+    #expect(StreamTextState.arrivalRevealPerChar == 0.0032)
+    #expect(StreamTextState.arrivalRevealMax == 5.200)
+
     let shortDuration = StreamTextState.arrivalRevealDuration(length: 12)
+    let thousandCharDuration = StreamTextState.arrivalRevealDuration(length: 1_000)
     let longDuration = StreamTextState.arrivalRevealDuration(length: 5_000)
     #expect(shortDuration >= StreamTextState.arrivalRevealMin)
-    #expect(shortDuration < 0.35)
+    #expect(shortDuration < 0.50)
+    #expect(thousandCharDuration > 3.0 && thousandCharDuration < StreamTextState.arrivalRevealMax)
     #expect(longDuration == StreamTextState.arrivalRevealMax)
 
     var state = StreamTextState(text: "Short reply!", live: false, now: 0, arrivalReveal: true)
@@ -43,7 +49,7 @@ import Testing
     }
     #expect(!state.needsTick)
     #expect(state.displayedText == "Short reply!")
-    #expect(now <= 0.40)
+    #expect(now <= 0.50)
 }
 
 @Test func liveToFinalTransitionCatchesUpSmoothlyWithinBudget() {
@@ -126,6 +132,8 @@ import Testing
     store.upsert(cached)
     #expect(!store.shouldRevealLiveText(for: cached))
 
+    let readingToken = UUID()
+    store.setReading(readingToken, botId: "b1", active: true)
     store.setActive(true)
     #expect(await until { await remote.subscribed })
 
@@ -191,4 +199,116 @@ import Testing
     store.completeLiveReveal(id: "msg-1")
     #expect(!store.shouldRevealLiveText(for: entry))
     #expect(store.initialRevealedCount(for: entry) == nil)
+}
+
+@MainActor @Test func closedChatAndExpiredLiveArrivalsDoNotReplayLater() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+
+    var now: TimeInterval = 100.0
+    let remote = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in remote }
+    defer { store.retire() }
+    store.revealClock = { now }
+
+    let openToken = UUID()
+    store.setReading(openToken, botId: "b1", active: true)
+    store.setActive(true)
+    #expect(await until { await remote.subscribed })
+
+    await remote.emit(#"{"type":"hello","hostId":"h1","rev":0,"usage":{"providers":[]},"catchUp":0}"#)
+    #expect(await until { store.streamCaughtUp })
+
+    // Closed chat b2 receives a finished reply: must not be marked for reveal when opened later.
+    await remote.emit(#"{"type":"entry","entry":{"id":"closed-1","seq":1,"botId":"b2","rev":1,"kind":"agent","turn":1,"data":{"text":"Finished in background chat","final":true},"createdAt":1,"updatedAt":1}}"#)
+    #expect(await until { store.chat("b2").contains { $0.id == "closed-1" } })
+    let closedEntry = try #require(store.chat("b2").first { $0.id == "closed-1" })
+    #expect(!store.shouldRevealLiveText(for: closedEntry))
+
+    // Open chat b1 receives a live reply, but if unmounted past TTL it expires cleanly.
+    await remote.emit(#"{"type":"entry","entry":{"id":"ttl-1","seq":2,"botId":"b1","rev":2,"kind":"agent","turn":1,"data":{"text":"Visible live reply","final":true},"createdAt":2,"updatedAt":2}}"#)
+    #expect(await until { store.chat("b1").contains { $0.id == "ttl-1" } })
+    let ttlEntry = try #require(store.chat("b1").first { $0.id == "ttl-1" })
+    #expect(store.shouldRevealLiveText(for: ttlEntry))
+
+    now += BotStore.liveArrivalTTL + 1.0
+    #expect(!store.shouldRevealLiveText(for: ttlEntry))
+    #expect(!store.liveArrivalIDs.contains("ttl-1"))
+
+    // Leaving an open chat clears its pending live reveals immediately.
+    await remote.emit(#"{"type":"entry","entry":{"id":"leave-1","seq":3,"botId":"b1","rev":3,"kind":"agent","turn":2,"data":{"text":"Leaving mid-stream"},"createdAt":3,"updatedAt":3}}"#)
+    #expect(await until { store.chat("b1").contains { $0.id == "leave-1" } })
+    let leaveEntry = try #require(store.chat("b1").first { $0.id == "leave-1" })
+    #expect(store.shouldRevealLiveText(for: leaveEntry))
+    store.setReading(openToken, botId: "b1", active: false)
+    #expect(!store.shouldRevealLiveText(for: leaveEntry))
+}
+
+@MainActor @Test func deletedEntriesAndDisconnectClearRevealProgress() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+
+    let remote = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in remote }
+    defer { store.retire() }
+
+    let token = UUID()
+    store.setReading(token, botId: "b1", active: true)
+    store.setActive(true)
+    #expect(await until { await remote.subscribed })
+    await remote.emit(#"{"type":"hello","hostId":"h1","rev":0,"usage":{"providers":[]},"catchUp":0}"#)
+    #expect(await until { store.streamCaughtUp })
+
+    await remote.emit(botEvent("b1", name: "Cody", rev: 1))
+    await remote.emit(#"{"type":"entry","entry":{"id":"del-1","seq":1,"botId":"b1","rev":2,"kind":"agent","turn":1,"data":{"text":"About to be deleted"},"createdAt":1,"updatedAt":1}}"#)
+    #expect(await until { store.chat("b1").contains { $0.id == "del-1" } })
+    store.noteLiveRevealProgress(id: "del-1", count: 5)
+    #expect(store.liveArrivalIDs.contains("del-1"))
+    #expect(store.revealedTextByID["del-1"] == 5)
+
+    await remote.emit(#"{"type":"botDeleted","id":"b1","rev":3}"#)
+    #expect(await until { store.bots["b1"] == nil })
+    #expect(!store.liveArrivalIDs.contains("del-1"))
+    #expect(store.revealedTextByID["del-1"] == nil)
+
+    // Going inactive clears any remaining live reveal state.
+    store.liveArrivalIDs.insert("dangling-1")
+    store.revealedTextByID["dangling-1"] = 4
+    store.setActive(false)
+    #expect(store.liveArrivalIDs.isEmpty)
+    #expect(store.revealedTextByID.isEmpty)
+}
+
+@MainActor @Test func legacyHostWithoutCatchUpCountSyncsWithoutReplayingHistory() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+
+    let remote = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in remote }
+    defer { store.retire() }
+
+    let token = UUID()
+    store.setReading(token, botId: "b1", active: true)
+    store.setActive(true)
+    #expect(await until { await remote.subscribed })
+
+    // Pre-2.32.0 host omits `catchUp`: sync finishes normally (`streamCaughtUp == true`),
+    // but historical entries sent after hello must not replay.
+    await remote.emit(#"{"type":"hello","hostId":"h1","rev":2,"usage":{"providers":[]}}"#)
+    await remote.emit(#"{"type":"entry","entry":{"id":"old-1","seq":1,"botId":"b1","rev":2,"kind":"agent","turn":1,"data":{"text":"Historical reply","final":true},"createdAt":1,"updatedAt":1}}"#)
+    #expect(await until { store.chat("b1").contains { $0.id == "old-1" } })
+    #expect(store.streamCaughtUp)
+    let oldEntry = try #require(store.chat("b1").first { $0.id == "old-1" })
+    #expect(!store.shouldRevealLiveText(for: oldEntry))
+
+    // Upgrading/reconnecting with an explicit `catchUp` boundary enables live reveal for new arrivals.
+    await remote.endEvents()
+    #expect(await until { !store.streamCaughtUp })
+    #expect(await until { await remote.subscribed })
+    await remote.emit(#"{"type":"hello","hostId":"h1","rev":2,"usage":{"providers":[]},"catchUp":0}"#)
+    #expect(await until { store.streamCaughtUp })
+    await remote.emit(#"{"type":"entry","entry":{"id":"new-1","seq":2,"botId":"b1","rev":3,"kind":"agent","turn":2,"data":{"text":"Live after upgrade","final":true},"createdAt":2,"updatedAt":2}}"#)
+    #expect(await until { store.chat("b1").contains { $0.id == "new-1" } })
+    let newEntry = try #require(store.chat("b1").first { $0.id == "new-1" })
+    #expect(store.shouldRevealLiveText(for: newEntry))
 }

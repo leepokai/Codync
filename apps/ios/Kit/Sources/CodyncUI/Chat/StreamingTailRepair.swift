@@ -91,13 +91,9 @@ private struct TailScanner {
         // A newline-terminated line is complete; dangling tokens on it are treated as literal.
         guard !endsWithNewline else { return unchanged }
 
-        var keep = count
+        let keep = count
         if isMarkerOnly(tailLines[tailLines.count - 1]) {
-            keep = tailLines[tailLines.count - 1].lowerBound
-            tailLines.removeLast()
-            if tailLines.isEmpty {
-                return StreamingTailRepair.Result(keptLength: keep, suffix: "")
-            }
+            return StreamingTailRepair.Result(keptLength: tailLines[tailLines.count - 1].lowerBound, suffix: "")
         }
 
         var scopeStart = tailLines[0].lowerBound

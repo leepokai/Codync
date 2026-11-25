@@ -12,6 +12,7 @@ public struct MarkdownText: View {
 
     @State private var blockCache = MarkdownBlockCache()
     @State private var fadeCoordinator = MarkdownFadeCoordinator()
+    @State private var settledDeadline: TimeInterval?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
@@ -44,25 +45,43 @@ public struct MarkdownText: View {
         let shouldAnimate = isStreaming && !reduceMotion && scenePhase == .active
         let now = ProcessInfo.processInfo.systemUptime
         let blocks = prepareBlocks(shouldAnimate: shouldAnimate, now: now)
+        let activeDeadline = shouldAnimate ? fadeCoordinator.latestEndTime : nil
+        let isActivelyFading = activeDeadline != nil && settledDeadline != activeDeadline
 
         Group {
-            if shouldAnimate, fadeCoordinator.hasActiveAnimations {
+            if isActivelyFading {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
                     let frameNow = frameTimeAfterPrune()
-                    blocksStack(blocks, now: frameNow, animate: true)
+                    blocksStack(blocks, now: frameNow, animate: fadeCoordinator.hasActiveAnimations)
                 }
             } else {
                 blocksStack(blocks, now: now, animate: false)
             }
         }
         .textSelection(.enabled)
+        .task(id: activeDeadline) {
+            guard let deadline = activeDeadline else { return }
+            while !Task.isCancelled {
+                let current = ProcessInfo.processInfo.systemUptime
+                let remaining = deadline - current
+                if remaining <= 0 {
+                    if !fadeCoordinator.pruneAndCheckActive(at: current) {
+                        settledDeadline = deadline
+                    }
+                    break
+                }
+                try? await Task.sleep(for: .seconds(remaining + 0.002))
+            }
+        }
         .onChange(of: shouldAnimate) { _, active in
             if !active {
                 fadeCoordinator.settleAll(hidden: true)
+                settledDeadline = nil
             }
         }
         .onDisappear {
             fadeCoordinator.settleAll(hidden: true)
+            settledDeadline = nil
         }
     }
 

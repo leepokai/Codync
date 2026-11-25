@@ -149,7 +149,7 @@ private struct ConversationCollection: UIViewRepresentable {
             contents = Dictionary(rows.map { ($0.id, $0.content) }, uniquingKeysWith: { a, _ in a })
 
             let first = lastId == nil
-            view.animatesContentGrowth = !reduceMotion && !first
+            view.animatesContentGrowth = !reduceMotion && !first && context.environment.scenePhase == .active
 
             // Reserve the offset before any snapshot or inset update can lay out the list.
             // Otherwise enabling following pins it to the end before the animation starts.

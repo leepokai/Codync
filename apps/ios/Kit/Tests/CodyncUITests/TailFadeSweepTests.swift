@@ -3,6 +3,10 @@ import Testing
 @testable import CodyncUI
 
 @Test func tailFadeSweepUsesExactDurationStaggerAndLinearOpacity() {
+    #expect(TailFadeSweepState.duration == 0.715)
+    #expect(TailFadeSweepState.staggerInterval == 0.028)
+    #expect(TailFadeSweepState.maxTotalDelay == 0.36)
+
     var state = TailFadeSweepState()
     state.sync(text: "alpha beta", isStreaming: true, now: 10.0)
     #expect(state.batches.count == 2)
@@ -10,10 +14,10 @@ import Testing
     #expect(abs(state.batches[1].startTime - (10.0 + TailFadeSweepState.staggerInterval)) < 0.0001)
     #expect(state.batches[0].duration == TailFadeSweepState.duration)
 
-    // First batch hits 0.5 opacity halfway through its 0.5s duration.
-    let mid = state.opacity(forCharacterAt: 0, at: 10.25)
+    // First batch hits 0.5 opacity halfway through its 0.715s duration.
+    let mid = state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration * 0.5)
     #expect(abs(mid - 0.5) < 0.001)
-    #expect(state.opacity(forCharacterAt: 0, at: 10.50) == 1.0)
+    #expect(state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration) == 1.0)
 }
 
 @Test func tailFadeSweepCapsStaggerDelayAtMaxTotalDelay() {
@@ -98,4 +102,48 @@ import Testing
     coordinator.settleAll(at: 1.1, hidden: true)
     #expect(!coordinator.hasActiveAnimations)
     #expect(coordinator.tableCellStates(forBlock: 0).isEmpty)
+}
+
+@MainActor @Test func fadeSchedulersPauseWhenLastBatchExpiresAndResumeOnNewText() {
+    let coordinator = MarkdownFadeCoordinator()
+    let blockCache = MarkdownBlockCache()
+
+    let initialBlocks = blockCache.render("First chunk", isStreaming: true)
+    coordinator.sync(blocks: initialBlocks, isStreaming: true, hidden: false, now: 1.0)
+    #expect(coordinator.hasActiveAnimations)
+    let firstDeadline = coordinator.latestEndTime ?? 0
+    #expect(firstDeadline > 1.0)
+    #expect(coordinator.pruneAndCheckActive(at: firstDeadline - 0.05))
+    #expect(!coordinator.pruneAndCheckActive(at: firstDeadline + 0.01))
+    #expect(!coordinator.hasActiveAnimations)
+    #expect(coordinator.latestEndTime == nil)
+
+    let nextBlocks = blockCache.render("First chunk second chunk", isStreaming: true)
+    coordinator.sync(blocks: nextBlocks, isStreaming: true, hidden: false, now: firstDeadline + 0.5)
+    #expect(coordinator.hasActiveAnimations)
+    #expect((coordinator.latestEndTime ?? 0) > firstDeadline + 0.5)
+
+    let holder = ThoughtTailFadeHolder()
+    holder.sync(pieces: ["Thinking chunk"], isStreaming: true, hidden: false, now: 2.0)
+    #expect(holder.isAnimating)
+    let thoughtDeadline = holder.latestEndTime ?? 0
+    #expect(!holder.pruneAndCheckActive(at: thoughtDeadline + 0.01))
+    #expect(!holder.isAnimating)
+    #expect(holder.latestEndTime == nil)
+
+    holder.sync(pieces: ["Thinking chunk more"], isStreaming: true, hidden: false, now: thoughtDeadline + 0.2)
+    #expect(holder.isAnimating)
+}
+
+@Test func longThoughtMergesIntoSingleSelectableTextWhenFadeInactiveOrFinalized() {
+    let longLine = String(repeating: "a", count: 2_600)
+    let fullThought = "Prefix line\n" + longLine
+    let pieces = ThoughtChunking.pieces(of: fullThought)
+    #expect(pieces.count > 1)
+
+    let active = ThoughtDisplaySegments.build(text: fullThought, pieces: pieces, isActivelyFading: true)
+    #expect(active == .chunked(pieces))
+
+    let finalizedOrPaused = ThoughtDisplaySegments.build(text: fullThought, pieces: pieces, isActivelyFading: false)
+    #expect(finalizedOrPaused == .unified(fullThought))
 }

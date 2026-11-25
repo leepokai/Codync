@@ -253,105 +253,10 @@ final class MarkdownBlockCache {
         baseBlockCount: Int
     ) -> ([MarkdownBlocks.Block], [Checkpoint]) {
         guard !source.isEmpty else { return ([], []) }
-        var blocks: [MarkdownBlocks.Block] = []
         var checkpoints: [Checkpoint] = []
-        var paragraph: [String] = []
-        var table: [String] = []
-        var code: [String]?
-        var language = ""
-
-        func flush() {
-            if !paragraph.isEmpty {
-                blocks.append(.paragraph(paragraph.joined(separator: "\n")))
-                paragraph = []
-            }
-            if !table.isEmpty {
-                if table.count >= 2, isTableRule(table[1]) {
-                    blocks.append(.table(header: cells(table[0]), rows: table.dropFirst(2).map(cells)))
-                } else {
-                    blocks.append(.paragraph(table.joined(separator: "\n")))
-                }
-                table = []
-            }
+        let blocks = MarkdownBlocks.parseBlocks(source) { utf8End, blockCount in
+            checkpoints.append(Checkpoint(utf8End: baseUtf8Offset + utf8End, blockCount: baseBlockCount + blockCount))
         }
-
-        var cursor = source.startIndex
-        let utf8 = source.utf8
-
-        while cursor <= source.endIndex {
-            let lineEnd = source[cursor...].firstIndex(of: "\n") ?? source.endIndex
-            let raw = String(source[cursor ..< lineEnd])
-            let hasNewline = lineEnd < source.endIndex
-            let nextCursor = hasNewline ? source.index(after: lineEnd) : source.endIndex
-            let line = raw.trimmingCharacters(in: .whitespaces)
-
-            if line.hasPrefix("```") {
-                if let c = code {
-                    blocks.append(.code(c.joined(separator: "\n"), language: language))
-                    code = nil
-                    if hasNewline {
-                        let offset = baseUtf8Offset + utf8.distance(from: source.startIndex, to: nextCursor)
-                        checkpoints.append(Checkpoint(utf8End: offset, blockCount: baseBlockCount + blocks.count))
-                    }
-                } else {
-                    flush()
-                    code = []
-                    language = String(line.dropFirst(3))
-                }
-            } else if code != nil {
-                code?.append(raw)
-            } else if line.hasPrefix("|") {
-                if !paragraph.isEmpty { flush() }
-                table.append(line)
-            } else {
-                if !table.isEmpty { flush() }
-                let depth = min(raw.prefix { $0 == " " || $0 == "\t" }.count / 2, 3)
-                if line.isEmpty {
-                    flush()
-                    if hasNewline, !blocks.isEmpty {
-                        let offset = baseUtf8Offset + utf8.distance(from: source.startIndex, to: nextCursor)
-                        checkpoints.append(Checkpoint(utf8End: offset, blockCount: baseBlockCount + blocks.count))
-                    }
-                } else if line == "---" || line == "***" || line == "___" {
-                    flush()
-                    blocks.append(.rule)
-                } else if let hashes = line.firstIndex(where: { $0 != "#" }), line.hasPrefix("#"), line[hashes] == " " {
-                    flush()
-                    let level = line.distance(from: line.startIndex, to: hashes)
-                    blocks.append(.heading(String(line[hashes...]).trimmingCharacters(in: .whitespaces), level: level))
-                } else if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ") || line.hasPrefix("• ") {
-                    flush()
-                    blocks.append(.bullet(String(line.dropFirst(2)), marker: depth > 0 ? "◦" : "•", depth: depth))
-                } else if let dot = line.firstIndex(of: "."), line[..<dot].allSatisfy(\.isNumber), !line[..<dot].isEmpty,
-                          line[line.index(after: dot)...].hasPrefix(" ")
-                {
-                    flush()
-                    blocks.append(.bullet(String(line[line.index(dot, offsetBy: 2)...]), marker: String(line[...dot]), depth: depth))
-                } else if line.hasPrefix(">") {
-                    flush()
-                    blocks.append(.quote(String(line.dropFirst()).trimmingCharacters(in: .whitespaces)))
-                } else {
-                    paragraph.append(raw)
-                }
-            }
-
-            if !hasNewline { break }
-            cursor = nextCursor
-        }
-
-        if let c = code { blocks.append(.code(c.joined(separator: "\n"), language: language)) }
-        flush()
         return (blocks, checkpoints)
-    }
-
-    private static func isTableRule(_ line: String) -> Bool {
-        line.contains("-") && line.allSatisfy { "|-: ".contains($0) }
-    }
-
-    private static func cells(_ line: String) -> [String] {
-        var row = line
-        if row.hasPrefix("|") { row.removeFirst() }
-        if row.hasSuffix("|") { row.removeLast() }
-        return row.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
     }
 }

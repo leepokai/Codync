@@ -20,6 +20,56 @@ enum MarkdownBlocks {
     }
 
     static func parse(_ source: String) -> [Block] {
+        parseBlocks(source)
+    }
+
+    static func scanLines(_ source: String, body: (_ raw: String, _ hasNewline: Bool, _ utf8End: Int) -> Void) {
+        guard !source.isEmpty else { return }
+        let utf8 = source.utf8
+        var cursor = utf8.startIndex
+        var utf8Offset = 0
+
+        while true {
+            var lineEnd = cursor
+            var lineBytes = 0
+            while lineEnd < utf8.endIndex {
+                let byte = utf8[lineEnd]
+                if byte == 0x0A || byte == 0x0D { break }
+                lineEnd = utf8.index(after: lineEnd)
+                lineBytes += 1
+            }
+
+            let raw = String(decoding: utf8[cursor ..< lineEnd], as: UTF8.self)
+            let hasNewline = lineEnd < utf8.endIndex
+            let nextCursor: String.UTF8View.Index
+            let newlineBytes: Int
+
+            if hasNewline {
+                let first = utf8[lineEnd]
+                let afterFirst = utf8.index(after: lineEnd)
+                if first == 0x0D, afterFirst < utf8.endIndex, utf8[afterFirst] == 0x0A {
+                    nextCursor = utf8.index(after: afterFirst)
+                    newlineBytes = 2
+                } else {
+                    nextCursor = afterFirst
+                    newlineBytes = 1
+                }
+            } else {
+                nextCursor = lineEnd
+                newlineBytes = 0
+            }
+
+            utf8Offset += lineBytes + newlineBytes
+            body(raw, hasNewline, utf8Offset)
+            if !hasNewline { break }
+            cursor = nextCursor
+        }
+    }
+
+    static func parseBlocks(
+        _ source: String,
+        onCheckpoint: ((_ utf8End: Int, _ blockCount: Int) -> Void)? = nil
+    ) -> [Block] {
         var blocks: [Block] = []
         var paragraph: [String] = []
         var table: [String] = []
@@ -42,32 +92,38 @@ enum MarkdownBlocks {
             }
         }
 
-        for raw in source.components(separatedBy: "\n") {
+        scanLines(source) { raw, hasNewline, utf8End in
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("```") {
                 if let c = code {
                     blocks.append(.code(c.joined(separator: "\n"), language: language))
                     code = nil
+                    if hasNewline {
+                        onCheckpoint?(utf8End, blocks.count)
+                    }
                 } else {
                     flush()
                     code = []
                     language = String(line.dropFirst(3))
                 }
-                continue
+                return
             }
             if code != nil {
                 code?.append(raw)
-                continue
+                return
             }
             if line.hasPrefix("|") {
                 if !paragraph.isEmpty { flush() }
                 table.append(line)
-                continue
+                return
             }
             if !table.isEmpty { flush() }
             let depth = min(raw.prefix { $0 == " " || $0 == "\t" }.count / 2, 3)
             if line.isEmpty {
                 flush()
+                if hasNewline, !blocks.isEmpty {
+                    onCheckpoint?(utf8End, blocks.count)
+                }
             } else if line == "---" || line == "***" || line == "___" {
                 flush()
                 blocks.append(.rule)

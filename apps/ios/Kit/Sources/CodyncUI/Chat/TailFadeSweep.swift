@@ -42,14 +42,14 @@ enum ThoughtChunking {
 }
 
 /// Pure, deterministic state machine for trailing token fade-in sweeps during streaming text reveal.
-/// Tracks character-level opacity batches across frames with bounded total delay (`0.25 s`) and
+/// Tracks character-level opacity batches across frames with bounded total delay (`0.36 s`) and
 /// bounded active batch count (`32`) without mutating plain text or inserting invisible characters.
 struct TailFadeSweepState: Equatable, Sendable {
-    static let duration: TimeInterval = 0.50
-    static let staggerInterval: TimeInterval = 0.02
-    static let maxTotalDelay: TimeInterval = 0.25
+    static let duration: TimeInterval = 0.715
+    static let staggerInterval: TimeInterval = 0.028
+    static let maxTotalDelay: TimeInterval = 0.36
     static let maxBatches = 32
-    static let coarseGap: TimeInterval = 0.09
+    static let coarseGap: TimeInterval = 0.13
     static let maxWaveUnits = 12
 
     struct Batch: Equatable, Sendable {
@@ -76,6 +76,7 @@ struct TailFadeSweepState: Equatable, Sendable {
     private(set) var latestBatchStart: TimeInterval
 
     var isAnimating: Bool { !batches.isEmpty }
+    var latestBatchEndTime: TimeInterval? { batches.map(\.endTime).max() }
 
     init(
         text: String = "",
@@ -126,6 +127,12 @@ struct TailFadeSweepState: Equatable, Sendable {
         if batches.isEmpty {
             activeOffset = totalCount
         }
+    }
+
+    @discardableResult
+    mutating func pruneAndCheckActive(now: TimeInterval) -> Bool {
+        prune(now: now)
+        return isAnimating
     }
 
     mutating func sync(text nextText: String, isStreaming nextStreaming: Bool, hidden nextHidden: Bool = false, now: TimeInterval) {
@@ -382,6 +389,20 @@ struct TailFadeSweepState: Equatable, Sendable {
     }
 }
 
+/// Selects between chunked fade rendering during active streaming and a single unified `Text`
+/// once finalized or faded so long thoughts support whole-text selection without artificial breaks.
+enum ThoughtDisplaySegments: Equatable, Sendable {
+    case unified(String)
+    case chunked([String])
+
+    static func build(text: String, pieces: [String]? = nil, isActivelyFading: Bool) -> Self {
+        guard isActivelyFading else { return .unified(text) }
+        let resolved = pieces ?? ThoughtChunking.pieces(of: text)
+        guard resolved.count > 1 else { return .unified(text) }
+        return .chunked(resolved)
+    }
+}
+
 /// Manages per-block `TailFadeSweepState` instances across streaming renders of a Markdown message.
 @MainActor
 final class MarkdownFadeCoordinator {
@@ -395,6 +416,10 @@ final class MarkdownFadeCoordinator {
 
     var hasActiveAnimations: Bool {
         states.values.contains(where: \.isAnimating)
+    }
+
+    var latestEndTime: TimeInterval? {
+        states.values.compactMap(\.latestBatchEndTime).max()
     }
 
     func prepare(forKey fadeKey: String?) {

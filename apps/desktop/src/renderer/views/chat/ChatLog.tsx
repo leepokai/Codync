@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Spinner } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
 import { useTr } from '../../lib/use-language'
-import { anchorFor, rowsCanScroll, scrollTopFor } from '../../lib/scroll-anchor'
+import { keptPlace, placeApplies, rowsCanScroll, shiftTo, type KeptPlace } from '../../lib/scroll-anchor'
 import { rowIn, useArrivals, type ChatItem } from './chat-items'
 import { MacChatButton } from './MacChatButton'
 
@@ -64,7 +64,7 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
   }
   const scroller = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
-  const keepPlace = useRef<number | null>(null)
+  const keepPlace = useRef<KeptPlace | null>(null)
   const last = items[items.length - 1]
   const jump = usePresence(!following && items.length > 0, 200)
   const arrivals = useArrivals(items.map((i) => i.id), following)
@@ -97,13 +97,22 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     if (el.scrollHeight - el.scrollTop - el.clientHeight >= 8) setFollowing(false)
   }, [revealing])
 
+  /** The id of the row the shown rows start at, which is what a kept place is filed under. */
+  const startId = items[0]?.id ?? null
+
+  /** Where each shown row sits now, measured from the view's own top. */
+  const rowTops = (el: HTMLElement) => {
+    const view = el.getBoundingClientRect().top
+    return [...el.querySelectorAll<HTMLElement>('[data-entry-id]')].map((row) => ({ id: row.dataset.entryId!, top: row.getBoundingClientRect().top - view }))
+  }
+
   const showEarlier = async () => {
     if (loadingEarlier) return
     setLoadingEarlier(true)
     const el = scroller.current
-    // A reader at the newest keeps no anchor: the rows are brought to the bottom after every render, and an anchor
-    // taken there would be applied later, once the view had left the bottom, as a distance the rows have outgrown.
-    keepPlace.current = el ? anchorFor(followingRef.current, el.scrollHeight, el.scrollTop) : null
+    // The row the reader is on, kept for the render the earlier page arrives in. A reader at the newest keeps none:
+    // the rows are brought to the bottom after every render there, and a place would only fight that.
+    keepPlace.current = el ? keptPlace(rowTops(el), startId, followingRef.current) : null
     let list = all
     let at = start
     if (at === 0) {
@@ -112,7 +121,10 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
       list = fresh()
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
-    if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
+    const next = at > 0 ? list[Math.max(0, at - PAGE)]!.id : null
+    // No earlier row can be shown: nothing arrives, so the place is dropped rather than left for a render that does.
+    if (!next || next === startId) keepPlace.current = null
+    if (next) setFirstShown(next)
     setLoadingEarlier(false)
   }
 
@@ -120,12 +132,18 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
-    if (keepPlace.current !== null && !followingRef.current) {
-      el.scrollTop = scrollTopFor(keepPlace.current, el.scrollHeight)
+    if (placeApplies(keepPlace.current, startId, followingRef.current)) {
+      const place = keepPlace.current!.place
       keepPlace.current = null
+      const row = el.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(place.id)}"]`)
+      if (row) {
+        const view = el.getBoundingClientRect().top
+        el.scrollTop += shiftTo(place, row.getBoundingClientRect().top - view)
+        lastScrollTop.current = el.scrollTop
+      }
     } else if (followingRef.current) {
-      // Cleared here too: an anchor that outlived the render which took it would move a reader who has since
-      // left the bottom, and never be cleared by the branch above.
+      // Cleared here too: a place that outlived the render which took it would move a reader who has since left
+      // the bottom, and the branch above would never see it again.
       keepPlace.current = null
       toBottom()
     }

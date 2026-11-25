@@ -138,7 +138,7 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
         kept.left = worktree::Left::InUse;
     } else if !Path::new(&thread.cwd).is_dir() {
         // Its worktree had nothing in it and went: the folder a thread without one works in.
-        thread.cwd.clone_from(task.setup.cwd.as_ref().unwrap_or(&owner.cwd));
+        thread.cwd = task.folder(owner);
         let _g = hub.emit_lock.locked();
         hub.store.save_bot(thread)?;
     }

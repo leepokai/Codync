@@ -54,7 +54,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 
 - **Two layers, two kinds of file.** Each layer is a folder: "yours", shared by every bot that uses it, in
   `<data>/shared-memory/`, and one per bot in `<data>/bots/<id>/bot-memory/`. A bot in its own workspace uses
-  "yours" by default and one in a project folder doesn't; the user switches it per bot (`sharedMemory`).
+  "yours" by default and one in a project folder doesn't (a bot moved home from a project at host start keeps it off:
+  the move stamps `sharedMemory: false`); the user switches it per bot (`sharedMemory`).
   - `MEMORY.md`: the short version, one short fact per line (at most 150 tokens a line), the way a project keeps
     its `CLAUDE.md` short and its `docs/` detailed. Caps count tokens (one per CJK character, one per four others):
     400 for "yours", 1,200 per bot. It may be empty. Dreaming keeps it within its cap (below).

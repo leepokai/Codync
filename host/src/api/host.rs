@@ -106,6 +106,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // without a bot).
                 "threadFiles": true,
                 "routineFolder": true,
+                // Bots have `projects` and `worktreeMode`, and `add_task` takes a folder.
+                "projects": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).

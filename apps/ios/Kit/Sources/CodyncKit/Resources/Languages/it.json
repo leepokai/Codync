@@ -2486,5 +2486,17 @@
   "Folder": "Cartella",
   "Bot's folder": "Cartella del bot",
   "Use the bot's folder": "Usa la cartella del bot",
-  "Each run works here in a thread of its own.": "Ogni esecuzione lavora qui in un thread tutto suo."
+  "Each run works here in a thread of its own.": "Ogni esecuzione lavora qui in un thread tutto suo.",
+  "Projects": "Progetti",
+  "Threads start in the default project. The bot can work elsewhere when you ask.": "I thread partono nel progetto predefinito. Il bot può lavorare altrove se glielo chiedi.",
+  "Add project": "Aggiungi progetto",
+  "Make default": "Imposta come predefinito",
+  "Remove project": "Rimuovi progetto",
+  "Worktree mode": "Modalità worktree",
+  "Side by side": "Affiancati",
+  "Always": "Sempre",
+  "Threads work in the project itself": "I thread lavorano nel progetto stesso",
+  "A thread gets its own worktree when another thread works in the same repository": "Un thread riceve un worktree tutto suo quando un altro thread lavora nello stesso repository",
+  "Every thread works in a worktree of its own; your checkout is never touched": "Ogni thread lavora in un worktree tutto suo; il tuo checkout non viene mai toccato",
+  "Its chat, routines and files live here.": "Qui vivono la sua chat, le sue routine e i suoi file."
 }

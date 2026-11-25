@@ -38,7 +38,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 
 | Tool | What it does |
 |---|---|
-| `start_dev_server {command, name?, folder?}` | Starts it, in the bot's folder by default. The same bot, folder (`.` and a trailing separator don't count) and command returns that server; a stopped one starts again, without a new card if someone allowed it on one. Waits up to 20 s for a port or an exit, then answers with the status, ports and the end of its log |
+| `start_dev_server {command, name?, folder?}` | Starts it, in the bot's default project (else its own folder; a thread: its own folder) by default, a relative `folder` from there. The same bot, folder (`.` and a trailing separator don't count) and command returns that server; a stopped one starts again, without a new card if someone allowed it on one. Waits up to 20 s for a port or an exit, then answers with the status, ports and the end of its log |
 | `list_dev_servers` | This bot's servers, what it left running through its shell included |
 | `stop_dev_server {id}` | Stops one of this bot's servers |
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |

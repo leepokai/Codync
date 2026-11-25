@@ -1,8 +1,8 @@
 import CodyncKit
 import SwiftUI
 
-/// A thread the user starts with `bot` from the Threads tab: its first message, on the bot's own folder, model and
-/// approvals. `started` gets the new task's id once the computer took it and the sheet is gone, so what it opens
+/// A thread the user starts with `bot` from the Threads tab: its first message, on the bot's model and approvals, in
+/// the folder the computer picks (the bot's default project, else its own folder). `started` gets the new task's id once the computer took it and the sheet is gone, so what it opens
 /// doesn't push while the sheet still slides away (a push then lands blank).
 public struct NewThreadSheet: View {
     let bot: Bot

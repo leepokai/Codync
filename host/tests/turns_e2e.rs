@@ -119,7 +119,7 @@ async fn pausing_a_bot_mid_turn_stops_it_and_resuming_lets_it_work_again() {
     }
     let host = Host::start().await;
     let bot = host.bot("Halted", "tests/fixtures/team_agent.py").await;
-    let folder = host.home.join("Halted");
+    let folder = common::folder(&host.home, "Halted");
 
     // A turn genuinely in flight: the agent holds the prompt and waits for `release`.
     host.call("send", json!({"botId": bot, "text": "BLOCK"})).await;

@@ -47,4 +47,10 @@ public extension AccountStore {
         }
         return computers.flatMap { onScreen($0.id, order: sectionOrder) } + boxes
     }
+
+    /// `botId` of `computer` as a roster row, hidden ones (the box of threads without a bot) included.
+    func item(_ computer: ComputerID, botId: String) -> RosterItem? {
+        guard let store = store(for: computer), let bot = store.bots[botId] else { return nil }
+        return RosterItem(ref: BotReference(accountId: accountId, computerId: computer, botId: botId), bot: bot, computer: store.computer)
+    }
 }

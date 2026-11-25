@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -36,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
+import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
 import com.codync.android.core.ThreadGroup
 import com.codync.android.core.ThreadGroupKind
@@ -80,11 +80,11 @@ internal data class LooseThread(val computerId: String, val botId: String, val t
  * The box of threads without a bot has no chat or details: its rows open their thread over the list ([loose], which
  * [openLoose] sets and clears), and one without a thread opens nothing (the desktop's).
  */
-@Composable internal fun ThreadsView(roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, loose: LooseThread?,
-    openLoose: (LooseThread?) -> Unit) {
+@Composable internal fun ThreadsView(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore,
+    bottomInset: Dp, loose: LooseThread?, openLoose: (LooseThread?) -> Unit) {
     NavStack(listOfNotNull<Any>(ThreadsPage, loose), key = { (it as? LooseThread)?.let { l -> "${l.computerId}/${l.botId}/${l.taskId}" } ?: "threads" }, pop = { openLoose(null) }) { page ->
         if (page is LooseThread) LooseThreadPage(page, roster, accounts) { openLoose(null) }
-        else ThreadsList(roster, filter, accounts, bottomInset, openLoose)
+        else ThreadsList(app, account, roster, filter, accounts, bottomInset, openLoose)
     }
 }
 
@@ -102,7 +102,7 @@ private data object ThreadsPage
     }
 }
 
-@Composable private fun ThreadsList(roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, openLoose: (LooseThread) -> Unit) {
+@Composable private fun ThreadsList(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, openLoose: (LooseThread) -> Unit) {
     val context = LocalContext.current
     var grouping by remember { mutableStateOf(ThreadsLayout.grouping(context)) }
     var byStatus by remember { mutableStateOf(ThreadsLayout.byStatus(context)) }
@@ -113,8 +113,8 @@ private data object ThreadsPage
     // The search field is open, and what it finds threads by.
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    // The bot a new thread is being written to.
-    var starting by remember { mutableStateOf<WorkingBot?>(null) }
+    // The New thread sheet is open.
+    var starting by remember { mutableStateOf(false) }
     fun track(option: LayoutOption, on: Boolean) = Analytics.capture(AnalyticsEvent.ListLayoutChanged(LayoutList.Threads, option, on))
     fun group(by: ThreadGrouping, option: LayoutOption) = layoutOption(groupTitle(by), grouping == by) { on ->
         track(option, on)
@@ -128,21 +128,16 @@ private data object ThreadsPage
     )
     val sections = threadSections(roster, { it.bot }, { "${it.state.computer.id}/${it.bot.id}" }, { it.state.hostName }, grouping, byStatus, byActivity)
     val bots = threadBots(roster)
+    val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
+    val plain = plainComputer(shown)
     val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openLoose) }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (searching) {
-                ListSearchField(query, { query = it }, "Search") { searching = false; query = "" }
-                return@Row
-            }
-            // The title at the start, as the Bots tab's sits beside its account button, so the buttons never cover it.
-            Text(tr("Threads"), Modifier.weight(1f).semantics { heading() }, style = Type.body.semibold, color = Palette.text, maxLines = 1)
-            // The desktop list header's buttons, as on the Bots tab: the computers to show, Search and New thread.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ComputerFilterHeader(filter.states, filter.hidden, filter.setHidden, filter.reconnect, filter.manage, options)
-                HeaderButton("magnifyingglass", "Search") { searching = true }
-                if (bots.isNotEmpty()) NewThreadButton(bots) { starting = it }
-            }
+        // The Bots tab's header: the title over how the shown computers are connected, then the computers to show, Search and New thread.
+        val summary = connectionSummary(shown)
+        ListHeader(app, account, "Threads", summary.filled(tr(summary.template)), searching, query, { query = it }, { searching = false; query = "" }) {
+            ComputerFilterHeader(filter.states, filter.hidden, filter.setHidden, filter.reconnect, filter.manage, options)
+            HeaderButton("magnifyingglass", "Search") { searching = true }
+            if (bots.isNotEmpty() || plain != null) HeaderButton("plus", "New thread") { starting = true }
         }
         // An empty search keeps the list, as on the iPhone.
         if (searching && query.isNotBlank()) {
@@ -174,7 +169,7 @@ private data object ThreadsPage
         }
     }
     WorkQuestionDialogs(question) { question = null }
-    NewThreadSheet(starting, accounts) { starting = null }
+    NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openLoose)
 }
 
 /** Search's threads, flat and newest first, as the list draws its rows. */

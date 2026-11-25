@@ -23,6 +23,10 @@ pub fn is_managed(cfg: &BotConfig) -> bool {
 /// The bot's own folder, when `cfg` works in it: the bot itself, or a thread of its that works there (not in a
 /// worktree).
 pub fn own_folder(cfg: &BotConfig) -> Option<PathBuf> {
+    // A thread without a bot works in a folder of its own, unless the user picked one (`chat::work::plain`).
+    if cfg.plain && cfg.is_thread() && crate::chat::work::plain::is_own_folder(&cfg.cwd) {
+        return Some(PathBuf::from(&cfg.cwd));
+    }
     let dir = path(cfg.owner());
     (!cfg.is_group() && std::path::Path::new(&cfg.cwd) == dir).then_some(dir)
 }

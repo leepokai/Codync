@@ -619,6 +619,32 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(edited.rebased(from: base, onto: elsewhere).projects == ["/p/b", "/p/a"])
     }
 
+    @Test func aBotsSharedFoldersAreSavedWholeAndStayInsideTheProject() throws {
+        func sent(_ draft: BotDraft) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+        }
+        // An older host: not read, not sent.
+        #expect(try sent(BotDraft(try bot(#","projects":["/p/a"]"#)))["sharedFolders"] == nil)
+
+        var draft = BotDraft(try bot(#","projects":["/p/a","/p/b"],"projectGitRepos":[true,true],"sharedFolders":{"/p/a":["node_modules"]}"#))
+        #expect(draft.sharedFolders(of: "/p/a") == ["node_modules"] && draft.sharedFolders(of: "/p/b").isEmpty)
+        // Trimmed, once; absolute names and `..` are refused, as the host would.
+        let added = draft.addSharedFolder(" .cache/pip/ ", to: "/p/a")
+        #expect(added)
+        draft.addSharedFolder("node_modules", to: "/p/a")
+        let refused = ["/etc", "C:\\x", "a/../..", "  "].filter { !draft.addSharedFolder($0, to: "/p/a") }
+        #expect(refused.count == 4)
+        #expect(BotDraft.sharedFolderName("./node_modules") == "node_modules")
+        draft.addSharedFolder("vendor", to: "/p/b")
+        var body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == ["/p/a": ["node_modules", ".cache/pip"], "/p/b": ["vendor"]])
+        // Removing a project's last folder, or the project, takes its entry off.
+        draft.removeSharedFolder("vendor", from: "/p/b")
+        draft.removeProject("/p/a")
+        body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == [:])
+    }
+
     @Test func eachWorktreeModeIsTranslated() {
         for mode in WorktreeMode.allCases {
             #expect(L10n.tr(mode.line, preference: .zhHant) != mode.line)

@@ -207,6 +207,8 @@ pub enum Field {
     ThreadFallbacks,
     /// The folders its threads work in, the first its default; only on a host with projects (`hello.projects`).
     Projects,
+    /// The picked git project's shared folders; only on a host that fills worktrees (`hello.worktreeFill`).
+    SharedFolders,
     /// When a thread gets a worktree; only on a host with projects, for a bot with a project in a git repository.
     WorktreeMode,
     /// Its project folder or its own (an older host); on a host with projects, its home, read only.
@@ -228,7 +230,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 28] = [
+pub const FIELDS: [Field; 29] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -243,6 +245,7 @@ pub const FIELDS: [Field; 28] = [
     Field::ThreadFallbacks,
     Field::Compaction,
     Field::Projects,
+    Field::SharedFolders,
     Field::WorktreeMode,
     Field::Folder,
     Field::MaxThreads,
@@ -294,6 +297,12 @@ pub struct Form {
     /// Its projects, the first its default; `None`: the host has no projects.
     pub projects: Option<Vec<String>>,
     pub worktree_mode: crate::store::WorktreeMode,
+    /// Per git project, the folders linked into its new worktrees; `None`: the host doesn't fill worktrees.
+    pub shared_folders: Option<BTreeMap<String, Vec<String>>>,
+    /// The project picked on the Projects field, whose shared folders the next field edits.
+    pub project: usize,
+    /// A shared folder's name being typed.
+    pub shared_name: Editor,
     /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,

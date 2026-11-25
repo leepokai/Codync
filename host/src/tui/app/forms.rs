@@ -54,6 +54,9 @@ impl App {
             thread_worktrees: b.thread_worktrees.filter(|_| b.git_repo && !b.managed_workspace && !self.projects),
             projects: self.projects.then(|| b.projects.clone()),
             worktree_mode: b.worktree_mode.unwrap_or_default(),
+            shared_folders: (self.projects && self.worktree_fill).then(|| b.shared_folders.clone()),
+            project: 0,
+            shared_name: Editor::default(),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -104,6 +107,12 @@ impl App {
             return Some(Overlay::Form(f));
         }
         if field == Field::Projects && f.project_key(k) {
+            return Some(Overlay::Form(f));
+        }
+        if field == Field::SharedFolders
+            && let Some(project) = self.shared_project(&f).map(str::to_owned)
+            && f.shared_key(&project, k)
+        {
             return Some(Overlay::Form(f));
         }
         match k.code {
@@ -370,6 +379,9 @@ impl Form {
             fields.remove("threadWorktrees");
             fields.insert("projects".into(), json!(projects));
             fields.insert("worktreeMode".into(), json!(self.worktree_mode));
+            if let Some(shared) = &self.shared_folders {
+                fields.insert("sharedFolders".into(), json!(shared));
+            }
         }
         // Only to a host that has Advisor mode.
         if self.advisor {

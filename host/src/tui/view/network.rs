@@ -214,9 +214,9 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             .flatten()
             .collect();
         let name = if s["older"] == true { t.dim } else { t.text };
-        // The dot and its space, two between title and details: the address goes in whole first, then
+        // Two columns for the dot and its space, two between title and details: the address goes in whole first, then
         // the state and the mail text as room allows, and the title gets what is left (12 to 34).
-        let fixed = 2 + 1 + 2 + 12;
+        let fixed = 2 + 2 + 12;
         let width = |d: &[String]| u16::try_from(d.join(" · ").chars().count()).unwrap_or(u16::MAX);
         while detail.len() > 1 && fixed + width(&detail) > body.width {
             detail.pop();
@@ -232,7 +232,7 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
         };
         let x = put(buf, body.x, y, 2, dot, if runs { t.text } else { t.dim }.patch(t.panel)) + 1;
         let rest = width(std::slice::from_ref(&detail));
-        let room = body.width.saturating_sub(2 + 1 + 2 + rest).clamp(12, 34);
+        let room = body.width.saturating_sub(2 + 2 + rest).clamp(12, 34);
         let x =
             put(buf, x, y, room + 2, &md::truncate(title.unwrap_or(address), usize::from(room)), name.patch(t.panel));
         let x = x + 2;
@@ -408,5 +408,22 @@ mod tests {
             buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
         };
         assert!(narrow.contains(address), "{narrow}");
+        // Exactly enough room keeps the state: the check and the drawing count the same columns.
+        let fits = |width: u16| {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": "billing-claude", "title": "A title long enough to be cut", "state": "working", "runs": true},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, width, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                .contains("billing-claude · Working")
+        };
+        let first = (30..90).find(|w| fits(*w)).expect("the state fits somewhere");
+        assert!((first..90).all(fits), "once it fits, wider keeps it");
     }
 }

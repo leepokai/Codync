@@ -380,7 +380,8 @@ pub(super) fn to_local_session(
     let id = uuid::Uuid::new_v4().to_string();
     // ponytail: kept in memory like a request to another computer; a host restart forgets it, and
     // the session's answer then reaches the bot as a new request.
-    let from = hub.network.handle_of(&source.id).unwrap_or_else(|| source.id.clone());
+    // Signed with the bot's id, which no rename or restart changes, so an answer always finds it.
+    let from = source.id.clone();
     let session = Some((to, hops, from.clone()));
     // Either failure is the store refusing a write: one category, `ask_failed`.
     let failed = || crate::analytics::network_session(hub, crate::analytics::SessionAction::AskFailed, to.kind);

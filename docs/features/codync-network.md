@@ -194,7 +194,7 @@ that was off learns of a removal.
   offer as a Codync bot) doesn't hold one of the asker's 16 running slots. Such a request (from a bot or a session) stops waiting after a week, as failed. An answer to a session's own request
   always gets in.
 - **Bots**: a bot's `list_bots` lists the sessions here too, and its `message_bot` to a session's address leaves a
-  letter under the request's id, from the bot's address (`remote::to_local_session`); the bot's exchange notice
+  letter under the request's id, from the bot's id, which no rename or restart changes (`remote::to_local_session`); the bot's exchange notice
   waits. When the session answers with `replyTo` = that id, the answer ends the notice and comes back as the bot's
   reply turn, as from another computer, carrying the chain's hops; only the session it went to can end it, and only with the asking bot as `botId`. A letter a full inbox
   (100) drops unread ends its request as failed. A bot's id or address name wins over a session's saved address that

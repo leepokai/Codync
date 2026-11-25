@@ -201,6 +201,10 @@ impl Sessions {
     pub fn post(&self, store: &Store, key: &str, mail: Mail) -> Result<Vec<String>> {
         let dropped = {
             let _one = self.lock.locked();
+            // Checked under the same lock as the write: a session forgotten meanwhile gets no mail.
+            if !load(store).contains_key(key) {
+                bail!("that session is gone: it was forgotten after a long time unseen");
+            }
             let mut all = load_mail(store);
             let waiting = all.entry(key.to_owned()).or_default();
             waiting.push(mail);

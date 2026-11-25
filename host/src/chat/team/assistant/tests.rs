@@ -297,6 +297,7 @@ fn a_reply_with_no_room_is_refused_not_kept_and_dropped() {
     }
     assert!(replies.add(Reply::queued("bot", "late", "Coder", "hi").unlimited()).is_none(), "no room for it");
     assert_eq!(replies.0.locked().len(), KEEP, "nothing else went");
+}
 
 #[tokio::test]
 async fn a_bot_messages_a_session_and_gets_its_answer() {

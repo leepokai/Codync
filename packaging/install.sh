@@ -88,6 +88,42 @@ restart_service() {
   return 0
 }
 
+host_healthy() {
+  target=$2
+  if [ -n "${CODYNC_INSTALL_HEALTH_URL:-}" ]; then
+    curl -fsS --max-time 1 "$CODYNC_INSTALL_HEALTH_URL" >/dev/null 2>&1
+  else
+    health=$(curl -fsS --max-time 1 "http://127.0.0.1:$1/health" 2>/dev/null) || return 1
+    # A different host may already own the port. The loopback health response
+    # includes the path of the process that answered.
+    printf '%s' "$health" | grep -Fq "\"binaryPath\":\"$target\""
+  fi
+}
+
+# The port an existing user unit was configured with.
+service_port() {
+  exec_start=$1
+  case $exec_start in
+    *" --port "*)
+      port=${exec_start#* --port }
+      port=${port%%[!0-9]*}
+      [ -z "$port" ] || printf '%s\n' "$port"
+      ;;
+  esac
+}
+
+# Waits for the host itself to answer, not only for systemd to accept the start request.
+wait_for_host() {
+  tries=${CODYNC_INSTALL_READY_TRIES:-40}
+  delay=${CODYNC_INSTALL_READY_DELAY:-0.25}
+  while [ "$tries" -gt 0 ]; do
+    host_healthy "$1" "$2" && return 0
+    tries=$((tries - 1))
+    [ "$tries" -eq 0 ] || sleep "$delay"
+  done
+  return 1
+}
+
 install_mac_app() {
   fetch codync-macos.dmg
   mnt=$TMP/mnt
@@ -202,9 +238,16 @@ install_linux_dependencies() {
       add_missing libfuse2
     fi
   fi
-  if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found'; then
+  web_rtc_missing=0
+  if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found' ||
+    ! command -v gst-inspect-1.0 >/dev/null ||
+    ! gst-inspect-1.0 webrtcbin >/dev/null 2>&1; then
+    web_rtc_missing=1
+  fi
+  if [ "$web_rtc_missing" = 1 ]; then
     add_missing libgstreamer-plugins-bad1.0-0
     add_missing gstreamer1.0-plugins-bad
+    add_missing gstreamer1.0-tools
   fi
   if [ $HOST_ONLY = 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] &&
     { ! command -v gst-inspect-1.0 >/dev/null || ! gst-inspect-1.0 pipewiresrc >/dev/null 2>&1; }; then
@@ -214,7 +257,7 @@ install_linux_dependencies() {
     if [ "$(id -u)" = 0 ]; then
       say "Installing runtime dependencies:$missing"
       DEBIAN_FRONTEND=noninteractive apt-get install -y $missing || say "Some runtime dependencies couldn't be installed"
-    elif [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
+    elif (exec </dev/tty) 2>/dev/null; then
       say "Installing runtime dependencies:$missing"
       DEBIAN_FRONTEND=noninteractive sudo apt-get install -y $missing </dev/tty || say "Some runtime dependencies couldn't be installed"
     else
@@ -228,19 +271,22 @@ install_linux_dependencies() {
 ensure_host_service() {
   unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
   target=$BIN_DIR/codync-host
+  host_port=19222
   if [ -f "$unit" ] || systemctl --user cat codync-host.service >/dev/null 2>&1; then
     # Keep an existing unit and its custom port, but only finish an interrupted
     # install of this same binary.
     exec_start=$(systemctl --user show codync-host.service -p ExecStart --value 2>/dev/null) || exec_start=""
+    port=$(service_port "$exec_start")
+    [ -z "$port" ] || host_port=$port
     owner=${exec_start#*path=}
     owner=${owner%% ;*}
     if [ "$owner" != "$target" ]; then
       service_owner=${owner:-unknown}
       say "An existing codync-host service belongs to another installation${owner:+ at $owner}; leaving it unchanged."
-    elif ! systemctl --user enable --now codync-host.service; then
+    elif ! systemctl --user enable --now codync-host.service || ! wait_for_host "$host_port" "$target"; then
       service_install_failed=1
     fi
-  elif ! "$target" install; then
+  elif ! "$target" install || ! wait_for_host "$host_port" "$target"; then
     service_install_failed=1
   fi
 }
@@ -260,7 +306,9 @@ else
   fi
   echo
   if [ $HOST_ONLY = 0 ]; then
-    echo "Next: open Codync, then choose Pair phone"
+    if [ -z "${service_install_failed:-}${service_owner:-}" ]; then
+      echo "Next: open Codync, then choose Pair phone"
+    fi
   else
     echo "Next: run $BIN_DIR/codync-host install, then $BIN_DIR/codync-host pair"
   fi

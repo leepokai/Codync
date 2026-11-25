@@ -1,50 +1,62 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { keptPlace, placeApplies, placeOf, rowsCanScroll, shiftTo, type KeptPlace } from './scroll-anchor.ts'
+import { contentTopOf, keptPlace, placeOf, rowsCanScroll, shiftTo } from './scroll-anchor.ts'
 
-/** Rows 60 px tall, the first starting `top` px below the view's top (negative: above it). */
-const rows = (count: number, top = 0) => Array.from({ length: count }, (_, i) => ({ id: `r${i}`, top: top + i * 60 }))
+/**
+ * Rows 60 px tall: the first starts `viewTop` px below the view's top edge (negative: above it) and `scrolled` px
+ * into the content, so a row's start in the content is `viewTop + i * 60 + scrolled`.
+ */
+const rows = (count: number, viewTop = 0, scrolled = 1000) => Array.from({ length: count }, (_, i) => ({
+  id: `r${i}`,
+  viewTop: viewTop + i * 60,
+  contentTop: viewTop + i * 60 + scrolled,
+}))
 
-test('the row straddling the top edge of the view is kept, with its start above that edge', () => {
-  // Scrolled 150 px in: r0 is 150 above the top edge, r1 90 above it, r2 starts 30 px above it and runs past it. r2
-  // is the row the reader is reading, so r2 is what is kept.
-  assert.deepEqual(placeOf(rows(12, -150)), { id: 'r2', offset: -30 })
-  // Scrolled to exactly a row's start: that row is below the edge, so the row over it is the one kept.
-  assert.deepEqual(placeOf(rows(12, -180)), { id: 'r2', offset: -60 })
-  // Scrolled into the rows' top margin: no row has reached the top edge, so the first row is kept where it sits.
-  assert.deepEqual(placeOf(rows(12, 500)), { id: 'r0', offset: 500 })
+test('the row straddling the top edge of the view is kept, with its start in the content', () => {
+  // r2 starts 30 px above the edge and runs past it: r2 is the row the reader is reading. Its start in the content is
+  // where it is among the rows, not where the view happens to be scrolled to.
+  assert.deepEqual(placeOf(rows(12, -150, 150)), { id: 'r2', top: 120 })
+  assert.deepEqual(placeOf(rows(12, -150, 4000)), { id: 'r2', top: 3970 })
+  // Scrolled to exactly a row's start (r2 starts 60 px above the edge): that row is above the edge, so r2 is the one.
+  assert.deepEqual(placeOf(rows(12, -180, 1000)), { id: 'r2', top: 940 })
+  // Scrolled into the rows' top margin: no row has reached the edge, so the first row is kept where it sits.
+  assert.deepEqual(placeOf(rows(12, 500, 1000)), { id: 'r0', top: 1500 })
   assert.equal(placeOf([]), null)
 })
 
 test('a page of earlier rows moves the view down by exactly how far the kept row moved', () => {
-  const place = placeOf(rows(20, -150))!
-  // 2400 px of earlier rows arrived above it: the kept row now starts 2400 px lower than the view's top.
-  assert.equal(shiftTo(place, -30 + 2400), 2400)
+  const place = placeOf(rows(20, -150, 150))!
+  // 2400 px of earlier rows arrived above it: the kept row now starts 2400 px lower in the content.
+  assert.equal(shiftTo(place, place.top + 2400), 2400)
   // Nothing above it moved — a picture loading below, the message box growing — so the view stays put.
-  assert.equal(shiftTo(place, -30), 0)
+  assert.equal(shiftTo(place, place.top), 0)
 })
 
-test('a place belongs only to the render that shows the rows from an earlier first row', () => {
-  const kept: KeptPlace = { place: { id: 'r2', offset: -30 }, start: 'r0' }
-  // A message arriving, the working line changing, the message box growing: the same first row, so it waits.
-  assert.equal(placeApplies(kept, 'r0', false), false)
-  // The earlier page arrives: the rows now start 40 rows earlier, which is the render the place was kept for.
-  assert.equal(placeApplies(kept, 'r-40', false), true)
-  // A reader who went back to the newest keeps none: there the rows are brought to the bottom after every render.
-  assert.equal(placeApplies(kept, 'r-40', true), false)
-  assert.equal(placeApplies(null, 'r-40', false), false)
-  // And a reader at the newest has no place to keep in the first place.
-  assert.equal(keptPlace(rows(20, -150), 'r0', true), null)
+test('the reader scrolling their own view changes no row\'s start in the content', () => {
+  // The same row, read at two scroll positions 200 px apart: the row is 200 px higher on the screen and the view is
+  // 200 px further scrolled, so its start among the rows is the very same number.
+  const at = { scrollTop: 700, getBoundingClientRect: () => ({ top: 200 }) } as unknown as HTMLElement
+  const row = { getBoundingClientRect: () => ({ top: 230 }) } as unknown as HTMLElement
+  const scrolled = { scrollTop: 900, getBoundingClientRect: () => ({ top: 200 }) } as unknown as HTMLElement
+  const lowered = { getBoundingClientRect: () => ({ top: 30 }) } as unknown as HTMLElement
+  assert.equal(contentTopOf(at, row), 730)
+  assert.equal(contentTopOf(scrolled, lowered), 730)
+  // A row 80 px into the content still reads as 80, whoever scrolls.
+  assert.equal(contentTopOf(at, { getBoundingClientRect: () => ({ top: -420 }) } as unknown as HTMLElement), 80)
 })
 
-test('a place kept for a page that never arrives cannot reach the top', () => {
-  // What the old distance did: kept at the bottom of 3000 px of rows, then applied once the rows had outgrown it, as
-  // an absolute scrollTop the browser clamped to 0 — and every render after clamped it there again. The row-anchored
-  // place moves the view by a delta, and that delta is 0 when its row did not move.
-  const place = placeOf(rows(20, -150))!
-  assert.equal(shiftTo(place, -30), 0)
-  // And when its row did move, the view follows it down by as much rather than to an absolute place of its own.
-  assert.equal(shiftTo(place, 5000 - 30), 5000)
+test('a place is applied by geometry, so an effect that runs twice shifts the view once', () => {
+  const place = placeOf(rows(20, -150, 150))!
+  // 2400 px went in above the row, and the view was moved by that much. Reading the row again now gives the very
+  // number the place was taken at, so a second pass finds nothing left to move.
+  const moved = shiftTo(place, place.top + 2400)
+  const afterMove = place.top + 2400 - moved
+  assert.equal(shiftTo(place, afterMove), 0)
+})
+
+test('a follower keeps no place, because the rows are brought to the bottom after every render', () => {
+  assert.equal(keptPlace(rows(20, -150), true), null)
+  assert.equal(keptPlace(rows(20, -150), false)?.id, 'r2')
 })
 
 test('rows that cannot scroll are not asked for earlier ones', () => {

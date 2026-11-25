@@ -7,14 +7,36 @@ type Entry = { kind: string; data: { text?: string } }
 /** Sends `text` and waits for the echo bot's answer. */
 async function say(page: Page, botId: string, text: string) {
   await api(page, 'send', { botId, text })
-  await expect.poll(async () => (await api<{ entries: Entry[] }>(page, 'history', { botId, limit: 6 }))
-    .entries.some((e) => e.kind !== 'user' && e.data.text?.includes(text)), { timeout: 20_000 }).toBe(true)
+  await waitForAnswer(page, botId, text)
 }
+
+/** Waits until the bot's answer to `text` is in the computer's history. */
+const waitForAnswer = (page: Page, botId: string, text: string) => expect.poll(
+  async () => (await api<{ entries: Entry[] }>(page, 'history', { botId, limit: 6 })).entries.some((e) => e.kind !== 'user' && e.data.text?.includes(text)),
+  { timeout: 20_000 },
+).toBe(true)
 
 /** Where the transcript sits, how far it can scroll, and how many rows it shows. */
 const place = (page: Page) => page.evaluate(() => {
   const el = document.querySelector<HTMLElement>('.transcript')!
   return { top: Math.round(el.scrollTop), max: Math.round(el.scrollHeight - el.clientHeight), rows: el.querySelectorAll('[data-entry-id]').length }
+})
+
+/**
+ * How many rows the chat has loaded, read from the component itself: the DOM shows a window of them, and only a page
+ * fetched from the computer makes that number grow.
+ */
+const loadedRows = (page: Page) => page.evaluate(() => {
+  const el = document.querySelector<HTMLElement>('.transcript')
+  if (!el) return -1
+  const key = Object.keys(el).find((k) => k.startsWith('__reactFiber$'))
+  let fiber = key ? (el[key as keyof HTMLElement] as unknown as { memoizedProps?: { items?: unknown[] }; return: unknown }) : null
+  for (let up = 0; fiber && up < 40; up++) {
+    const props = fiber.memoizedProps as { loadOlder?: unknown; items?: unknown[] } | undefined
+    if (props && typeof props.loadOlder === 'function') return props.items?.length ?? 0
+    fiber = fiber.return as typeof fiber
+  }
+  return -1
 })
 
 /** Puts the keyboard's caret in the rows, as clicking a message does, so the paging keys move the chat. */
@@ -54,6 +76,16 @@ const pageStep = (page: Page) => page.evaluate(() => Math.round(document.querySe
 const scrollTo = (page: Page, top: number) => page.evaluate((top) => {
   document.querySelector<HTMLElement>('.transcript')!.scrollTop = top
 }, top)
+
+/** A window that came back after a restart, with whatever it put up on the way. */
+const settle = async (page: Page) => {
+  for (let i = 0; i < 40; i++) {
+    const s = await page.evaluate(() => ({ c: !!document.querySelector('.welcome-continue'), nav: document.querySelectorAll('.nav-rail button').length, w: !!document.querySelector('.welcome') }))
+    if (s.c) { await page.evaluate(() => document.querySelector<HTMLElement>('.welcome-continue')!.click()); await page.waitForTimeout(2500); continue }
+    if (s.nav > 0 && !s.w) return
+    await page.waitForTimeout(500)
+  }
+}
 
 test('a page of earlier rows asked for at the newest does not move the reader afterwards', async () => {
   test.setTimeout(180_000) // Twenty-six turns go by first.
@@ -135,9 +167,9 @@ test('a paste first, then PageUp through the history, keeps the row the reader w
 
     /**
      * One PageUp, measured by the row the reader was on: that row must end up about one page further up the
-     * view — less only when they were nearer the top than a page — and no further, whichever page of earlier
-     * rows arrives on the way. A view thrown to its top takes the row right off the screen, or leaves it a
-     * page or more away.
+     * view — less only when they were nearer the top than a page — and no further, whichever page of earlier rows
+     * arrives on the way. A view thrown to its top takes the row right off the screen, or leaves it a page or more
+     * away.
      */
     const pageUp = async () => {
       const held = await topRow(page)
@@ -197,6 +229,167 @@ test('a paste first, then PageUp through the history, keeps the row the reader w
     await pageDown()
   } finally {
     if (otherId) await api(page, 'deleteBot', { botId: otherId }).catch(() => {})
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+  }
+})
+
+/** The view's own height, which is the room the rows have to show in. */
+const viewHeight = (page: Page) => page.evaluate(() => Math.round(document.querySelector<HTMLElement>('.transcript')!.clientHeight))
+
+/** Resizes the app's window, as a reader dragging its corner or a docked laptop does. Returns the size to put back. */
+const resizeWindow = async (page: Page, width: number, height: number) => {
+  const was = await page.evaluate(() => ({ w: window.outerWidth, h: window.outerHeight }))
+  await page.evaluate(([w, h]) => window.resizeTo(w, h), [width, height] as const)
+  await page.waitForTimeout(600)
+  return was
+}
+
+/**
+ * The view shrinking under a reader in the history — the other half of the report.
+ *
+ * A shorter view is not an arrival of rows: nothing above the reader moved, so nothing may be paid for and the view
+ * may not be re-placed. What must not happen is what the distance-from-the-rows'-end place did: it read the new, taller
+ * distance and put the view somewhere else entirely, and once the rows were shorter than that distance the browser
+ * clamped the view to 0 — the top of the oldest rows held — with every later render clamping it again.
+ */
+test('a view that shrinks under a reader in the history keeps their row where it was', async () => {
+  test.setTimeout(180_000)
+  const { page } = await attach()
+  const name = `Scroll anchor resize ${Date.now()}`
+  let botId: string | undefined
+  let was: { w: number; h: number } | null = null
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    for (let i = 1; i <= 70; i++) await say(page, bot.id, `Say ${i} · padding text for a realistic bubble`)
+    await page.locator('.roster-row', { hasText: name }).click()
+    await expect.poll(async () => (await place(page)).rows, { timeout: 30_000 }).toBe(40)
+
+    // The reader scrolls into the history, well away from both ends, so the view is theirs and not the bottom's. A
+    // page of earlier rows is brought in first, in memory: the place kept here is a reader's, not a follower's.
+    await focusRows(page)
+    await scrollTo(page, 0)
+    await expect.poll(async () => (await place(page)).rows, { timeout: 20_000 }).toBeGreaterThan(60)
+    const before = await place(page)
+    const middle = Math.round(before.max * 0.55)
+    expect(middle, 'the rows can scroll far enough to be in the middle').toBeGreaterThan(1000)
+    await scrollTo(page, middle)
+    await expect.poll(async () => (await place(page)).top, { timeout: 10_000 }).toBeGreaterThan(middle - 40)
+    expect((await place(page)).top, 'the view stayed where the reader put it').toBeLessThanOrEqual(middle + 40)
+    const held = await topRow(page)
+    expect(held, 'a row was at the top edge before the resize').not.toBeNull()
+
+    // Step 1: the window shrinks, as a docked laptop or a dragged corner does. The rows do not move; the view's room
+    // does. The row the reader was on stays exactly where it was.
+    const tall = await viewHeight(page)
+    was = await resizeWindow(page, 1000, 560)
+    const short = await viewHeight(page)
+    expect(short, 'the view got shorter').toBeLessThan(tall)
+    const shrunk = await place(page)
+    expect(shrunk.top, 'the shorter view did not throw the rows to their top').toBeGreaterThan(200)
+    const afterShrink = await offsetOf(page, held!.id)
+    expect(afterShrink, 'the row the reader was on is still shown').not.toBeNull()
+    expect(Math.abs(afterShrink! - held!.offset), 'the shrink moved the reader off their row').toBeLessThanOrEqual(60)
+
+    // Step 2: and the reader can still page up and down by a page from there.
+    await focusRows(page)
+    const step = await pageStep(page)
+    const up = Math.min(step, (await place(page)).top)
+    await page.keyboard.press('PageUp')
+    await expect.poll(async () => {
+      const now = await offsetOf(page, held!.id)
+      return now === null ? -10_000 : now - afterShrink!
+    }, { timeout: 10_000 }).toBeGreaterThanOrEqual(up - 200)
+    const now = await offsetOf(page, held!.id)
+    expect(now, 'the row the reader was on is still shown after paging').not.toBeNull()
+
+    // Step 3: the window comes back, as the laptop is undocked. That must not move the reader either.
+    await page.evaluate(([w, h]) => window.resizeTo(w, h), [was.w, was.h] as [number, number])
+    await page.waitForTimeout(600)
+    await expect.poll(async () => await viewHeight(page), { timeout: 10_000 }).toBe(tall)
+    const restored = await offsetOf(page, held!.id)
+    expect(restored, 'the row the reader was on is still shown after the window came back').not.toBeNull()
+    expect(Math.abs(restored! - now!), 'the window coming back moved the reader off their row').toBeLessThanOrEqual(60)
+  } finally {
+    if (was) await page.evaluate(([w, h]) => window.resizeTo(w, h), [was.w, was.h] as [number, number]).catch(() => {})
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+  }
+})
+
+/**
+ * The page that has to be FETCHED — the one the reported jump came from.
+ *
+ * Paging up inside the rows the app already holds is all in memory: the press, the "loading" state and the new
+ * first row land in one render, so no place kept can be spent on the wrong one. At the oldest rows held, the page
+ * comes from the computer over a round trip, so the app commits at least once while it is on its way. A window
+ * filed under a row's id could not survive that: the row it was filed under is often a date separator that stops
+ * existing the moment the older rows arrive, so the window fell back to the newest page — 261 rows away in the
+ * measured case — and every later press walked into the same trap.
+ *
+ * So this one starts a chat with more turns than the app holds when it launches, restarts the window, and pages up
+ * to the fetch. Every press must leave the row the reader was on in front of them, moved by about their own page;
+ * the press that makes the loaded rows grow is the one this exists for.
+ */
+test('the page fetched from the computer keeps the row the reader was on', async () => {
+  test.setTimeout(420_000) // A hundred and thirty turns go by first, then the paging.
+  const { page } = await attach()
+  const name = `Scroll anchor fetch ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    // More entries than the app holds for a chat it did not open: 130 turns are 261 entries, and after a restart the
+    // app holds the newest 200 of them, so paging up has to ask the computer for the rest. Each turn is waited for
+    // before the next one is sent: a burst of sends outruns the bot and the computer drops turns, which leaves a chat
+    // too short to page through (and one whose older rows the app already holds, so no fetch is ever made).
+    for (let i = 1; i <= 130; i++) await say(page, bot.id, `Say ${i} · padding text for a realistic bubble`)
+
+    // Let the app write its cache before the restart, as a launch after a quiet chat finds it: the cache keeps the
+    // newest 200 entries of each chat, so that is what the restarted window holds, and the rest has to be fetched.
+    // Restarting right after the last turn instead leaves the cache saved mid-seed, and the catch-up then tops it up
+    // to the whole chat — nothing left to fetch.
+    await page.waitForTimeout(5000)
+
+    // Restart the window, as an app launch does, so it holds only the newest entries of each chat.
+    await page.reload()
+    await settle(page)
+    await page.locator('.roster-row', { hasText: name }).click()
+    await expect.poll(async () => (await place(page)).rows, { timeout: 30_000 }).toBe(40)
+
+    // Step 1: the large paste, as in the report: the box grows and the rows' bottom padding with it.
+    const boxBefore = await composerHeight(page)
+    await page.locator('.composer:not(.thread-chat .composer) textarea').fill(Array.from({ length: 60 }, (_, i) => `line ${i + 1} of a long pasted message`).join('\n'))
+    await expect.poll(async () => composerHeight(page), { timeout: 10_000 }).toBeGreaterThan(boxBefore + 40)
+    expect((await place(page)).top, 'the paste did not throw the rows to their top').toBeGreaterThan(2)
+
+    // Step 2: paging up, press by press, to the oldest rows held and then past them.
+    await focusRows(page)
+    const step = await pageStep(page)
+    const loadedBefore = await loadedRows(page)
+    expect(loadedBefore, 'the window holds a window of the chat, not all of it').toBeLessThan(300)
+    let grewOnPress = 0
+    for (let press = 1; press <= 30 && grewOnPress === 0; press++) {
+      const held = await topRow(page)
+      expect(held, 'a row was at the top edge before the press').not.toBeNull()
+      const before = await place(page)
+      const up = Math.min(step, before.top)
+      await page.keyboard.press('PageUp')
+      await expect.poll(async () => {
+        const now = await offsetOf(page, held!.id)
+        return now === null ? -10_000 : now - held!.offset
+      }, { timeout: 10_000 }).toBeGreaterThanOrEqual(up - 150)
+      const now = await offsetOf(page, held!.id)
+      // The sharpest statement of the bug: the row the reader was reading must still be on screen after the press.
+      expect(now, `the row the reader was on is still shown after press ${press}`).not.toBeNull()
+      expect(now! - held!.offset, `press ${press} moved the view no further than the reader`).toBeLessThanOrEqual(up + 150)
+      if ((await loadedRows(page)) > loadedBefore) grewOnPress = press
+    }
+    expect(grewOnPress, 'a page was fetched from the computer while paging up').toBeGreaterThan(0)
+
+    // And the view is still in the history, not thrown back to the newest page: the reader can go on up.
+    await page.keyboard.press('PageUp')
+    await expect.poll(async () => (await place(page)).top, { timeout: 10_000 }).toBeGreaterThan(0)
+  } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
   }
 })

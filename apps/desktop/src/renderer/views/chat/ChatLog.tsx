@@ -2,17 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Spinner } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
 import { useTr } from '../../lib/use-language'
-import { keptPlace, placeApplies, rowsCanScroll, shiftTo, type KeptPlace } from '../../lib/scroll-anchor'
+import { keptPlace, placesOf, contentTopOf, rowsCanScroll, shiftTo, type Place } from '../../lib/scroll-anchor'
+import { entryFrom, indexOfEntry, pageAbove, startShowing, windowStart, type WindowStart } from '../../lib/shown-window'
 import { rowIn, useArrivals, type ChatItem } from './chat-items'
 import { MacChatButton } from './MacChatButton'
 
 const PAGE = 40
-
-/** Where the shown rows start: at the row `first`, or with the newest `PAGE` rows. */
-function startOf(list: ChatItem[], first: string | null) {
-  const found = first ? list.findIndex((i) => i.id === first) : -1
-  return found >= 0 ? found : Math.max(0, list.length - PAGE)
-}
 
 /** The message box floats over the rows: its height is the room they leave under the last one. */
 export function useDockHeight(root: RefObject<HTMLElement | null>, dock: RefObject<HTMLElement | null>) {
@@ -47,10 +42,11 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
   working?: ReactNode
 }) {
   const tr = useTr()
-  // The newest 40 items first; older pages come in near the top.
-  const [firstShown, setFirstShown] = useState<string | null>(null)
+  // Where the shown rows start in the loaded list; null is the newest PAGE rows. A number, not an id: the ids of
+  // rows are derived from the list they were built in, so they cannot say where a reader was (shown-window.ts).
+  const [firstShown, setFirstShown] = useState<WindowStart>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const start = startOf(all, firstShown)
+  const start = windowStart(all.length, firstShown, PAGE)
   const items = all.slice(start)
   const more = start > 0 || canLoadOlder
   // Following the newest message, or reading history: scrolling up releases the bottom,
@@ -64,7 +60,7 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
   }
   const scroller = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
-  const keepPlace = useRef<KeptPlace | null>(null)
+  const keepPlace = useRef<Place | null>(null)
   const last = items[items.length - 1]
   const jump = usePresence(!following && items.length > 0, 200)
   const arrivals = useArrivals(items.map((i) => i.id), following)
@@ -74,18 +70,12 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }
 
-  useEffect(() => {
-    if (!firstShown && items[0]) setFirstShown(items[0].id)
-  }, [firstShown, items])
-
   // `revealed`: the shown rows reach back to its entry, and it scrolls into the middle.
   const [revealing, setRevealing] = useState<{ entryId: string } | null>(null)
   useEffect(() => {
     if (!revealed) return
     const list = fresh()
-    const at = list.findIndex((i) => i.kind !== 'separator' && i.entry.id === revealed.entryId)
-    if (at < 0) return
-    setFirstShown((first) => list[Math.min(at, startOf(list, first))]!.id)
+    setFirstShown((from) => startShowing(list, revealed.entryId, from, PAGE))
     setRevealing({ entryId: revealed.entryId })
   }, [revealed])
   // At once, not smooth: a smooth scroll still at the end lets the follower take the chat back down. Brought up from
@@ -97,50 +87,52 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     if (el.scrollHeight - el.scrollTop - el.clientHeight >= 8) setFollowing(false)
   }, [revealing])
 
-  /** The id of the row the shown rows start at, which is what a kept place is filed under. */
-  const startId = items[0]?.id ?? null
-
-  /** Where each shown row sits now, measured from the view's own top. */
-  const rowTops = (el: HTMLElement) => {
-    const view = el.getBoundingClientRect().top
-    return [...el.querySelectorAll<HTMLElement>('[data-entry-id]')].map((row) => ({ id: row.dataset.entryId!, top: row.getBoundingClientRect().top - view }))
-  }
-
   const showEarlier = async () => {
     if (loadingEarlier) return
     setLoadingEarlier(true)
     const el = scroller.current
-    // The row the reader is on, kept for the render the earlier page arrives in. A reader at the newest keeps none:
-    // the rows are brought to the bottom after every render there, and a place would only fight that.
-    keepPlace.current = el ? keptPlace(rowTops(el), startId, followingRef.current) : null
-    let list = all
-    let at = start
-    if (at === 0) {
-      const anchor = list[0]?.id
-      await loadOlder()
-      list = fresh()
-      at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
+    // The row the reader is on, kept for however many rows go in above it. A reader at the newest keeps none: the
+    // rows are brought to the bottom after every render there, and a place would only fight that.
+    keepPlace.current = el ? keptPlace(placesOf(el), followingRef.current) : null
+    // The entry the reader's first row is about, which is what the rebuilt list is asked for. Not the first row's
+    // own id: that is often a date separator, and the separator stops existing as soon as rows above it arrive.
+    const wasShowing = entryFrom(all, start)
+    if (canLoadOlder) await loadOlder()
+    // Read after the wait: the rows that went in are above everything held, so the row the reader is on sits that
+    // many rows further down. With nothing added, the rows themselves are already held and one page of them is all
+    // there is to show.
+    const list = fresh()
+    const above = indexOfEntry(list, wasShowing)
+    // The reader's own entry is no longer in the list at all: leave the window where it is rather than move it to a
+    // page of the conversation the reader was not reading.
+    if (above === null) {
+      setLoadingEarlier(false)
+      return
     }
-    const next = at > 0 ? list[Math.max(0, at - PAGE)]!.id : null
-    // No earlier row can be shown: nothing arrives, so the place is dropped rather than left for a render that does.
-    if (!next || next === startId) keepPlace.current = null
-    if (next) setFirstShown(next)
+    setFirstShown(pageAbove(above, PAGE))
     setLoadingEarlier(false)
   }
 
-  // Earlier messages going in above keep the reader's place; a follower stays at the bottom.
+  // Rows going in above keep the reader's place; a follower stays at the bottom. This runs after every render, so the
+  // place has to survive whatever renders come first: it moves the view only by how far the row itself moved in the
+  // content, which is zero for a message arriving below, for the box growing, and for the fetch's own "loading"
+  // render — and it is dropped once nothing more can arrive.
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
-    if (placeApplies(keepPlace.current, startId, followingRef.current)) {
-      const place = keepPlace.current!.place
-      keepPlace.current = null
+    const place = keepPlace.current
+    if (place && !followingRef.current) {
       const row = el.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(place.id)}"]`)
-      if (row) {
-        const view = el.getBoundingClientRect().top
-        el.scrollTop += shiftTo(place, row.getBoundingClientRect().top - view)
+      // Undone by geometry, not by an id: the row's start in the content is the same number however the view is
+      // scrolled, so applying the shift restores it exactly and applying it twice changes nothing.
+      const moved = row ? shiftTo(place, contentTopOf(el, row)) : 0
+      if (moved !== 0) {
+        el.scrollTop += moved
         lastScrollTop.current = el.scrollTop
       }
+      // Nothing to keep a place on, or the arrival has been paid for and no more rows can come: drop it, so a later
+      // insertion above this row (with the reader long gone from it) is not paid for either.
+      if (!row || (moved === 0 && !loadingEarlier)) keepPlace.current = null
     } else if (followingRef.current) {
       // Cleared here too: a place that outlived the render which took it would move a reader who has since left
       // the bottom, and the branch above would never see it again.
@@ -182,7 +174,7 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
           else if (atEnd) setFollowing(true)
           lastScrollTop.current = el.scrollTop
           // Rows shorter than the view sit at their top permanently, where "near the top" says nothing: there are
-          // no earlier rows to bring in, and asking would take an anchor from a view that never moved.
+          // no earlier rows to bring in, and asking would take a place from a view that never moved.
           if (more && rowsCanScroll(el.scrollHeight, el.clientHeight) && el.scrollTop < 200 && !loadingEarlier) void showEarlier()
         }}
       >

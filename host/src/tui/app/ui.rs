@@ -232,7 +232,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 29] = [
+pub const FIELDS: [Field; 30] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,

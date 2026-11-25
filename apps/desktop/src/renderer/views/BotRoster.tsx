@@ -1,9 +1,10 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { runningAgent } from '@shared/fallbacks'
-import { hoverTip, modelPath } from '@shared/model-path'
+import { hoverTip } from '@shared/model-path'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
+import { botModelPath } from '../lib/bot-model-path'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
 import { prefs, usePref } from '../lib/prefs'
 import { sameRosterGroup } from '../lib/roster-sections'
@@ -199,9 +200,11 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const agent = logoAgent(item, agentLogos)
     const name = agent ? `${item.bot.name}, ${item.store.backendName(agent)}` : item.bot.name
     // The hover tip says what the row cannot when the sidebar is narrow: the name it truncates,
-    // and the agent and model a bot runs, which otherwise take a right-click and the editor.
+    // and the agent, login and model a bot runs, which otherwise take a right-click and the editor.
     const heading = many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name
-    const path = modelPath(item.bot, item.store.backendName(item.bot.backend))
+    // The tip is the one `botModelPath` the Bot Manager's row also shows (MM sync rule: one
+    // implementation), so the two rows can never name a bot differently.
+    const path = botModelPath(item.store, item.bot)
     return (
       <RosterRow
         key={key}

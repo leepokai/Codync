@@ -49,8 +49,8 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
     await test.step('the list carries both test bots, and the search filters it', async () => {
       await expect(rows.filter({ hasText: nameA })).toHaveCount(1)
       await expect(rows.filter({ hasText: nameB })).toHaveCount(1)
-      // The row's small agent->model line stays honest: a custom-command bot shows none
-      // (rowModelPath's null contract; the readable-model rendering is unit-pinned).
+      // The row's small agent · model line stays honest: a custom-command bot shows none
+      // (`modelPath`'s null contract; the readable-model rendering is unit-pinned).
       await expect(rows.filter({ hasText: nameA }).locator('.model-manager-model-path')).toHaveCount(0)
       const search = sheet.getByRole('textbox', { name: 'Search bots' })
       await search.fill(nameB)

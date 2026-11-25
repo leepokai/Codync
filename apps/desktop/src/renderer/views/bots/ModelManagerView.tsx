@@ -9,16 +9,18 @@ import { Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
+import { botModelPath } from '../../lib/bot-model-path'
 import { refKey, type RosterItem } from '../../store/app-model'
 import { analytics } from '../../store/analytics'
 import { StoreContext, useStore } from '../../store/context'
 import { botWords } from '../search-items'
 import { matchWords } from '../palette-items'
 import { ModelPicker } from './ModelPicker'
+import { ModelPathLine } from './ModelPathLine'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, agentNameOf, applyTargets, clampSheetSize, defaultSheetSize, loginNameOf, modelPathWords, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, modelPathWords, pausePatch, providerOptions, resizeFrom, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -162,11 +164,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const searchField = useRef<HTMLInputElement>(null)
-  // Whether the search also reads each bot's model path. On by default: a bot list the user
-  // searches for "deepseek" is looking for the bots that run it, and an off-by-default toggle
-  // would hide exactly what this sheet exists to show. The rule for new features is that they
-  // are off until asked for; the exceptions are controls that would be useless switched off,
-  // and this one narrows a search rather than changing what the app does behind the user's back.
+  // Whether the search also reads each bot's model path. On to begin with, because this is a new
+  // control designed to make sense rather than a switch bolted onto an existing one: a bot list
+  // searched for "deepseek" is looking for the bots that run it, so off would hide what the sheet
+  // exists to show. It narrows this one search and changes nothing else in the app.
   const [modelSearch, setModelSearch] = useState(true)
   // The agent filter, composed with the search over the ONE shared matcher: `''` is every provider.
   const [provider, setProvider] = useState('')
@@ -200,8 +201,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const searchWords = (item: RosterItem): string[] => {
     const words = botWords(item)
     if (!modelSearch) return words
-    const backend = item.bot.backend
-    return [...words, ...modelPathWords(item.bot, agentNameOf(backends, backend), loginNameOf(backends, backend, item.bot.loginProfile))]
+    return [...words, ...modelPathWords(item.bot, botModelPath(item.store, item.bot))]
   }
   const shown = matchWords(items.map((item) => ({ item, words: searchWords(item) })), query)
     .map((w) => w.item)
@@ -420,10 +420,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           const on = checked.has(key)
           const outcome = outcomes[key]
           const line = subtitle(item, oneComputer)
-          // The bot's current agent, login and model path, under the name in the app's muted small text.
-          const agentName = agentNameOf(backends, item.bot.backend)
-          const loginName = loginNameOf(backends, item.bot.backend, item.bot.loginProfile)
-          const modelPath = rowModelPath(item.bot, agentName, loginName)
+          // The bot's current agent, login and model path, under the name in the app's muted small
+          // text. One builder for both rows and for the search words above, so the list and what
+          // it matches on cannot name a bot differently (MM sync rule).
+          const path = botModelPath(item.store, item.bot)
           return (
             <button key={key} type="button" role="checkbox" aria-checked={on} className="palette-row model-manager-row" disabled={applying} onClick={() => toggle(key, !on)}>
               <span className={`model-manager-check ${on ? 'on' : ''}`} aria-hidden="true">{on ? <Icon name="checkmark" size={11} /> : null}</span>
@@ -431,7 +431,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
               <VStack as="span" gap={2} grow>
                 <Text size="body" tone="text" truncate>{item.bot.name}</Text>
                 {item.bot.paused ? <Text size="caption" tone="attention" truncate>{tr('Paused')}</Text> : null}
-                {modelPath ? <Text size="caption" tone="secondary" truncate className="model-manager-model-path">{modelPath}</Text> : null}
+                {path ? <ModelPathLine path={path} className="model-manager-model-path" /> : null}
                 {line ? <Text size="subheadline" tone="secondary" truncate>{line}</Text> : null}
               </VStack>
               {outcome ? (

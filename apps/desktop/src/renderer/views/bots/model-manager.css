@@ -71,7 +71,8 @@
 }
 
 /* The bot's current agent, login and model path: a tab-like indent under the name, in the muted
-   small text (it is pure data, so it reads through the row's own truncation). */
+   small text. The line truncates like every other row line, and `ModelPathLine` adds the whole
+   path as a hover tip only while it really is clipped. */
 .model-manager-model-path {
   padding-left: 12px;
 }

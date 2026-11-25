@@ -1,6 +1,7 @@
 import type { RosterItem } from '../../store/app-model'
 import { refKey } from '../../store/bot-ref.ts'
 import { trNow } from '../../lib/l10n.ts'
+import { MODEL_PATH_JOIN } from '../../../shared/model-path.ts'
 import type { AgentModels } from './agent-models'
 
 /** One agent, one model and its options, applied to every bot the user checked. */
@@ -104,52 +105,6 @@ export const providerOptions = (items: RosterItem[], backends: ReadonlyArray<{ i
  */
 export const pausePatch = (botId: string, paused: boolean) => ({ id: botId, paused })
 
-/** The segments of a bot's model path in the row, as one string. */
-const PATH_SEPARATOR = ' · '
-
-/**
- * The agent's display name as the model picker names it, or null for one hello doesn't name — the
- * caller then shows the raw id it runs under, so a path is never left blank.
- */
-export const agentNameOf = (backends: ReadonlyArray<{ id: string; name: string }>, backend: unknown): string | null =>
-  typeof backend === 'string' ? (backends.find((b) => b.id === backend)?.name ?? null) : null
-
-/**
- * The name of the login profile a bot runs on, when it picks one and the computer has named it. The
- * computer's own login has no id, so it adds nothing; a profile the computer hasn't named yet has
- * no name to show, so it adds nothing either.
- */
-export const loginNameOf = (
-  backends: ReadonlyArray<{ id: string; loginProfiles?: { id: string; name: string | null }[] | null }>,
-  backend: unknown,
-  loginProfile: unknown,
-): string | null => {
-  if (typeof backend !== 'string' || typeof loginProfile !== 'string' || !loginProfile) return null
-  const profile = backends.find((b) => b.id === backend)?.loginProfiles?.find((p) => p.id === loginProfile)
-  return profile?.name?.trim() || null
-}
-
-/**
- * The bot's current agent and model path for the row's small line, the way Ryan asked to see it:
- * `opencode/opencode-go deepseek 4.1 flash` as the data has it, i.e. the agent, the login profile
- * when it picks one and the model id verbatim — `OpenCode · opendesign/deepseek-v4.1-flash-eco`.
- * The model id is the computer's own `provider/model`, so the provider is in it; the model's
- * display name belongs to that agent's model catalog, which only reads by starting the agent, so
- * the list shows the id rather than guessing a pretty name. A custom-command bot or one whose
- * model isn't readable shows nothing rather than a wrong guess.
- */
-export const rowModelPath = (
-  bot: { backend?: unknown; model?: unknown },
-  agentName: string | null | undefined,
-  loginName?: string | null,
-): string | null => {
-  if (typeof bot.backend !== 'string' || bot.backend === 'custom') return null
-  if (typeof bot.model !== 'string' || !bot.model.trim()) return null
-  const agent = agentName && agentName.trim() ? agentName.trim() : bot.backend
-  const login = loginName?.trim()
-  return [agent, ...(login ? [login] : []), bot.model.trim()].join(PATH_SEPARATOR)
-}
-
 /**
  * The model path as search words, so the manager can find a bot by what it runs: the whole path,
  * each segment of it, each part of the model id (`opendesign`, `deepseek-v4.1-flash-eco`), the
@@ -158,20 +113,18 @@ export const rowModelPath = (
  * whose model isn't readable adds nothing, so it is found by its name alone. Every word is added
  * as it is: the matcher is a case-insensitive substring test, so a phrase matches without any
  * splitting on the query's side.
+ *
+ * `path` is the row's own path — the one `botModelPath` builds from the roster row, which is also
+ * the one the row prints — so what is searched is what the list shows, from one string.
  */
-export const modelPathWords = (
-  bot: { backend?: unknown; model?: unknown },
-  agentName: string | null | undefined,
-  loginName?: string | null,
-): string[] => {
-  const path = rowModelPath(bot, agentName, loginName)
+export const modelPathWords = (bot: { model?: unknown }, path: string | null): string[] => {
   if (!path) return []
   // The model id itself, not the tail of the joined path: a login's name may hold the separator.
-  const model = (bot.model as string).trim()
+  const model = typeof bot.model === 'string' ? bot.model.trim() : ''
   const asWords = (text: string) => text.replace(/[/_-]+/g, ' ')
   return [
     path,
-    ...path.split(PATH_SEPARATOR),
+    ...path.split(MODEL_PATH_JOIN),
     ...model.split('/'),
     asWords(model),
     ...(model.includes('/') ? [asWords(model.slice(model.indexOf('/') + 1))] : []),

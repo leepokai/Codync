@@ -20,8 +20,9 @@ test('the roster row tip names the bot, then the agent and model it runs', async
     made.push((await api<{ bot: { id: string } }>(page, 'createBot', { name: bare, backend: 'codex' })).bot.id)
 
     // The tip is the app's own `title`: a line feed in it is a line break in the tooltip, so the
-    // model lands on its own line under the name. Codex is the sandbox's agent name.
-    await expect(row(codex)).toHaveAttribute('title', new RegExp(`^${codex}\nCodex->gpt-5.3-codex$`))
+    // model lands on its own line under the name. Codex is the sandbox's agent name, and the path
+    // between agent, login and model is the one shared `modelPath` (` · `), as the sheet's row shows it.
+    await expect(row(codex)).toHaveAttribute('title', new RegExp(`^${codex}\nCodex · gpt-5.3-codex$`))
     // And a bot with no model says nothing about one — no blank second line, no dangling agent.
     await expect(row(bare)).toHaveAttribute('title', new RegExp(`^${bare}$`))
   } finally {

@@ -1,9 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
+import type { BotStore } from '../store/bot-store'
+import type { Bot } from '../../shared/models'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, agentNameOf, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, modelPathWords, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, modelPathWords, pausePatch, planRows, providerOptions, resizeFrom, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { hoverTip } from '../../shared/model-path.ts'
+import { botModelPath } from '../lib/bot-model-path.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
@@ -235,58 +239,26 @@ test('stepSize steps only the axis the handle advertises, toward the drag direct
   assert.deepEqual(stepSize('corner-bl', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
 })
 
-test('rowModelPath shows agent, login and model, display name when known, nothing when unreadable', () => {
-  // The picker knows the agent: its display name; the model shows its id, verbatim.
-  assert.equal(rowModelPath({ backend: 'opencode', model: 'open-design/deepseek 4.1 flash' }, 'OpenCode'), 'OpenCode · open-design/deepseek 4.1 flash')
-  // A bot on a login profile names it between the agent and the model: the profile is part of the path.
-  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work'), 'OpenCode · Work · opendesign/deepseek-v4.1-flash-eco')
-  // A blank login name is as good as none.
-  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', '  '), 'OpenCode · opendesign/hy4-preview')
-  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', null), 'OpenCode · opendesign/hy4-preview')
-  // An agent the picker doesn't know falls back to the raw id.
-  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, null), 'mystery · some/model')
-  // A blank display name is as good as none.
-  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, '  '), 'mystery · some/model')
-  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, undefined), 'mystery · some/model')
-  // Custom-command bots (backend not a string) and unreadable models show nothing.
-  assert.equal(rowModelPath({ backend: { command: 'my-bot' }, model: 'x' }, 'OpenCode'), null)
-  assert.equal(rowModelPath({ backend: 'custom', model: 'x' }, 'OpenCode'), null)
-  assert.equal(rowModelPath({ backend: 'opencode', model: null }, 'OpenCode'), null)
-  assert.equal(rowModelPath({ backend: 'opencode', model: '   ' }, 'OpenCode'), null)
-  assert.equal(rowModelPath({ backend: 'opencode', model: 5 }, 'OpenCode'), null)
-  assert.equal(rowModelPath({ backend: 'opencode' }, 'OpenCode'), null)
-  // A padded model id is trimmed into the path.
-  assert.equal(rowModelPath({ backend: 'opencode', model: ' some/model ' }, 'OpenCode'), 'OpenCode · some/model')
-})
-
-test('agentNameOf names an agent hello knows and answers null for one it does not', () => {
-  const backends = [{ id: 'opencode', name: 'OpenCode' }, { id: 'grok', name: 'Grok' }]
-  assert.equal(agentNameOf(backends, 'opencode'), 'OpenCode')
-  assert.equal(agentNameOf(backends, 'mystery'), null)
-  assert.equal(agentNameOf(backends, null), null)
-  assert.equal(agentNameOf(backends, { command: 'x' }), null)
-})
-
-test('loginNameOf names the login profile a bot picked, and nothing for the computer\'s own login', () => {
-  const backends: ReadonlyArray<{ id: string; name: string; loginProfiles?: { id: string; name: string | null }[] }> = [{
-    id: 'opencode',
-    name: 'OpenCode',
-    loginProfiles: [{ id: 'w', name: 'Work' }, { id: '7b3f', name: null }],
-  }]
-  assert.equal(loginNameOf(backends, 'opencode', 'w'), 'Work')
-  // null (and absent) is the computer's own login, which has no name to add.
-  assert.equal(loginNameOf(backends, 'opencode', null), null)
-  assert.equal(loginNameOf(backends, 'opencode', undefined), null)
-  assert.equal(loginNameOf(backends, 'opencode', ''), null)
-  // An unnamed profile's id is a uuid: it would read as noise, so it is left out.
-  assert.equal(loginNameOf(backends, 'opencode', '7b3f'), null)
-  // An agent hello doesn't know, or one with no login profiles: nothing.
-  assert.equal(loginNameOf(backends, 'mystery', 'w'), null)
-  assert.equal(loginNameOf([{ id: 'grok' }], 'grok', 'w'), null)
+test('the sheet row and the roster tip name a bot with the same one string', () => {
+  // Both rows call `botModelPath` (MM sync rule: one implementation, no second copy that can
+  // drift), which is `modelPath` over the row's own hello. This guards the seam the two views use:
+  // the path the manager renders is the head of the words its search matches, and the tip's
+  // second line.
+  const bot = { backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco', loginProfile: 'w' }
+  const store = {
+    hello: { backends: [{ id: 'opencode', name: 'OpenCode', loginProfiles: [{ id: 'w', name: 'Work' }] }] },
+  } as unknown as BotStore
+  const path = botModelPath(store, bot as unknown as Bot)
+  assert.equal(path, 'OpenCode · Work · opendesign/deepseek-v4.1-flash-eco')
+  // The manager's search words start with the path itself.
+  assert.equal(modelPathWords(bot, path)[0], path)
+  // The roster's tip is the bot's name, then that same path on its own line.
+  assert.equal(hoverTip(['Rusty', path]), `Rusty\n${path}`)
 })
 
 test('modelPathWords finds a bot by its agent, provider and model, however the model is typed', () => {
-  const words = modelPathWords({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work')
+  const bot = { model: 'opendesign/deepseek-v4.1-flash-eco' }
+  const words = modelPathWords(bot, 'OpenCode · Work · opendesign/deepseek-v4.1-flash-eco')
   assert.deepEqual(words, [
     // The whole path, then each segment of it — the agent, the login, the model id.
     'OpenCode · Work · opendesign/deepseek-v4.1-flash-eco',
@@ -300,11 +272,10 @@ test('modelPathWords finds a bot by its agent, provider and model, however the m
     'opendesign deepseek v4.1 flash eco',
     'deepseek v4.1 flash eco',
   ])
-  // A custom-command bot adds nothing, so it is found by its name alone.
-  assert.deepEqual(modelPathWords({ backend: 'custom', model: 'x' }, 'OpenCode'), [])
-  assert.deepEqual(modelPathWords({ backend: 'opencode', model: '  ' }, 'OpenCode'), [])
+  // A custom-command bot has no path, so it adds no words and is found by its name alone.
+  assert.deepEqual(modelPathWords({ model: 'x' }, null), [])
   // A login's name is its own word, never glued to the model id.
-  const spaced = modelPathWords({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', 'Work · Home')
+  const spaced = modelPathWords({ model: 'opendesign/hy4-preview' }, 'OpenCode · Work · Home · opendesign/hy4-preview')
   assert.deepEqual(spaced, [
     'OpenCode · Work · Home · opendesign/hy4-preview',
     'OpenCode',
@@ -317,7 +288,7 @@ test('modelPathWords finds a bot by its agent, provider and model, however the m
     'hy4 preview',
   ])
   // A model id without a provider still reads as words, and adds no model half of its own.
-  assert.deepEqual(modelPathWords({ backend: 'claude', model: 'opus-5.2' }, 'Claude'), [
+  assert.deepEqual(modelPathWords({ model: 'opus-5.2' }, 'Claude · opus-5.2'), [
     'Claude · opus-5.2',
     'Claude',
     'opus-5.2',

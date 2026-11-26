@@ -90,6 +90,9 @@ const settle = async (page: Page) => {
 test('a page of earlier rows asked for at the newest does not move the reader afterwards', async () => {
   test.setTimeout(180_000) // Twenty-six turns go by first.
   const { page } = await attach()
+  // A sandbox nobody has opened yet is still on its welcome screen, where no `.roster-row` exists: without this the
+  // test would time out rather than fail on what it is about. A sandbox already signed in returns at once.
+  await settle(page)
   const name = `Scroll anchor e2e ${Date.now()}`
   let botId: string | undefined
   try {
@@ -135,6 +138,7 @@ test('a page of earlier rows asked for at the newest does not move the reader af
 test('a paste first, then PageUp through the history, keeps the row the reader was on', async () => {
   test.setTimeout(240_000) // Fifty-five turns go by first, then the paging.
   const { page } = await attach()
+  await settle(page)
   const name = `Scroll anchor steps ${Date.now()}`
   const other = `Scroll anchor other ${Date.now()}`
   let botId: string | undefined
@@ -255,6 +259,7 @@ const resizeWindow = async (page: Page, width: number, height: number) => {
 test('a view that shrinks under a reader in the history keeps their row where it was', async () => {
   test.setTimeout(180_000)
   const { page } = await attach()
+  await settle(page)
   const name = `Scroll anchor resize ${Date.now()}`
   let botId: string | undefined
   let was: { w: number; h: number } | null = null
@@ -366,6 +371,9 @@ test('the page fetched from the computer keeps the row the reader was on', async
     await focusRows(page)
     const step = await pageStep(page)
     const loadedBefore = await loadedRows(page)
+    // The probe returns -1 when it cannot find the component, and `toBeLessThan(300)` would accept that: a -1 that
+    // later read as a real number would look like growth on the first press. Read a real count first.
+    expect(loadedBefore, 'the row count is a real reading, not the probe\'s -1').toBeGreaterThan(0)
     expect(loadedBefore, 'the window holds a window of the chat, not all of it').toBeLessThan(300)
     let grewOnPress = 0
     for (let press = 1; press <= 30 && grewOnPress === 0; press++) {

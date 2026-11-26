@@ -211,6 +211,12 @@ enum Sub {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// stdio ACP bridge for iMate's HTTP/SSE ACP tunnel (launched by iMate bots).
+    #[command(hide = true)]
+    Acp {
+        #[command(subcommand)]
+        backend: AcpBackend,
+    },
     /// Add Codync's own Node.js, for agents that run on it (an agent's setup step).
     #[command(hide = true)]
     Node,
@@ -227,6 +233,12 @@ enum Sub {
         #[command(subcommand)]
         server: McpServer,
     },
+}
+
+#[derive(Subcommand)]
+enum AcpBackend {
+    /// Serve iMate's ACP tunnel as stdio JSON-RPC.
+    Imate,
 }
 
 #[derive(Subcommand)]
@@ -495,6 +507,7 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
+        Sub::Acp { backend: AcpBackend::Imate } => agent::imate_bridge::run().await,
         Sub::Node => codync_agent::node::add().await,
         Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(codync_agent::node::npm(&args).await?),

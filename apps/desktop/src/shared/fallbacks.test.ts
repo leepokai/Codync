@@ -116,6 +116,9 @@ test('Advisor mode starts the threads on the bot\'s own agent and chain, and ano
   assert.deepEqual([withAdvisor(moved, false, []).threadAgent, withAdvisor(moved, false, []).threadFallbacks], [null, []])
   const installed = { id: 'gemini', name: 'Gemini', available: true } as Backend
   assert.equal(withAdvisor({ ...draft, backend: 'custom' }, true, [installed]).threadAgent?.backend, 'gemini', 'the picker has no custom command')
+  const imate = { id: 'imate', name: 'iMate', available: true, installed: true } as Backend
+  assert.equal(withAdvisor({ ...draft, backend: 'custom' }, true, [imate]).threadAgent ?? null, null, 'iMate is not the automatic threads agent')
+  assert.equal(withAdvisor({ ...draft, backend: 'custom' }, true, [imate, installed]).threadAgent?.backend, 'gemini')
 })
 
 test('an older host has no fallbacks to show or send', () => {

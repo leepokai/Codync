@@ -6,6 +6,7 @@ pub mod bot;
 pub mod elicitation;
 pub mod fallback;
 pub mod gear;
+pub(crate) mod imate_bridge;
 pub mod login_profiles;
 pub mod new_bot;
 pub mod own_memory;

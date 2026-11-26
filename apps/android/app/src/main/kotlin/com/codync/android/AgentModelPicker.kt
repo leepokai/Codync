@@ -149,9 +149,10 @@ private class Choice(val name: String, val on: Boolean, val pick: () -> Unit)
 
 /** [agents] as the Agent pickers list them, one row per login ("(not installed)" after an agent that isn't), in the app's language. */
 @Composable internal fun pickerSeats(agents: List<AgentBackend>, on: Login, logins: ((AgentBackend) -> List<String?>?)? = null): List<LoginSeat> =
-    agents.map { if (it.available) it else it.copy(name = "${it.name} (not installed)") }.loginSeats(on, tr("Default login profile"), tr("New login profile"), logins)
+    agents.map { if (it.available || it.id == "imate") it else it.copy(name = "${it.name} (not installed)") }
+        .loginSeats(on, tr("Default login profile"), tr("New login profile"), logins)
 
 /** The logins a chat's box can switch to (iOS `BotStore.readySeats`, the desktop's `readySeats`): the installed agents and the one [on]. */
 @Composable internal fun readySeats(state: AppState, on: Login): List<LoginSeat> =
-    pickerSeats(agentBackends(state).filter { it.available || it.id == on.backend }, on) { it.readyLogins(on) }
+    pickerSeats(agentBackends(state).filter { it.available || it.id == "imate" || it.id == on.backend }, on) { it.readyLogins(on) }
 

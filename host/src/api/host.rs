@@ -229,6 +229,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "agentModels" => {
             crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?).await?
         }
+        "imateStatus" => crate::agent::auth::imate::status(hub.clone()).await?,
+        "imateSetToken" => crate::agent::auth::imate::set_token(hub.clone(), str_arg(&b, "token")?).await?,
         // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
         "agentAuth" if b["loginProfile"].is_string() => {
             let id = str_arg(&b, "loginProfile")?;
@@ -252,7 +254,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 }
                 _ => {
                     let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
-                    crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                    if backend == "imate" {
+                        crate::agent::auth::imate::save_agent_env(hub.clone(), vars).await?
+                    } else {
+                        crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                    }
                 }
             };
             // Chats that asked the user to sign in get their messages answered now.

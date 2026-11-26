@@ -276,6 +276,27 @@ impl Hub {
         h.tx.send(cmd).map_err(|_| anyhow!("bot stopped"))
     }
 
+    /// Every running bot on `backend` starts a new agent process before its next turn. A credential
+    /// saved for that agent (an iMate token) is already in the vault; a process still running would keep the old one.
+    pub fn restart_agents(&self, backend: &str) {
+        let Ok(bots) = self.store.bots() else {
+            tracing::warn!(backend, "couldn't list bots to restart");
+            return;
+        };
+        for row in bots {
+            if row.deleted || row.config.backend != backend {
+                continue;
+            }
+            if let Err(error) = self.send_cmd(&row.config.id, Cmd::RefreshTools) {
+                tracing::warn!(
+                    bot = %row.config.id,
+                    error = format!("{error:#}"),
+                    "couldn't restart a bot after its agent's credentials changed"
+                );
+            }
+        }
+    }
+
     /// [`Self::send_cmd`], giving `cmd` back when `bot_id`'s actor doesn't run.
     pub(crate) fn offer_cmd(&self, bot_id: &str, cmd: Cmd) -> std::result::Result<(), Box<Cmd>> {
         match self.bots.locked().get(bot_id) {

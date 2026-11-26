@@ -576,6 +576,11 @@ public extension HostClient {
         try await call("agentAuth", ["backend": backend], timeout: 300)
     }
 
+    /// iMate stores one personal token on the host, including when asked from a phone.
+    func imateSetToken(_ token: String) async throws -> ImateStatus {
+        try await call("imateSetToken", ["token": token], timeout: 60)
+    }
+
     /// A new login profile for `backend` (an account one is signed out, an API key one has no key yet), and the
     /// agent list with it.
     func addLoginProfile(_ backend: String, kind: LoginProfile.Kind) async throws -> (loginProfile: LoginProfile, backends: [Backend]) {

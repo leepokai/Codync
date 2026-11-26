@@ -27,7 +27,10 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     if crate::agent::auth::launch_reads_vault(&hub.store, &cfg.backend, profile)? {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let (env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend, profile)?;
+    let (mut env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend, profile)?;
+    if cfg.backend == "imate" {
+        crate::agent::auth::imate::apply_launch(&hub.store, cfg.model.as_deref(), profile, &mut env)?;
+    }
     let candidates = crate::agent::bot::launch_commands(cfg)?;
     let workspace = cwd.as_str();
     let mut conn = crate::agent::bot::start_first(candidates, &env, |candidate, mut env, _| async move {

@@ -56,7 +56,9 @@ impl App {
         }
         let signed_in =
             a.auth.as_ref().map_or_else(|| b.map(|b| &b["signedIn"]) == Some(&json!(true)), |v| v["signedIn"] == true);
-        if !signed_in && !a.busy {
+        if a.backend == "imate" {
+            rows.push(SetupRow::ImateToken);
+        } else if !signed_in && !a.busy {
             if a.auth.as_ref().is_some_and(|v| v["login"] == true) {
                 rows.push(SetupRow::Login);
             }
@@ -172,6 +174,12 @@ impl App {
                             );
                         }
                     },
+                    Some(SetupRow::ImateToken) => {
+                        let f = imate_token_fields();
+                        self.overlays.push(Overlay::Agent(a));
+                        self.overlays.push(Overlay::Fields(Box::new(f)));
+                        return None;
+                    }
                     Some(SetupRow::Brings) => {
                         self.overlays.push(Overlay::Agent(a));
                         self.open_agent_gear(&backend);
@@ -319,6 +327,28 @@ impl App {
     }
 }
 
+fn imate_token_fields() -> Fields {
+    Fields {
+        title: "iMate token".into(),
+        note: "Uses the personal token from the iMate open platform.".into(),
+        choices: vec![],
+        choice: 0,
+        inputs: vec![Input {
+            name: "token".into(),
+            label: "Personal token".into(),
+            secret: true,
+            required: true,
+            multiline: false,
+            placeholder: String::new(),
+            ed: Editor::default(),
+        }],
+        cursor: 0,
+        error: None,
+        saving: false,
+        submit: Submit::ImateToken,
+    }
+}
+
 fn env_fields(backend: &str, method: &Value, saved: &[String], host: &str) -> Fields {
     let inputs = method["vars"]
         .as_array()
@@ -439,6 +469,10 @@ mod tests {
             cursor: 0,
             error: None,
         };
+        app.backends.push(json!({"id": "imate", "installed": true, "signedIn": false, "curated": true}));
+        let imate = app.agent_rows(&sheet("imate"));
+        assert!(imate.iter().any(|r| matches!(r, SetupRow::ImateToken)), "iMate edits its personal token");
+        assert!(!imate.iter().any(|r| matches!(r, SetupRow::Login | SetupRow::Method(_))));
         assert!(
             !app.agent_rows(&sheet("gemini"))
                 .iter()

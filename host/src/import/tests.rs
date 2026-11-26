@@ -189,3 +189,49 @@ async fn an_import_makes_bots_and_one_group_and_rolls_a_failed_bot_back() {
     drop(hub);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn an_export_that_names_imate_keeps_it() {
+    let agents = super::import_agents([
+        json!({"id": "imate", "available": false, "installed": true}),
+        json!({"id": "claude", "available": false}),
+        json!({"id": "codex", "available": true}),
+    ]);
+    assert!(agents.contains("imate"), "an export that names iMate still uses it");
+    assert!(agents.contains("codex"));
+    assert!(!agents.contains("claude"), "another agent that is not available stays out");
+}
+
+#[tokio::test]
+async fn an_imate_import_keeps_it_and_says_when_no_token_is_saved() {
+    use crate::LockExt;
+    let dir = std::env::temp_dir().join(format!("codync-import-imate-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = crate::store::Store::open(&dir.join("t.db")).unwrap();
+    let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+    let hub = crate::hub::Hub::new(store, "test".into(), identity, "token".into(), 0);
+    let manifest = json!({
+        "format": "codync-bot-import", "version": 1, "source": {"app": "codync"},
+        "agents": [{"key": "ops", "name": "Ops", "provider": "imate"}]
+    });
+    let path = zip(&[("codync-import.json", manifest.to_string().as_bytes())]);
+    let done = super::apply(&hub, &json!({"path": path})).await.unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let warnings = done["warnings"].to_string();
+    assert!(warnings.contains("Ops") && warnings.contains("needs a token"), "{warnings}");
+    let id = done["bots"][0]["id"].as_str().unwrap();
+    assert_eq!(hub.store.bot(id).unwrap().unwrap().config.backend, "imate");
+
+    *hub.store.secret_key.locked() = Some(zeroize::Zeroizing::new(vec![7; 32]));
+    crate::agent::auth::save_env(&hub.store, "agent-env:imate", &[("IMATE_API_TOKEN".into(), Some("saved".into()))])
+        .unwrap();
+    let path = zip(&[("codync-import.json", manifest.to_string().as_bytes())]);
+    let again = super::apply(&hub, &json!({"path": path})).await.unwrap();
+    std::fs::remove_file(path).unwrap();
+    let warnings = again["warnings"].to_string();
+    assert!(!warnings.contains("needs a token"), "{warnings}");
+    let id = again["bots"][0]["id"].as_str().unwrap();
+    assert_eq!(hub.store.bot(id).unwrap().unwrap().config.backend, "imate");
+    drop(hub);
+    let _ = std::fs::remove_dir_all(dir);
+}

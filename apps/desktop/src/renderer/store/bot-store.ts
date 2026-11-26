@@ -688,6 +688,12 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Saves iMate's personal token on the computer. The host checks it before replacing the saved one. */
+  async imateSetToken(token: string) {
+    await (await this.ready()).call('imateSetToken', { token }, 60_000)
+    await this.refreshBackends()
+  }
+
   async refreshBackends() {
     if (!this.client || !this.hello) return
     try {

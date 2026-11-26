@@ -19,7 +19,7 @@ import { AgentSource } from './AgentSource'
 import { SetupTerminalView } from './SetupTerminal'
 import { OpenExtensions } from '../NavRail'
 
-type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; loginProfile?: string } | { kind: 'keys'; method: AuthMethod } | { kind: 'profileKeys'; loginProfile: string }
+type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; loginProfile?: string } | { kind: 'keys'; method: AuthMethod } | { kind: 'profileKeys'; loginProfile: string } | { kind: 'imate' }
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
@@ -146,6 +146,7 @@ export function AgentSheet({ initial, recheck = false, signInProfile }: { initia
     : route.kind === 'node' ? <SetupTerminalView backend={backend} step="node" back={back} />
     : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} loginProfile={route.loginProfile} back={back} />
     : route.kind === 'profileKeys' ? <LoginProfileKeys backend={backend} loginProfile={route.loginProfile} back={back} />
+    : route.kind === 'imate' ? <ImateTokenForm back={back} />
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
@@ -172,12 +173,22 @@ export function AgentSheet({ initial, recheck = false, signInProfile }: { initia
   )
 
   const options: ReactNode[] = []
+  // iMate has one personal token on the computer, not a CLI sign-in.
+  if (backend.id === 'imate') {
+    options.push(optionRow(
+      'imate',
+      signedIn === true ? tr('Edit iMate token') : tr('Add iMate token'),
+      tr('Uses the personal token from the iMate open platform.'),
+      'key',
+      () => setRoute({ kind: 'imate' }),
+    ))
+  }
   // A registry agent downloads on its first start; an app's own CLI comes from Install above.
-  if (!setUp && !curated && !checking && !nodeMissing) {
+  if (backend.id !== 'imate' && !setUp && !curated && !checking && !nodeMissing) {
     options.push(optionRow('setup', 'Set up', `Downloads ${backend.name} on ${host} if it needs to, then checks its sign-in.`, 'arrow.down.circle', () => void check()))
   }
   // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
-  if (signedIn !== true && !checking) {
+  if (backend.id !== 'imate' && signedIn !== true && !checking) {
     if (auth?.login) options.push(optionRow('login', 'Sign in', `In a terminal on ${host}. Links open here.`, 'terminal', () => setRoute({ kind: 'terminal', method: null })))
     for (const m of auth?.methods ?? []) {
       if (m.kind === 'terminal') options.push(optionRow(m.id, m.name, m.description ?? `In a terminal on ${host}.`, 'terminal', () => setRoute({ kind: 'terminal', method: m })))
@@ -341,6 +352,43 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
             </button>
           </CardSection>
         ) : null}
+        {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
+      </CardForm>
+    </SheetPage>
+  )
+}
+
+/** iMate's personal token is one value on the computer, not a named login profile. */
+function ImateTokenForm({ back }: { back: () => void }) {
+  const tr = useTr()
+  const store = useStore()
+  const [token, setToken] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    if (!store.client) return
+    setSaving(true)
+    try {
+      await store.imateSetToken(token.trim())
+      back()
+    } catch (e) {
+      setError(errorText(e))
+    }
+    setSaving(false)
+  }
+  return (
+    <SheetPage>
+      <ScreenHeader
+        title={tr('iMate token')}
+        onBack={back}
+        trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={token.trim() === ''} onClick={() => void save()} />}
+      />
+      <CardForm>
+        <CardSection>
+          <Field label={tr('Personal token')} value={token} secret placeholder={tr('Personal token')} onChange={setToken} />
+          <Text size="footnote" tone="secondary">{fill(tr('Create a personal token on the {name} open platform.'), { name: 'iMate' })}</Text>
+          <Text size="footnote" tone="secondary">{fill(tr('Values are kept on {name} only and never shown again.'), { name: store.hostName })}</Text>
+        </CardSection>
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
     </SheetPage>

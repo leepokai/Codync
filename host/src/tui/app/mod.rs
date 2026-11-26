@@ -162,6 +162,8 @@ pub struct App {
     pub plugins: (Vec<Value>, Vec<Value>),
     /// Models each agent (and login profile) offers (`None` while loading).
     pub models: HashMap<ModelKey, Option<Vec<AgentModel>>>,
+    /// How many times each list was dropped. A reply from an older ask is ignored.
+    pub model_epoch: HashMap<ModelKey, u64>,
     /// Agent/login-profile pairs whose model list came with Fast mode.
     pub fast_mode: HashSet<ModelKey>,
     /// The modes each agent's (and login profile's) model list came with.
@@ -260,6 +262,7 @@ impl App {
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
+            model_epoch: HashMap::new(),
             fast_mode: HashSet::new(),
             modes: HashMap::new(),
             shell: None,

@@ -149,7 +149,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
             chooseAgent = { change(draft.withAgent(it)) },
             onReload = reloadModels, loginProfile = draft.loginProfile, store = store) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
-                backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
+                backends(state).firstOrNull { it.text("id") == draft.backend && !it.available && it.text("id") != "imate" }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
                 }
                 if (draft.backend == "custom") FieldBox(draft.command.orEmpty(), { change(draft.copy(command = it.ifEmpty { null })) },

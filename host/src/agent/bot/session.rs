@@ -217,6 +217,11 @@ impl Actor {
             let profile = self.cfg.login_profile.as_deref();
             let on_profile = crate::agent::login_profiles::prepare(&self.hub.store, &self.cfg.backend, profile).await?;
             let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, profile)?;
+            if self.cfg.backend == "imate" {
+                // The tunnel URL is the colleague. Codync tells the agent its model only after `session/new`.
+                // A login profile with no key of its own would clear the token saved for the agent.
+                crate::agent::auth::imate::apply_launch(&self.hub.store, self.cfg.model.as_deref(), profile, &mut env)?;
+            }
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});

@@ -10,6 +10,7 @@
 
 use crate::shell;
 use crate::{acp, node, registry};
+use anyhow::Context;
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -113,13 +114,18 @@ pub fn list() -> Vec<Value> {
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
             let native = path.is_some() && h.local.is_some();
             let runnable = native || reg.is_some_and(|a| registry::launch_kind(a).is_some());
+            // iMate is a remote catalog, not a CLI. It stays installed so Extensions can take a
+            // token and a person can pick it. It is not available, so Advisor and a new bot do
+            // not start on it when nothing else is installed.
+            let remote = h.id == "imate";
+            let available = !remote && path.is_some() && runnable;
             let needs_node = if native { workbuddy::runs_on_node(h.id) } else { reg.is_some_and(registry::needs_node) };
             let node = if needs_node { node::state() } else { None };
             json!({
                 "id": h.id,
                 "name": h.name,
-                "installed": path.is_some(),
-                "available": path.is_some() && runnable,
+                "installed": remote || path.is_some(),
+                "available": available,
                 "path": path.map(|p| p.to_string_lossy().into_owned()),
                 "description": reg.and_then(|a| a["description"].as_str()).unwrap_or_default(),
                 "installHint": h.setup,
@@ -127,7 +133,7 @@ pub fn list() -> Vec<Value> {
                 "canInstall": h.install.and_then(Install::command).is_some(),
                 "node": node.map(node::State::name),
                 "command": h.local.unwrap_or_default(),
-                "registry": h.registry,
+                "registry": if h.id == "imate" { Some("imate") } else { h.registry },
                 "curated": true,
             })
         })
@@ -214,6 +220,11 @@ pub fn is_known(id: &str) -> bool {
 /// Ways to start this backend, best first: the installed CLI's own ACP mode, then the
 /// registry build, for a CLI that isn't installed, has no ACP mode of its own, or is too old for it.
 pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
+    if id == "imate" {
+        let exe = std::env::current_exe().context("locating codync-host for iMate")?;
+        let program = format!("{} acp imate", shell::quote(&exe.to_string_lossy()));
+        return Ok(vec![registry::Candidate::Ready(registry::Cmd { program, args: String::new() })]);
+    }
     let h = harness(id);
     let build = h.map_or(Some(id), |h| h.registry).and_then(registry::agent);
     let out: Vec<_> = local_candidate(id)

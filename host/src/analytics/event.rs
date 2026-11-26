@@ -175,6 +175,7 @@ pub enum Event {
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
     /// its variables.
     LoginProfileChanged,
+    ImateAgentsListed,
     SettingChanged,
     /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
     ReachAccountAnswered,
@@ -348,6 +349,7 @@ impl Event {
             Self::BotTerminalOpened => "bot_terminal_opened",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",
+            Self::ImateAgentsListed => "imate_agents_listed",
             Self::SettingChanged => "setting_changed",
             Self::ReachAccountAnswered => "reach_account_answered",
             Self::ContinuedWithoutAccount => "continued_without_account",

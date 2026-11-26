@@ -30,6 +30,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 mod agent;
+pub(crate) mod imate;
 mod models;
 mod proxied;
 pub use agent::authenticate;
@@ -37,7 +38,7 @@ use agent::start;
 pub(crate) use agent::{Started, authenticate_account, start_with};
 pub use codync_agent::acp::auth::{Method, MethodKind};
 use codync_agent::acp::auth::{methods, reported_login};
-pub use models::{InFlight, models, shared_models};
+pub use models::{InFlight, shared_models};
 
 /// What the last check found for one backend.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -194,6 +195,15 @@ pub(crate) fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
 pub async fn check(store: &Store, backend: &str) -> Result<Value> {
+    if backend == "imate" {
+        let status = imate::check(store)?;
+        backends::set_signed_in(backend, status.signed_in);
+        CHECKED.locked().insert(backend.to_owned(), status.clone());
+        let mut v = serde_json::to_value(&status)?;
+        v["savedEnv"] = json!(saved_env(store, backend)?);
+        v["login"] = json!(false);
+        return Ok(v);
+    }
     let mut status = probe(store, backend).await?;
     // Where a session proves nothing, a check that can't tell keeps what the last sign-in showed.
     if status.signed_in.is_none() && !backends::session_proves_sign_in(backend) {
@@ -277,7 +287,11 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 }
 
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
+/// An iMate token does not go through here: `imate::save_agent_env` checks it with iMate first.
 pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) -> Result<Value> {
+    if backend == "imate" && vars.contains_key("IMATE_API_TOKEN") {
+        bail!("an iMate token is saved with imateSetToken, after iMate accepts it");
+    }
     save_env(store, &env_slot(backend), &env_changes(vars)?)?;
     // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
     backends::clear_prompt_refused(backend);

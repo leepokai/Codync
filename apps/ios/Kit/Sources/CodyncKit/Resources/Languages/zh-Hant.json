@@ -2493,5 +2493,11 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "每個 thread 都在自己的 worktree 裡工作，你的 checkout 永遠不會被動到",
   "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。",
   "Add folder": "新增資料夾",
-  "Remove folder": "移除資料夾"
+  "Remove folder": "移除資料夾",
+  "iMate token": "iMate 令牌",
+  "Personal token": "個人令牌",
+  "Create a personal token on the {name} open platform.": "在 {name} 開放平台上建立個人令牌。",
+  "Edit iMate token": "編輯 iMate 令牌",
+  "Add iMate token": "新增 iMate 令牌",
+  "Uses the personal token from the iMate open platform.": "使用 iMate 開放平台上的個人令牌。"
 }

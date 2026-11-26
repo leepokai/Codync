@@ -112,7 +112,7 @@ struct BotSettingsForm: View {
                              + [LoginSeat(login: AgentLogin(backend: "custom"), name: L10n.tr("Custom command"))],
                          onAgentChange: { draft.setAgent($0) },
                          command: $draft.command,
-                         installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
+                         installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available && $0.id != "imate" }?.installHint,
                          restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 })
     }
 

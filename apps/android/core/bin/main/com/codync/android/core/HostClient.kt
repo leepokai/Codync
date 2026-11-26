@@ -1,13 +1,16 @@
 package com.codync.android.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Bot(
     val id: String,
@@ -74,6 +77,8 @@ data class Bot(
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
+    /** The computer's box of threads started without a bot (desktop "No bot"): hidden, never a row in the roster. */
+    val plain: Boolean = false,
     val unread: Int = 0,
     /** How many of [unread] are cards waiting on the user: the badge turns amber. 0 from an older host. */
     val waiting: Int = 0,
@@ -83,6 +88,10 @@ data class Bot(
     val fallbacks: List<Fallback>? = null,
     /** The bot may set its own fallbacks, for example when the user asks it to; null from an older host. */
     val selfFallbacks: Boolean? = null,
+    /** Advisor mode: the agent its threads run on; null when they run on the bot's own. */
+    val threadAgent: Fallback? = null,
+    /** In Advisor mode, the threads' fallbacks; null from an older host (no Advisor mode there). */
+    val threadFallbacks: List<Fallback>? = null,
     /** The fallback it runs on right now; null on its own agent. */
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
@@ -91,21 +100,36 @@ data class Bot(
     val agentCommands: List<AgentCommand> = emptyList(),
     /** What it keeps running on the computer. Empty from an older host, and for a group. */
     val devServers: List<DevServer> = emptyList(),
-    /** Its box ([WorkItem]): every live or waiting item in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    /** Its box ([WorkTask]): every live or waiting task in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
     @Serializable(with = WorkSerializer::class)
-    val work: List<WorkItem> = emptyList(),
-    /** The most agents it runs at once; null from a host before the box. */
-    @Serializable(with = MaxAgentsSerializer::class)
-    val maxAgents: Int? = null,
-    /** A task that starts while another of its tasks works in the same repository gets a git worktree of its own; null from an older host. */
-    val taskWorktrees: Boolean? = null,
-    /** Its folder is in a git repository: where [taskWorktrees] matters. */
+    val work: List<WorkTask> = emptyList(),
+    /** The most threads it runs at once; null from a host before the box. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("maxAgents")
+    @Serializable(with = MaxThreadsSerializer::class)
+    val maxThreads: Int? = null,
+    /** A thread that starts while another of its threads works in the same repository gets a git worktree of its own; null from an older host. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("taskWorktrees")
+    val threadWorktrees: Boolean? = null,
+    /** Its folder is in a git repository: where [threadWorktrees] matters. */
     val gitRepo: Boolean = false,
+    /** The user's folders it sends work to, the first its default; empty from a host before projects (`hello.projects`). */
+    val projects: List<String> = emptyList(),
+    /** Whether each of [projects], in the same order, is in a git repository: where [worktreeMode] matters. */
+    val projectGitRepos: List<Boolean> = emptyList(),
+    /** Where its threads work ([WorktreeMode], by its wire name); null from a host before projects. */
+    val worktreeMode: String? = null,
+    /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
+    val gitInstalled: Boolean? = null,
     /** How it stands outside its chat ([Outside]); null from an older host. */
     @Serializable(with = OutsideSerializer::class)
     val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** Whether its saved project [path] is in a git repository; false for one it hasn't saved yet. */
+    fun isGitProject(path: String): Boolean = projects.zip(projectGitRepos).any { (project, git) -> project == path && git }
+
     /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
     val unseen: Int get() = unread - waiting
 

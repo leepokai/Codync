@@ -23,7 +23,12 @@ pub struct InFlight(Mutex<HashMap<InFlightKey, Slot>>);
 type Slot = Arc<OnceCell<Result<Value, String>>>;
 
 impl InFlight {
-    async fn get(
+    /// Forgets cached catalogs for `backend` after its credentials change.
+    pub(crate) fn clear(&self, backend: &str) {
+        self.0.locked().retain(|(known, _), _| known != backend);
+    }
+
+    pub(crate) async fn get(
         &self,
         backend: &str,
         login_profile: Option<&str>,
@@ -31,10 +36,13 @@ impl InFlight {
     ) -> Result<Value> {
         let key = (backend.to_owned(), login_profile.map(str::to_owned));
         let slot = self.0.locked().entry(key.clone()).or_default().clone();
+        let mine = Arc::clone(&slot);
         let answer = slot
-            .get_or_init(|| async {
+            .get_or_init(|| async move {
                 let answer = fetch.await.map_err(|e| format!("{e:#}"));
-                self.0.locked().remove(&key);
+                // A newer lookup for this key may already have replaced us (`clear` then `get`).
+                // Removing by key would drop that one and make the next ask start again.
+                self.0.locked().retain(|known, held| known != &key || !Arc::ptr_eq(held, &mine));
                 answer
             })
             .await;
@@ -43,7 +51,10 @@ impl InFlight {
 }
 
 /// [`models`], shared with the asks for the same agent and login profile meanwhile.
-pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+pub async fn shared_models(hub: &Arc<Hub>, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    if backend == "imate" {
+        return super::imate::shared_models(hub, login_profile).await;
+    }
     let login_profile = login_profile.filter(|s| !s.is_empty());
     Box::pin(hub.model_lists.get(backend, login_profile, Box::pin(models(&hub.store, backend, login_profile)))).await
 }
@@ -130,6 +141,64 @@ mod tests {
         assert_eq!(p1_b.unwrap()["models"][0]["id"], "pro");
         assert_eq!(p2.unwrap()["models"][0]["id"], "ultra");
         assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_finished_lookup_does_not_drop_the_one_that_replaced_it() {
+        use std::future::Future;
+
+        let lists = Arc::new(InFlight::default());
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let old_started = Arc::new(tokio::sync::Notify::new());
+        let fresh_entered = Arc::new(tokio::sync::Notify::new());
+        let running = Arc::clone(&lists);
+        let ready = Arc::clone(&old_started);
+        let old = tokio::spawn(async move {
+            running
+                .get("imate", None, async move {
+                    ready.notify_one();
+                    let _ = wait.await;
+                    Ok(json!({"id": "old"}))
+                })
+                .await
+        });
+        old_started.notified().await;
+        lists.clear("imate");
+        let (release_fresh, hold_fresh) = tokio::sync::oneshot::channel();
+        let fetching = Arc::clone(&lists);
+        let entered = Arc::clone(&fresh_entered);
+        let fresh = tokio::spawn(async move {
+            fetching
+                .get("imate", None, async move {
+                    entered.notify_one();
+                    let _ = hold_fresh.await;
+                    Ok(json!({"id": "fresh"}))
+                })
+                .await
+        });
+        fresh_entered.notified().await;
+        release.send(()).expect("release");
+        assert_eq!(old.await.expect("old task").expect("old list")["id"], "old");
+        let started = std::sync::atomic::AtomicUsize::new(0);
+        let again = lists.get("imate", None, async {
+            started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(json!({"id": "again"}))
+        });
+        tokio::pin!(again);
+        let waker = std::task::Waker::noop();
+        let mut cx = std::task::Context::from_waker(waker);
+        assert!(
+            matches!(again.as_mut().poll(&mut cx), std::task::Poll::Pending),
+            "the replacement lookup is still open",
+        );
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0, "joining it does not start another fetch");
+        release_fresh.send(()).expect("release fresh");
+        assert_eq!(fresh.await.expect("fresh task").expect("fresh list")["id"], "fresh");
+        match again.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(value) => assert_eq!(value.expect("joined")["id"], "fresh"),
+            std::task::Poll::Pending => panic!("the joined lookup should already have its answer"),
+        }
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

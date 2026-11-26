@@ -86,6 +86,9 @@ class FallbacksTest {
         val missing = WireJson.decodeFromString<AgentBackend>("""{"id":"qwen","name":"Qwen"}""")
         val gemini = WireJson.decodeFromString<AgentBackend>("""{"id":"gemini","name":"Gemini","available":true}""")
         assertEquals("the picker has no custom command", Fallback("gemini"), draft.copy(backend = "custom").withAdvisor(true, listOf(missing, gemini)).threadAgent)
+        val imate = WireJson.decodeFromString<AgentBackend>("""{"id":"imate","name":"iMate","available":true,"installed":true}""")
+        assertNull("iMate is not the automatic threads agent", draft.copy(backend = "custom").withAdvisor(true, listOf(imate)).threadAgent)
+        assertEquals(Fallback("gemini"), draft.copy(backend = "custom").withAdvisor(true, listOf(imate, gemini)).threadAgent)
     }
 
     @Test fun `a step runs on a login profile, and rests and the step in use match by login`() {

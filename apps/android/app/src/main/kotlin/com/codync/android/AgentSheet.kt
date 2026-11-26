@@ -124,6 +124,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
             }
             // Its save already brought the new agent list: nothing to check on the way back.
             shown.keysOf != null -> LoginProfileKeysForm(backend, shown.keysOf, state, store) { route = null }
+            shown.step == "imate" -> ImateTokenForm(state, store, back)
             shown.step == "keys" -> AgentKeysForm(backend, requireNotNull(shown.method), auth?.savedEnv.orEmpty(), state, store, back) { auth = it }
             else -> SetupTerminal(backend.takeUnless { shown.step == "node" }, shown.step, shown.method, state, store, shown.loginProfile, back)
         }
@@ -168,7 +169,14 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
         val browserNote = if (signedIn != true && agentMethods) "Browser sign-ins open on $host itself. Away from it? Use Remote screen to finish there." else null
         val status = statusText(backend, setUp, auth, signedIn, checking, host)
         // The computer's own login: what the agent said of it, then the ways to sign it in.
-        val signInRows: CardRows.() -> Unit = {
+        val signInRows: CardRows.() -> Unit = signInRows@{
+            if (backend.id == "imate") {
+                row {
+                    OptionRow(if (signedIn == true) "Edit iMate token" else "Add iMate token",
+                        "Uses the personal token from the iMate open platform.", "key") { go(SetupRoute("imate")) }
+                }
+                return@signInRows
+            }
             val detail = auth?.detail
             if (signedIn != true && !detail.isNullOrEmpty()) row { SelectionContainer { Text(detail, style = Type.footnote, color = Palette.secondary) } }
             // A registry agent downloads on its first start; an app's own CLI comes from Install above.

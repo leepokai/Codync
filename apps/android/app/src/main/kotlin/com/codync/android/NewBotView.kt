@@ -46,8 +46,8 @@ import com.codync.android.design.*
     var draft by remember { mutableStateOf(BotDraft()) }
     val online = state.actualConnection is LinkState.Ready
     val dismiss = LocalDismissModal.current
-    // A new bot starts on an installed agent we know (again on another computer); the host turns on every connector and skill.
-    LaunchedEffect(state.computer.id, state.hello) { draft = fillDefaults(draft, state) }
+    // The computer the bot is created on picks the agent. A choice remembered from another computer would be sent as-is.
+    LaunchedEffect(state.computer.id) { draft = fillDefaults(draft) }
     CreateLayout(state, "New bot", draft.name, { draft = draft.copy(name = it) }, "Name your bot", online, { store.saveBot(draft) { dismiss() } },
         { CharacterAvatar(draft.avatarShape, draft.avatarColor, 96.dp) }) {
         AvatarPicker(draft.avatarShape, draft.avatarColor, { draft = draft.copy(avatarShape = it) }, { draft = draft.copy(avatarColor = it) })
@@ -110,9 +110,5 @@ import com.codync.android.design.*
     }
 }
 
-/** Picks an installed agent we know (a registry agent nobody chose is never the default). */
-private fun fillDefaults(draft: BotDraft, state: AppState): BotDraft {
-    val backends = backends(state)
-    if (backends.any { it.text("id") == draft.backend && it.available }) return draft
-    return backends.firstOrNull { it.available && it.curated }?.text("id")?.let { draft.copy(backend = it) } ?: draft
-}
+/** A new bot names no agent. The host on the computer it is created on picks one, and skips iMate. */
+private fun fillDefaults(draft: BotDraft): BotDraft = draft.copy(backend = "")

@@ -106,14 +106,15 @@ export function moveFallback(list: Fallback[], index: number, by: number): Fallb
 }
 
 /** Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a custom
- * command, which the threads' picker doesn't offer, on the first agent that is installed); off: none. */
+ * command, which the threads' picker doesn't offer, on the first agent that is installed, never iMate); off: none. */
 export function withAdvisor(d: BotDraft, on: boolean, backends: Backend[]): BotDraft {
   if (!on) return { ...d, threadAgent: null, threadFallbacks: [] }
   if (d.backend !== 'custom') {
     const own = { backend: d.backend, loginProfile: d.loginProfile ?? null, model: d.model ?? null, modelOptions: d.modelOptions ?? {} }
     return { ...d, threadAgent: own, threadFallbacks: d.fallbacks ?? [] }
   }
-  const first = backends.find((b) => b.available) ?? backends[0]
+  // iMate stays in the picker. It is not an automatic choice when nothing else is installed.
+  const first = backends.find((b) => b.available && b.id !== 'imate') ?? backends.find((b) => b.id !== 'imate')
   return first ? { ...d, threadAgent: stepOn(first, []), threadFallbacks: [] } : d
 }
 

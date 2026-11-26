@@ -104,6 +104,11 @@ import Testing
     #expect(AgentModels.settings(catalog, model: "on-host").map(\.id) == ["effort"])
     #expect(AgentModels.settings(withoutDefault, model: nil).isEmpty)
     #expect(AgentModels.selected(withoutDefault, model: nil)?.id == "on-host")
+    let colleagues = try JSONDecoder().decode(AgentModels.self, from: Data(#"{"models":[{"id":"support","name":"Default Support"},{"id":"zoe","name":"Zoe"}],"currentModelId":"support","defaultModelId":""}"#.utf8))
+    let listed = AgentModels.choices(colleagues, selection: nil)
+    #expect(listed.map(\.id) == ["", "support", "zoe"])
+    #expect(listed[1].name == "Default Support")
+    #expect(AgentModels.listValue(colleagues, model: "support") == "support")
 }
 
 @Test func threadWithoutBotNamesItsWholeSetup() throws {

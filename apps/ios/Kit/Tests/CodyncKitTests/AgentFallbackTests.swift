@@ -112,6 +112,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     custom.backend = "custom"
     custom.setAdvisor(true, backends: [gemini])
     #expect(custom.threadAgent?.backend == "gemini" && custom.threadFallbacks == [], "the picker has no custom command")
+    let imate = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"imate","name":"iMate","available":true,"installed":true,"command":"","installHint":""}"#.utf8))
+    custom.setAdvisor(false, backends: [])
+    custom.setAdvisor(true, backends: [imate])
+    #expect(custom.threadAgent == nil, "iMate is not the automatic threads agent")
+    custom.setAdvisor(true, backends: [imate, gemini])
+    #expect(custom.threadAgent?.backend == "gemini")
 }
 
 @Test func aLoginOfTheChainPickedForTheBotOrItsThreadsLeavesTheChainAndAnotherLoginOfItsAgentKeepsTheModel() {

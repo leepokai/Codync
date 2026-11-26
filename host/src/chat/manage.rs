@@ -187,11 +187,18 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             // A first-ever load can build the agent's model registry, which is slow: cap it at the window
             // the clients give a tool call, so a wedged agent launch can't outlive them silently.
             let deadline = Instant::now() + APPROVAL_TIMEOUT;
-            let catalog =
-                tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent, profile.as_deref()))
-                    .await
-                .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
-                .map_err(|e| {
+            let catalog = tokio::time::timeout_at(
+                deadline,
+                crate::agent::auth::shared_models(
+                    hub,
+                    &agent,
+                    profile.as_deref(),
+                    crate::agent::auth::ModelListWanted::Kept,
+                ),
+            )
+            .await
+            .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
+            .map_err(|e| {
                     anyhow!("couldn't list {agent}'s models: {e:#} — install and sign in to {agent} on this computer, or list an agent that is set up here")
                 })?;
             let mut models = catalog["models"].as_array().cloned().unwrap_or_default();

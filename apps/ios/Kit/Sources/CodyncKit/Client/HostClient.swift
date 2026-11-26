@@ -12,6 +12,8 @@ public enum HostEvent: Sendable {
     /// catch-up (`threadEntries` reads a thread back).
     case threadEntry(thread: String, Entry)
     case usage(Usage)
+    /// An agent's model list the computer just read (`loginProfile` nil: the default login); no rev.
+    case models(backend: String, loginProfile: String?, AgentModels)
     case screen(ScreenState)
     /// An artifact published or renamed (the catch-up replays it too).
     case artifact(Artifact)
@@ -23,6 +25,8 @@ public enum HostEvent: Sendable {
     case name(String)
     /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
     case autoOrder(Bool)
+    /// How long the computer keeps ended threads changed (from any device): its `hello` says it from now on.
+    case threadKeepDays(Int)
     case resync
     /// One this app has no use for.
     case skipped
@@ -155,6 +159,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
+        case "models":
+            // Not worth a rewind: a model panel asks for the list when it opens.
+            struct ModelsWrap: Decodable { var backend: String; var loginProfile: String?; var models: AgentModels }
+            return (try? d.decode(ModelsWrap.self, from: data)).map { .models(backend: $0.backend, loginProfile: $0.loginProfile, $0.models) }
         case "artifact":
             // Not worth a rewind: a card or the Library reads the artifact again.
             return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
@@ -169,6 +177,9 @@ public struct HostClient: Sendable {
         case "autoOrder":
             struct AutoOrderWrap: Decodable { var enabled: Bool }
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
+        case "threadKeepDays":
+            struct KeepWrap: Decodable { var days: Int }
+            return (try? d.decode(KeepWrap.self, from: data)).map { .threadKeepDays($0.days) }
         case "resync":
             return .resync
         case "workflow":
@@ -392,6 +403,20 @@ public extension HostClient {
         let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
     }
 
+    /// How many days after a thread last finished the computer deletes it (0 never, else 7 to 3650); answers the
+    /// days it keeps now.
+    func setThreadKeepDays(_ days: Int) async throws -> Int {
+        struct Kept: Decodable { var days: Int }
+        let kept: Kept = try await self.call("setThreadKeepDays", ["days": days])
+        return kept.days
+    }
+
+    /// A page of the ended threads of every bot that ended before `before` (the newest when nil), newest first.
+    func olderThreads(before: Int64?) async throws -> OlderThreadsPage {
+        struct Body: Encodable { var before: Int64? }
+        return try await self.call("olderThreads", Body(before: before))
+    }
+
     /// The user makes this bot the lead, in place of the one before.
     func setLead(_ botId: String) async throws {
         let _: Empty = try await self.call("setLead", ["botId": botId])
@@ -548,9 +573,10 @@ public extension HostClient {
     }
 
     /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
-    /// `loginProfile`: the login profile to list them for; nil for the computer's own.
-    func agentModels(_ backend: String, loginProfile: String? = nil) async throws -> AgentModels {
-        try await call("agentModels", AgentModelsRequest(backend: backend, loginProfile: loginProfile), timeout: 300)
+    /// `loginProfile`: the login profile to list them for; nil for the computer's own. The computer answers with the
+    /// list it kept when it has one; `refresh` waits for a new one.
+    func agentModels(_ backend: String, loginProfile: String? = nil, refresh: Bool = false) async throws -> AgentModels {
+        try await call("agentModels", AgentModelsRequest(backend: backend, loginProfile: loginProfile, refresh: refresh ? true : nil), timeout: 300)
     }
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
@@ -642,4 +668,5 @@ public extension HostClient {
 struct AgentModelsRequest: Encodable {
     var backend: String
     var loginProfile: String?
+    var refresh: Bool?
 }

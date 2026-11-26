@@ -55,7 +55,7 @@ entries leave as `threadEntry` events, not `entry`.
 A thread works one task per turn. When the turn ends the task is done and reported (unless a message of the user's
 waits in its [thread](#talking-to-a-thread): that message's turn is the task's end); a thread with no task left ends (its
 actor and agent process stop; its transcript stays for its tasks' details, and a message to one of them starts it again). A thread bot no task names any more is
-deleted with its transcript.
+deleted with its transcript; one whose tasks went to the [archive](#older-threads) is parked there instead.
 
 ## The dispatcher
 
@@ -135,8 +135,7 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 - `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
-  its box and its past tasks (kv `work-past.<bot>`: tasks that left the box at host start, kept until 30 days after
-  they ended, the newest 200). With `task`: its brief, `usersWords`, `usersNotes`, `chatPassedOn`, whole result,
+  its box and the [archive](#older-threads) (tasks that ended in the last 30 days, the newest 200). With `task`: its brief, `usersWords`, `usersNotes`, `chatPassedOn`, whole result,
   `after`, `followedBy`, local times, and a page of 30 of its thread's steps (user, agent, notice, tool and card lines,
   each cut at 600 bytes) with `earlierSteps`, the `before` for the page before; none once the thread is gone. With
   `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
@@ -209,8 +208,8 @@ chat's own queue: nothing here is a second copy of it.
 - **The task isn't over while a message waits.** A turn that ends (done, failed, or stopped for Send now) with a
   message of the user's still queued ends nothing (`work::finished`): the task stays `working`, the message's turn
   runs, and that turn's last message is the task's result and its one report.
-- **After it ended.** A done, failed or stopped task whose thread bot still exists (it is kept seven days with the
-  task) takes a message too. The first one reopens it: `working` again, under Threads, `startedAt` now, counted
+- **After it ended.** A done, failed or stopped task whose thread bot still exists (it is kept with the task, in the
+  [archive](#older-threads) after a week, until the user's `threadKeepDays`) takes a message too. The first one reopens it: `working` again, under Threads, `startedAt` now, counted
   among the bot's running threads even past `maxThreads` (the user asked), so the dispatcher starts nothing else while
   the bot is over its ceiling, and neither it nor the hourly look ends the thread. The thread's actor starts again and
   opens its session as an actor does after a restart: `session/load` or `session/resume` where the agent can, so
@@ -234,15 +233,15 @@ chat's own queue: nothing here is a second copy of it.
   write to`), and one whose thread is gone can't be picked up (`"<title>" ended too long ago to write to: add new
   work instead`). `work[].talk` says which tasks take a message, so no client guesses.
 - **What the thread shares stays in the chat.** Its cards, files, voice notes and artifacts are the chat's entries
-  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. On the iPhone, Android and the
-  terminal the thread's transcript shows each, in time order among the thread's own entries, as one quiet line with a
-  symbol (`sharedLine`, the terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
+  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The desktop and the phones show a thread in the chat's form (desktop
+  `ThreadChat`, iPhone `ThreadChatView`, Android `ThreadChat.kt`): each of these is the chat's own row, in time order
+  among the thread's own entries, the same entry of the bot's chat, answered, downloaded and opened in the thread as in
+  the chat ([UI conventions](../design/ui-conventions.md)). Only the terminal shows each as one quiet line with a
+  symbol (`shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
   `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
   expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
   [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry; the thread has no card to answer. The desktop shows a thread in the chat's form
-  instead (`ThreadChat`, on the Threads page and as a tab of the inspector): there each of these is the chat's own row, the same entry of the bot's chat, answered,
-  downloaded and opened in the thread as in the chat ([UI conventions](../design/ui-conventions.md)).
+  line opens the chat at that entry.
 
 With the rest:
 
@@ -474,8 +473,8 @@ picked, the approvals and the model with it. With no folder picked it works in *
 `<data dir>/threads/<task id>/` (`plain::own_folder`), made as the task is added and versioned as a bot's own folder is
 (`agent::versions`: a git repository of its own, saved before and after each turn), so threads without a bot no longer
 share the home folder. It counts as the thread's own folder (`workspace::own_folder`), so it never gets a worktree,
-and it goes with the task when the task leaves the box (a week after it ended, at host start, as its transcript does;
-or when the user drops the task). An app sends no `cwd` for it only on a host that says `hello.threadFolders: true`;
+and it goes with the task (when the user's [`threadKeepDays`](#older-threads) deletes it, as its transcript; or when
+the user drops the task). An app sends no `cwd` for it only on a host that says `hello.threadFolders: true`;
 an older host gets the home folder, as before. Its task waits in the computer's **box of
 threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
 hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
@@ -590,8 +589,8 @@ another stays in that one's folder, and the bot's own folder never gets one.
 - **At host start** every kept worktree, and one whose look the last process didn't finish, is looked over again
   (`recheck`, from `pick_up`): one the user has merged since goes, with its branch. So does a worktree under
   `~/.codync/worktrees` that no task has as its own or works in any more (one inherited by a task that followed
-  counts, though it is named after the earlier task; it goes once its last task ended more than a week ago, or its
-  bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work.
+  counts, though it is named after the earlier task; it goes once its last task left the box for the
+  [archive](#older-threads), or its bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work.
 - **In the hourly look** at a box ([restart and cleanup](#restart-and-cleanup)) every kept worktree is looked over
   again the same way (`worktree::kept`, from `sweep`): one the user merged since goes, without a restart.
 - A task that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
@@ -643,6 +642,38 @@ The same status is on the wire as `bot.outside = {status, startedAt}`, beside th
 client keeps up to date itself (the activity while the app runs, the tray, the island).
 A task's end sends no alert of its own: its report is a turn of the bot's, whose reply alerts as any reply does.
 
+## Older threads
+
+A box is read and written whole on every change, so a task leaves it a week after it ended (`KEEP_MS`, at host
+start and once a day: `work::age`) for the **archive** (`work/archive.rs`, table `thread_archive`: bot, task, thread,
+`endedAt`, the task's JSON). Its thread bot, once no task left in the box names it, is **parked** (table
+`parked_threads`): out of `bots`, so the lists of threads every dispatcher pass and host start read stay short, with
+its transcript, session (`session_id`, `read_rev`, put back as they were with the bot row), uploads and folder left
+as they are. The tables are made beside the others (`Store::open`): nothing stored changes, so the schema stays. A
+host from before kept tasks for `recall_task` in kv `work-past.<bot>`; they move into the archive once, at host start,
+a thread a task in the box still names staying where it is. Most of their threads were already gone: those tasks are
+only recalled, never listed.
+
+- **Kept for good by default.** `threadKeepDays` (kv, per computer; `setThreadKeepDays {days}`, 0 or 7 to 3650,
+  `hello.threadKeepDays`, a `threadKeepDays {days}` event to connected apps) deletes a thread that many days after it
+  last ended: the archived task, its parked thread bot with its transcript (`Hub::delete_bot`), its own folder (a
+  thread without a bot) and an untouched worktree. A thread that worked a later task stays with it. It runs at host
+  start, once a day and as the choice changes. Writing to a thread reopens it and its clock starts again when it ends.
+- **Listed.** `olderThreads {botId?, before?}` → `{threads, more}`: the ended threads of `botId`, else of every
+  bot on the computer, that ended before `before` (the `endedAt` of the oldest one the app has paged; none for the
+  newest), newest first, 30 a page, from the boxes and the archive; a page never splits threads that ended in the same
+  millisecond (it takes them all), so the next one, before that `endedAt`, misses none. Each is a `work` row with `botId`; the newest overlap the bots' `work`, so an
+  app keeps one row per bot and task. Apps list them at the end of Threads (the terminal: under Recent on a bot's
+  Details page, with `botId`), loading the next page as the list scrolls to its end, on a host that sends
+  `hello.threadKeepDays`. An ended thread that leaves its bot's `work` while the app is connected stays listed as it
+  last read (desktop, iPhone, Android), without moving the next page's cursor.
+- **Opened and written to** as any thread: `threadEntries` and `readUpload` read a parked thread, and `send`,
+  `upload` (with `taskId`), `retryWork` and `dropWork` on an archived task first bring it back into its box with its
+  thread bot (`archive::bring_back`, under the box's lock: the dispatcher never sees the thread without its task).
+- **A deleted bot** takes its archive and parked threads with it.
+- Analytics: `setting_changed` (`thread_keep_days`, `days`), `threads_deleted` (`count`, `days`),
+  `older_threads_listed` (`count`, `more`, `first`); a failed archive is a host error.
+
 ## Wire
 
 - Bot: `work: [task]`: every working task (oldest first), then the waiting in dispatch order, then the tasks ended
@@ -677,6 +708,8 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
 - Bot: `sharedFolders` (`{<project path>: [<folder>]}`, `updateBot`; [filling a new worktree](#filling-a-new-worktree)).
   `hello.worktreeFill: true` on a host that fills new worktrees.
 - `hello.threadFolders: true`: a thread without a bot that names no `cwd` gets [a folder of its own](#threads-without-a-bot).
+- `hello.threadKeepDays` (0: never), `setThreadKeepDays {days}`, the `threadKeepDays {days}` event and
+  `olderThreads {botId?, before?}` → `{threads: [task + botId], more}`: [older threads](#older-threads).
 - `startThread {botId?, text, attachments?, setup?: {backend?, loginProfile?, cwd?, place?, model?: {id, options}, approval?: {permission, mode}}}` →
   `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
   `setup.place` (`here` | `worktree`, `hello.threadPlace: true`) is where it works in a git repository, over the
@@ -709,7 +742,7 @@ aliases: the host sends and takes only the new names. What it had stored is read
   conversation again.
 - **Thread ids**: a new thread is `thread-<uuid>`. A thread started before the update keeps its id `task-<uuid>`
   (`store::is_thread_id` knows both), since its transcript, session and cards are keyed by it; it goes when its task
-  is purged, 7 days after it ended.
+  is deleted ([older threads](#older-threads): only as the user's `threadKeepDays` says, never by default).
 
 ## In the apps
 
@@ -719,8 +752,8 @@ absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
 
-At host start (`work::restore`): tasks ended over 7 days ago leave the box for the bot's past tasks (`recall_task`),
-and their threads go at the next dispatcher pass; a working task whose thread's turn was cut
+At host start (`work::restore`): tasks ended over 7 days ago leave the box for the [archive](#older-threads), their
+thread bots parked, and the archive drops what the user's `threadKeepDays` no longer keeps; a working task whose thread's turn was cut
 off and can be resumed (`agent::bot::resumable`: a restart mark under an hour old) stays working, and its thread's
 actor resumes the turn; one whose thread can't goes back to waiting once, as a task that was cut in on, and fails with
 a report the second time. An ended task's undelivered report is sent again: to the bot, or, for a routine's run,
@@ -850,8 +883,10 @@ known after its earlier task is gone (`known`) (`worktree.rs`), how a bot stands
 (`dispatch.rs`), the watchdog's signals (looping, failing, quiet, a card overdue), its hourly hold and its reasons,
 only the bot's own tasks watched, a wake-up dropped once its task moved on and its analytics (`watch.rs`), the host
 watchdog's verdict, a computer that slept and the mark reported once (`watchdog.rs`), `recall_task` by id, query and
-latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the past ones
-at host start (`mod.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
+latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the archive
+at host start (`mod.rs`), the archive, parked threads coming back in their session, `threadKeepDays`, paging and an
+older host's past tasks (`archive.rs`, `store/archive.rs`), the terminal's Delete old threads choices and older pages
+(`tui/app/thread_keep.rs`, `tui/manage/older.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
 old and not once its task ended (`market/agent_sign_in.rs`), a task's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`tasks.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting tasks and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a reopened task's kept worktree becoming its folder again and a removed one's thread moving to the bot's folder end to end (the unit test covers the folder), a message to a task whose thread is on a task that followed it, a message that arrives as the task's turn ends (the lock that orders them), a real agent resuming a reopened session, a replaced brief carrying what waited, a worktree reused by a task that starts again, one inherited by a task that follows, a
 stopped task's worktree looked over, a task stopped while it waits for a sign-in ending its thread, a worktree's dev server and artifact, git failing, a real agent in a worktree, the host-start reclaim end to end (`tidy` spawning

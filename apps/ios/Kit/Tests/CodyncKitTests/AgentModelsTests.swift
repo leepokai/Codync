@@ -120,3 +120,22 @@ import Testing
     #expect(other["loginProfile"] as? String == "")
     #expect((other["model"] as? [String: Any])?["id"] as? String == "gpt")
 }
+
+@Test func aModelListTheComputerReadIsHeardAndJunkIsPassedOver() throws {
+    let event = HostClient.parseEvent(Data(#"{"type":"models","backend":"codex","loginProfile":null,"models":{"models":[{"id":"gpt","name":"GPT"}]}}"#.utf8))
+    guard case let .models(backend, loginProfile, list)? = event else { Issue.record("no models event"); return }
+    #expect(backend == "codex")
+    #expect(loginProfile == nil)
+    #expect(list.models.map(\.id) == ["gpt"])
+    #expect(HostClient.parseEvent(Data(#"{"type":"models","loginProfile":null,"models":{"models":[]}}"#.utf8)) == nil)
+    #expect(HostClient.parseEvent(Data(#"{"type":"models","backend":"codex"}"#.utf8)) == nil)
+}
+
+@Test func onlyARefreshAsksTheComputerToReadTheAgentAgain() throws {
+    func body(_ refresh: Bool?) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(AgentModelsRequest(backend: "claude", loginProfile: nil, refresh: refresh))
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+    #expect(try body(true)["refresh"] as? Bool == true)
+    #expect(try body(nil)["refresh"] == nil)
+}

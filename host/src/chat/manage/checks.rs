@@ -12,6 +12,7 @@ use crate::store::Fallback;
 use anyhow::Result;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::time::Instant;
 
 /// The model-level part of a change: the model it sets (`set`, none: not touched), the model the bot is on after it
@@ -28,7 +29,7 @@ pub(super) struct Models<'a> {
 /// didn't load accepts a model (the bot's session reports it clearly) but refuses settings (`modelOptions`), whose
 /// wrong value would keep the session from starting at all.
 pub(super) async fn change(
-    hub: &Hub,
+    hub: &Arc<Hub>,
     backend: &str,
     command: Option<&str>,
     login_profile: Option<&str>,
@@ -129,7 +130,7 @@ fn engine_hint(model: &str, backend: &str) -> String {
 /// `agent`'s model catalog on its login profile, loaded at most once per call. `Err` says why it didn't load: the
 /// agent, or the `deadline` the call's approval card shares.
 async fn catalog(
-    hub: &Hub,
+    hub: &Arc<Hub>,
     fetched: &mut HashMap<(String, Option<String>), Result<Value, String>>,
     agent: &str,
     login_profile: Option<&str>,
@@ -140,11 +141,13 @@ async fn catalog(
     if let Some(catalog) = fetched.get(&key) {
         return catalog.clone().map_err(anyhow::Error::msg);
     }
-    let catalog =
-        match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, agent, login_profile)).await {
-            Ok(catalog) => catalog.map_err(|e| format!("{e:#}")),
-            Err(_) => Err("the agent's model list took too long to load".to_owned()),
-        };
+    // A value the agent added or dropped since an old list was read is judged by what it offers now.
+    let fresh =
+        crate::agent::auth::shared_models(hub, agent, login_profile, crate::agent::auth::ModelListWanted::Fresh);
+    let catalog = match tokio::time::timeout_at(deadline, fresh).await {
+        Ok(catalog) => catalog.map_err(|e| format!("{e:#}")),
+        Err(_) => Err("the agent's model list took too long to load".to_owned()),
+    };
     fetched.insert(key, catalog.clone());
     catalog.map_err(anyhow::Error::msg)
 }

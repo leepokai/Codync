@@ -67,14 +67,11 @@ private struct ModelSheet: View {
     @Environment(BotStore.self) private var model
 
     var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("Model")
-            ModelPanel(backend: draft.backend, loginProfile: draft.loginProfile, model: $draft.model, options: $draft.modelOptions,
-                       fast: Binding(get: { draft.fastMode ?? false }, set: { draft.fastMode = $0 }), bot: bot,
-                       seats: model.readySeats(on: draft.login), pickSeat: { draft.setAgent($0) },
-                       notes: notes)
-        }
-        .background(Palette.background)
+        ModelPanel(backend: draft.backend, loginProfile: draft.loginProfile, model: $draft.model, options: $draft.modelOptions,
+                   fast: Binding(get: { draft.fastMode ?? false }, set: { draft.fastMode = $0 }), bot: bot, approvals: $draft,
+                   seats: model.readySeats(on: draft.login), pickSeat: { draft.setAgent($0) },
+                   notes: notes)
+            .background(Palette.background)
     }
 
     private var notes: [(text: String, tone: Color)] {

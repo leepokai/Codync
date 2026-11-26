@@ -1,8 +1,6 @@
 package com.codync.android
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,11 +55,8 @@ import java.io.IOException
         add(tr("Changing the model starts a new agent session. Chat history is kept.") to Palette.secondary)
         error?.let { add(tr(it) to Palette.danger) }
     }
-    Column(Modifier.fillMaxSize()) {
-        ModalHeader("Model")
-        ModelPanel(state, store, backend = draft.backend, loginProfile = draft.loginProfile, model = draft.model, options = draft.modelOptions,
-            choose = { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, fast = draft.fastMode ?: false,
-            setFast = { edit(draft.copy(fastMode = it)) }, bot = bot, seats = readySeats(state, draft.login), pickSeat = { edit(draft.withAgent(it)) },
-            notes = notes)
-    }
+    ModelPanel(state, store, backend = draft.backend, loginProfile = draft.loginProfile, model = draft.model, options = draft.modelOptions,
+        choose = { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, fast = draft.fastMode ?: false,
+        setFast = { edit(draft.copy(fastMode = it)) }, bot = bot, seats = readySeats(state, draft.login), pickSeat = { edit(draft.withAgent(it)) },
+        notes = notes, approvals = draft, setApprovals = edit)
 }

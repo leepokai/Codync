@@ -220,6 +220,8 @@ Releases that kept the floor on purpose:
 
 - 2.52.0 (`minApp` stays 2.51.0): an agent's own question (ACP elicitation) that has options comes with `ownWords: false`. Apps older than 2.52.0 ignore the field and still show **Something else** on it; words typed there match no option, so they cancel the question and reach the bot as the next message. Kept because the question is new (older apps lose nothing they had), its options still answer it, and the agent hears `cancel` rather than a wrong answer.
 
+- 2.54.0 (`minApp` stays 2.51.0): `agentModels` answers from the list the host kept, and a refresh asks for a new read with `refresh: true`; a list read again behind a kept one goes out only as a `models` event. Older apps send no `refresh` and pass the event over, so their Refresh may show the kept list (for 10 minutes, or until a second press once it's older). Kept because nothing breaks: the list is the one the host last read, and the next open shows the new one.
+
 ## Trying it on a simulator
 
 Run a throwaway Debug host (it registers with the dev cloud) on its own data and port, never

@@ -98,6 +98,10 @@ pub enum SessionAction {
     Expired,
     /// Its full inbox dropped a bot's request unread.
     Dropped,
+    /// Its agent ran our hook for the first time (it has the turn tier now).
+    Hooked,
+    /// A hook told it that letters wait.
+    Told,
 }
 
 pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
@@ -111,6 +115,8 @@ pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::A
         SessionAction::AskFailed => "ask_failed",
         SessionAction::Expired => "expired",
         SessionAction::Dropped => "dropped",
+        SessionAction::Hooked => "hooked",
+        SessionAction::Told => "told",
     };
     capture(
         hub,

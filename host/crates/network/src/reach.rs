@@ -124,6 +124,9 @@ pub(crate) fn claude_dir() -> Result<PathBuf> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ClaudeSession {
+    /// Claude Code's process, the file's name.
+    #[serde(skip)]
+    pub(crate) pid: Option<u32>,
     pub(crate) session_id: Option<String>,
     pub(crate) messaging_socket_path: Option<String>,
     #[serde(default)]
@@ -140,7 +143,11 @@ pub(crate) fn claude_sessions(dir: &Path) -> Vec<ClaudeSession> {
     entries
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
-        .filter_map(|e| serde_json::from_slice::<ClaudeSession>(&std::fs::read(e.path()).ok()?).ok())
+        .filter_map(|e| {
+            let session = serde_json::from_slice::<ClaudeSession>(&std::fs::read(e.path()).ok()?).ok()?;
+            let pid = e.path().file_stem().and_then(|s| s.to_str()?.parse().ok());
+            Some(ClaudeSession { pid, ..session })
+        })
         .collect()
 }
 

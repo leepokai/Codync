@@ -97,7 +97,7 @@ impl Hub {
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg) = {
+        let (before, cfg, paused_runs) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -109,22 +109,27 @@ impl Hub {
             self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
-            (row.config, cfg)
+            // A pause takes the runs it will cancel while it still holds the lock the flag was saved under. A resume
+            // saves under this same lock, so a run admitted after the resume can never be in this set: cancelling
+            // these afterwards cannot reach what the resume started (Greptile on this file, #587).
+            let paused_runs =
+                if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
+            (row.config, cfg, paused_runs)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
+        if !paused_runs.is_empty() {
+            // A pause reaches every worker, not only the bot's own actor: an active routine run (boxed or delivered
+            // by a webhook) is cancelled, and a request still waiting in the box is answered now.
+            if let Err(error) = self.routines.cancel_for_pause(&self.store, &paused_runs) {
+                tracing::error!(
+                    bot = %id, error = format!("{error:#}"),
+                    "couldn't cancel a paused bot's routine runs"
+                );
+            }
+        }
         if !cfg.is_group() {
             let pause_changed = before.paused != cfg.paused;
-            if pause_changed && cfg.paused {
-                // A pause reaches every worker, not only the bot's own actor: an active routine run (boxed or
-                // delivered by a webhook) is cancelled, and a request still waiting in the box is answered now.
-                if let Err(error) = self.routines.cancel_for_pause(&self.store, &id) {
-                    tracing::error!(
-                        bot = %id, error = format!("{error:#}"),
-                        "couldn't cancel a paused bot's routine runs"
-                    );
-                }
-            }
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }

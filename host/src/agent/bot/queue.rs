@@ -193,7 +193,7 @@ impl Actor {
 
     pub(super) async fn stop(&mut self) {
         self.hub.team.end_turn(&self.cfg.id);
-        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
+        if let Err(error) = self.hub.routines.cancel_for_stop(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
         }
         if self.active_routine.is_none() {
@@ -536,9 +536,18 @@ impl Actor {
             !matches!(q, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
         });
         // A routine run that came due while it is paused is cancelled too (a pause stops its queued ones):
-        // its schedule continues from the next trigger after the resume.
-        if kept.iter().any(|q| matches!(q, Queued::Routine(_)))
-            && let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id)
+        // its schedule continues from the next trigger after the resume. Only the runs still in *this* queue: a
+        // run admitted after the resume is not one of them, so a pause notification that arrives late cannot
+        // cancel work the resume already started.
+        let routine_ids: Vec<String> = kept
+            .iter()
+            .filter_map(|q| match q {
+                Queued::Routine(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        if !routine_ids.is_empty()
+            && let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &routine_ids)
         {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
         }

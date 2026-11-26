@@ -5,7 +5,7 @@ use crate::agent::bot::{Adapter, Instructions};
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow, bail};
-use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::acp::{self, Acp, Incoming, refusal::PromptText};
 use codync_agent::events::{Event, Update};
 use serde_json::json;
 use std::sync::Arc;
@@ -76,10 +76,21 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         let deadline = tokio::time::sleep(TIMEOUT);
         tokio::pin!(deadline);
         let mut out = String::new();
+        let mut text_seen = PromptText::default();
         loop {
             tokio::select! {
-                r = &mut prompt => { r.and_then(acp::codebuddy::prompt_result)?; break }
+                r = &mut prompt => {
+                    let result = r.and_then(acp::codebuddy::prompt_result)?;
+                    acp::refusal::prompt_result(&result, &text_seen).map_or(Ok(result), Err)?;
+                    break
+                }
                 inc = conn.rx.recv() => {
+                    if let Some(inc) = &inc
+                        && let Incoming::Update(update) = inc
+                        && let Event::Text { text, .. } = &update.event
+                    {
+                        text_seen.push(text);
+                    }
                     if !collect(inc, &mut out) {
                         bail!("the background job's agent exited");
                     }

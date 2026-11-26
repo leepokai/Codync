@@ -88,6 +88,7 @@ impl Actor {
                     return;
                 }
                 self.unheard.clear();
+                self.turn_text_seen.push(&text);
                 self.append(SegKind::Text, &text);
                 self.set_activity("Writing a reply…");
             }

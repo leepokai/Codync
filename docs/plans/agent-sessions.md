@@ -136,9 +136,7 @@ so this only matters if a bot's conversation title is ever shown.
 | turn (next tool call or stop) | Codex, Copilot CLI and Grok: built (`codync-host network hook`), checked end to end on aimock. Cursor: its MCP calls carry no session id, so a hook can't find the mailbox (follow-up); Gemini CLI and Antigravity not installed / unverified (follow-up) |
 | pull (`check_inbox` + an unread notice, built in phase 1) | any MCP client, including the above before their hooks or plugins are installed |
 
-To do when the sessions UI (PR #607) and the turn tier are both in `dev`: the network view's sessions take their tier
-from `Session::tier()` (PR #607 writes `"tier": "pull"` in `host/src/network/api.rs`), with a check that a session
-reads `turn` there once its hook ran; until then the apps never show `turn`.
+The network view's sessions take their tier from `Session::tier()`, and every client labels `pull`, `turn` and `push`.
 
 ## Open design questions
 

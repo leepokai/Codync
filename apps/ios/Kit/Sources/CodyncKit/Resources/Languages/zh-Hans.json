@@ -2510,5 +2510,13 @@
   "Search or enter a model ID": "搜索或输入模型 ID",
   "Approvals": "批准",
   "Speed": "速度",
-  "Close search": "关闭搜索"
+  "Close search": "关闭搜索",
+  "Coding agents": "编程代理",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Bot 和其他编程代理通过地址给这些会话发消息；每个会话自己读取信件。",
+  "Checks its mail": "自行查看信件",
+  "Told of mail at its next step": "下一步时得知新信",
+  "Told of mail as it comes": "来信即得知",
+  "Idle": "空闲",
+  "Older sessions: {count}": "较早的会话：{count}",
+  "More sessions: {count}": "更多会话：{count}"
 }

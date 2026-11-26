@@ -2510,5 +2510,13 @@
   "Search or enter a model ID": "Pesquise ou digite um ID de modelo",
   "Approvals": "Aprovações",
   "Speed": "Velocidade",
-  "Close search": "Fechar busca"
+  "Close search": "Fechar busca",
+  "Coding agents": "Agentes de código",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Bots e outros agentes de código enviam mensagens a estas sessões pelo endereço; cada uma lê a própria correspondência.",
+  "Checks its mail": "Confere a correspondência",
+  "Told of mail at its next step": "Avisado das cartas no próximo passo",
+  "Told of mail as it comes": "Avisado das cartas assim que chegam",
+  "Idle": "Ociosa",
+  "Older sessions: {count}": "Sessões anteriores: {count}",
+  "More sessions: {count}": "Mais sessões: {count}"
 }

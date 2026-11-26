@@ -10,6 +10,62 @@ public struct NetworkView: Codable, Hashable, Sendable {
     public var assistants: Bool?
     /// Cloud assistants can reach this computer at all: it's in a Codync account.
     public var assistantsAvailable: Bool?
+    /// This computer's coding agents' sessions with a Network address; hosts before them send none.
+    public var sessions: [Session]?
+
+    /// A coding agent's session on the computer (`codync-host mcp network`). `kind` and `tier` stay
+    /// strings: a newer host may send ones this app doesn't know.
+    public struct Session: Codable, Hashable, Sendable, Identifiable {
+        /// What bots and other agents message it at.
+        public var address: String
+        /// The agent's own title for it; display only.
+        public var title: String?
+        public var kind: String
+        /// The ACP registry id of its logo.
+        public var registry: String?
+        /// How it gets its mail: `pull` (it checks); later `turn` and `push`.
+        public var tier: String
+        /// Whether its agent runs now (`working`, `idle`, `online`, `offline`); nil where nothing can tell.
+        public var state: String?
+        /// Running now, as far as the computer can tell.
+        public var runs: Bool?
+        /// Folded under the older ones: neither running nor called in the last day. The host lists
+        /// running ones first, then the most recent.
+        public var older: Bool?
+        /// Its last call (Unix ms).
+        public var seen: Double?
+
+        public var id: String { address }
+
+        /// What its agent does, untranslated, where it says; the dot alone shows online or offline.
+        public var stateTitle: String? {
+            switch state {
+            case "working": "Working"
+            case "idle": "Idle"
+            default: nil
+            }
+        }
+
+        /// What the dot says to a screen reader, untranslated, where no word shows (online or
+        /// offline); with no state, there is no dot.
+        public var dotTitle: String? {
+            switch state {
+            case "online": "Online"
+            case "offline": "Offline"
+            default: nil
+            }
+        }
+
+        /// How it gets its mail, untranslated; nil for a tier this app doesn't know.
+        public var tierTitle: String? {
+            switch tier {
+            case "pull": "Checks its mail"
+            case "turn": "Told of mail at its next step"
+            case "push": "Told of mail as it comes"
+            default: nil
+            }
+        }
+    }
 
     public struct Network: Codable, Hashable, Sendable, Identifiable {
         public var id: String
@@ -108,6 +164,8 @@ public struct NetworkView: Codable, Hashable, Sendable {
         public var name: String
     }
 
-    /// Worth showing: in a network, or cloud assistants can reach this computer's bots.
-    public var hasContent: Bool { joined || (assistantsAvailable == true && assistants == true) }
+    /// Worth showing: in a network, cloud assistants can reach this computer's bots, or it has coding agents' sessions.
+    public var hasContent: Bool {
+        joined || (assistantsAvailable == true && assistants == true) || !(sessions ?? []).isEmpty
+    }
 }

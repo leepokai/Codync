@@ -63,8 +63,9 @@ struct ModelPanel: View {
                     .transition(.opacity)
             }
             list
-            settings
-            if !notes.isEmpty {
+            // While searching, the list gets the room the keyboard leaves.
+            if !searching { settings }
+            if !searching, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
                         Text(note.text).font(.caption).foregroundStyle(note.tone)

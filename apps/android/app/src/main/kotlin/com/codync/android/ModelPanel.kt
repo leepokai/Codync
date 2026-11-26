@@ -127,9 +127,10 @@ private const val NEWEST = 6
                 if (empty != null) item { Text(tr(empty), Modifier.padding(12.dp), style = Type.caption, color = Palette.tertiary) }
             }
         }
-        SettingsCard(catalog, model, options, { choose(model, it) }, approvals, setApprovals, if (showsFast) setFast else null, fast == true,
-            bot?.fastModeRefusal)
-        if (notes.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+        // While searching, the list gets the room the keyboard leaves.
+        if (!searching) SettingsCard(catalog, model, options, { choose(model, it) }, approvals, setApprovals, if (showsFast) setFast else null,
+            fast == true, bot?.fastModeRefusal)
+        if (!searching && notes.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((text, tone) in notes) Text(text, style = Type.caption, color = tone)
         }

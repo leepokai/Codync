@@ -73,8 +73,21 @@ impl Hub {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // A pause and a resume are transactions: the older one finishes every effect before the newer one starts.
         let _transition = self.pause.transition();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg) = {
+        // `paused` and kind change only in this function, which already holds the transition, so the wait is
+        // decided from the stored row. The merge happens after the wait and is what gets saved.
+        let pausing = {
+            let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let asks_for_pause = patch.get("paused").and_then(Value::as_bool) == Some(true);
+            !row.config.is_group() && !row.config.paused && asks_for_pause
+        };
+        if pausing {
+            // Before the flag is saved: no new prompt is admitted, and one already being written reaches the agent
+            // before this pause continues. Never hold every bot's event lock while waiting for that write.
+            self.pause.block(&id);
+        }
+        // One lock for the read, the merge and the save. A section rename during the wait takes this same lock,
+        // so it commits before this read and is not written back.
+        let saved = (|| -> Result<_> {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -85,19 +98,19 @@ impl Hub {
             cfg.plain = row.config.plain;
             self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
-            let pausing = !cfg.is_group() && !row.config.paused && cfg.paused;
-            if pausing {
-                // Before the flag is saved: no new prompt is admitted, and one already being written reaches the
-                // agent before this pause continues. Everything created before it is caught by the cleanup below.
-                self.pause.block(&id);
-            }
-            if let Err(error) = self.store.save_bot(&cfg) {
+            self.store.save_bot(&cfg)?;
+            Ok((row.config, cfg))
+        })();
+        let (before, cfg) = match saved {
+            Ok(pair) => pair,
+            Err(error) => {
+                // `block` already advanced the epoch. Drop the in-memory block when the row was not saved.
+                // The epoch stays advanced (a failed save still looks paused to an in-flight admission).
                 if pausing {
                     self.pause.unblock(&id);
                 }
                 return Err(error);
             }
-            (row.config, cfg)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
@@ -196,5 +209,71 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hub::Hub;
+    use crate::remote::identity::Identity;
+    use crate::store::{BotConfig, Store};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    /// A pause waits out an admitted prompt write with `emit_lock` released, then reads and saves.
+    /// Two properties: the rename during that wait does not sit on the pause's lock, and the save
+    /// keeps the renamed section.
+    #[test]
+    fn a_section_rename_during_a_pause_wait_is_not_written_back() {
+        let dir = std::env::temp_dir().join(format!("codync-pause-rename-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.join("work");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "pause-rename".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "b", "name": "b", "backend": "claude", "cwd": cwd, "section": "Old",
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+
+        let admitted = hub.pause.admit_prompt("b", hub.pause.epoch("b")).expect("the prompt is admitted");
+        let pausing = hub.clone();
+        let saved = std::thread::spawn(move || pausing.update_bot(&json!({"id": "b", "paused": true})));
+        let started = Instant::now();
+        while !hub.pause.blocked("b") {
+            assert!(started.elapsed() < Duration::from_secs(2), "the pause never closed admission");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // Time only the rename, and only while the pause is still inside block(). The lock is free
+        // during that wait, so the rename returns at once. If the pause held emit_lock across the
+        // wait, this would sit until the admitted write was dropped.
+        let renaming = hub.clone();
+        let (finished, waited) = mpsc::channel();
+        let rename_thread = std::thread::spawn(move || {
+            let rename_started = Instant::now();
+            let result = renaming.rename_section("Old", Some("Kept"));
+            let _ = finished.send((rename_started.elapsed(), result));
+        });
+        let rename_finished = waited.recv_timeout(Duration::from_secs(1));
+        assert!(!saved.is_finished(), "the pause finished before the rename, so the timing says nothing");
+        drop(admitted);
+        let _ = rename_thread.join();
+        let (rename_wait, renamed) = rename_finished.expect("the rename waited on the pause's emit_lock");
+        renamed.expect("the section rename");
+        assert!(rename_wait < Duration::from_secs(1), "the rename waited on the pause's emit_lock ({rename_wait:?})");
+        let saved = saved.join().expect("the pause thread panicked");
+        // No actor is running: the row is saved, then Reconfigure has nobody to take it.
+        let err = saved.expect_err("saving the pause still reports that the actor is absent");
+        assert!(err.to_string().contains("unknown bot"), "{err:#}");
+        let row = hub.store.bot("b").unwrap().unwrap();
+        assert!(row.config.paused, "the pause was saved");
+        assert_eq!(
+            row.config.section.as_deref(),
+            Some("Kept"),
+            "the rename during the pause wait was written back over"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

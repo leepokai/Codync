@@ -550,6 +550,12 @@ fn requested(hub: &Arc<Hub>, network: &str, target: &BotConfig, m: &Message, bac
     let from = m.from.to_string();
     let target_epoch = {
         let _transition = hub.pause.transition();
+        if hub.paused(&target.id) {
+            let error = anyhow!("{} is paused", target.name);
+            send_back(hub, &back, format!("Couldn't take it: {error:#}"), RequestStatus::Failed, m.hops);
+            // A working peer that is paused is not a transport failure. listen counts every Err as one.
+            return Ok(());
+        }
         hub.pause.epoch(&target.id)
     };
     let mut lifetime =
@@ -592,7 +598,15 @@ pub(super) fn cancelled(hub: &Arc<Hub>, to: &Return, hops: u8) {
 }
 
 fn send_back(hub: &Arc<Hub>, to: &Return, mut body: String, status: RequestStatus, hops: u8) {
-    let Ok(slot) = hub.network.slot(Some(&to.network)) else { return };
+    // A missing slot used to come back as `Err`, and `listen` logged it. Returning here keeps a paused
+    // peer from being counted as a transport failure, and the warning is the trace that return dropped.
+    let slot = match hub.network.slot(Some(&to.network)) {
+        Ok(slot) => slot,
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "couldn't send a reply to another computer");
+            return;
+        }
+    };
     let (node, hub) = (slot.node, hub.clone());
     if body.trim().is_empty() {
         body = "(no reply)".into();
@@ -709,5 +723,37 @@ mod waiting_tests {
         waiting.insert("gone".into(), to_bot);
         assert!(matches!(waiting.answer("gone", "codex:t", "b", "b", |_| false), Answer::Ended(false)));
         assert_eq!(ended("codex:t", "gone"), Some(false));
+    }
+
+    #[tokio::test]
+    async fn a_remote_request_to_a_paused_bot_is_refused_at_admission() {
+        let f = super::super::tests::Fixture::new();
+        f.hub.update_bot(&json!({"id": "b", "paused": true})).unwrap();
+        let target = f.hub.store.bot("b").unwrap().unwrap().config;
+        let message = Message {
+            id: "paused-remote-request".into(),
+            from: "asker@elsewhere".parse().unwrap(),
+            to: "b".into(),
+            body: "must not queue".into(),
+            wake: true,
+            reply_to: None,
+            hops: 1,
+            meta: None,
+            access: codync_network::Access::Allow,
+        };
+        let back = Return {
+            network: "missing-test-network".into(),
+            to: message.from.clone(),
+            request: message.id.clone(),
+            from: message.to.clone(),
+        };
+
+        // `back.network` is not a slot on this hub, so `send_back` returns before the Failed letter
+        // is built. Ok here means no transport error. It does not mean the peer was answered. That
+        // one Failed letter is covered only by the e2e lane.
+        requested(&f.hub, "missing-test-network", &target, &message, back)
+            .expect("a paused peer is refused without a transport error");
+        assert!(f.hub.store.history("b", i64::MAX, 50).unwrap().iter().all(|e| e.data["delegationId"].is_null()));
+        f.shutdown().await;
     }
 }

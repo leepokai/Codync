@@ -137,6 +137,8 @@ With Near the limit or a size, nothing summarizes the chat or starts it over bef
 
 A paused bot answers nothing and spends nothing until you resume it. A message sent to it is refused with a notice in its chat, a turn it is working on stops, and its queued routine runs are cancelled (its schedules continue from their next trigger after the resume). A bot that messages it hears that it is paused. Its history, settings, memory and files stay as they are, and resuming it picks up where things left off.
 
+If the agent is still accepting a message when you pause, that write gets up to 5 seconds. If it has not finished, Codync stops that agent and the pause continues. Other bots keep working during the wait. The delay is bounded, not removed: pauses share one lock, so a write that uses the full 5 seconds can hold up another bot's pause for that long.
+
 - **Desktop:** right-click the bot in the sidebar, then **Pause bot** (or **Resume bot**). The same switch is in its settings, first under **Activity**.
 - **Terminal UI:** select the bot and press `e` for settings; **Paused** is the switch under **Approvals**.
 

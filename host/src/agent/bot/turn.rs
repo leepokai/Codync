@@ -309,8 +309,21 @@ impl Actor {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
         }
-        // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.session(&sid).prompt(prompt).await?;
+        // Written before this returns, so a Stop right after is sent after the prompt. A broken pipe must not
+        // strand the actor and every later pause behind this admitted write.
+        let written = tokio::time::timeout(crate::hub::PROMPT_WRITE_TIMEOUT, acp.session(&sid).prompt(prompt)).await;
+        let Ok(answer) = written else {
+            if let Some(conn) = self.conn.take() {
+                conn.acp.kill().await;
+            } else {
+                acp.kill().await;
+            }
+            return Err(anyhow!(
+                "the agent didn't accept the prompt within {}s",
+                crate::hub::PROMPT_WRITE_TIMEOUT.as_secs()
+            ));
+        };
+        let answer = answer?;
         drop(admission);
         if std::mem::take(&mut self.relay.handing_off) {
             self.handed_off(true);

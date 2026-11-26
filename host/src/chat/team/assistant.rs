@@ -286,6 +286,9 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let back = Back::Assistant { request: request.clone() };
     let target_epoch = {
         let _transition = hub.pause.transition();
+        if hub.paused(&target.id) {
+            bail!("{} is paused", target.name);
+        }
         hub.pause.epoch(&target.id)
     };
     let mut lifetime = MessageLifetime::new(hub, &request, message, back, &target.name, target_epoch, 1);

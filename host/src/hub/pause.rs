@@ -8,6 +8,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+/// A pipe that stays full must not hold its bot's actor or pause transaction forever.
+pub const PROMPT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
 pub struct Pause {
@@ -41,12 +45,26 @@ impl Pause {
     }
 
     /// Closes new prompt writes for `bot`, records the pause, and waits for a write admitted just before it.
+    /// The writer has the same deadline, after which it kills its agent and drops the admission; the timeout here
+    /// is a final bound, not permission for a broken agent to hold a pause indefinitely.
     pub fn block(&self, bot: &str) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *state.epochs.entry(bot.to_owned()).or_default() += 1;
         state.blocked.insert(bot.to_owned());
+        let deadline = Instant::now() + PROMPT_WRITE_TIMEOUT;
         while state.writing.get(bot).is_some_and(|writing| *writing > 0) {
-            state = self.wake.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                tracing::error!(%bot, "a prompt write stayed admitted past its deadline; continuing the pause");
+                break;
+            }
+            let (waiting, timeout) =
+                self.wake.wait_timeout(state, remaining).unwrap_or_else(std::sync::PoisonError::into_inner);
+            state = waiting;
+            if timeout.timed_out() && state.writing.get(bot).is_some_and(|writing| *writing > 0) {
+                tracing::error!(%bot, "a prompt write stayed admitted past its deadline; continuing the pause");
+                break;
+            }
         }
     }
 

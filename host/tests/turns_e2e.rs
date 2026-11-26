@@ -175,6 +175,34 @@ async fn pausing_a_bot_mid_turn_stops_it_and_resuming_lets_it_work_again() {
     );
 }
 
+#[tokio::test]
+async fn a_stuck_prompt_write_cannot_freeze_other_bots_or_pause_forever() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let stuck = host.bot("Stuck", "tests/fixtures/stuck_input_agent.py").await;
+    let other = host.bot("Other", "tests/fixtures/team_agent.py").await;
+    host.call("send", json!({"botId": stuck, "text": "x".repeat(512 * 1024)})).await;
+    let workspace = common::folder(&host.home, "Stuck");
+    common::eventually("the prompt writer to block", Duration::from_secs(30), async || {
+        workspace.join("session-ready").exists()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let pausing =
+        tokio::time::timeout(Duration::from_secs(15), host.call("updateBot", json!({"id": stuck, "paused": true})));
+    let unrelated = tokio::time::timeout(
+        Duration::from_secs(7),
+        host.call("updateBot", json!({"id": other, "description": "still responsive"})),
+    );
+    let (pausing, unrelated) = tokio::join!(pausing, unrelated);
+    unrelated.expect("the shared event lock froze an unrelated bot update");
+    pausing.expect("the stuck prompt write froze the pause");
+    assert_eq!(common::bot(&common::snapshot(&host.base, &host.token).await, &stuck)["paused"], true);
+}
+
 /// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
 #[cfg(unix)]
 struct Escaped(PathBuf);

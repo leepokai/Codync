@@ -530,7 +530,9 @@ impl Actor {
     /// A turn that couldn't start: on the next agent if one can take it, otherwise the failure as usual.
     pub(super) async fn start_error(&mut self, error: anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) {
         // A pause is not a failing agent: no fallback may take the turn, since that would spend during the pause.
-        if self.paused() || self.hub.pause.blocked(self.cfg.owner()) {
+        // The admission error stays authoritative even when a quick resume has already changed the current flag.
+        if error.to_string() == super::PAUSED_BEFORE_PROMPT || self.paused() || self.hub.pause.blocked(self.cfg.owner())
+        {
             self.start_paused();
             return;
         }

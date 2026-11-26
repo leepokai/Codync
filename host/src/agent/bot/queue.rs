@@ -516,15 +516,10 @@ impl Actor {
     }
 
     /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
-    /// lets what was already waiting go on. The bot's own actor cancels every active routine run (a boxed run and a
-    /// webhook delivery included); a thread does only its own part, since the owner's actor does the rest.
+    /// lets what was already waiting go on. The host's pause transaction already cancelled its routine runs, so a
+    /// delayed notification cannot cancel work admitted after a resume.
     async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
         if paused {
-            if !self.cfg.is_thread()
-                && let Err(error) = self.hub.routines.cancel_for_pause(&self.hub.store, &self.cfg.id)
-            {
-                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
-            }
             self.cancel_turn().await;
             self.refuse_paused();
         } else {

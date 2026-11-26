@@ -25,7 +25,7 @@ mod order;
 mod patch;
 mod pause;
 pub(crate) mod projects;
-pub use pause::Pause;
+pub use pause::{PROMPT_WRITE_TIMEOUT, Pause};
 mod reactions;
 mod sections;
 mod sync;

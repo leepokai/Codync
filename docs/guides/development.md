@@ -48,6 +48,9 @@ not finish the task.
    before the host was ready. Do not report installation complete before both
    checks pass.
 
+For a requested **build and install on the Mac mini**, run `tools/install-dev-mac-mini.sh`:
+[Mac mini testing](mac-mini-testing.md).
+
 This sequence records the Dev installation failure on 2026-10-23: the old host
 was booted out, the app bundle was replaced, but the service was not reloaded
 until the new bundled host's `install` command was run explicitly.

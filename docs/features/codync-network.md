@@ -372,3 +372,4 @@ Planned in order, with what each step touches: [what's left](../plans/codync-net
 - `host/tests/network_e2e.rs`: two real hosts in one network, a bot messaging a bot on the other computer through
   approval and back, a request its recipient's user stops and one that fails, and the view with its per-row
   permissions and the `network` event reaching both computers' apps on a promotion.
+- Local testing with two computers (the Mac and the Lima Linux VM): [codync-network testing](../guides/codync-network-testing.md).

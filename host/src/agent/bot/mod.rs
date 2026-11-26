@@ -412,7 +412,9 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        self.flush(true);
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
+        let done = self.quota_refusal(done);
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {

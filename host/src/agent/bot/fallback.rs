@@ -10,12 +10,13 @@ pub(crate) use handoff::owe_move;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;
-use super::{Actor, Done, NoticeStyle};
+use super::{Actor, Done, NoticeStyle, Seg};
 use crate::LockExt;
 use crate::agent::fallback::{self, Reason, carry, rest};
 use crate::agent::login_profiles::Login;
 use crate::analytics::Carried;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
+use codync_agent::acp;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -378,8 +379,31 @@ impl Actor {
                 (title, e.data["status"].as_str().unwrap_or("pending").to_owned())
             })
             .collect();
-        let narration = self.last_text.as_ref().and_then(|id| self.hub.store.entry(id));
-        carry::so_far(&tools, &self.sent, narration.as_ref().and_then(|e| e.data["text"].as_str()))
+        carry::so_far(&tools, &self.sent, self.last_words().as_deref())
+    }
+
+    /// The text of the turn's last agent message.
+    fn last_words(&self) -> Option<String> {
+        let entry = self.hub.store.entry(self.last_text.as_ref()?)?;
+        entry.data["text"].as_str().map(str::to_owned)
+    }
+
+    /// The turn's answer `done`, with Antigravity's quota refusal as the usage-limit error it is
+    /// (`acp::antigravity`). The streamed notice becomes the error itself: it isn't carried to the next agent and
+    /// leaves the transcript (`removed: true`) instead of staying in trace views as narration.
+    pub(super) fn quota_refusal(&mut self, done: Done) -> Done {
+        let Ok(answer) = done else { return done };
+        let done = acp::antigravity::prompt_result(&self.cfg.backend, Ok(answer), self.last_words().as_deref());
+        if done.is_err() {
+            if let Some(id) = self.last_text.take()
+                && let Some(mut e) = self.hub.store.entry(&id)
+            {
+                e.data["removed"] = true.into();
+                self.hub.set_entry(&id, &e.data);
+            }
+            self.seg = Seg::None;
+        }
+        done
     }
 
     /// The turn failed with `error`: when it may move on and another agent can take it, starts it again there.
@@ -399,7 +423,9 @@ impl Actor {
             if reason == Reason::SignedOut {
                 self.note_signed_out(&login);
             }
-            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now);
+            let failed = start_error.as_ref().unwrap_or(error);
+            let resets =
+                rest::reset_until(&self.hub.usage.locked(), &agent, login.profile.as_deref(), &failed.to_string(), now);
             let rest = rest::record(&self.hub.store, &key, reason, now, resets);
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &key);
@@ -408,7 +434,6 @@ impl Actor {
                 self.relay.skipped.push(key.clone());
             }
             self.relay.tried.push(key);
-            let failed = start_error.as_ref().unwrap_or(error);
             let Some(next) = self.next_step(now) else {
                 self.relay.exhausted = true;
                 // No agent answers the turn's messages: they go out again once the first one left signed out is

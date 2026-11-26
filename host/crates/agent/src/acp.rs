@@ -16,6 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
+pub mod antigravity;
 pub mod auth;
 mod capabilities;
 pub mod claude;
@@ -124,6 +125,8 @@ pub struct RpcError {
 pub const AUTH_REQUIRED: i64 = -32000;
 /// JSON-RPC's "internal error".
 pub const INTERNAL_ERROR: i64 = -32603;
+/// [`RpcError::kind`] of a usage limit (codex-acp's `usageLimitExceeded`, Antigravity's quota refusal).
+pub const USAGE_LIMIT_EXCEEDED: &str = "usage_limit_exceeded";
 
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

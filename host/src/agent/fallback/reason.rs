@@ -2,7 +2,7 @@
 //! the adapter's category (`errorKind`, codex-acp's `codexErrorInfo`), and the host's own `Failure`. The agents
 //! retry what is worth retrying before they answer with an error, so Codync never asks the same agent again.
 
-use codync_agent::acp::{Failure, FailureKind, RpcError, signed_out};
+use codync_agent::acp::{Failure, FailureKind, RpcError, USAGE_LIMIT_EXCEEDED, signed_out};
 use serde::{Deserialize, Serialize};
 
 /// Why an agent couldn't answer, and how long it rests for it (see `rest`).
@@ -84,7 +84,7 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
     // Claude's adapter sends the Agent SDK's assistant error (`rate_limit`…); codex-acp its `codexErrorInfo`
     // (`usage_limit_exceeded`…); CodeBuddy its `category` (`auth`…).
     Some(match r.kind.as_deref() {
-        Some("usage_limit_exceeded") => Reason::UsageLimit,
+        Some(USAGE_LIMIT_EXCEEDED) => Reason::UsageLimit,
         Some("rate_limit" | "billing_error" | "account_on_hold") if usage_text => Reason::UsageLimit,
         Some("billing_error" | "account_on_hold") => Reason::OutOfCredits,
         Some("rate_limit" | "rate_limit_exceeded") => Reason::RateLimited,

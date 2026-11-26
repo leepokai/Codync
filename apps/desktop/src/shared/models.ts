@@ -173,7 +173,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     plain: raw.plain === true,
-    paused: raw.paused ?? false,
+    // Only a boolean true. A missing flag, or anything else an older host sent, is not paused.
+    paused: raw.paused === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],

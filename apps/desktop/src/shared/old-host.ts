@@ -74,6 +74,21 @@ export function fromOldEvent(raw: Fields): Fields {
   return raw
 }
 
+/**
+ * What an `updateBot` answer says about a pause or resume the client just asked for.
+ *
+ * A current host echoes `bot.paused` as a boolean: it always serializes the flag. An older host
+ * ignores the unknown field and still returns success, with `paused` absent. A missing flag is not
+ * an applied pause — the client must not show Paused, or count it as applied, on that success.
+ */
+export type PauseEcho = { applied: boolean; paused: boolean }
+
+export function pauseEcho(requested: boolean, answer: unknown): PauseEcho {
+  const echoed = isFields(answer) && isFields(answer.bot) ? answer.bot.paused : undefined
+  if (typeof echoed !== 'boolean') return { applied: false, paused: false }
+  return { applied: echoed === requested, paused: echoed }
+}
+
 /** The answer to `method` as either host sends it: its `bot`, `entry` and `entries`, and `threadEntries`' `thread`. */
 export function fromOldAnswer(method: string, answer: unknown): unknown {
   if (!isFields(answer)) return answer

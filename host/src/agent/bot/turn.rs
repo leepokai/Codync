@@ -463,8 +463,7 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
-        let completion_reply_id =
-            self.completion_reply_id.take().filter(|_| reply.is_ok() && !grouped && !compacting && self.in_own_chat());
+        let own_chat = !grouped && self.in_own_chat();
         if let Some(step) = self.active_workflow.clone() {
             let timed_out = self.routine_timed_out;
             let stopped_step = !timed_out && (stopped || self.stop_requested);
@@ -484,7 +483,7 @@ impl Actor {
                 self.set_session(Some(&slot), None);
             }
         }
-        if routine {
+        let routine_reported = if routine {
             let (status, detail) = if self.routine_timed_out {
                 (crate::routines::Status::Failed, Some(crate::routines::TIMED_OUT.into()))
             } else if stopped {
@@ -495,8 +494,14 @@ impl Actor {
                 (crate::routines::Status::Succeeded, None)
             };
             let text = (status == crate::routines::Status::Succeeded).then(|| final_text.clone()).flatten();
+            let reported = text.as_deref().is_some_and(|t| !crate::chat::group::ends_in_pass(t));
             self.finish_routine(status, detail, text);
-        }
+            reported
+        } else {
+            false
+        };
+        let completion_reply_id =
+            self.completion_reply_id.take().filter(|_| reply.is_ok() && !compacting && (own_chat || routine_reported));
         self.complete_request(reply, stopped);
         self.complete_group(if stopped || failed || stop_reason != "end_turn" {
             Err(anyhow!("turn did not complete ({stop_reason})"))

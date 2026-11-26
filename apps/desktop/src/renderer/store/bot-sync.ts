@@ -64,6 +64,7 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private replayRev = Infinity
+  /** Keep the last live reply through the next turn so a batched island summary can see it. */
   private readonly liveCompletionReplies = new Map<string, string>()
   private readingViews = new Map<string, string>()
 
@@ -71,7 +72,7 @@ export class BotSync extends BotMirror {
 
   completionFor(bot: Bot): string | null | undefined {
     if (bot.completionReplyId === undefined) return bot.rev > this.replayRev ? undefined : null
-    return this.liveCompletionReplies.get(bot.id) === bot.completionReplyId ? bot.completionReplyId : null
+    return this.liveCompletionReplies.get(bot.id) ?? null
   }
 
   // MARK: lifecycle
@@ -313,8 +314,7 @@ export class BotSync extends BotMirror {
       case 'bot': {
         const bot = event.bot
         const previous = this.bots.get(bot.id)
-        if (!bot.completionReplyId) this.liveCompletionReplies.delete(bot.id)
-        else if (bot.rev > this.replayRev && bot.completionReplyId !== previous?.completionReplyId) {
+        if (bot.completionReplyId && bot.rev > this.replayRev && bot.completionReplyId !== previous?.completionReplyId) {
           this.liveCompletionReplies.set(bot.id, bot.completionReplyId)
         }
         this.putHostBot(bot)

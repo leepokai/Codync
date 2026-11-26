@@ -4,8 +4,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
+import type { IslandSummary } from '@shared/island'
 import type { HostEvent, HostTransport } from '../client/host-client'
-import type { Bot } from '@shared/models'
+import type { Bot, Entry } from '@shared/models'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('@shared/')) return nextResolve(new URL(`../../shared/${specifier.slice(8)}.ts`, import.meta.url).href, context)
@@ -68,13 +69,97 @@ test('only a changed completion received live can reach the island', () => {
   assert.equal(update(12, null), null)
   assert.equal(update(13, 'live'), 'live')
   assert.equal(update(14, 'live'), 'live', 'metadata before the next summary keeps the live completion')
-  assert.equal(update(15, null), null, 'the next turn clears the live completion before the next summary')
+  assert.equal(update(15, null), 'live', 'a summary during the next turn can still deliver the live completion')
 
   connect(20)
   assert.equal(update(20, 'while-offline'), null)
   assert.equal(update(21, 'while-offline'), null)
   assert.equal(update(22), undefined, 'an older host still uses the transcript fallback for live updates')
   store.retire()
+})
+
+test('a live reply appears once when the next turn starts between island summaries', async (t) => {
+  Object.assign(globalThis, {
+    window: { addEventListener: () => {}, codync: { speech: { available: false }, island: { setShape: () => {} } } },
+  })
+  t.after(() => { Reflect.deleteProperty(globalThis, 'window') })
+  const { IslandModel } = await import('../views/island/island-model.ts')
+  const { FINISHED_MS, islandReply } = await import('@shared/island')
+  const { store, receive } = storeWithAlerts()
+  t.after(() => store.retire())
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+
+  const island = new IslandModel()
+  const connect = (rev: number) => receive({ type: 'hello', hostId: 'host', rev, usage: { providers: [] }, screen: null, network: null, catchUp: 1 })
+  const update = (rev: number, status: Bot['status'], completionReplyId: string | null, workingChat: string | null = null) => {
+    const bot = { id: 'a', rev, status, completionReplyId, workingChat, unread: 0, waiting: 0 } as Bot
+    receive({ type: 'bot', bot })
+  }
+  const save = (id: string, rev: number, text: string) => {
+    const entry: Entry = { id, botId: 'a', seq: rev, rev, turn: 1, kind: 'agent', data: { final: true, text }, createdAt: rev, updatedAt: rev }
+    receive({ type: 'entry', entry })
+    return entry
+  }
+  const sample = () => {
+    const bot = store.bots.get('a')!
+    const id = store.completionFor(bot)
+    const summary: IslandSummary = {
+      bots: [{
+        ref: 'c1/a', name: 'Alpha', shape: 'blob', color: 'blue', chat: bot.status, status: bot.status,
+        away: Boolean(bot.workingChat && bot.workingChat !== bot.id),
+        completion: typeof id === 'string' ? islandReply(store.allEntries(bot.id), undefined, id) : id,
+        backend: 'Custom', folder: '', detail: '', steps: [], error: null,
+      }],
+      permissions: [], usage: [],
+    }
+    ;(island as unknown as { apply(summary: IslandSummary): void }).apply(summary)
+  }
+
+  connect(10)
+  update(10, 'idle', null)
+  sample()
+  update(11, 'working', null, 'a')
+  sample()
+  assert.equal(island.mode, 'compact')
+
+  const reply = save('first-reply', 12, 'The report')
+  update(13, 'idle', reply.id)
+  update(14, 'working', null, 'a')
+  save('unrelated', 15, 'Other visible text')
+  sample()
+  assert.equal(island.mode, 'finished', 'the idle summary was coalesced into the next working summary')
+  assert.equal(island.notice?.text, 'The report')
+  t.mock.timers.tick(FINISHED_MS - 1)
+  update(16, 'working', null, 'a')
+  sample()
+  assert.equal(island.mode, 'finished')
+  t.mock.timers.tick(1)
+  assert.equal(island.mode, 'compact')
+  sample()
+  assert.equal(island.mode, 'compact', 'another summary of the same reply stays quiet')
+
+  update(17, 'idle', null)
+  update(18, 'working', null, 'room')
+  sample()
+  receive({ type: 'entry', entry: { ...reply, rev: 19, updatedAt: 19, data: { ...reply.data, reactions: ['👍'] } } })
+  update(20, 'idle', null)
+  sample()
+  assert.equal(island.mode, 'hidden', 'delegated work and reactions leave no completion')
+
+  connect(25)
+  save('offline-reply', 24, 'Reply while disconnected')
+  update(25, 'idle', 'offline-reply')
+  sample()
+  update(26, 'idle', 'offline-reply')
+  sample()
+  assert.equal(island.mode, 'hidden', 'catch-up and later metadata stay quiet')
+
+  update(27, 'working', null, 'a')
+  const next = save('next-reply', 28, 'The report')
+  update(29, 'idle', next.id)
+  sample()
+  assert.equal(island.mode, 'finished', 'a distinct saved reply with identical text still appears')
+  assert.equal(island.notice?.text, 'The report')
 })
 
 test("a model list the computer read again replaces that login's, and only that login's", () => {

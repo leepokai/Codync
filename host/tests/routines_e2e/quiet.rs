@@ -42,3 +42,49 @@ async fn a_chat_routine_that_ends_in_a_pass_says_nothing_and_one_that_mentions_i
     let bot = host.chat_run_bot("quiet-chat").await;
     quiet_then_loud(&host, &bot, "quiet-chat").await;
 }
+
+#[tokio::test]
+async fn a_chat_routine_completion_names_the_saved_report_and_a_pass_stays_quiet() {
+    let host = common::host::Host::start().await;
+    let bot = host.fixture_bot("Chat routine", "routine_agent.py", "").await;
+    host.works_in_chat(&bot).await;
+    let mut events = host.events().await;
+    let mut completions = Vec::new();
+
+    for (name, instruction) in [("report", "REPORT_STATUS"), ("quiet", "TRAILING_PASS[Product newsletter]")] {
+        let saved = host
+            .call(
+                "saveRoutine",
+                json!({"botId":bot,"name":name,"instruction":instruction,"triggers":[{"type":"webhook"}]}),
+            )
+            .await;
+        host.call("runRoutine", json!({"botId":bot,"id":saved["routine"]["id"]})).await;
+        let finished = tokio::time::timeout(Duration::from_secs(25), async {
+            let mut working = false;
+            loop {
+                let event = events.recv().await.unwrap();
+                let row = &event["bot"];
+                if event["type"] == "bot" && row["id"] == bot {
+                    if working && row["status"] == "idle" {
+                        break event["bot"].clone();
+                    }
+                    working |= row["status"] == "working";
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("missing live completion for {name}"));
+        completions.push(finished.get("completionReplyId").unwrap().clone());
+    }
+
+    let history = host.call("history", json!({"botId":bot})).await;
+    let replies: Vec<_> = history["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
+        .collect();
+    assert_eq!(replies.len(), 1, "only the report is visible in the chat");
+    assert_eq!(replies[0]["data"]["text"], "Routine completed successfully.");
+    assert_eq!(completions, [replies[0]["id"].clone(), Value::Null]);
+}

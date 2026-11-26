@@ -7,7 +7,7 @@ fn store() -> Store {
 }
 
 fn caller(kind: AgentKind, session: Option<&str>, cwd: &str) -> Caller {
-    Caller { kind, session: session.map(str::to_owned), process: "7-a".into(), cwd: cwd.into(), hint: None }
+    Caller { kind, session: session.map(str::to_owned), process: "7-a".into(), cwd: cwd.into() }
 }
 
 /// Hands out `base`, `base-2`… like the network's address book, remembering what it gave.

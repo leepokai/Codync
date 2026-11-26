@@ -5,7 +5,7 @@ type View = { networks: { id: string; name: string; rules: unknown[] }[]; sessio
 
 // A coding agent's session registers on its first call (agentCall, as `codync-host mcp network` sends it).
 const whoami = (session: string, kind: string) => ({
-  agent: { kind, session, process: '1-e2e', cwd: '/work/api', hint: null },
+  agent: { kind, session, process: '1-e2e', cwd: '/work/api' },
   name: 'whoami',
   arguments: {},
 })

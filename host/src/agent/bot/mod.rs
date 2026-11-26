@@ -436,25 +436,33 @@ impl Actor {
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
         if self.paused() {
-            // Paused while the host was down: nothing resumes (that would spend). The run that was going says
-            // interrupted, its queued runs are cancelled as a pause while running does, and what waits goes on
-            // when it is resumed.
+            // Paused while the host was down: nothing resumes now (that would spend). A thread's cut-off task is
+            // settled here: one of the bot's own waits again and starts only after an explicit resume, while a
+            // routine run or request ends as interrupted. The bot's own run that was going says interrupted, and
+            // every active routine run is cancelled as a pause while running does.
             self.set_inflight(false);
-            if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
-                let ran = crate::routines::Ran { timed_out: false, thread: None };
-                if let Err(error) = self.hub.routines.complete(
-                    &self.hub,
-                    &run.id,
-                    crate::routines::Status::Interrupted,
-                    Some("the bot is paused".into()),
-                    None,
-                    &ran,
-                ) {
-                    tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
+            if self.cfg.is_thread() {
+                self.turn_over(crate::chat::work::Outcome::Failed(
+                    crate::chat::work::Failure::Restart,
+                    crate::chat::work::CUT_OFF.into(),
+                ));
+            } else {
+                if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
+                    let ran = crate::routines::Ran { timed_out: false, thread: None };
+                    if let Err(error) = self.hub.routines.complete(
+                        &self.hub,
+                        &run.id,
+                        crate::routines::Status::Interrupted,
+                        Some("the bot is paused".into()),
+                        None,
+                        &ran,
+                    ) {
+                        tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
+                    }
                 }
-            }
-            if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
-                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+                if let Err(error) = self.hub.routines.cancel_for_pause(&self.hub.store, &self.cfg.id) {
+                    tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
+                }
             }
         } else if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
             self.active_routine = Some(run.id.clone());
@@ -530,8 +538,8 @@ impl Actor {
     /// The bot (or, for a thread, its bot) is paused: no turn of its starts, so nothing is spent.
     fn paused(&self) -> bool {
         match self.cfg.thread_of.as_deref() {
-            Some(owner) => self.hub.paused(owner),
-            None => self.cfg.paused,
+            Some(owner) => self.hub.paused(owner) || self.hub.pause.blocked(owner),
+            None => self.hub.paused(&self.cfg.id) || self.hub.pause.blocked(&self.cfg.id),
         }
     }
 
@@ -569,6 +577,8 @@ const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted 
 
 /// Shown in a paused bot's chat when a message of the user's reaches it: nothing runs until it is resumed.
 const PAUSED_NOTICE: &str = "This bot is paused. Resume it to respond.";
+/// A turn whose setup outlived the start of a pause: no prompt was written, so it ends as a paused start.
+const PAUSED_BEFORE_PROMPT: &str = "the bot was paused before its turn began";
 
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);

@@ -81,9 +81,13 @@ fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
     let hops = data["hops"].as_u64().and_then(|hops| u8::try_from(hops).ok()).unwrap_or(0);
     let recipient = visible_bot(hub, target);
     let name = recipient.as_ref().map_or_else(|_| hub.bot_name(target), |cfg| cfg.name.clone());
+    let target_epoch = {
+        let _transition = hub.pause.transition();
+        recipient.as_ref().map_or(0, |cfg| hub.pause.epoch(&cfg.id))
+    };
     hub.team.readmit(source);
     let back = Back::Local { sender: source.to_owned() };
-    let mut lifetime = MessageLifetime::new(hub, id, text, back, &name, hops);
+    let mut lifetime = MessageLifetime::new(hub, id, text, back, &name, target_epoch, hops);
     lifetime.entries = notices.iter().map(|notice| notice.id.clone()).collect();
     lifetime.admitted = true;
     let started = notices.iter().any(|notice| notice.data["status"] == "sent");

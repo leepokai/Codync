@@ -71,6 +71,8 @@ impl Hub {
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
+        // A pause and a resume are transactions: the older one finishes every effect before the newer one starts.
+        let _transition = self.pause.transition();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();
@@ -83,12 +85,46 @@ impl Hub {
             cfg.plain = row.config.plain;
             self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
-            self.store.save_bot(&cfg)?;
+            let pausing = !cfg.is_group() && !row.config.paused && cfg.paused;
+            if pausing {
+                // Before the flag is saved: no new prompt is admitted, and one already being written reaches the
+                // agent before this pause continues. Everything created before it is caught by the cleanup below.
+                self.pause.block(&id);
+            }
+            if let Err(error) = self.store.save_bot(&cfg) {
+                if pausing {
+                    self.pause.unblock(&id);
+                }
+                return Err(error);
+            }
             (row.config, cfg)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
         if !cfg.is_group() {
+            let pause_changed = before.paused != cfg.paused;
+            if pause_changed && !cfg.paused {
+                // Resume starts nothing from the pause: runs and due schedules that lived through it are discarded
+                // before admission opens. Routine work is held by the same transition while this runs.
+                if let Err(error) = self.routines.resume_after_pause(&self.store, &id) {
+                    tracing::error!(
+                        bot = %id, error = format!("{error:#}"),
+                        "couldn't settle a resumed bot's routine runs"
+                    );
+                }
+                self.pause.unblock(&id);
+            }
+            if pause_changed && cfg.paused {
+                // A pause reaches every worker, not only the bot's own actor: an active routine run (boxed or
+                // delivered by a webhook) is cancelled, and a request still waiting in the box is answered now.
+                if let Err(error) = self.routines.cancel_for_pause(&self.store, &id) {
+                    tracing::error!(
+                        bot = %id, error = format!("{error:#}"),
+                        "couldn't cancel a paused bot's routine runs"
+                    );
+                }
+                crate::chat::work::paused(self, &id);
+            }
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
@@ -97,6 +133,20 @@ impl Hub {
                 || cfg.thread_fallbacks != before.thread_fallbacks
             {
                 crate::chat::work::fallbacks_changed(self, &cfg);
+            }
+            if pause_changed {
+                // The bot's own actor learns from `Reconfigure` below; each live thread that reads its owner's
+                // pause (`Actor::paused`) is told separately, so a running thread turn stops now too.
+                for thread in crate::chat::work::of(&self.store, &id) {
+                    if self.has_actor(&thread.id)
+                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                    {
+                        tracing::warn!(
+                            thread = %thread.id, error = format!("{error:#}"),
+                            "couldn't give a thread its bot's pause"
+                        );
+                    }
+                }
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }

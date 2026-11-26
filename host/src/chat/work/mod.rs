@@ -178,6 +178,39 @@ impl Work {
     }
 }
 
+/// The bot was just paused: a request that had not started is answered now, and a routine task whose run the pause
+/// cancelled leaves the box. The threads already working it stop through their own actors.
+pub fn paused(hub: &Hub, bot: &str) {
+    let ids: Vec<String> = tasks::load(&hub.store, bot)
+        .into_iter()
+        .filter(|task| task.status == Status::Waiting)
+        .filter(|task| matches!(task.source, Source::Request { .. }))
+        .map(|task| task.id)
+        .collect();
+    let refused: Vec<crate::chat::team::BotRequest> = {
+        let mut requests = hub.work.requests.locked();
+        ids.iter().filter_map(|id| requests.remove(id)).collect()
+    };
+    if let Err(error) = tasks::change(hub, bot, |tasks| {
+        tasks.retain(|task| {
+            if task.status != Status::Waiting {
+                return true;
+            }
+            match &task.source {
+                Source::Request { .. } => !ids.contains(&task.id),
+                Source::Routine { run, .. } => hub.routines.waits(run),
+                Source::Bot | Source::User => true,
+            }
+        });
+        Ok(())
+    }) {
+        host_error!(hub, "couldn't clear a paused bot's box", bot, error = format!("{error:#}"));
+    }
+    for request in refused {
+        request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+    }
+}
+
 /// Looks over each box one of whose threads gave its seat up ([`Work::seat_freed`]), for as long as the host runs.
 fn look_when_seats_free(hub: &Arc<Hub>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };

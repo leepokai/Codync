@@ -111,6 +111,9 @@ impl Actor {
         hidden: bool,
         done_tx: &mpsc::UnboundedSender<Done>,
     ) -> Result<()> {
+        // A pause that begins during this setup invalidates the turn, even if a resume finishes before the setup
+        // reaches the prompt.
+        let pause_epoch = self.hub.pause.epoch(self.cfg.owner());
         self.task_source = work::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_thread() {
             // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
@@ -288,10 +291,6 @@ impl Actor {
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
         let prompt = json!([{"type": "text", "text": prompt}]);
-        if let Some(id) = &self.active_routine {
-            self.hub.routines.mark_started(&self.hub.store, id)?;
-            self.set_inflight(true);
-        }
         // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
         self.versions.before(&self.hub, &self.cfg, text).await;
         // From here what changes in its memory folders is the bot's, however it changed them: a thread's too, as
@@ -299,8 +298,20 @@ impl Actor {
         // thread started: what the user wants forgotten, the bot does in the chat.
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
+        // Admission is the last gate before the prompt. A pause that began during session setup has closed it, and
+        // one that begins after this point waits until the prompt has reached the agent before it returns.
+        let admission = self
+            .hub
+            .pause
+            .admit_prompt(self.cfg.owner(), pause_epoch)
+            .ok_or_else(|| anyhow!(super::PAUSED_BEFORE_PROMPT))?;
+        if let Some(id) = &self.active_routine {
+            self.hub.routines.mark_started(&self.hub.store, id)?;
+            self.set_inflight(true);
+        }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
+        drop(admission);
         if std::mem::take(&mut self.relay.handing_off) {
             self.handed_off(true);
         }

@@ -54,6 +54,13 @@ impl Actor {
                     self.cancel_turn().await;
                 }
             }
+            // A pause after the request was made refuses it here as well as in the sender: the owner may have been
+            // resumed before this actor handled the command, and no turn may start from work admitted inside a pause.
+            Cmd::BotRequest(request)
+                if self.paused() || self.hub.pause.epoch(self.cfg.owner()) != request.pause_epoch =>
+            {
+                request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+            }
             // A task in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
             Cmd::BotRequest(request) if work::boxed(&self.base) => {
                 work::add_request(&self.hub, &self.cfg.id, request);
@@ -100,6 +107,7 @@ impl Actor {
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
+            Cmd::Paused(paused) => self.pause_changed(paused, done_tx).await,
             Cmd::SwitchBack => self.switch_back().await,
             Cmd::CallEnded { call } => {
                 if self.turn_call.as_ref() == Some(&call) {
@@ -169,22 +177,10 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
-                // A pause stops the running turn (nothing more is spent), cancels its queued routine runs and
+                // A pause stops the running turn (nothing more is spent), cancels every run of its routines and
                 // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
                 if old.paused != self.base.paused {
-                    if self.base.paused {
-                        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
-                            tracing::error!(
-                                error = format!("{error:#}"),
-                                "couldn't cancel a paused bot's queued routines"
-                            );
-                        }
-                        self.cancel_turn().await;
-                        self.refuse_paused();
-                    } else {
-                        self.next_in_queue(done_tx).await;
-                        work::dispatch(&self.hub, &self.cfg.id);
-                    }
+                    self.pause_changed(self.base.paused, done_tx).await;
                 }
             }
             Cmd::Shutdown => return false,
@@ -519,12 +515,32 @@ impl Actor {
         }
     }
 
+    /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
+    /// lets what was already waiting go on. The bot's own actor cancels every active routine run (a boxed run and a
+    /// webhook delivery included); a thread does only its own part, since the owner's actor does the rest.
+    async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
+        if paused {
+            if !self.cfg.is_thread()
+                && let Err(error) = self.hub.routines.cancel_for_pause(&self.hub.store, &self.cfg.id)
+            {
+                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
+            }
+            self.cancel_turn().await;
+            self.refuse_paused();
+        } else {
+            self.next_in_queue(done_tx).await;
+            if !self.cfg.is_thread() {
+                work::dispatch(&self.hub, &self.cfg.id);
+            }
+        }
+    }
+
     /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. The user's messages go out
     /// cancelled with a notice (they don't wait to run on a later resume), a bot's request ends as not started,
     /// replies go to their notices, and a room's turn is dropped with why. Host turns (a task's report, the
     /// watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due routine run is
     /// cancelled instead (see below): its schedule continues from the next trigger after the resume.
-    fn refuse_paused(&mut self) {
+    pub(super) fn refuse_paused(&mut self) {
         let (kept, refused): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queue).into_iter().partition(|q| {
             !matches!(q, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
         });

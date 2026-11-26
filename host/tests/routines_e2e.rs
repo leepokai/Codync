@@ -236,6 +236,78 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
 }
 
 #[tokio::test]
+async fn pausing_a_bot_cancels_a_running_webhook_delivery_and_does_not_replay_it() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("paused-webhook").await;
+    let id = host.save(&bot, "paused webhook", "BLOCK[webhook]", json!([{"type":"webhook"}]), 30).await;
+    let credentials = host.call("routineWebhook", json!({"botId":bot,"id":id})).await;
+    let client = reqwest::Client::new();
+    let deliver = || async {
+        client
+            .post(credentials["localUrl"].as_str().unwrap())
+            .bearer_auth(credentials["key"].as_str().unwrap())
+            .header("x-delivery-id", "pause-delivery")
+            .json(&json!({"text":"hello"}))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()
+    };
+    let first = deliver().await;
+    assert_eq!(first["run"]["status"], "pending", "{first}");
+    host.wait_status(&bot, &id, "running").await;
+
+    host.call("updateBot", json!({"id":bot,"paused":true})).await;
+    let cancelled = host.wait_status(&bot, &id, "cancelled").await;
+    assert_eq!(cancelled["detail"], "the bot is paused");
+
+    // The sender's retry still finds its own run: a pause cancels it, and does not make the same delivery run later.
+    host.call("updateBot", json!({"id":bot,"paused":false})).await;
+    let again = deliver().await;
+    assert_eq!(again["run"]["id"], first["run"]["id"]);
+    assert_eq!(again["run"]["status"], "cancelled");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(host.wait_status(&bot, &id, "cancelled").await["status"], "cancelled");
+}
+
+#[tokio::test]
+async fn a_fresh_webhook_arriving_while_paused_is_refused_and_does_not_run_after_resume() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("paused-fresh-webhook").await;
+    let id = host.save(&bot, "paused fresh webhook", "PASS", json!([{"type":"webhook"}]), 30).await;
+    let credentials = host.call("routineWebhook", json!({"botId":bot,"id":id})).await;
+    let client = reqwest::Client::new();
+    let deliver = |delivery: &'static str| {
+        let request = client
+            .post(credentials["localUrl"].as_str().unwrap())
+            .bearer_auth(credentials["key"].as_str().unwrap())
+            .header("x-delivery-id", delivery)
+            .json(&json!({"text":"during pause"}));
+        async move { request.send().await.unwrap() }
+    };
+
+    host.call("updateBot", json!({"id":bot,"paused":true})).await;
+    let refused = deliver("fresh-pause").await;
+    assert_eq!(refused.status(), reqwest::StatusCode::CONFLICT);
+    assert!(
+        host.call("routines", json!({"botId":bot})).await["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|run| run["deliveryId"] != "fresh-pause"),
+        "a paused delivery was recorded as a run"
+    );
+
+    // A delivery after the resume is new work, not the paused one replayed.
+    host.call("updateBot", json!({"id":bot,"paused":false})).await;
+    let accepted: Value = deliver("after-pause").await.json().await.unwrap();
+    assert_eq!(accepted["run"]["deliveryId"], "after-pause");
+    host.wait_status(&bot, &id, "succeeded").await;
+}
+
+#[tokio::test]
 async fn interval_fires_without_a_client_and_invalid_schedules_fail() {
     let host = Host::start().await;
     let bot = host.bot("scheduled-bot").await;

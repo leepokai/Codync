@@ -356,6 +356,8 @@ pub(super) fn run_again(hub: &Arc<Hub>, bot: &str, task: &Task) -> Result<()> {
     match &task.source {
         Source::Bot | Source::User => Ok(()),
         Source::Routine { id, run } => {
+            // A retry is new work: it waits for any pause/resume settling rather than becoming work that pause left.
+            let _transition = hub.pause.transition();
             let again = hub.routines.run_again(hub, bot, id, run)?;
             tasks::change(hub, bot, |tasks| {
                 tasks.retain(|i| i.id != task.id);

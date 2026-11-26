@@ -548,7 +548,12 @@ fn waiting(hub: &Hub, id: &str, text: &str, status: RequestStatus) {
 fn requested(hub: &Arc<Hub>, network: &str, target: &BotConfig, m: &Message, back: Return) -> Result<()> {
     let peer = peer_name(hub, network, &m.from);
     let from = m.from.to_string();
-    let mut lifetime = MessageLifetime::new(hub, &m.id, &m.body, Back::Remote(back), &target.name, m.hops);
+    let target_epoch = {
+        let _transition = hub.pause.transition();
+        hub.pause.epoch(&target.id)
+    };
+    let mut lifetime =
+        MessageLifetime::new(hub, &m.id, &m.body, Back::Remote(back), &target.name, target_epoch, m.hops);
     let exchange = Exchange {
         request: &m.id,
         source: &from,

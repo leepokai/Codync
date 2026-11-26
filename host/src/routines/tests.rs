@@ -69,6 +69,35 @@ fn pause_cancels_pending_and_resume_recalculates_schedule() {
     assert!(routines.state.locked().routines[0].next_runs[0].unwrap() > now_ms());
 }
 #[test]
+fn pause_cancels_boxed_and_webhook_runs_too() {
+    let (store, routines) = seeded();
+    let routine = routine();
+    let mut boxed = new_run(&routine, Value::Null, None);
+    boxed.boxed = true;
+    let mut webhook = new_run(&routine, json!({"text": "delivered"}), Some("delivery-1".into()));
+    webhook.status = Status::Running;
+    let waiting = new_run(&routine, Value::Null, None);
+    routines.state.locked().runs.extend([boxed, webhook, waiting]);
+    routines.cancel_for_pause(&store, "bot").unwrap();
+    let state = routines.state.locked();
+    assert!(state.runs.iter().all(|run| run.status == Status::Cancelled && run.event.is_null()));
+    assert_eq!(state.runs[1].detail.as_deref(), Some("the bot is paused"));
+}
+
+#[test]
+fn resume_discards_runs_made_during_the_pause_and_advances_due_schedules() {
+    let (store, routines) = seeded();
+    let due = new_run(&routine(), json!({"source": "delivery"}), Some("during-pause".into()));
+    routines.state.locked().runs.push(due);
+    routines.state.locked().routines[0].next_runs[0] = Some(0);
+    routines.resume_after_pause(&store, "bot").unwrap();
+    let state = routines.state.locked();
+    assert!(state.runs[0].status == Status::Cancelled);
+    assert!(state.runs[0].event.is_null());
+    assert!(state.routines[0].next_runs[0].is_some_and(|at| at > now_ms()), "{:?}", state.routines[0].next_runs);
+}
+
+#[test]
 fn duplicate_delivery_is_idempotent_and_cross_bot_edits_fail() {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     let routines = Routines::default();

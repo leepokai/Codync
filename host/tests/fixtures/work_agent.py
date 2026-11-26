@@ -83,6 +83,15 @@ def log(name, value):
 def new_session():
     global count
     count += 1
+    # A test can hold session setup open by putting `setup-barrier` in the folder: this says when it is waiting and
+    # goes on once the file is gone.
+    barrier = pathlib.Path("setup-barrier")
+    if barrier.exists():
+        waiting = pathlib.Path("setup-barrier-waiting")
+        waiting.write_text("", encoding="utf-8")
+        while barrier.exists() and not cancel.wait(0.01):
+            pass
+        waiting.unlink(missing_ok=True)
     return f"s{os.getpid()}-{count}"
 
 

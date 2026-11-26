@@ -428,6 +428,9 @@ impl Routines {
     /// One delivery from the local endpoint or the cloud: checks the key or signature, then
     /// queues a run when the event matches. Retries of a delivery id return its first run.
     pub fn receive(&self, hub: &Hub, id: &str, headers: &hooks::Headers, body: &[u8]) -> Result<Value, Refused> {
+        // A delivery that arrives while its bot is paused is refused, and the same transaction keeps it from slipping
+        // through between the pause's save and its cleanup.
+        let _transition = hub.pause.transition();
         let r = self.state.locked().routines.iter().find(|r| r.id == id && !r.deleted).cloned();
         let Some(r) = r.filter(|r| hooks::authorized(&r.webhook_key, headers, body)) else {
             return Err(Refused::Unauthorized);
@@ -436,7 +439,7 @@ impl Routines {
         let Some(event) = hooks::event(headers, body)? else {
             return Ok(json!({"ping": true}));
         };
-        if !r.enabled {
+        if !r.enabled || hub.pause.blocked(&r.bot_id) || hub.paused(&r.bot_id) {
             return Err(Refused::Paused);
         }
         if !r.triggers.iter().any(|t| matches!(t, Trigger::Webhook) || t.matches(&event)) {

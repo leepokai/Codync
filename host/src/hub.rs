@@ -23,7 +23,9 @@ mod groups;
 mod lead;
 mod order;
 mod patch;
+mod pause;
 pub(crate) mod projects;
+pub use pause::Pause;
 mod reactions;
 mod sections;
 mod sync;
@@ -94,6 +96,8 @@ pub struct Hub {
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
     pub work: crate::chat::work::Work,
+    /// Pause transactions and prompt admission (see [`pause`]).
+    pub pause: Pause,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
@@ -169,6 +173,7 @@ impl Hub {
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
             work: crate::chat::work::Work::default(),
+            pause: Pause::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),

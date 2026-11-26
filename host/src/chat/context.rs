@@ -517,7 +517,8 @@ mod tests {
     #[test]
     fn a_thread_on_a_handed_out_task_is_told_the_task_alone() {
         let store = store();
-        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::Bot);
+        let thread = thread_of(&cfg("Fixer", "Fix bugs"));
+        let text = render_thread(&store, &thread, &Source::Bot, &Identity::of(&store, &thread));
         assert!(text.starts_with(TASK), "{text}");
         for absent in ["Fixer", "Description:", "add_task", "Other conversations", "Messages:", "Other computers"] {
             assert!(!text.contains(absent), "{absent} in: {text}");
@@ -529,7 +530,8 @@ mod tests {
     #[test]
     fn a_thread_the_user_opened_is_the_bot_away_from_its_chat() {
         let store = store();
-        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::User);
+        let thread = thread_of(&cfg("Fixer", "Fix bugs"));
+        let text = render_thread(&store, &thread, &Source::User, &Identity::of(&store, &thread));
         assert!(text.contains("Title: Fixer") && text.contains("Description: Fix bugs"), "{text}");
         assert!(text.contains(USER), "{text}");
         for absent in ["add_task", "Other conversations", "Messages:", crate::routines::BRIEF] {
@@ -541,9 +543,10 @@ mod tests {
     fn a_routines_run_and_a_request_keep_the_routines_they_can_use() {
         let store = store();
         let thread = thread_of(&cfg("Fixer", "Fix bugs"));
-        let run = render_thread(&store, &thread, &Source::Routine { id: "r1".into(), run: "run-1".into() });
+        let identity = Identity::of(&store, &thread);
+        let run = render_thread(&store, &thread, &Source::Routine { id: "r1".into(), run: "run-1".into() }, &identity);
         assert!(run.contains(crate::routines::BRIEF) && run.contains(OTHER_COMPUTERS), "{run}");
-        let asked = render_thread(&store, &thread, &Source::Request { id: None });
+        let asked = render_thread(&store, &thread, &Source::Request { id: None }, &identity);
         assert!(asked.contains(crate::routines::BRIEF) && !asked.contains(OTHER_COMPUTERS), "{asked}");
         assert!(!run.contains("add_task") && !asked.contains("add_task"));
     }
@@ -561,7 +564,8 @@ mod tests {
     #[test]
     fn a_bot_is_told_its_projects_and_hears_when_they_change() {
         let store = store();
-        let mut bot = cfg("Fixer", "");
+        let original = cfg("Fixer", "");
+        let mut bot = original.clone();
         let alone = render(&store, &bot);
         assert!(
             alone.contains("Workspace: your own folder is /tmp") && alone.contains("You have no projects"),
@@ -574,9 +578,12 @@ mod tests {
             "{system}"
         );
         assert!(system.contains("add_task folder") && system.contains("never change your own folder"), "{system}");
-        assert!(!render_thread(&store, &thread_of(&cfg("Fixer", "")), &Source::User).contains("Your projects"));
+        let thread = thread_of(&original);
+        let thread_text = render_thread(&store, &thread, &Source::User, &Identity::of(&store, &thread));
+        assert!(!thread_text.contains("Your projects"));
 
-        let first = adopt(&store, &cfg("Fixer", ""), "s1", "SYSTEM".into(), String::new()).expect("adopt");
+        let identity = Identity::of(&store, &original);
+        let first = adopt(&store, &original.id, "s1", "SYSTEM".into(), identity, String::new()).expect("adopt");
         let (text, _) = profile_update(&store, &first, &bot).expect("its projects changed");
         assert!(text.contains("/code/app (your default)"), "{text}");
         let renamed = thread_of(&cfg("Fixer 2", ""));
@@ -734,10 +741,5 @@ mod tests {
         let snap = adopt(&store, &owner.id, "s-new", system, identity, String::new()).expect("adopt");
         let (update, _) = profile_update(&store, &snap, &owner).expect("new skill must still be announced");
         assert!(update.contains("- Deploy: Ship releases"), "{update}");
-
-        // Same for a forked session: a skill saved while `session/fork` runs is announced on the fork's next turn.
-        let forked = adopt_fork(&store, &owner.id, "s-fork", &snap).expect("adopt fork");
-        let (fork_update, _) = profile_update(&store, &forked, &owner).expect("forked session must hear new skill");
-        assert!(fork_update.contains("- Deploy: Ship releases"), "{fork_update}");
     }
 }

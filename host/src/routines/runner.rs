@@ -257,6 +257,24 @@ impl Routines {
         })
     }
 
+    /// A pause is not the bot's Stop: it ends every run of the bot, including a run working in a box thread and a
+    /// webhook delivery whose sender was already acknowledged, and a run that came due while it is paused. The
+    /// routine's schedule keeps its next trigger, so resuming starts nothing from this pause.
+    pub fn cancel_for_pause(&self, store: &Store, bot: &str) -> Result<()> {
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            Ok(())
+        })
+    }
+
     pub fn disable_bot(&self, store: &Store, bot: &str) -> Result<()> {
         self.change(store, |s| {
             for r in &mut s.routines {

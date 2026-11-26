@@ -87,6 +87,7 @@ impl Actor {
                 let _ = reply.send(self.post_artifact(data));
             }
             Cmd::Stop => self.stop().await,
+            Cmd::Paused(paused) => self.pause_changed(paused, done_tx).await,
             Cmd::Permission { entry_id, option_id } => self.answer_permission(&entry_id, option_id).await,
             Cmd::Approve { title, detail, reply } => self.ask_approval(&title, &detail, reply),
             Cmd::NewSession => {
@@ -169,22 +170,12 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
-                // A pause stops the running turn (nothing more is spent), cancels its queued routine runs and
-                // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
+                // A pause stops the running turn (nothing more is spent) and closes what waits on it; resuming
+                // lets what stayed queued go on and looks over the box again. The host's pause transaction
+                // cancelled the bot's routine runs (`Hub::update_bot`), so a notification that arrives late
+                // cannot cancel a run admitted after a resume.
                 if old.paused != self.base.paused {
-                    if self.base.paused {
-                        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
-                            tracing::error!(
-                                error = format!("{error:#}"),
-                                "couldn't cancel a paused bot's queued routines"
-                            );
-                        }
-                        self.cancel_turn().await;
-                        self.refuse_paused();
-                    } else {
-                        self.next_in_queue(done_tx).await;
-                        work::dispatch(&self.hub, &self.cfg.id);
-                    }
+                    self.pause_changed(self.base.paused, done_tx).await;
                 }
             }
             Cmd::Shutdown => return false,
@@ -250,6 +241,22 @@ impl Actor {
             self.cancel_turn().await;
         } else {
             self.hub.workflows.finish(&self.hub, step_id, None, None, true);
+        }
+    }
+
+    /// Its bot's pause changed: a pause stops the running turn (nothing more is spent) and closes what waits on
+    /// it; a resume lets what stayed queued go on and, for the bot's own chat, looks the box over again. The host's
+    /// pause transaction cancelled the bot's routine runs, so this never does: a late notification would otherwise
+    /// cancel a run admitted after a resume.
+    pub(super) async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
+        if paused {
+            self.cancel_turn().await;
+            self.refuse_paused();
+        } else {
+            self.next_in_queue(done_tx).await;
+            if !self.cfg.is_thread() {
+                work::dispatch(&self.hub, &self.cfg.id);
+            }
         }
     }
 

@@ -114,6 +114,17 @@ impl Hub {
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
         if !cfg.is_group() {
+            let pause_changed = before.paused != cfg.paused;
+            if pause_changed && cfg.paused {
+                // A pause reaches every worker, not only the bot's own actor: an active routine run (boxed or
+                // delivered by a webhook) is cancelled, and a request still waiting in the box is answered now.
+                if let Err(error) = self.routines.cancel_for_pause(&self.store, &id) {
+                    tracing::error!(
+                        bot = %id, error = format!("{error:#}"),
+                        "couldn't cancel a paused bot's routine runs"
+                    );
+                }
+            }
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
@@ -122,6 +133,20 @@ impl Hub {
                 || cfg.thread_fallbacks != before.thread_fallbacks
             {
                 crate::chat::work::fallbacks_changed(self, &cfg);
+            }
+            if pause_changed {
+                // The bot's own actor learns from `Reconfigure` below; each live thread that reads its owner's
+                // pause (`Actor::paused`) is told separately, so a running thread turn stops now too.
+                for thread in crate::chat::work::of(&self.store, &id) {
+                    if self.has_actor(&thread.id)
+                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                    {
+                        tracing::warn!(
+                            thread = %thread.id, error = format!("{error:#}"),
+                            "couldn't give a thread its bot's pause"
+                        );
+                    }
+                }
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }

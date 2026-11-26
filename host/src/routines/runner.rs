@@ -285,7 +285,7 @@ impl Routines {
     /// A pause is not the bot's Stop: it ends the runs it names, including a run working in a box thread and a
     /// webhook delivery whose sender was already acknowledged, and a run that came due while it is paused. The
     /// routine's schedule keeps its next trigger, so resuming starts nothing from this pause.
-    pub fn cancel_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
         if ids.is_empty() {
             return Ok(());
         }

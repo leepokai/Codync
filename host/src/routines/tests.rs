@@ -200,7 +200,7 @@ fn a_pause_that_lands_after_a_resume_does_not_cancel_the_resumed_run() {
             Ok(())
         })
         .unwrap();
-    routines.cancel_for_pause(&store, &captured).unwrap();
+    routines.cancel_ids_for_pause(&store, &captured).unwrap();
 
     let runs = routines.state.locked();
     assert!(

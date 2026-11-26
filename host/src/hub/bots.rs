@@ -121,7 +121,7 @@ impl Hub {
         if !paused_runs.is_empty() {
             // A pause reaches every worker, not only the bot's own actor: an active routine run (boxed or delivered
             // by a webhook) is cancelled, and a request still waiting in the box is answered now.
-            if let Err(error) = self.routines.cancel_for_pause(&self.store, &paused_runs) {
+            if let Err(error) = self.routines.cancel_ids_for_pause(&self.store, &paused_runs) {
                 tracing::error!(
                     bot = %id, error = format!("{error:#}"),
                     "couldn't cancel a paused bot's routine runs"

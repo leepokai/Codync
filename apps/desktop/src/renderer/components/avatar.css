@@ -45,7 +45,7 @@
    top-right, over whatever the avatar draws, legible by its background halo. The badge family keeps
    the bottom corners — the agent's logo bottom-left, needs-you and unread bottom-right — and the
    crown the top-center, so this one sizes itself to the gap the crown leaves. Decorative: it never
-   takes a pointer, and the row's own marks announce Paused to a screen reader. */
+   takes a pointer, and the row's subtitle still says Paused to a screen reader. */
 .avatar-paused {
   position: absolute;
   top: 0;

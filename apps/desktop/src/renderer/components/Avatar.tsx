@@ -299,8 +299,8 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
   // The crown's width is named once: the mark's clearance math and the badge itself must stay
   // in sync for the 2px gap to hold. A paused bot's mark takes the top-right gap the lead's
-  // crown leaves; a gap too small for a readable mark skips it — the row's fade, name mark and
-  // preview still say Paused.
+  // crown leaves; a gap too small for a readable mark skips it — the row still fades and
+  // its subtitle still says Paused.
   const crownSize = Math.max(12, size * 0.34)
   const crown = bot.lead ? crownSize : 0
   const pausedMark = Math.min(Math.max(9, size * 0.3), size - (size / 2 + crown / 2) - 2)

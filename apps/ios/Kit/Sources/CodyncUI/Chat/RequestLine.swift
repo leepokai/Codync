@@ -30,7 +30,15 @@ enum Request {
     /// What an answered (or cancelled, or expired) approval ended in; nil while it waits or for any other entry.
     static func ending(_ e: Entry) -> String? {
         guard e.kind == "permission", let status = e.data.status, status != "pending" else { return nil }
-        return "\(status):\(e.data.options?.first { $0.optionId == e.data.selected }?.kind ?? "")"
+        let options = e.data.options ?? []
+        let chosen = options.first { $0.optionId == e.data.selected }
+        if let chosen {
+            let name = chosen.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if options.filter({ $0.kind == chosen.kind }).count > 1, !name.isEmpty {
+                return "\(status):\(chosen.kind):\(name)"
+            }
+        }
+        return "\(status):\(chosen?.kind ?? "")"
     }
 
     /// A request's detail as worth showing: without the Markdown fence agents wrap it in, nil when it is empty.

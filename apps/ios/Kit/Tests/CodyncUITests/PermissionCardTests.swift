@@ -20,6 +20,14 @@ import Testing
         data.selected = "session"
         data.options = options
         #expect(PermissionCard.outcome(data) == "Always allow for this session")
+
+        var foreverData = EntryData()
+        foreverData.status = "answered"
+        foreverData.selected = "forever"
+        foreverData.options = options
+        let sessionEntry = Entry(id: "p1", seq: 1, botId: "b1", rev: 1, kind: "permission", turn: 1, data: data, createdAt: 0, updatedAt: 0)
+        let foreverEntry = Entry(id: "p2", seq: 2, botId: "b1", rev: 1, kind: "permission", turn: 1, data: foreverData, createdAt: 0, updatedAt: 0)
+        #expect(Request.ending(sessionEntry) != Request.ending(foreverEntry))
     }
 
     @Test func singleAllowAlwaysKeepsLocalizedLabel() {

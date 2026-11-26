@@ -3,12 +3,14 @@ import type { Entry, PermissionOption } from '@shared/models'
 const hasDuplicateKind = (kind: string, options?: PermissionOption[]) =>
   (options?.filter((o) => o.kind === kind).length ?? 0) > 1
 
+const trimmedName = (name?: string | null) => (typeof name === 'string' ? name.trim() : '')
+
 /**
  * Label for a permission option: Codync's own words when each kind appears once, or the agent's own option name when
  * multiple options share a kind (e.g. Codex MCP sending two `allow_always` scopes).
  */
 export function permissionOptionLabel(o: PermissionOption, options: PermissionOption[] | undefined, tr: (s: string) => string): string {
-  const name = o.name.trim()
+  const name = trimmedName(o.name)
   if (hasDuplicateKind(o.kind, options) && name) return name
   switch (o.kind) {
     case 'allow_once':
@@ -20,7 +22,7 @@ export function permissionOptionLabel(o: PermissionOption, options: PermissionOp
     case 'reject_always':
       return tr('Never')
     default:
-      return o.name
+      return typeof o.name === 'string' ? o.name : ''
   }
 }
 
@@ -34,8 +36,9 @@ export function permissionOutcomeLabel(
   switch (status) {
     case 'answered': {
       const chosen = options?.find((o) => o.optionId === selected)
-      if (chosen && hasDuplicateKind(chosen.kind, options) && chosen.name.trim()) {
-        return chosen.name.trim()
+      const chosenName = trimmedName(chosen?.name)
+      if (chosen && hasDuplicateKind(chosen.kind, options) && chosenName) {
+        return chosenName
       }
       switch (chosen?.kind) {
         case 'allow_once':
@@ -47,7 +50,7 @@ export function permissionOutcomeLabel(
         case 'reject_always':
           return tr('Never allowed')
         default:
-          return chosen?.name ?? tr('Answered')
+          return (typeof chosen?.name === 'string' ? chosen.name : null) ?? tr('Answered')
       }
     }
     case 'cancelled':
@@ -73,8 +76,9 @@ export function settledAs(e: Entry): string | null {
   if (e.kind !== 'permission' || !e.data.status || e.data.status === 'pending') return null
   const options = e.data.options
   const chosen = options?.find((o) => o.optionId === e.data.selected)
-  if (chosen && hasDuplicateKind(chosen.kind, options) && chosen.name.trim()) {
-    return `${e.data.status}:${chosen.kind}:${chosen.name.trim()}`
+  const chosenName = trimmedName(chosen?.name)
+  if (chosen && hasDuplicateKind(chosen.kind, options) && chosenName) {
+    return `${e.data.status}:${chosen.kind}:${chosenName}`
   }
   return `${e.data.status}:${chosen?.kind ?? ''}`
 }

@@ -79,4 +79,15 @@ test('permission labels keep agent option names when multiple options share a ki
   const entry = (selected: string) =>
     ({ kind: 'permission', data: { status: 'answered', selected, options } }) as unknown as Entry
   assert.notEqual(settledAs(entry('session')), settledAs(entry('forever')))
+
+  const missingNames = [
+    { optionId: 'a1', name: null, kind: 'allow_always' },
+    { optionId: 'a2', name: undefined, kind: 'allow_always' },
+  ] as unknown as { optionId: string; name: string; kind: string }[]
+  assert.equal(permissionOptionLabel(missingNames[0], missingNames, tr), 'Always allow')
+  assert.equal(permissionOutcomeLabel('answered', 'a1', missingNames, tr), 'Always allowed')
+  assert.equal(
+    settledAs({ kind: 'permission', data: { status: 'answered', selected: 'a1', options: missingNames } } as unknown as Entry),
+    'answered:allow_always',
+  )
 })

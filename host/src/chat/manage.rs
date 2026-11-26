@@ -329,16 +329,25 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     .await;
     if validate_only {
         // A dry run answers the manager's "would this be valid?" without applying anything, without an
-        // approval card, and without a trace of a change: the audit below only records real mutations.
-        return match checked {
-            Ok(()) => Ok(json!({
+        // approval card, and without a trace of a change: the audit below only records real mutations. It makes
+        // the checks a save makes too, so a change the host would refuse later isn't reported valid.
+        let previewed = if fields.is_empty() {
+            Ok(())
+        } else {
+            let mut preview = Value::Object(fields.clone());
+            preview["id"] = id.clone().into();
+            hub.preview_update(&preview).map(|_| ())
+        };
+        let reason = checked.err().map(|e| e.to_string()).or_else(|| previewed.err().map(|e| e.to_string()));
+        return Ok(match reason {
+            Some(reason) => json!({"valid": false, "reason": reason, "applied": false}),
+            None => json!({
                 "valid": true,
                 "resolvedModel": model,
                 "resolvedBackend": target.backend,
                 "applied": false,
-            })),
-            Err(e) => Ok(json!({"valid": false, "reason": e.to_string(), "applied": false})),
-        };
+            }),
+        });
     }
     checked?;
     let detail = describe(&hub.store, &fields, &lines);

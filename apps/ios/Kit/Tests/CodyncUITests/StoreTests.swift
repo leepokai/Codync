@@ -593,6 +593,31 @@ private func windowEntry(_ id: String, seq: Int64, rev: Int64 = 1) -> Entry {
     return Entry(id: id, seq: seq, botId: "b1", rev: rev, kind: "agent", turn: 0, data: data, createdAt: 1, updatedAt: 1)
 }
 
+/// A fired schedule takes a new seq. The row has to move with it, or the delivered text stays among older messages.
+@MainActor @Test func aFiredScheduleMovesToItsDeliveryPlace() {
+    let (storage, suite) = context()
+    defer { storage.erase(); UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    defer { store.retire() }
+    var scheduled = windowEntry("later", seq: 2, rev: 1)
+    scheduled.kind = "user"
+    scheduled.turn = 1
+    scheduled.data.text = "later"
+    scheduled.data.status = "scheduled"
+    scheduled.data.final = nil
+    store.upsert(scheduled)
+    store.upsert(windowEntry("work", seq: 3, rev: 2))
+    var fired = scheduled
+    fired.seq = 4
+    fired.rev = 3
+    fired.turn = 4
+    fired.createdAt = 4
+    fired.data.status = "queued"
+    store.upsert(fired)
+    #expect(store.chat("b1").map(\.id) == ["work", "later"])
+}
+
 @MainActor @Test func windowRuleDropsOnlyUnknownEntriesBelowTheFloor() {
     let below = windowEntry("a", seq: 5)
     #expect(BotStore.isOutsideLoadedWindow(below, floor: 100, held: false))

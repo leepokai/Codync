@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
 import type { Entry } from '@shared/models'
 import type { HostEvent, HostTransport } from '../client/host-client.ts'
+import { heldOutside, waitingMessages } from '../views/chat/queued-messages.ts'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('@shared/')) return nextResolve(new URL(`../../shared/${specifier.slice(8)}.ts`, import.meta.url).href, context)
@@ -114,6 +115,31 @@ test('a held message that stops being scheduled leaves hello.held, and an older 
     entry: { ...held, rev: 2, data: { ...held.data, status: 'cancelled', removed: true } },
   })
   assert.deepEqual(store.hello?.held, [])
+})
+
+test('a schedule made below this window joins the tray and stays out of the transcript', () => {
+  const { store, receive } = storeWithAlerts()
+  const newer: Entry = { ...heldEntry('newer'), seq: 100, rev: 5, data: { text: 'newest in the loaded window', status: 'sent' } }
+  store.entries.set('b', [newer])
+  ;(store as unknown as { floors: Map<string, number> }).floors = new Map([['b', 100]])
+  ;(store as unknown as { hello: unknown }).hello = { version: '2.54.0', scheduleSend: true, held: [] }
+
+  const scheduled = heldEntry('from-elsewhere')
+  receive({ type: 'entry', entry: scheduled })
+  assert.deepEqual(store.hello?.held, [scheduled], 'another window\'s schedule is visible without reconnecting')
+  assert.deepEqual(store.entries.get('b'), [newer], 'it does not open a gap in history paging')
+  const shown = store.allEntries('b')
+  assert.deepEqual(
+    waitingMessages([...shown, ...heldOutside(shown, 'b', store.hello?.held)], false).map((e) => e.id),
+    ['from-elsewhere'],
+  )
+
+  receive({
+    type: 'entry',
+    entry: { ...newer, id: 'old-rewrite', seq: 4, rev: 6, data: { text: 'a reaction, not a schedule', status: 'sent' } },
+  })
+  assert.deepEqual(store.hello?.held?.map((e) => e.id), ['from-elsewhere'], 'an old rewrite is not a held message')
+  assert.deepEqual(store.entries.get('b'), [newer])
 })
 
 test('a fired schedule moves its existing row to the delivery end of the chat', () => {

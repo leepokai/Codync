@@ -317,16 +317,23 @@ export class BotMirror extends Observable {
     this.hello = { ...this.hello, held: held.filter((e) => e.id !== id) }
   }
 
-  /** A live entry event for a message `hello.held` carries: the tray's copy follows it — a new time or text on
-   * one still held (even below the chat's loaded window, where the event itself is not kept), and nothing at all
-   * once it fired or was taken back. */
+  /** A live entry event for a message the tray may be showing. One still scheduled joins `hello.held` even
+   * when this window has never seen it: another window can schedule a queued message that sits below the loaded
+   * history, and that event is not inserted into the transcript (it would open a gap for `loadOlder`). A new
+   * time or text replaces the copy. Once it fired or was taken back, the copy goes. */
   protected trackHeld(entry: Entry) {
-    const held = this.hello?.held
-    if (!this.hello || !held?.some((e) => e.id === entry.id)) return
-    this.hello =
-      entry.data.status === 'scheduled'
-        ? { ...this.hello, held: held.map((e) => (e.id === entry.id ? entry : e)) }
-        : { ...this.hello, held: held.filter((e) => e.id !== entry.id) }
+    if (!this.hello) return
+    const held = this.hello.held ?? []
+    const known = held.some((e) => e.id === entry.id)
+    if (entry.data.status === 'scheduled' && entry.data.removed !== true) {
+      this.hello = {
+        ...this.hello,
+        held: known ? held.map((e) => (e.id === entry.id ? entry : e)) : [...held, entry],
+      }
+      return
+    }
+    if (!known) return
+    this.hello = { ...this.hello, held: held.filter((e) => e.id !== entry.id) }
   }
 
   /** A bot's or group's chat, trace entries included. */

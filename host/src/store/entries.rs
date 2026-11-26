@@ -653,6 +653,14 @@ mod tests {
         assert!(fired.created_at > 1, "the chat shows when it was delivered, not when it was scheduled");
         let history = s.history("b1", i64::MAX, 10).unwrap();
         assert_eq!(history.last().map(|e| e.id.as_str()), Some(scheduled.id.as_str()));
+        // seq stays the history cursor: the next insert must be strictly newer, never a reused number.
+        let after = s.insert_entry(&main, EntryKind::User, 4, &json!({"text": "typed after delivery"})).unwrap();
+        assert!(after.seq > fired.seq, "the next message is newer than the delivered schedule");
+        let mut seqs: Vec<i64> = s.history("b1", i64::MAX, 10).unwrap().into_iter().map(|e| e.seq).collect();
+        let n = seqs.len();
+        seqs.sort_unstable();
+        seqs.dedup();
+        assert_eq!(seqs.len(), n, "delivery does not reuse a seq");
     }
 
     #[test]

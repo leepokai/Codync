@@ -7,7 +7,7 @@ use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
 use crate::chat::team::no_reply;
 use crate::chat::work::{self, Failure, Outcome, Source};
-use crate::hub::BotStatus;
+use crate::hub::{BotStatus, StoppedTurn};
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
@@ -199,6 +199,9 @@ impl Actor {
             }
             .into();
             r.started_at = Some(now_ms());
+            if let Some(stop) = &mut r.stopped_turn {
+                stop.latest = false;
+            }
             r.lane = Some(lane.clone());
             r.message = message;
         });
@@ -531,6 +534,7 @@ impl Actor {
             let _ = self.dreamer.send(memory::DreamEvent::Turn(turn));
         }
         let needs = goes_on.as_ref().and_then(Held::needs);
+        let stop = stopped.then(|| StoppedTurn { through_seq: self.hub.store.last_seq(&self.cfg.id), latest: true });
         self.hub.set_runtime(&self.id(), |r| {
             r.status = if needs.is_some() {
                 BotStatus::NeedsInput
@@ -541,6 +545,7 @@ impl Actor {
             };
             r.activity = needs.unwrap_or_default();
             r.started_at = None;
+            r.stopped_turn = stop.or(r.stopped_turn);
             r.lane = None;
             r.message = None;
             r.session = None;

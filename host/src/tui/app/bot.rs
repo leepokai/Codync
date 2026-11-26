@@ -90,6 +90,7 @@ pub struct Bot {
     pub status: Status,
     pub activity: String,
     pub started_at: Option<i64>,
+    pub turn_stopped: bool,
     pub unread: i64,
     /// How many of `unread` are cards waiting on the user: the badge turns amber.
     pub waiting: i64,
@@ -276,6 +277,7 @@ impl Bot {
             outside: status(&v["outside"]["status"]),
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
+            turn_stopped: v["stoppedTurn"]["latest"] == true,
             unread: v["unread"].as_i64().unwrap_or(0),
             waiting: v["waiting"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),

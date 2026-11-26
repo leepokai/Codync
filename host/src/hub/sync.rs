@@ -47,6 +47,7 @@ impl Hub {
         v["status"] = json!(rt.status);
         v["activity"] = rt.activity.clone().into();
         v["startedAt"] = rt.started_at.into();
+        v["stoppedTurn"] = json!(rt.stopped_turn);
         v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
         v["fastModeSupport"] = rt.fast_mode.as_str().into();
         if !cfg.is_group() {

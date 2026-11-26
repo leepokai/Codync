@@ -30,9 +30,10 @@ export interface IslandBot {
   status: BotStatus | string
   /** Its chat's own status: done and failed follow the chat's turns. */
   chat: BotStatus | string
+  turnStopped?: boolean
   /** True while the bot's running turn talks in another conversation (e.g. a group room). */
   away?: boolean
-  /** The newest final agent reply in this bot's own chat, or null if none. */
+  /** The newest final agent reply in this bot's own chat after its last stop. */
   reply?: IslandReply | null
   /** The agent it runs, as the app names it ("Claude Code"). */
   backend: string
@@ -160,9 +161,15 @@ export function islandMode(
   return summary.bots.some(isActive) ? 'overview' : 'empty'
 }
 
-/** The newest final agent reply in a bot's own chat (excluding calls and removed entries). */
-export function islandReply(entries: readonly Entry[], formatPreview: (text: string) => string = (t) => t): IslandReply | null {
-  const entry = entries.findLast((e) => e.kind === 'agent' && e.data.final === true && !e.data.call && !e.data.removed)
+/** The newest final reply after `afterSeq`, excluding calls and removed entries. */
+export function islandReply(
+  entries: readonly Entry[],
+  formatPreview: (text: string) => string = (t) => t,
+  afterSeq?: number,
+): IslandReply | null {
+  const entry = entries.findLast((e) =>
+    e.kind === 'agent' && e.data.final === true && !e.data.call && !e.data.removed && (afterSeq == null || e.seq > afterSeq),
+  )
   if (!entry) return null
   const raw =
     entry.data.text?.trim() ||
@@ -227,7 +234,7 @@ export function transitions(before: ReadonlyMap<string, BotTurnState>, bots: Isl
     const prev = before.get(b.ref)
     if (!prev || !inTurn(prev.chat) || prev.away) return []
     if (b.chat === 'idle') {
-      if (!b.reply || b.reply.id === prev.baselineReplyId) return []
+      if (b.turnStopped || !b.reply || b.reply.id === prev.baselineReplyId) return []
       return [{ kind: 'finished', ref: b.ref, text: b.reply.text || null }]
     }
     if (b.chat === 'error') {

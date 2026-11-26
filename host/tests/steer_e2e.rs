@@ -95,6 +95,61 @@ async fn a_steered_message_gets_its_reply_even_after_the_bot_used_send_message()
 }
 
 #[tokio::test]
+async fn stopped_turn_keeps_a_reply_and_marks_the_idle_bot_until_its_next_turn() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Sends", "steer_agent.py", "sends 60").await;
+    let reply = |e: &Value| e["data"]["final"] == true && e["data"]["text"] == "Before it joined";
+    turn_running(&host, &bot).await;
+    eventually("the bot sent a reply while working", Duration::from_secs(20), async || {
+        entries(&host, &bot).await.iter().any(reply)
+    })
+    .await;
+    let mut events = host.events().await;
+    host.call("stop", json!({"botId": bot})).await;
+    let stopped = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event["type"] == "bot" && event["bot"]["id"] == bot && event["bot"]["status"] == "idle" {
+                break event["bot"].clone();
+            }
+        }
+    })
+    .await
+    .expect("the stop reached the live stream");
+    assert_eq!(stopped["lastMessage"], "Before it joined");
+    let stop = &stopped["stoppedTurn"];
+    assert_eq!(stop["latest"], true, "the reply did not complete the turn: {stopped}");
+
+    let snapshot = host.snapshot().await;
+    assert_eq!(&common::bot(&snapshot, &bot)["stoppedTurn"], stop, "a reconnect sees the stop");
+    let sent = entries(&host, &bot).await.into_iter().find(reply).expect("the reply stays final in the chat");
+    assert!(stop["throughSeq"].as_i64().unwrap() >= sent["seq"].as_i64().unwrap());
+
+    host.call("send", json!({"botId": bot, "text": "Next turn"})).await;
+    eventually("the bot started its next turn", Duration::from_secs(20), async || {
+        host.requests(&bot, "session/prompt").len() == 2
+    })
+    .await;
+    let snapshot = host.snapshot().await;
+    let working = common::bot(&snapshot, &bot);
+    assert_eq!(working["status"], "working");
+    let previous_stop = json!({"throughSeq": stop["throughSeq"], "latest": false});
+    assert_eq!(working["stoppedTurn"], previous_stop);
+    let queued = host.call("send", json!({"botId": bot, "text": "Follow up"})).await;
+    assert_eq!(queued["entry"]["data"]["status"], "queued");
+    host.call("steer", json!({"botId": bot, "entryId": queued["entry"]["id"]})).await;
+    eventually("the follow-up finished", Duration::from_secs(20), async || idle(&host, &bot).await).await;
+    let snapshot = host.snapshot().await;
+    let finished = common::bot(&snapshot, &bot);
+    assert_eq!(finished["stoppedTurn"], previous_stop);
+    let text = finished["lastMessage"].as_str().unwrap();
+    assert!(text.starts_with("Got: ") && text.ends_with("Follow up"), "{text}");
+}
+
+#[tokio::test]
 async fn a_voice_note_sent_before_a_message_joined_keeps_earlier_text_in_the_trace() {
     if python_missing() {
         return;

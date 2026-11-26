@@ -45,6 +45,7 @@ pub struct Runtime {
     pub status: BotStatus,
     pub activity: String,
     pub started_at: Option<i64>,
+    pub stopped_turn: Option<StoppedTurn>,
     /// Where the running turn talks: its own chat or a group.
     pub lane: Option<Lane>,
     /// The user's message that started the running turn, typed in the bot's own chat; `None` for a turn a routine,
@@ -56,6 +57,15 @@ pub struct Runtime {
     pub fast_mode: codync_agent::config::FastModeSupport,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedTurn {
+    /// The chat's last entry when the turn stopped, kept across subsequent turns.
+    pub through_seq: i64,
+    /// True until the next turn starts.
+    pub latest: bool,
 }
 
 /// The bot runs on one of its fallbacks: which, since when, and why it left the agent before.
@@ -354,6 +364,7 @@ impl Hub {
         };
         if before.status != after.status
             || before.activity != after.activity
+            || before.stopped_turn != after.stopped_turn
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
             || before.agent_step != after.agent_step

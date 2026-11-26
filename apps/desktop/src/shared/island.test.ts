@@ -71,6 +71,34 @@ test('a bot that stops working is done only with a fresh own-chat reply, or fail
   ])
 })
 
+test('a stopped turn stays quiet even after sending a reply, and the next successful turn notifies', () => {
+  let states = nextTurnStates(null, [bot('a', 'idle')])
+  states = nextTurnStates(states, [bot('a', 'working')])
+  const reply = { id: 'e1', text: 'Sent before Stop' }
+  states = nextTurnStates(states, [bot('a', 'working', false, { reply })])
+
+  const stopped = [bot('a', 'idle', false, { reply, turnStopped: true })]
+  assert.deepEqual(transitions(states, stopped), [])
+  states = nextTurnStates(states, stopped)
+
+  const working = [bot('a', 'working', false, { reply })]
+  states = nextTurnStates(states, working)
+  assert.deepEqual(transitions(states, [bot('a', 'idle', false, { reply })]), [])
+  const finished = [bot('a', 'idle', false, { reply: { id: 'e2', text: 'New reply' } })]
+  assert.deepEqual(transitions(states, finished), [{ kind: 'finished', ref: 'a', text: 'New reply' }])
+})
+
+test('skipping the stopped summary cannot turn its reply into a later completion', () => {
+  const states = nextTurnStates(null, [bot('a', 'working')])
+  const sent = entry('e1', 'agent', { final: true, text: 'Sent before Stop' })
+  const throughSeq = sent.seq + 1
+  const after = (entries: Entry[]) => [bot('a', 'idle', false, { reply: islandReply(entries, undefined, throughSeq) })]
+  assert.deepEqual(transitions(states, after([sent])), [])
+
+  const fresh = { ...entry('e2', 'agent', { final: true, text: 'New reply' }), seq: throughSeq + 1 }
+  assert.deepEqual(transitions(states, after([sent, fresh])), [{ kind: 'finished', ref: 'a', text: 'New reply' }])
+})
+
 test('bot-to-bot, group-room, and no-reply turns never pop a stale chat preview (#588)', () => {
   const oldReply = { id: 'e-old', text: 'Old message X' }
   let states = nextTurnStates(null, [bot('a', 'idle', false, { detail: 'Old message X', reply: oldReply })])

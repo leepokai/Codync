@@ -75,6 +75,7 @@
     "event:bot.bot.skills": "array",
     "event:bot.bot.startedAt": "null",
     "event:bot.bot.status": "string",
+    "event:bot.bot.stoppedTurn": "null",
     "event:bot.bot.threadAgent": "null",
     "event:bot.bot.threadFallbacks": "array",
     "event:bot.bot.threadWorktrees": "bool",

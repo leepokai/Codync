@@ -180,7 +180,11 @@ impl App {
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working && new.status == Status::Idle && turn_replied(&old, &new) {
+        } else if old.status == Status::Working
+            && new.status == Status::Idle
+            && !new.turn_stopped
+            && turn_replied(&old, &new)
+        {
             self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
@@ -561,6 +565,29 @@ mod tests {
         app.host_version = "2.50.1".into();
         app.on_msg(Msg::Online(false));
         assert!(app.host_version.is_empty(), "the host that answers next may be another build");
+    }
+
+    #[test]
+    fn stopped_turn_with_a_reply_does_not_toast_as_done() {
+        let mut app = test_app();
+        app.upsert_bot(&json!({
+            "id": "a", "name": "Alpha", "status": "working", "startedAt": 200,
+            "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1,
+        }));
+        app.upsert_bot(&json!({
+            "id": "a", "name": "Alpha", "status": "idle", "stoppedTurn": {"throughSeq": 3, "latest": true},
+            "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1,
+        }));
+        assert!(app.toasts.is_empty(), "a stopped turn is not done");
+        assert_eq!(app.bots["a"].last_message, "Sent before Stop");
+
+        app.upsert_bot(&json!({"id": "a", "name": "Alpha", "status": "working", "startedAt": 300}));
+        app.upsert_bot(&json!({
+            "id": "a", "name": "Alpha", "status": "idle", "stoppedTurn": {"throughSeq": 3, "latest": false},
+            "lastAt": 310, "lastMessage": "New reply", "unread": 2,
+        }));
+        assert_eq!(app.toasts.len(), 1);
+        assert_eq!(app.toasts[0].text, "Alpha is done");
     }
 
     #[test]

@@ -96,9 +96,9 @@ import kotlinx.coroutines.CancellationException
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't complete the action." }
     }
-    DisposableEffect(threadId) {
-        threadId?.let(store::watchThread)
-        onDispose { threadId?.let(store::closeThread) }
+    DisposableEffect(bot.id, threadId) {
+        threadId?.let { store.watchThread(bot.id, it) }
+        onDispose { threadId?.let { store.closeThread(bot.id, it) } }
     }
     // What it put in the bot's chat, and the card it waits on, maybe further back than the rows loaded.
     val needsYou = task.status == WorkStatus.NeedsYou

@@ -11,6 +11,7 @@ import com.codync.android.core.MirrorSnapshot
 import com.codync.android.core.PendingSend
 import com.codync.android.core.SendStatus
 import com.codync.android.core.WireJson
+import com.codync.android.core.threadNamed
 import java.io.File
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
@@ -18,8 +19,9 @@ import kotlinx.serialization.json.jsonObject
 
 /** All entity writes, send reconciliation and the event cursor commit together. */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
-    SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, 3) {
+    SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, SCHEMA_VERSION) {
     companion object {
+        private const val SCHEMA_VERSION = 5
         /** Hidden rows read per chat row before a resident window stops. Keeps a tool-heavy chat bounded. */
         private const val RAW_PER_SHOWN = 10
         /** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
@@ -49,13 +51,20 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     }
     /** The conversation is a cache of the computer's: an older schema's is dropped and fetched again; unsent messages stay. */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion >= 3) {
+            // Routing metadata is stored beside the payload. Keep the cached conversation; a row whose missing route
+            // predates this schema falls back to one bounded structural scan of its payload.
+            if (oldVersion == 3) db.execSQL("ALTER TABLE entries ADD COLUMN thread_id TEXT")
+            if (oldVersion < 5) db.execSQL("ALTER TABLE entries ADD COLUMN routing_known INTEGER NOT NULL DEFAULT 0")
+            return
+        }
         db.execSQL("DROP TABLE IF EXISTS entries")
         db.execSQL("DROP TABLE IF EXISTS history")
         createConversation(db)
         setMeta(db, "rev", "0")
     }
     private fun createConversation(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL, thread_id TEXT, routing_known INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE INDEX entries_chat ON entries(bot_id, seq)")
         db.execSQL("CREATE INDEX entries_nonce ON entries(bot_id, nonce)")
         db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
@@ -68,6 +77,13 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
 
     /** Per chat, the oldest row the mirror held when this event stream began, set by its hello (iOS `windowFloors`). */
     private var streamFloors: Map<String, Long> = emptyMap()
+
+    /** Routing recovered for rows written before `thread_id` existed. Null is cached too: an unthreaded row is scanned once. */
+    private val routingThreads = HashMap<String, String?>()
+
+    /** Structural scans this mirror has performed; tests use it to prove a negative route is not rescanned. */
+    internal var routingScanAttempts = 0
+        private set
 
     /** A reconnect's snapshot is authoritative even after restoring an older database with the same host id. */
     @Synchronized fun beginIconConnection(): Long = transaction { db ->
@@ -252,10 +268,14 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         val revision = db.rawQuery("SELECT rev FROM entries WHERE id=?", arrayOf(entry.id)).use { if (it.moveToFirst()) it.getLong(0) else -1 }
         if (revision > entry.rev) return
         if (live && revision < 0 && streamFloors[entry.botId]?.let { entry.seq < it } == true) return
+        routingThreads.remove(entry.id)
         check(db.insertWithOnConflict("entries", null, ContentValues().apply {
             put("id", entry.id); put("bot_id", entry.botId)
             put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
             put("nonce", entry.clientNonce?.takeIf { entry.kind == "user" })
+            put("thread_id", entry.routingThreadId())
+            // A value written by this schema is authoritative even when null: only older rows need a structural scan.
+            put("routing_known", 1)
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the conversation update." }
         entry.clientNonce?.takeIf { entry.kind == "user" && it.isNotEmpty() }?.let { db.delete("pending", "nonce=?", arrayOf(it)) }
     }
@@ -318,13 +338,34 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     /**
      * [rows] with each kept approval read whole: its options and status sit past the head, so a card the computer still
      * waits on could not be answered from its stub. One row at a time, and the row stays for as long as its card does,
-     * so an approval may take a chat past its window budget by its own size. An approval whose row is gone stays a stub.
+     * so an approval may take a chat past its window budget by its own size. An approval whose row is gone stays a stub;
+     * one whose stored row cannot be read says so on its card instead of failing silently.
      */
     private fun answerable(db: SQLiteDatabase, rows: List<KeptRow>): List<KeptRow> = rows.map { row ->
         if (!row.entry.isApprovalStub) return@map row
-        val payload = storedPayload(row.entry.botId, row.entry.id) ?: return@map row
-        val entry = runCatching { WireJson.decodeFromString<Entry>(payload) }.getOrNull() ?: return@map row
-        KeptRow(entry, payload.length)
+        // Routing metadata the schema could not trust (too long, or a NUL that hides its real length) keeps the stub:
+        // the row is not brought back as an answerable card under a route nothing proved.
+        if (row.routingAmbiguous) return@map row
+        // Reading the whole value can fail before decoding (a cursor window too small for the row): that row must not
+        // abort the snapshot and hide every other chat either.
+        val payload = try {
+            storedPayload(row.entry.botId, row.entry.id)
+        } catch (error: Exception) {
+            android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
+            return@map KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+        } ?: return@map row
+        val decoded = try {
+            WireJson.decodeFromString<Entry>(payload)
+        } catch (error: Exception) {
+            android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
+            return@map KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+        }
+        // WireJson takes the last of two duplicate keys, so it can name a thread the strict walk rejected. A row whose
+        // decoded route disagrees stays the read-only stub the window built: no answers under an unproven thread, and
+        // it appears in the owner chat only. The checked route is what a decoded row keeps everywhere else.
+        val named = decoded.threadNamed()
+        if (named.routingThreadId() != row.routingThread) return@map row
+        KeptRow(named.withCheckedThread(row.routingThread), payload.length, row.routingThread)
     }
 
     /**
@@ -334,18 +375,50 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
      */
     private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<StoredRow>) -> T): T =
         db.rawQuery(
-            "SELECT length(payload), " +
+            "SELECT id, length(payload), " +
                 "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN payload ELSE substr(payload, 1, $PAYLOAD_HEAD_CHARS) END, " +
-                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN NULL ELSE substr(payload, -$PAYLOAD_TAIL_CHARS) END " +
+                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN NULL ELSE substr(payload, -$PAYLOAD_TAIL_CHARS) END, " +
+                // A routing id is small text. SQLite's length() counts characters before a NUL, so the byte copy is
+                // what proves there is none: without it a short prefix hides a multi-megabyte value and the projection
+                // overflows the cursor window before any row can recover. The value is bounded even when it passes.
+                "CASE WHEN thread_id IS NOT NULL AND length(thread_id) <= $MAX_ROUTING_ID_CHARS " +
+                "AND instr(CAST(thread_id AS BLOB), x'00') = 0 THEN substr(thread_id, 1, $MAX_ROUTING_ID_CHARS) ELSE NULL END, " +
+                "routing_known, " +
+                // Metadata this mirror cannot trust: no route, and the card keeps the stub instead of offering answers.
+                "CASE WHEN thread_id IS NOT NULL AND (length(thread_id) > $MAX_ROUTING_ID_CHARS " +
+                "OR instr(CAST(thread_id AS BLOB), x'00') > 0) THEN 1 ELSE 0 END " +
                 "FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
             arrayOf(bot),
         ).use { cursor ->
             read(generateSequence {
                 if (!cursor.moveToNext()) return@generateSequence null
-                val chars = cursor.getLong(0)
-                StoredRow(cursor.getString(1).orEmpty(), chars, if (chars > PER_MESSAGE_CHARS) cursor.getString(2).orEmpty() else null)
+                val id = cursor.getString(0)
+                val chars = cursor.getLong(1)
+                val head = cursor.getString(2).orEmpty()
+                val tail = if (chars > PER_MESSAGE_CHARS) cursor.getString(3).orEmpty() else null
+                val ambiguous = cursor.getInt(6) != 0
+                val stored = cursor.getString(4)?.takeIf { it.isNotBlank() && '\u0000' !in it && it.length <= MAX_ROUTING_ID_CHARS }
+                var routingKnown = ambiguous || stored != null || cursor.getInt(5) != 0
+                var route = if (ambiguous) null else stored
+                if (!routingKnown && chars > PER_MESSAGE_CHARS) {
+                    route = legacyRoutingThread(db, id)
+                    routingKnown = true
+                }
+                StoredRow(head, chars, tail, route, routingKnown, ambiguous)
             })
         }
+
+    /**
+     * [id]'s routing thread for an oversized row written before the route column. The direct `data.thread.id` is
+     * recovered by a structural walk of the whole payload, including escaped field names and a marker with a large body
+     * before it. There is no literal-text precheck: that missed escaped keys and made every negative row rescan. The
+     * result is kept for this mirror's lifetime, including null, so a preview, window and page scan a row only once.
+     */
+    private fun legacyRoutingThread(db: SQLiteDatabase, id: String): String? {
+        if (routingThreads.containsKey(id)) return routingThreads[id]
+        routingScanAttempts++
+        return storedRoutingThread(db, id).also { routingThreads[id] = it }
+    }
 
     private fun botIds(db: SQLiteDatabase): List<String> = db.rawQuery("SELECT DISTINCT bot_id FROM entries", null).use { cursor ->
         buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }

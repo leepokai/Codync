@@ -3,6 +3,7 @@ package com.codync.android
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
 import com.codync.android.core.threadNamed
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -59,12 +60,28 @@ data class Residency(
 
 /**
  * One stored payload. [text] is the whole row, or only its first [PAYLOAD_HEAD_CHARS] when [chars] exceeds
- * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null.
+ * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null. [routingThread] is its separately
+ * stored `data.thread.id`, or one structurally recovered from an older row.
  */
-internal class StoredRow(val text: String, val chars: Long, val tail: String? = null)
+internal class StoredRow(
+    val text: String,
+    val chars: Long,
+    val tail: String? = null,
+    val routingThread: String? = null,
+    /** Whether routing is authoritative: a stored value, or a legacy oversized row already structurally evaluated. */
+    val routingKnown: Boolean = false,
+    /** The stored route could not be trusted (over the id bound, or holding an embedded NUL): no route and no actions. */
+    val routingAmbiguous: Boolean = false,
+)
 
-/** A row the window kept, and the characters it counted toward the budget. */
-internal class KeptRow(val entry: Entry, val cost: Int)
+/** A row the window kept, and the characters it counted toward the budget. [routingThread] is the route the structural
+ * check established for it (a stored column, a full-row scan, or a walk of the visible payload), or null for none. */
+internal class KeptRow(
+    val entry: Entry,
+    val cost: Int,
+    val routingThread: String? = null,
+    val routingAmbiguous: Boolean = false,
+)
 
 /**
  * A chat's rows from its stored [newestFirst] payloads, oldest first: through the [target]-th chat row, until [budget]
@@ -91,27 +108,66 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
     while (shown < target && bytes < budget && rows.hasNext()) {
         val row = rows.next()
         val oversized = row.chars > PER_MESSAGE_CHARS
-        if (!oversized && row.chars <= budget - bytes) {
+        if (!oversized && !row.routingAmbiguous && row.chars <= budget - bytes) {
             // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0 (rows an earlier app saved from one).
-            val entry = WireJson.decodeFromString<Entry>(row.text).threadNamed()
-            decoded += KeptRow(entry, row.chars.toInt())
+            // A malformed stored row must not abort the whole snapshot: keep what its head identifies as a stub.
+            val checked = if (row.routingKnown) row.routingThread else routingThreadIn(row.text)
+            val read = try {
+                WireJson.decodeFromString<Entry>(row.text).threadNamed()
+            } catch (_: Exception) {
+                // This row fits in memory whole: a structural walk of it can find `data.thread` wherever it sits.
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, row.routingKnown)
+                    ?.threadNamed() ?: continue
+            }
+            // WireJson accepts duplicate object keys and other routing evidence the strict walk rejected. An approval
+            // whose decoded route disagrees keeps a non-actionable stub in the owner chat instead of offering answers
+            // under a thread nothing checked; every other row follows the checked route.
+            val entry = if (read.isApproval && read.routingThreadId() != checked) {
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, checked, true)?.threadNamed()
+                    ?: continue
+            } else read.withCheckedThread(checked)
+            decoded += KeptRow(entry, row.chars.toInt(), entry.routingThreadId())
             bytes += row.chars
             if (entry.isChat) shown++
             continue
         }
         // A row already in the window means a normal row that does not fit is the budget's edge.
-        if (decoded.isNotEmpty() && !oversized) break
-        val entry = boundedEntry(row.text.take(PAYLOAD_HEAD_CHARS), row.tail ?: row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars)
-            ?.threadNamed() ?: continue
+        if (decoded.isNotEmpty() && !oversized && !row.routingAmbiguous) break
+        val entry = boundedEntry(
+            row.text.take(PAYLOAD_HEAD_CHARS),
+            row.tail ?: row.text.takeLast(PAYLOAD_TAIL_CHARS),
+            row.chars,
+            row.routingThread,
+            row.routingKnown || row.routingAmbiguous,
+        )?.threadNamed() ?: continue
         val cost = entry.text.length
         if (decoded.isNotEmpty() && bytes + cost > budget) break
-        decoded += KeptRow(entry, cost)
+        decoded += KeptRow(entry, cost, entry.routingThreadId(), row.routingAmbiguous)
         bytes += cost
         if (entry.isChat) shown++
-        if (!oversized) break
+        if (!oversized && !row.routingAmbiguous) break
     }
     return decoded.reversed()
 }
+
+/**
+ * [this] with `data.thread` carrying [thread] as its id, or without a `thread` when the check found none. The strict
+ * walk decides where a row belongs: the decoder's own answer never adds a route back to a payload that had none.
+ */
+internal fun Entry.withCheckedThread(thread: String?): Entry {
+    val named = threadNamed()
+    val current = named.data["thread"] as? JsonObject
+    val routed = when {
+        thread == null -> JsonObject(named.data - "thread")
+        current == null -> JsonObject(named.data + ("thread" to buildJsonObject { put("id", thread) }))
+        else -> JsonObject(named.data + ("thread" to JsonObject(current + ("id" to JsonPrimitive(thread)))))
+    }
+    return named.copy(data = routed)
+}
+
+/** An approval row, whose answers must not be offered from a route the strict walk did not establish. */
+private val Entry.isApproval: Boolean
+    get() = kind == "permission"
 
 /**
  * The chats to preview, in order: those the reader opened ([priority]) first, then the rest.
@@ -143,12 +199,22 @@ internal fun previewsWithin(order: List<String>, budget: Long, read: (String) ->
 }
 
 /**
- * [head] is at most [PAYLOAD_HEAD_CHARS] of a payload, [tail] its last [PAYLOAD_TAIL_CHARS] where its times sit.
- * [fullLength] is the stored row, which is not copied.
+ * [head] is at most [PAYLOAD_HEAD_CHARS] of a payload, [tail] its last [PAYLOAD_TAIL_CHARS] where its times sit, and
+ * [storedThread] the routing metadata kept beside an oversized row. [fullLength] is the stored row, which is not copied.
  */
-private fun boundedEntry(head: String, tail: String, fullLength: Long): Entry? {
+private fun boundedEntry(
+    head: String,
+    tail: String,
+    fullLength: Long,
+    storedThread: String? = null,
+    routingKnown: Boolean = false,
+): Entry? {
     val fields = headFields(head)
     val seq = fields["seq"]?.toLongOrNull() ?: return null
+    // A stored value, or a completed scan of an older oversized row, is authoritative even when it found no thread.
+    // A legacy short row may still expose a complete direct marker in the visible payload; that fallback uses the same
+    // strict structural walk as the full-row scan, so nesting and duplicate ids cannot route it.
+    val thread = if (routingKnown) storedThread else storedThread ?: routingThreadIn(head)
     val times = tailTimes(tail)
     return Entry(
         id = fields["id"].orEmpty(),
@@ -160,6 +226,9 @@ private fun boundedEntry(head: String, tail: String, fullLength: Long): Entry? {
         data = buildJsonObject {
             put("text", storedStubText(fullLength))
             put("storedOnly", true)
+            // What a thread put in its bot's chat must stay there even when its row cannot be read: the warning card
+            // belongs in the affected thread, not only in the owner's main chat.
+            thread?.let { put("thread", buildJsonObject { put("id", it) }) }
         },
         createdAt = times["createdAt"] ?: 0L,
         updatedAt = times["updatedAt"] ?: 0L,
@@ -193,6 +262,21 @@ internal val Entry.isStoredStub: Boolean
  */
 internal val Entry.isApprovalStub: Boolean
     get() = isStoredStub && kind == "permission"
+
+/** The thread this entry belongs to (`data.thread.id`), stored beside its payload so routing never depends on field order. */
+internal fun Entry.routingThreadId(): String? =
+    ((data.threadNamed()["thread"] as? JsonObject)?.get("id") as? JsonPrimitive)
+        ?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() && it.length <= MAX_ROUTING_ID_CHARS }
+
+/** An approval stub whose stored row could not be read: it stays on screen, and says so, instead of looking answerable. */
+internal val Entry.approvalReadFailed: Boolean
+    get() = data[APPROVAL_READ_FAILED]?.jsonPrimitive?.booleanOrNull == true
+
+/** [this] approval stub marked with a read failure, keeping its stored text; the marker is never written back. */
+internal fun Entry.withApprovalReadFailure(): Entry =
+    if (approvalReadFailed) this else copy(data = JsonObject(data + (APPROVAL_READ_FAILED to JsonPrimitive(true))))
+
+private const val APPROVAL_READ_FAILED = "approvalReadFailed"
 
 /** Text to show for one decoded payload: the message, or a tool row's output. */
 internal fun Entry.storedDisplayText(): String {

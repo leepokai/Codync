@@ -271,8 +271,16 @@ internal fun String.storedChunkRanges(size: Int = STORED_CHUNK_CHARS): List<IntR
             break
         }
         var end = start + size
-        val lineBreak = lastIndexOf('\n', end - 1)
-        if (lineBreak >= start + size / 2) end = lineBreak + 1
+        // Search only this piece's second half. Searching the whole string each time rescans every earlier line
+        // on one huge line and makes the whole message quadratic.
+        val lowestBreak = start + size / 2
+        var lineBreak = -1
+        var i = end - 1
+        while (i >= lowestBreak) {
+            if (this[i] == '\n') { lineBreak = i; break }
+            i--
+        }
+        if (lineBreak >= lowestBreak) end = lineBreak + 1
         ranges += start until end
         start = end
     }

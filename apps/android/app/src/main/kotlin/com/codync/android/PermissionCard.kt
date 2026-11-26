@@ -155,7 +155,12 @@ internal val Entry.takesOwnWords: Boolean
         .padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(tr(approvalHeadline(entry.data.text("toolKind"))), style = Type.headline, color = Palette.text)
         Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", ""), style = Type.caption, color = Palette.tertiary)
-        Text(entry.text, style = Type.subheadline, color = Palette.secondary)
+        if (entry.approvalReadFailed) {
+            Text(tr("This approval couldn't be read on this phone. Check the computer to answer it."),
+                style = Type.subheadline, color = Palette.danger)
+        } else {
+            Text(entry.text, style = Type.subheadline, color = Palette.secondary)
+        }
     }
 }
 

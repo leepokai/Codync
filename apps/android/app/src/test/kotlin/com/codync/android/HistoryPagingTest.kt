@@ -4,8 +4,13 @@ import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -118,6 +123,85 @@ class HistoryPagingTest {
         assertTrue(kept.isStoredStub)
         assertTrue(kept.isApprovalStub)
         assertFalse(row(3, "user").isApprovalStub)
+    }
+
+    @Test fun `a malformed short approval becomes a readable stub instead of aborting the snapshot`() {
+        val approval = row(2, "permission").copy(data = buildJsonObject { put("title", "Edit"); put("status", "pending") })
+        val broken = WireJson.encodeToString(approval).dropLast(1)
+        val kept = newestWindow(sequenceOf(broken), 10, Long.MAX_VALUE).single()
+        assertEquals(2L, kept.seq)
+        assertTrue(kept.isStoredStub)
+        assertTrue(kept.isApprovalStub)
+    }
+
+    @Test fun `a host approval keeps its separately stored thread when the marker follows a large body`() {
+        val approval = row(2, "permission").copy(botId = "b", data = buildJsonObject {
+            put("detail", """A detail that mentions "thread":{"id":"not-the-thread"} and then keeps going: ${"D".repeat(40_000)}""")
+            put("title", "Edit")
+            put("status", "pending")
+            put("author", "b")
+            putJsonObject("thread") { put("id", "thread-1"); put("title", "A card from its thread") }
+            put("task", "task-1")
+        })
+        val broken = WireJson.encodeToString(approval).dropLast(1)
+        assertTrue(broken.length > PER_MESSAGE_CHARS)
+        // A marker in the tail is not routing evidence: without metadata the stub stays in the owner chat.
+        val unstored = newestWindow(sequenceOf(broken), 10, Long.MAX_VALUE).single()
+        assertTrue(unstored.isStoredStub)
+        assertEquals(null, unstored.data["thread"])
+        // Routing stored beside the payload (or structurally recovered in MirrorDatabase for an older row) is.
+        val kept = windowRows(sequenceOf(StoredRow(
+            broken.take(PAYLOAD_HEAD_CHARS),
+            broken.length.toLong(),
+            broken.takeLast(PAYLOAD_TAIL_CHARS),
+            "thread-1",
+        )), 10, Long.MAX_VALUE).single().entry
+        assertTrue(kept.isStoredStub)
+        assertTrue(kept.isApprovalStub)
+        val card = threadChatItems(emptyList(), listOf(kept.withApprovalReadFailure()), "thread-1", emptyList(), live = false)
+            .filterIsInstance<ChatItem.Message>().single().entry
+        assertEquals("e-2", card.id)
+        assertTrue(card.approvalReadFailed)
+        assertEquals("thread-1", ((card.data["thread"] as kotlinx.serialization.json.JsonObject)["id"] as kotlinx.serialization.json.JsonPrimitive).content)
+    }
+
+    @Test fun `only a nonblank string thread id is routing metadata`() {
+        fun routed(id: JsonElement?) = row(2, "permission").copy(data = buildJsonObject {
+            if (id == null) putJsonObject("thread") { put("title", "No id") }
+            else putJsonObject("thread") { put("id", id); put("title", "A thread") }
+        }).routingThreadId()
+
+        assertEquals("thread-1", routed(JsonPrimitive("thread-1")))
+        assertEquals(null, routed(JsonPrimitive("")))
+        assertEquals(null, routed(JsonPrimitive("   ")))
+        assertEquals(null, routed(JsonNull))
+        assertEquals(null, routed(buildJsonObject { put("nested", "thread-2") }))
+        assertEquals(null, routed(buildJsonArray { add(JsonPrimitive("thread-2")) }))
+        assertEquals(null, routed(JsonPrimitive(7)))
+        assertEquals(null, routed(JsonPrimitive(true)))
+        assertEquals(null, routed(null))
+        assertEquals(null, row(2, "permission").routingThreadId())
+    }
+
+    @Test fun `an unreadable approval keeps its thread and shows there as a warning`() {
+        val approval = row(2, "permission").copy(botId = "b", data = buildJsonObject {
+            putJsonObject("thread") { put("id", "thread-1") }
+            put("title", "Edit")
+            put("status", "pending")
+        })
+        val broken = WireJson.encodeToString(approval).dropLast(1)
+        val kept = newestWindow(sequenceOf(broken), 10, Long.MAX_VALUE).single()
+        assertTrue(kept.isStoredStub)
+        assertTrue(kept.isApprovalStub)
+        val thread = kept.data["thread"] as kotlinx.serialization.json.JsonObject
+        assertEquals("thread-1", (thread["id"] as kotlinx.serialization.json.JsonPrimitive).content)
+        val warning = kept.withApprovalReadFailure()
+        val card = threadChatItems(emptyList(), listOf(warning), "thread-1", emptyList(), live = false)
+            .filterIsInstance<ChatItem.Message>().single().entry
+        assertEquals("e-2", card.id)
+        assertTrue(card.approvalReadFailed)
+        assertTrue(card.isApprovalStub)
+        assertEquals("thread-1", ((card.data["thread"] as kotlinx.serialization.json.JsonObject)["id"] as kotlinx.serialization.json.JsonPrimitive).content)
     }
 
     @Test fun `a preview that does not fit is dropped whole and a later one still joins`() {

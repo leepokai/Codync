@@ -36,4 +36,23 @@ class StoredMessageTest {
         val ranges = text.storedChunkRanges(40)
         assertEquals(listOf(0 until 40, 40 until 80), ranges)
     }
+
+    @Test fun `a line break at either edge of the search half keeps exact pieces`() {
+        fun textWithBreak(at: Int) = "x".repeat(80).toCharArray().also { it[at] = '\n' }.concatToString()
+        for ((at, firstEnd) in listOf(19 to 40, 20 to 21, 39 to 40)) {
+            val text = textWithBreak(at)
+            val ranges = text.storedChunkRanges(40)
+            assertEquals("break at $at", firstEnd, ranges.first().last - ranges.first().first + 1)
+            assertEquals("break at $at", text, ranges.joinToString("") { text.substring(it) })
+        }
+    }
+
+    @Test(timeout = 5_000) fun `a giant single line is cut once in linear time`() {
+        val text = "e".repeat(2_000_000)
+        val ranges = text.storedChunkRanges()
+        assertEquals(500, ranges.size)
+        assertTrue(ranges.all { it.last - it.first + 1 == STORED_CHUNK_CHARS })
+        assertEquals(0, ranges.first().first)
+        assertEquals(text.length - 1, ranges.last().last)
+    }
 }

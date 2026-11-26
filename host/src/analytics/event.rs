@@ -72,6 +72,8 @@ pub enum Event {
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
     ContextCompacted,
     UsageReadFailed,
+    /// An agent's model list read from the agent (`agent::auth::model_cache`): `background` when a kept list answered.
+    ModelListFetched,
     SessionReset,
     PermissionAnswered,
     DecisionAsked,
@@ -292,6 +294,7 @@ impl Event {
             Self::OwnFolderSaveFailed => "own_folder_save_failed",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
+            Self::ModelListFetched => "model_list_fetched",
             Self::SessionReset => "session_reset",
             Self::PermissionAnswered => "permission_answered",
             Self::DecisionAsked => "decision_asked",

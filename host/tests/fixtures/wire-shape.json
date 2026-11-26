@@ -234,6 +234,7 @@
     "event:hello.network.assistantsAvailable": "bool",
     "event:hello.network.joined": "bool",
     "event:hello.network.networks": "array",
+    "event:hello.network.sessions": "array",
     "event:hello.rev": "number",
     "event:hello.scheduleSend": "bool",
     "event:hello.type": "string",

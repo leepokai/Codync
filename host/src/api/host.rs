@@ -232,7 +232,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"term": term})
         }
         "agentModels" => {
-            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?).await?
+            use crate::agent::auth::ModelListWanted;
+            let wanted = if b["refresh"] == true { ModelListWanted::New } else { ModelListWanted::Kept };
+            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?, wanted).await?
         }
         // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
         "agentAuth" if b["loginProfile"].is_string() => {

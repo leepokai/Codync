@@ -4,7 +4,7 @@ import { CardSection, ChoiceList, ChoicePicker, IconButton, Reveal, Spinner, Swi
 import { ModalHeader, useDismiss } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { ANY, beforeCeilings } from '../../lib/network-copy'
+import { ANY, beforeCeilings, levelsFor } from '../../lib/network-copy'
 import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
 import { network } from '../../store/network'
@@ -32,6 +32,15 @@ export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
   const others = net.computers.filter((c) => !c.me)
   const me = net.computers.find((c) => c.me)
   const from = others.find((c) => c.name === fromComputer)
+  const sessions = store.network?.sessions ?? []
+  const sessionAt = (id: string) => sessions.find((s) => s.address === id)
+  const isSession = (id: string) => sessionAt(id) !== undefined
+  const accessChoices = ACCESS.filter((a) => levelsFor(sessionAt(toAgent)).includes(a.id))
+
+  const pickTo = (id: string) => {
+    setToAgent(id)
+    if (!levelsFor(sessionAt(id)).includes(access)) setAccess('deny')
+  }
 
   const pickComputer = (name: string) => {
     setFromComputer(name)
@@ -65,7 +74,7 @@ export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
       />
       <VStack gap={16} className="network-sheet-body">
         <CardSection>
-          <ChoiceList selection={access} options={ACCESS} onChange={setAccess} />
+          <ChoiceList selection={access} options={accessChoices} onChange={setAccess} />
         </CardSection>
         <CardSection footer="The first rule that matches decides.">
           <ValueRow label="From computer">
@@ -75,7 +84,15 @@ export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
             <ChoicePicker selection={fromAgent} options={[{ id: ANY, label: 'Any bot' }, ...(from?.agents ?? []).map((a) => ({ id: a.id, label: a.name }))]} onChange={setFromAgent} />
           </ValueRow>
           <ValueRow label="To bot">
-            <ChoicePicker selection={toAgent} options={[{ id: ANY, label: 'Any bot here' }, ...(me?.agents ?? []).map((a) => ({ id: a.id, label: a.name }))]} onChange={setToAgent} />
+            <ChoicePicker
+              selection={toAgent}
+              options={[
+                { id: ANY, label: 'Any bot here' },
+                ...(me?.agents ?? []).filter((a) => !isSession(a.id)).map((a) => ({ id: a.id, label: a.name })),
+                ...sessions.map((s) => ({ id: s.address, label: s.address })),
+              ]}
+              onChange={pickTo}
+            />
           </ValueRow>
           <Switch on={first} onChange={setFirst}>Put it first</Switch>
         </CardSection>

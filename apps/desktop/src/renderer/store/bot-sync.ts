@@ -330,6 +330,9 @@ export class BotSync extends BotMirror {
       case 'usage':
         this.usage = event.usage
         break
+      case 'models':
+        this.keepModels(event.backend, event.loginProfile, event.models)
+        break
       case 'alert':
         if (!this.isReading(event.alert.botId)) this.onAlert?.(event.alert)
         break

@@ -156,7 +156,7 @@ test('an echo that leaves paused out is not shown as paused', async () => {
   assert.equal(store.lastError, 'Not applied on this computer')
 })
 
-test('an echo that omits rev still replaces the row', async () => {
+test('an echo with no rev updates paused and leaves the rest of the row', async () => {
   const { store, update, started } = pausingStore()
   const bot = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false })
   store.bots.set(bot.id, bot)
@@ -167,9 +167,27 @@ test('an echo that omits rev still replaces the row', async () => {
   update.resolve({ bot: { id: 'b', name: 'Renamed', paused: true } })
   await ticks()
 
-  assert.equal(store.bots.get('b')?.name, 'Renamed')
+  assert.equal(store.bots.get('b')?.name, 'Bee')
   assert.equal(store.bots.get('b')?.paused, true)
-  assert.equal(store.bots.get('b')?.rev, 0)
+  assert.equal(store.bots.get('b')?.rev, 5)
+})
+
+test('an echo with no rev after a newer rename keeps that name and takes the echo paused', async () => {
+  const { store, update, started } = pausingStore()
+  const bot = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false })
+  store.bots.set(bot.id, bot)
+
+  store.setPaused(bot, true)
+  await ticks()
+  assert.equal(started(), true)
+  store.bots.set('b', { ...store.bots.get('b')!, name: 'Newer', rev: 8 })
+
+  update.resolve({ bot: { id: 'b', name: 'Renamed', paused: true } })
+  await ticks()
+
+  assert.equal(store.bots.get('b')?.name, 'Newer')
+  assert.equal(store.bots.get('b')?.paused, true)
+  assert.equal(store.bots.get('b')?.rev, 8)
 })
 
 test('a pause echo whose rev is not older than the row replaces that row', async () => {

@@ -572,9 +572,11 @@ export class BotStore extends BotSync {
    * `paused` did not apply it (an older host ignores the field): the row keeps the true state.
    * A reply can arrive after the row has moved. Failure puts only `paused` back, and only while
    * that row is still there at the same `rev`, so a bot deleted or replaced meanwhile stays as it is.
-   * An echo is stored only when the row is still there and the echo's `rev`, if it has one, is not
-   * older than the row. A numeric echo that is already older does not raise "Not applied": the row
-   * moved on, and the stale body is not a failure of this pause.
+   * A successful echo replaces the row only when it carries a fresh numeric revision. An echo with
+   * no revision updates `paused` alone: without a rev there is no way to tell whether a newer event
+   * has already landed, so the rest of that body is an unverifiable write. A numeric echo that is
+   * already older does not raise "Not applied": the row moved on, and the stale body is not a
+   * failure of this pause.
    */
   setPaused(bot: Bot, paused: boolean) {
     const current = this.bots.get(bot.id)
@@ -594,8 +596,11 @@ export class BotStore extends BotSync {
       const row = echoed && typeof echoed.id === 'string' ? this.bots.get(bot.id) : undefined
       const echoedRev = echoed && typeof echoed.rev === 'number' ? echoed.rev : undefined
       const stale = !!row && echoedRev !== undefined && echoedRev < row.rev
-      if (row && !stale && (echoedRev === undefined || echoedRev >= row.rev)) {
+      if (row && echoed && echoedRev !== undefined && !stale) {
         this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
+      } else if (row && echoedRev === undefined) {
+        if (typeof echoed?.paused === 'boolean') this.bots.set(bot.id, { ...row, paused: echoed.paused })
+        else restorePaused()
       } else if (!row) restorePaused()
       if (!stale && !pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
       this.changed()

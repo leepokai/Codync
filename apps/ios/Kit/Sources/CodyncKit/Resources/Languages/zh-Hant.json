@@ -1771,6 +1771,7 @@
   "Unmute": "取消靜音",
   "Update Codync on your computer to see this bot's memory.": "請在電腦上更新 Codync，才能看到這個 Bot 的記憶。",
   "Update Codync on {host}": "在 {host} 上更新 Codync",
+  "Update Codync on {computer} to apply models safely": "請在 {computer} 上更新 Codync，以便安全地套用模型。",
   "Update this app": "更新此應用程式",
   "Update now": "立即更新",
   "Update Codync": "更新 Codync",

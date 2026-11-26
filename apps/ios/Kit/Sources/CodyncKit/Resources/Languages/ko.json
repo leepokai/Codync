@@ -1771,6 +1771,7 @@
   "Unmute": "음소거 해제",
   "Update Codync on your computer to see this bot's memory.": "이 봇의 기억을 보려면 컴퓨터의 Codync를 업데이트하세요.",
   "Update Codync on {host}": "{host}의 Codync 업데이트",
+  "Update Codync on {computer} to apply models safely": "{computer}에서 Codync를 업데이트해야 모델을 안전하게 적용할 수 있습니다.",
   "Update this app": "이 앱 업데이트",
   "Update now": "지금 업데이트",
   "Update Codync": "Codync 업데이트",

@@ -191,7 +191,7 @@ connection-request API flows. These checks do not authenticate real third-party 
 
 Extensions is an entry of the window's rail (`square.grid.2x2`) and a page of the window:
 the Extensions screen of one computer (the selected bot's, or this one). With several
-computers online its title has the computer beside it as a filled capsule (its badge, its name and a menu of the others; one computer: the capsule without the menu), and each computer heading in the
+computers online its title, led by the rail's icon (`pageIcon('extensions')`), has the computer beside it as a filled capsule (its badge, its name and a menu of the others; one computer: the capsule without the menu), and each computer heading in the
 roster carries its own Extensions button (always shown, while that computer is reachable),
 which opens the page on that computer.
 

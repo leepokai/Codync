@@ -109,10 +109,8 @@ export function MarketplaceView({ computer, focus = null }: { computer: Computer
     <div className="market-heading">
       {/* Everything here lives on one computer: which, in a capsule beside the title, its menu the others. */}
       <HStack gap={10} shrink className="market-heading-titles">
-        <HStack gap={10}>
-          <Icon name={pageIcon('extensions')} size={26} weight="medium" />
-          <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
-        </HStack>
+        <Icon name={pageIcon('extensions')} size={26} weight="medium" />
+        <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
         {computer ? (
           <ChoicePicker
             selection={computer.selection}

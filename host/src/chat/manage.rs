@@ -336,7 +336,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         } else {
             let mut preview = Value::Object(fields.clone());
             preview["id"] = id.clone().into();
-            hub.preview_update(&preview).map(|_| ())
+            // These checks stat the workspace folder. Off the async worker, as `update_bot` is below.
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || hub.preview_update(&preview).map(|_| ())).await?
         };
         let reason = checked.err().map(|e| e.to_string()).or_else(|| previewed.err().map(|e| e.to_string()));
         return Ok(match reason {

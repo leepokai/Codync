@@ -153,7 +153,7 @@ mod tests {
     use crate::remote::identity::Identity;
     use crate::store::Store;
 
-    /// The Model Manager read the default login's catalog, then another device chose a named login
+    /// The Bot Manager read the default login's catalog, then another device chose a named login
     /// before its update arrived. Compare-and-save under `emit_lock` must preserve that newer choice.
     #[test]
     fn a_stale_expected_login_profile_cannot_restore_the_old_login_or_model() {

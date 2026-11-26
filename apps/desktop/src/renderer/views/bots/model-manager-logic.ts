@@ -139,7 +139,7 @@ export const rowModelPath = (bot: { backend?: unknown; model?: unknown }, agentN
   return `${agent}->${bot.model.trim()}`
 }
 
-/** The Model Manager sheet's smallest usable size: every control reachable, list still scrollable. */
+/** The Bot Manager sheet's smallest usable size: every control reachable, list still scrollable. */
 export const SHEET_MIN = { width: 480, height: 420 } as const
 
 /** A dragged or re-measured sheet size, clamped to the bounds and the main window. */

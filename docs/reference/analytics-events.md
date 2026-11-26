@@ -72,7 +72,7 @@ host answers and sends it once the host is up.
 | `kofi_invite_answered` | host `track` (desktop) | A Ko-fi invitation was opened, which ends them on this device, or put off with *Not now* (the terminal UI only shows the link) | `ask`, `opened` |
 | `desktop_notifications_set` | host `track` (desktop) | System notifications were turned on or off in Settings → General ([desktop notifications](../design/push-and-live-activity.md#desktop-app)) | `on` |
 | `desktop_notification_opened` | host `track` (desktop) | A system notification was clicked, opening its chat | `kind` (`done`/`needs_input`/`failed`) |
-| `model_manager_applied` | host `track` (desktop) | The Model Manager applied one agent and model to the checked bots ([Model Manager](../features/model-manager.md)) | `requested`, `applied`, `failed` (counts; a skipped bot whose computer lacks the model counts in `failed`) |
+| `model_manager_applied` | host `track` (desktop) | The Bot Manager's apply: one agent and model applied to the checked bots ([Bot Manager](../features/bot-manager.md)) | `requested`, `applied`, `failed` (counts; a skipped bot whose computer lacks the model counts in `failed`) |
 | `whats_new_shown` | host `track` (desktop, TUI), iOS, Android | The What's new window is on screen after an update to a release with an announcement ([What's new](../features/whats-new.md)); `app_version` says which | — |
 | `panel_split` | host `track` (desktop) | The details panel was split into two panes, or joined back | `on` |
 | `panel_maximized` | host `track` (desktop) | The details panel took the conversation's place, or was restored | `on` |

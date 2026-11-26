@@ -199,7 +199,7 @@ pub enum Reported {
     DesktopNotificationOpened {
         kind: AlertKind,
     },
-    /// The Model Manager applied one agent and model to the bots the user checked (desktop).
+    /// The Bot Manager's apply: one agent and model applied to the bots the user checked (desktop).
     ModelManagerApplied {
         requested: u32,
         applied: u32,

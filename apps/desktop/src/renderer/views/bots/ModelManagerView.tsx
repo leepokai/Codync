@@ -62,7 +62,7 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
     <Sheet open onClose={onClose} width={size.width} height={size.height}>
       <VStack gap={12} className="model-manager">
         <HStack gap={8} className="model-manager-head">
-          <Text size="body" tone="text" className="model-manager-title">{tr('Model Manager')}</Text>
+          <Text size="body" tone="text" className="model-manager-title">{tr('Bot Manager')}</Text>
           <Spacer />
           <IconButton title={tr('Close')} icon="xmark" size={28} onClick={onClose} />
         </HStack>

@@ -214,7 +214,7 @@ pub enum Event {
     DesktopNotificationsSet,
     /// A desktop system notification was clicked, opening its chat.
     DesktopNotificationOpened,
-    /// The Model Manager applied one agent and model to the bots the user checked (desktop).
+    /// The Bot Manager's apply: one agent and model applied to the bots the user checked (desktop).
     ModelManagerApplied,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,

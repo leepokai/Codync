@@ -3,8 +3,8 @@ import { api, attach, setPref, steerBot } from './sandbox.ts'
 
 type Hello = { backends: { id: string; name: string; available?: boolean; installed?: boolean }[] }
 
-/** The Model Manager drives the shared picker and applies to the checked bots, on the real sandbox app. */
-test('the Model Manager window opens from the header, filters, checks and applies', async () => {
+/** The Bot Manager drives the shared picker and applies to the checked bots, on the real sandbox app. */
+test('the Bot Manager window opens from the header, filters, checks and applies', async () => {
   test.setTimeout(180_000)
   const { browser, page } = await attach()
   // A sandbox with no saved account covers the window with the welcome; mark the choice made, the
@@ -23,8 +23,8 @@ test('the Model Manager window opens from the header, filters, checks and applie
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)
 
-  const nameA = `Model manager e2e A ${Date.now()}`
-  const nameB = `Model manager e2e B ${Date.now()}`
+  const nameA = `Bot manager e2e A ${Date.now()}`
+  const nameB = `Bot manager e2e B ${Date.now()}`
   const created: string[] = []
   try {
     const { backends } = await api<Hello>(page, 'hello', {})
@@ -36,8 +36,8 @@ test('the Model Manager window opens from the header, filters, checks and applie
       created.push((await steerBot(page, nameB, 1)).id)
     })
 
-    await test.step('open the Model Manager from the header button', async () => {
-      await page.locator('button[title="Model Manager"]').first().click()
+    await test.step('open the Bot Manager from the header button', async () => {
+      await page.locator('button[title="Bot Manager"]').first().click()
       const sheet = page.locator('.model-manager')
       await expect(sheet).toBeVisible()
       // The top section is the shared ModelPicker, not a copy: the same row trigger the editor shows.

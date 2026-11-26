@@ -1,4 +1,4 @@
-# Model Manager
+# Bot Manager
 
 One agent, one model and that model's settings applied to many bots at once, on every computer the
 account reaches. Desktop app only for now: batch swapping is a desktop-shaped workflow, and each

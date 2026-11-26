@@ -291,7 +291,7 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  // The Model Manager ignores the sidebar's computer filter: it always sees every computer's bots.
+  // The Bot Manager ignores the sidebar's computer filter: it always sees every computer's bots.
   const fullRoster = useComputerRoster(app, new Set(app.computers.map((c) => c.id)))
   // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
   const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
@@ -581,7 +581,7 @@ function ChatSplitView() {
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
-                  <IconButton title="Model Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
+                  <IconButton title="Bot Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
                   <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {list.add}

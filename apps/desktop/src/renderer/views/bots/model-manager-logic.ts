@@ -2,7 +2,7 @@ import type { RosterItem } from '../../store/app-model'
 import { refKey } from '../../store/bot-ref.ts'
 import { trNow } from '../../lib/l10n.ts'
 import { MODEL_PATH_JOIN } from '../../../shared/model-path.ts'
-import type { AgentModels } from './agent-models'
+import type { AgentModels } from '@shared/agent-models'
 
 /** One agent, one model and its options, applied to every bot the user checked. */
 export interface ApplyPlan {

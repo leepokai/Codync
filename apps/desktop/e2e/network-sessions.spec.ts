@@ -40,7 +40,12 @@ test("the Network page lists this computer's coding agents, and a rule can only 
     await expect(sheet.locator('.choice-row')).toHaveCount(2)
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
-    await expect(api(page, 'setNetworkRules', { network: made, rules: [{ fromComputer: '*', fromAgent: '*', toAgent: codex.address, access: 'ask' }] })).rejects.toThrow()
+    // One sent anyway (an older rule, the API) is saved as Deny.
+    const saved = await api<View>(page, 'setNetworkRules', {
+      network: made,
+      rules: [{ fromComputer: '*', fromAgent: '*', toAgent: codex.address, access: 'ask' }],
+    })
+    expect(saved.networks.find((n) => n.id === made)?.rules[0]).toMatchObject({ toAgent: codex.address, access: 'deny' })
   } finally {
     if (made) await api(page, 'networkLeave', { network: made }).catch(() => {})
     await openPage(page, 'Bots').catch(() => {})

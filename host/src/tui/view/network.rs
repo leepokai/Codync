@@ -199,6 +199,10 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
     if all.is_empty() {
         return y.saturating_sub(1);
     }
+    // The heading only with room for a session under it, above what keeps its place below.
+    if body.bottom().saturating_sub(y + below) < 2 {
+        return y.saturating_sub(1);
+    }
     line(buf, body, &mut y, &tr("Coding agents"), t.bold);
     let room = usize::from(body.bottom().saturating_sub(y + below));
     // The last row says how many more when they don't all fit.

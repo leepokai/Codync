@@ -178,6 +178,11 @@ impl Live {
         if let Some(live) = Self::of_busy(s.id().and_then(|id| codync_network::sessions::busy(s.kind, id))) {
             return Some(live);
         }
+        // Claude Code lists every session it runs: one it no longer lists has ended, even when its
+        // MCP server's process lives on in another session (after `/clear`).
+        if s.kind == AgentKind::ClaudeCode && s.id().is_some() && cfg!(unix) {
+            return Some(Self::Offline);
+        }
         let (pid, started) = s.running.as_ref()?;
         // ponytail: one `ps` per session; one `ps -A` for all if listings grow long.
         let now = crate::dev_servers::process_start(*pid);

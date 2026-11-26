@@ -24,7 +24,10 @@ const KV_SESSIONS: &str = "network_sessions";
 const KV_MAIL: &str = "network_mail";
 /// Letters kept per session, oldest dropped first.
 const MAIL_MAX: usize = 100;
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+const HOUR_MS: i64 = 60 * 60 * 1000;
+const DAY_MS: i64 = 24 * HOUR_MS;
+/// Pushes that may wake one session in an hour.
+pub const WAKES_PER_HOUR: usize = 12;
 /// A session keyed by its process is forgotten this long after its last call.
 const TEMPORARY_FOR_MS: i64 = DAY_MS;
 /// A session with an id and no mail waiting is forgotten this long after its last call.
@@ -119,9 +122,10 @@ pub struct Session {
     #[serde(default)]
     pub named: Option<String>,
     pub seen: i64,
-    /// Its agent ran our hook (`codync-host network hook`): it hears of its mail at its next step.
+    /// How it hears of its mail: raised by its agent's hook (turn) or its MCP server's wait (push),
+    /// never lowered.
     #[serde(default)]
-    pub hooked: bool,
+    pub tier: Tier,
     /// The newest letter a hook already told it of.
     #[serde(default)]
     pub announced: Option<String>,
@@ -130,14 +134,17 @@ pub struct Session {
     pub running: Option<(u32, String)>,
 }
 
-/// How a session hears of its mail.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// How a session hears of its mail, from least to most direct.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// It reads its mail when it calls `check_inbox`; every tool result says how many wait.
+    #[default]
     Pull,
     /// Its hook tells it at its next tool call or when its turn ends.
     Turn,
+    /// Its MCP server tells it as soon as a letter comes, starting a turn when it is idle.
+    Push,
 }
 
 /// What a hook of a session finds.
@@ -147,8 +154,8 @@ pub struct Hooked {
     pub unread: usize,
     /// The newest of them, which the hook confirms once it told of them (`told`).
     pub newest: Option<String>,
-    /// The session's first hook: it has the turn tier now.
-    pub first: bool,
+    /// This call raised its tier.
+    pub raised: bool,
 }
 
 /// Whether a session's agent runs now, as the apps show it: working or idle where its agent says
@@ -201,10 +208,6 @@ pub struct Listed {
 }
 
 impl Session {
-    pub fn tier(&self) -> Tier {
-        if self.hooked { Tier::Turn } else { Tier::Pull }
-    }
-
     /// The agent's own id for it; `None` for a temporary one.
     pub fn id(&self) -> Option<&str> {
         if self.temporary { None } else { self.key.split_once(':').map(|(_, id)| id) }
@@ -241,6 +244,25 @@ pub struct Sessions {
     pub arrived: tokio::sync::Notify,
     /// What each session's agent was doing when last looked at, by key, and when (Unix ms); never kept.
     live: Mutex<HashMap<String, (Live, i64)>>,
+    /// Each session's wakes by a push.
+    wakes: Mutex<HashMap<String, Wakes>>,
+}
+
+/// When a session was woken by a push within the hour, and the letter a push last couldn't wake it for.
+#[derive(Default)]
+struct Wakes {
+    at: Vec<i64>,
+    limited: Option<String>,
+}
+
+/// Whether a push may wake a session for a letter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wake {
+    Allowed,
+    /// Woken `WAKES_PER_HOUR` times this hour: the first refusal for this letter.
+    Limited,
+    /// Refused for this letter already.
+    StillLimited,
 }
 
 impl Sessions {
@@ -273,7 +295,7 @@ impl Sessions {
                 temporary: caller.session.is_none(),
                 named: None,
                 seen: now,
-                hooked: false,
+                tier: Tier::Pull,
                 announced: None,
                 running: None,
             },
@@ -401,22 +423,46 @@ impl Sessions {
     /// What a hook of the session at `key` tells it: how many letters wait, while its newest letter
     /// isn't one a hook already told it of (`told`), so a hook that runs at every step says it once.
     /// `None` for a session not registered (a hook never registers one: only its MCP server knows
-    /// the session the same way). A hook counts as the session being seen, saved once a day.
-    pub fn hook(&self, store: &Store, key: &str) -> Result<Option<Hooked>> {
+    /// the session the same way). A hook counts as the session being seen, saved once a day; it
+    /// raises the session's tier to `tier`.
+    pub fn hook(&self, store: &Store, key: &str, tier: Tier) -> Result<Option<Hooked>> {
         let _one = self.lock.locked();
         let mut all = load(store);
         let Some(session) = all.get_mut(key) else { return Ok(None) };
         let mail = load_mail(store);
         let waiting = mail.get(key).map_or(&[][..], Vec::as_slice);
         let newest = waiting.last().map(|m| m.id.clone()).filter(|id| session.announced.as_ref() != Some(id));
-        let first = !session.hooked;
+        let raised = session.tier < tier;
         let now = now_ms();
-        if first || now - session.seen >= DAY_MS {
-            session.hooked = true;
+        if raised || now - session.seen >= DAY_MS {
+            session.tier = session.tier.max(tier);
             session.seen = now;
             save(store, &all)?;
         }
-        Ok(Some(Hooked { unread: if newest.is_some() { waiting.len() } else { 0 }, newest, first }))
+        Ok(Some(Hooked { unread: if newest.is_some() { waiting.len() } else { 0 }, newest, raised }))
+    }
+
+    /// Whether a push may wake the session at `key` now for `letter`: at most `WAKES_PER_HOUR` times
+    /// an hour, so two sessions that answer each other's letters can't keep each other working
+    /// unattended. Asking spends nothing: a wake counts once it was told (`woke`).
+    pub fn may_wake(&self, key: &str, letter: &str) -> Wake {
+        let now = now_ms();
+        let mut wakes = self.wakes.locked();
+        let w = wakes.entry(key.to_owned()).or_default();
+        w.at.retain(|at| now - at < HOUR_MS);
+        if w.at.len() < WAKES_PER_HOUR {
+            return Wake::Allowed;
+        }
+        if w.limited.as_deref() == Some(letter) {
+            return Wake::StillLimited;
+        }
+        w.limited = Some(letter.to_owned());
+        Wake::Limited
+    }
+
+    /// A push woke the session at `key`.
+    pub fn woke(&self, key: &str) {
+        self.wakes.locked().entry(key.to_owned()).or_default().at.push(now_ms());
     }
 
     /// The session's hook printed the notice of the letters up to `letter`: later hooks keep quiet

@@ -69,7 +69,7 @@ fn sessions(hub: &Hub) -> Vec<Value> {
         .map(|Listed { session: s, state, older }| {
             json!({
                 "address": s.address, "title": s.title, "kind": s.kind,
-                "registry": super::sessions::registry(s.kind), "tier": s.tier(), "levels": super::sessions::LEVELS,
+                "registry": super::sessions::registry(s.kind), "tier": s.tier, "levels": super::sessions::LEVELS,
                 "state": state, "runs": state.is_some_and(Live::runs), "older": older, "seen": s.seen,
             })
         })

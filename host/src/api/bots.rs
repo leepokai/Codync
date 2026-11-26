@@ -158,8 +158,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         // The turn tier: a coding agent's hook asks whether letters wait (`codync-host network hook`).
         "networkHook" => {
+            use crate::network::sessions;
             let kind: codync_network::AgentKind = serde_json::from_value(b["kind"].clone()).context("kind")?;
-            crate::chat::team::mailbox::hook(hub, kind, str_arg(&b, "session")?, b["told"].as_str())?
+            let ask = crate::chat::team::mailbox::HookAsk {
+                told: b["told"].as_str(),
+                failed: b["failed"].as_str(),
+                tier: if b["push"] == true { sessions::Tier::Push } else { sessions::Tier::Turn },
+                wait: std::time::Duration::from_secs(b["waitSecs"].as_u64().unwrap_or(0)),
+            };
+            crate::chat::team::mailbox::hook(hub, kind, str_arg(&b, "session")?, ask).await?
         }
         "teamCall" => {
             let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);

@@ -189,3 +189,15 @@ async fn an_import_makes_bots_and_one_group_and_rolls_a_failed_bot_back() {
     drop(hub);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn an_export_that_names_imate_keeps_it() {
+    let agents = super::import_agents([
+        json!({"id": "imate", "available": false, "installed": true}),
+        json!({"id": "claude", "available": false}),
+        json!({"id": "codex", "available": true}),
+    ]);
+    assert!(agents.contains("imate"), "an export that names iMate still uses it");
+    assert!(agents.contains("codex"));
+    assert!(!agents.contains("claude"), "another agent that is not available stays out");
+}

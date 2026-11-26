@@ -53,14 +53,20 @@ pub async fn apply(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
         if plan.bots.is_empty() {
             bail!("pick at least one agent to import");
         }
-        let agents = codync_agent::backends::list()
-            .into_iter()
-            .filter(|a| a["available"] == true)
-            .filter_map(|a| a["id"].as_str().map(str::to_owned))
-            .collect();
+        let agents = import_agents(codync_agent::backends::list());
         Ok(Importer { hub, archive, agents, warnings: std::mem::take(&mut plan.warnings) }.run(&plan))
     })
     .await?
+}
+
+/// Agents an export may land on. iMate is not `available`, so Advisor does not pick it, but an
+/// export that names it still uses it.
+fn import_agents(listed: impl IntoIterator<Item = Value>) -> HashSet<String> {
+    listed
+        .into_iter()
+        .filter(|agent| agent["available"] == true || agent["id"] == "imate")
+        .filter_map(|agent| agent["id"].as_str().map(str::to_owned))
+        .collect()
 }
 
 fn export_path(b: &Value) -> Result<PathBuf> {

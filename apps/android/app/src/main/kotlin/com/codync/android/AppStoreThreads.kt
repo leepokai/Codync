@@ -4,10 +4,12 @@ import com.codync.android.core.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -122,19 +124,25 @@ internal fun AppStore.loadOlderThreads() {
     val held = now.olderThreads
     if (held?.more == false) return
     action("olderThreads") {
-        var before = held?.before
-        var generation = now.olderThreadsGeneration
-        while (true) {
-            val reply = try { hostQuery("olderThreads", buildJsonObject { before?.let { put("before", it) } }) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (state.value.droppedOlderThreadsSince(generation)) null else throw error }
-            val next = reply?.let { page -> mutableState.updateAndGet { it.takingOlderThreads(generation, OlderThreads.decode(page.jsonObject)) } }
-                ?: state.value
-            // Dropped meanwhile (a new hello, another Delete old threads): the first page is asked again.
-            if (!next.droppedOlderThreadsSince(generation) || threadKeepDays(next.hello) == null) return@action
-            before = null
-            generation = next.olderThreadsGeneration
+        mutableState.readOlderThreads(held?.before, now.olderThreadsGeneration) { before ->
+            hostQuery("olderThreads", buildJsonObject { before?.let { put("before", it) } })
         }
+    }
+}
+
+/** [loadOlderThreads]'s pages from [from], asked under [asked], through [query] (the host's `olderThreads`). */
+internal suspend fun MutableStateFlow<AppState>.readOlderThreads(from: Long?, asked: Int, query: suspend (before: Long?) -> JsonElement) {
+    var before = from
+    var generation = asked
+    while (true) {
+        val reply = try { query(before) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { if (value.droppedOlderThreadsSince(generation)) null else throw error }
+        val next = reply?.let { page -> updateAndGet { it.takingOlderThreads(generation, OlderThreads.decode(page.jsonObject)) } } ?: value
+        // Dropped meanwhile (a new hello, another Delete old threads): the first page is asked again.
+        if (!next.droppedOlderThreadsSince(generation) || threadKeepDays(next.hello) == null) return
+        before = null
+        generation = next.olderThreadsGeneration
     }
 }
 

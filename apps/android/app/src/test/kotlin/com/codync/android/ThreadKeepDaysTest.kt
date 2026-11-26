@@ -3,6 +3,8 @@ package com.codync.android
 import com.codync.android.core.Computer
 import com.codync.android.core.OlderThreads
 import com.codync.android.core.WireJson
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -38,5 +40,23 @@ class ThreadKeepDaysTest {
         assertEquals(true, dropped.droppedOlderThreadsSince(listed.olderThreadsGeneration))
         val chosen = listed.withThreadKeepDays(7)
         assertEquals(7 to null, threadKeepDays(chosen.hello) to chosen.olderThreads)
+    }
+
+    @Test fun aLaterPageThatFailsAfterACleanupAsksTheFirstPageAgain() = runBlocking {
+        val held = OlderThreads.decode(hello("""{"threads":[{"botId":"b1","id":"t1","status":"done","endedAt":200}],"more":true}"""))
+        val state = MutableStateFlow(AppState(Computer("fixture", "Studio", "fixture"), hello = hello("""{"threadKeepDays":30}"""), olderThreads = held))
+        val asked = mutableListOf<Long?>()
+        state.readOlderThreads(held.before, state.value.olderThreadsGeneration) { before ->
+            asked += before
+            if (asked.size == 1) {
+                state.value = state.value.heardThreadKeepDays(30)
+                error("the host went away")
+            }
+            hello("""{"threads":[{"botId":"b1","id":"t2","status":"done","endedAt":100}],"more":false}""")
+        }
+        assertEquals(listOf<Long?>(200, null), asked)
+        assertEquals(listOf("t2"), state.value.olderThreads?.threads?.map { it.task.id })
+        // A failure with the list still held is the reader's to show.
+        assertEquals("kept", runCatching { state.readOlderThreads(null, state.value.olderThreadsGeneration) { error("kept") } }.exceptionOrNull()?.message)
     }
 }

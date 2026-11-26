@@ -139,7 +139,7 @@ internal val Entry.takesOwnWords: Boolean
                             if (answering && chosen == id) Spinner(12.dp)
                             else Text("${index + 1}", style = Type.caption.semibold.copy(fontFeatureSettings = "tnum"), color = Palette.secondary)
                         }
-                        Text(permissionOptionLabel(option, options) { tr(it) }, Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        Text(permissionOptionLabel(option, options, translator()), Modifier.weight(1f), style = Type.body, color = Palette.text)
                     }
                 }
             }
@@ -177,7 +177,7 @@ internal fun permissionOutcomeLabel(d: JsonObject, translate: (String) -> String
 }
 
 /** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */
-@Composable private fun outcome(d: JsonObject): String = permissionOutcomeLabel(d) { tr(it) }
+@Composable private fun outcome(d: JsonObject): String = permissionOutcomeLabel(d, translator())
 
 /** One file's change: its name and line counts over the colored patch. */
 @Composable internal fun DiffView(diff: JsonObject) {

@@ -10,10 +10,11 @@ test('the Extensions title leads with its rail icon, the computer capsule beside
     const [icon, title, capsule] = [titles.locator('> *').nth(0), titles.locator('> *').nth(1), titles.locator('> *').nth(2)]
     await expect(title).toHaveText('Extensions')
     const rail = page.locator('.nav-rail').getByRole('button', { name: 'Extensions', exact: true })
-    // Same symbol as the rail entry.
-    const symbol = async (l: typeof icon) => (await l.evaluate((e) => e.outerHTML)).match(/square\.grid\.2x2/)?.[0] ?? null
-    expect(await symbol(icon)).toBe('square.grid.2x2')
-    expect(await rail.evaluate((e) => e.outerHTML)).toContain('square.grid.2x2')
+    // Same symbol as the rail entry: its mask on macOS, its fallback drawing elsewhere.
+    const shape = (l: typeof icon) => l.evaluate((e) => (e as HTMLElement).style.maskImage || e.innerHTML)
+    const drawn = await shape(icon)
+    expect(drawn).not.toBe('')
+    expect(drawn).toBe(await shape(rail.locator('svg, span[aria-hidden]').first()))
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
       const [i, t, c] = await Promise.all([icon, title, capsule].map(async (l) => (await l.boundingBox())!))

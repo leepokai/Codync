@@ -31,3 +31,7 @@ __pycache__/
 .env
 .env.*
 !.env.*.example
+
+# Local scratch: Playwright MCP captures and task notes
+/.playwright-mcp/
+/work/

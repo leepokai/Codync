@@ -1,8 +1,8 @@
 // Builds the host the app bundles for the same environment as the app: node tools/native-host.mjs
 // dev|main compiles it in as CODYNC_ENV. Built on every package so a host made for another
 // environment is never shipped. macOS: build/native/codync-host (universal; Codync Dev: this Mac's
-// architecture only, since it never leaves the Mac that built it). Windows:
-// build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in), plus the computer-use
+// architecture only, since it runs only on the Mac that built it and the Mac mini, both Apple
+// silicon). Windows: build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in), plus the computer-use
 // driver the host starts from beside itself. Linux apps use the installed host, so there's
 // nothing to do there.
 import { copyFileSync, mkdirSync } from 'node:fs'

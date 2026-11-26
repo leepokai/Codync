@@ -287,3 +287,15 @@ fn an_account_is_in_use_by_a_thread_that_works_on_it() {
     assert_eq!(users(&store, "a2").expect("bots"), ["Own"], "its agent runs on it until its task ends");
     assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new(), "a thread that ended holds nothing");
 }
+
+#[test]
+fn signed_in_ids_excludes_profiles_being_removed() {
+    let store = store_with(&[("keep", "claude"), ("leaving", "claude")]);
+    note_signed_in(&store, "keep", true);
+    note_signed_in(&store, "leaving", true);
+    assert_eq!(signed_in_ids(&store, "claude"), ["keep", "leaving"]);
+    let removing = Removing::on("leaving");
+    assert_eq!(signed_in_ids(&store, "claude"), ["keep"], "profile being removed is skipped by auto-rotation");
+    drop(removing);
+    assert_eq!(signed_in_ids(&store, "claude"), ["keep", "leaving"]);
+}

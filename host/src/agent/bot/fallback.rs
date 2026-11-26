@@ -74,10 +74,16 @@ pub(super) struct Relay {
     pub(super) held: Option<Held>,
 }
 
+impl Relay {
+    pub(super) fn with_recap(recap: Option<(String, Option<String>)>) -> Self {
+        Self { recap, ..Self::default() }
+    }
+}
+
 /// The bot as it runs on `current`'s agent with `base`'s settings, also when that agent is no longer in its chain.
-pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
-    match fallback::step_of(base, &fallback::login::of(current)) {
-        Some(step) => fallback::effective(base, step),
+pub(super) fn running(store: &crate::store::Store, base: &BotConfig, current: &BotConfig) -> BotConfig {
+    match fallback::step_of(store, base, &fallback::login::of(current)) {
+        Some(step) => fallback::effective(store, base, step),
         None => BotConfig {
             backend: current.backend.clone(),
             command: current.command.clone(),
@@ -92,14 +98,14 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
 impl Actor {
     /// The step of the agent the bot is on (its own: 0).
     pub(super) fn step(&self) -> Option<usize> {
-        fallback::step_of(&self.base, &fallback::login::of(&self.cfg))
+        fallback::step_of(&self.hub.store, &self.base, &fallback::login::of(&self.cfg))
     }
 
     /// The first step, in order, whose agent this turn hasn't failed on and that isn't resting. A signed-out agent
     /// rests too: the sign-in state an app last checked can be stale.
-    fn next_step(&self, now: i64) -> Option<usize> {
+    fn next_step(&self, now: i64) -> Option<fallback::Picked> {
         let passed = |login: &str| self.relay.tried.iter().chain(&self.relay.skipped).any(|l| l == login);
-        fallback::first_step(&self.hub.store, &self.base, now, passed)
+        fallback::pick_step(&self.hub.store, &self.base, now, passed)
     }
 
     /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
@@ -117,12 +123,14 @@ impl Actor {
         self.relay.handing_off = false;
         self.relay.attempt = Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned() });
         let now = now_ms();
-        let target = self.next_step(now).unwrap_or(0);
-        self.left_signed_out_before(target, now);
+        let target = self.next_step(now).unwrap_or_else(|| fallback::Picked::own(&self.base));
+        for login in &target.signed_out_before {
+            self.left_signed_out(login);
+        }
         let from = self.cfg.clone();
-        if fallback::login(&self.base, target) != fallback::login::of(&from) {
-            self.switch_to(target).await;
-            self.relay.line = self.tell_switch(&from, target);
+        if fallback::login::of(&target.cfg) != fallback::login::of(&from) {
+            self.switch_to(target.cfg).await;
+            self.relay.line = self.tell_switch(&from);
         }
     }
 
@@ -131,20 +139,6 @@ impl Actor {
         if let Some(attempt) = &mut self.relay.attempt {
             attempt.entries.push(entry_id.to_owned());
             attempt.text = format!("{}\n\n{text}", attempt.text);
-        }
-    }
-
-    /// A turn (or its retry) starting on step `target`: the agents before it that rest because a bot found them
-    /// signed out ask to be signed in here too.
-    fn left_signed_out_before(&mut self, target: usize, now: i64) {
-        let signed_out = |s: &usize| {
-            rest::get(&self.hub.store, &fallback::login(&self.base, *s), now)
-                .is_some_and(|r| r.reason == Reason::SignedOut)
-        };
-        let login = |s| Login::of(&self.hub.store, &fallback::effective(&self.base, s));
-        let skipped: Vec<Login> = (0..target).filter(signed_out).map(login).collect();
-        for login in skipped {
-            self.left_signed_out(&login);
         }
     }
 
@@ -196,15 +190,22 @@ impl Actor {
         }
     }
 
-    /// The chat line for a move from the agent `from` ran on to step `target`'s (`carry_in` adds what the new agent
+    /// The chat line for a move from the agent `from` ran on to `self.cfg`'s (`carry_in` adds what the new agent
     /// was told).
-    fn tell_switch(&self, from: &BotConfig, target: usize) -> Option<String> {
+    fn tell_switch(&self, from: &BotConfig) -> Option<String> {
         let to = self.cfg.backend.clone();
         let from_login = fallback::login::of(from);
+        let to_login = fallback::login::of(&self.cfg);
+        let own_login = fallback::login(&self.hub.store, &self.base, 0);
         let (from_name, to_name) = (self.called(from), self.called(&self.cfg));
         let from = from.backend.as_str();
-        // Toward the bot's own agent, or away from one it no longer uses.
-        let back = fallback::step_of(&self.base, &from_login).is_none_or(|s| target < s);
+        // Toward the bot's own agent (or an earlier step when idle), never when falling back mid-turn.
+        let back = self.relay.stopped.is_none()
+            && (to_login == own_login
+                || matches!(
+                    (fallback::step_of(&self.hub.store, &self.base, &from_login), self.step()),
+                    (Some(from_step), Some(to_step)) if to_step < from_step
+                ));
         let (reason, until) = self
             .relay
             .stopped
@@ -429,7 +430,7 @@ impl Actor {
                 self.left_signed_out(&login);
             }
             self.report_turn(false, Some(failed), "error");
-            let to = Login::of(&self.hub.store, &fallback::effective(&self.base, next));
+            let to = Login::of(&self.hub.store, &next.cfg);
             let on_profile = login.profile.is_some() || to.profile.is_some();
             crate::analytics::agent_fell_back(&self.hub, &agent, on_profile, reason);
             let done = self.so_far();
@@ -482,13 +483,14 @@ impl Actor {
     /// `reason` (see `stop_notice`).
     pub(super) fn failure_notice(&self, error: &anyhow::Error, text: &str, reason: &str) {
         let mut data = json!({"text": text, "style": NoticeStyle::Error, "stopReason": reason});
+        let steps = fallback::steps(&self.hub.store, &self.base);
         match fallback::reason::of(error) {
             Some(Reason::UsageLimit | Reason::OutOfCredits | Reason::RateLimited | Reason::Overloaded)
-                if self.base.fallbacks.is_empty() =>
+                if steps <= 1 =>
             {
                 data["addFallback"] = true.into();
             }
-            Some(_) if self.relay.exhausted && !self.base.fallbacks.is_empty() => {
+            Some(_) if self.relay.exhausted && steps > 1 => {
                 data["text"] = format!("{text}\n\n{}", self.chain_note()).into();
             }
             _ => {}
@@ -511,10 +513,11 @@ impl Actor {
     /// limit (resets in 2 h); Codex is rate limited (back in 4 min)."
     fn chain_note(&self) -> String {
         let now = now_ms();
-        let parts: Vec<String> = (0..fallback::steps(&self.base))
+        let store = &self.hub.store;
+        let parts: Vec<String> = (0..fallback::steps(store, &self.base))
             .map(|s| {
-                let agent = self.called(&fallback::effective(&self.base, s));
-                match rest::get(&self.hub.store, &fallback::login(&self.base, s), now) {
+                let agent = self.called(&fallback::effective(store, &self.base, s));
+                match rest::get(store, &fallback::login(store, &self.base, s), now) {
                     Some(r) => {
                         let when = if r.reason == Reason::UsageLimit { "resets" } else { "back" };
                         let wait = carry::in_words(r.until - now);
@@ -541,13 +544,13 @@ impl Actor {
 
     /// `switchBack`: the bot's own agent again, now when idle, or for its next turn.
     pub(super) async fn switch_back(&mut self) {
-        let own = fallback::login(&self.base, 0);
+        let own = fallback::login(&self.hub.store, &self.base, 0);
         fallback::end_rest(&self.hub, &own);
         if self.turn.is_none() && fallback::login::of(&self.cfg) != own {
             let from = self.cfg.clone();
             self.idle_relay();
-            self.switch_to(0).await;
-            self.tell_switch(&from, 0);
+            self.switch_to(fallback::effective(&self.hub.store, &self.base, 0)).await;
+            self.tell_switch(&from);
         }
     }
 
@@ -560,9 +563,9 @@ impl Actor {
         if self.step().is_none() && self.turn.is_none() {
             let from = self.cfg.clone();
             self.idle_relay();
-            let target = self.next_step(now_ms()).unwrap_or(0);
-            self.switch_to(target).await;
-            self.tell_switch(&from, target);
+            let target = self.next_step(now_ms()).unwrap_or_else(|| fallback::Picked::own(&self.base));
+            self.switch_to(target.cfg).await;
+            self.tell_switch(&from);
         } else {
             self.mark_step();
         }
@@ -577,18 +580,225 @@ impl Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet, VecDeque};
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    fn test_actor(store: crate::store::Store, base: BotConfig) -> (Actor, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("codync-bot-fallback-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        store.save_bot(&base).expect("save bot");
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = crate::hub::Hub::new(store, "bot-fallback-test".into(), identity, "test".into(), 0);
+        hub.start().expect("start hub");
+        let lane = Lane::main(&base.id);
+        let cfg = base.clone();
+        let actor = Actor {
+            hub,
+            base,
+            cfg,
+            conn: None,
+            session_id: None,
+            run_sessions: HashMap::new(),
+            lane,
+            turn_session: None,
+            active_group: None,
+            active_routine: None,
+            active_workflow: None,
+            routine_deadline: None,
+            routine_timed_out: false,
+            routine_completion: None,
+            session_fresh: false,
+            unfiled: super::super::codex_section::Unfiled::default(),
+            profile_resend: HashSet::new(),
+            compacting: None,
+            raw_prompt: false,
+            handoff: None,
+            compaction_notice: None,
+            applied_system: HashMap::new(),
+            dreamer: mpsc::unbounded_channel().0,
+            turn_text: None,
+            versions: crate::agent::versions::Saves::default(),
+            turn_entries: Vec::new(),
+            turn_call: None,
+            turn_memory_revision: String::new(),
+            announce: None,
+            first_prompt: None,
+            turn: None,
+            queue: VecDeque::new(),
+            steers_in_flight: HashMap::new(),
+            held_done: None,
+            active_request: None,
+            task_source: crate::chat::work::Source::Bot,
+            reply_hops: None,
+            host_turn: None,
+            reports: Vec::new(),
+            prompt_call: None,
+            seg: super::super::Seg::None,
+            tools: HashMap::new(),
+            plan_entry: None,
+            last_text: None,
+            sent: Vec::new(),
+            reacted: super::super::Reacted::No,
+            joined: false,
+            unheard: Vec::new(),
+            files: super::super::files::FileShares::default(),
+            perms: HashMap::new(),
+            asked: HashMap::new(),
+            open_card: None,
+            stop_requested: false,
+            stopped_for_message: false,
+            cancel_deadline: None,
+            exit_tail: None,
+            agent_error: None,
+            restart_before_turn: false,
+            restart_after_turn: false,
+            fast_support: codync_agent::config::FastModeSupport::from_stored(None),
+            idle_checked: Instant::now(),
+            relay: Relay::default(),
+        };
+        (actor, dir)
+    }
 
     #[test]
     fn a_bot_keeps_running_an_agent_that_left_its_chain_until_it_moves_off() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("a store");
         let mut base: BotConfig =
             serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "model": "opus"})).expect("bot");
         let mut on_codex = base.clone();
         on_codex.backend = "codex".into();
         on_codex.model = Some("gpt-5.5".into());
         base.description = "new instructions".into();
-        let cfg = running(&base, &on_codex);
+        let cfg = running(&store, &base, &on_codex);
         assert_eq!((cfg.backend.as_str(), cfg.model.as_deref()), ("codex", Some("gpt-5.5")));
         assert_eq!(cfg.description, "new instructions");
-        assert_eq!(running(&base, &base).backend, "claude");
+        assert_eq!(running(&store, &base, &base).backend, "claude");
+    }
+
+    #[tokio::test]
+    async fn forget_parked_clears_signed_out_and_removed_profile_sessions() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("fp-1", "claude"), ("fp-2", "claude")]);
+        crate::agent::login_profiles::note_signed_in(&store, "fp-1", true);
+        let base: BotConfig = serde_json::from_value(json!({
+            "id": "b",
+            "name": "B",
+            "backend": "claude",
+            "fallbacks": [{"backend": "codex"}],
+        }))
+        .expect("bot");
+        store.kv_set("fallback.session.b.claude#profile-fp-1", "sid-fp1").expect("park fp1");
+        store.kv_set("fallback.session.b.claude#profile-fp-2", "sid-fp2").expect("park fp2");
+        store.kv_set("fallback.session.b.codex", "sid-codex").expect("park codex");
+        store.kv_set("fallback.session.other.claude#profile-fp-1", "sid-other").expect("park other");
+        crate::agent::login_profiles::note_signed_in(&store, "fp-1", false);
+
+        let (mut actor, dir) = test_actor(store, base);
+        actor.forget_parked();
+        assert!(actor.hub.store.kv_prefix("fallback.session.b.").is_empty(), "every parked session of bot b cleared");
+        assert_eq!(
+            actor.hub.store.kv_get("fallback.session.other.claude#profile-fp-1").as_deref(),
+            Some("sid-other"),
+            "other bots stay untouched"
+        );
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn switch_to_keeps_selected_target_when_profiles_sign_out_mid_switch() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("sw-1", "claude")]);
+        crate::agent::login_profiles::note_signed_in(&store, "sw-1", true);
+        let base: BotConfig = serde_json::from_value(json!({
+            "id": "b",
+            "name": "B",
+            "backend": "claude",
+            "fallbacks": [{"backend": "codex"}],
+        }))
+        .expect("bot");
+        let now = now_ms();
+        rest::record(&store, "claude", Reason::UsageLimit, now, None);
+        rest::record(&store, "claude#profile-sw-1", Reason::UsageLimit, now, None);
+
+        let (mut actor, dir) = test_actor(store, base);
+        let picked = actor.next_step(now).expect("codex fallback step");
+        assert_eq!(picked.cfg.backend, "codex");
+
+        // Concurrent sign-out shrinks chain indices before `switch_to` runs.
+        crate::agent::login_profiles::note_signed_in(&actor.hub.store, "sw-1", false);
+        actor.switch_to(picked.cfg).await;
+
+        assert_eq!(actor.cfg.backend, "codex");
+        assert_eq!(actor.cfg.login_profile, None);
+        let step = actor.hub.runtime("b").agent_step.expect("agent_step recorded");
+        assert_eq!(step.agent, "codex");
+        assert_eq!(step.step, 1);
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn resume_step_keeps_signed_out_auto_profile_and_protects_primary_parked_session() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("rs-1", "claude")]);
+        crate::agent::login_profiles::note_signed_in(&store, "rs-1", true);
+        let base: BotConfig = serde_json::from_value(json!({
+            "id": "b",
+            "name": "B",
+            "backend": "claude",
+            "model": "opus",
+            "fallbacks": [{"backend": "codex"}],
+        }))
+        .expect("bot");
+        store.save_bot(&base).expect("save bot");
+        store.set_session("b", Some("sid-rs1")).expect("save rs1 session");
+        store.kv_set("fallback.on.b", "claude#profile-rs-1").expect("mark on rs1");
+        store.kv_set("fallback.session.b.claude", "sid-primary").expect("park primary");
+
+        // Another bot marks rs-1 signed out while host is down/restarting.
+        crate::agent::login_profiles::note_signed_in(&store, "rs-1", false);
+        let (mut actor, dir) = test_actor(store, base.clone());
+        let saved = actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id);
+        let resumed = resume_step(&actor.hub, &base, saved);
+        assert_eq!(fallback::login::of(&resumed.cfg), "claude#profile-rs-1");
+        assert_eq!(resumed.cfg.model.as_deref(), Some("opus"));
+        assert_eq!(resumed.session_id.as_deref(), Some("sid-rs1"));
+        assert_eq!(resumed.recap, None);
+
+        actor.cfg = resumed.cfg;
+        actor.session_id = resumed.session_id;
+        // Switching to codex parks sid-rs1 under rs-1, leaving primary's parked session intact.
+        rest::record(&actor.hub.store, "claude", Reason::UsageLimit, now_ms(), None);
+        let codex = actor.next_step(now_ms()).expect("codex step");
+        assert_eq!(codex.cfg.backend, "codex");
+        actor.switch_to(codex.cfg).await;
+        assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude").as_deref(), Some("sid-primary"));
+        assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude#profile-rs-1").as_deref(), Some("sid-rs1"));
+
+        // If a saved profile was deleted altogether, resume_step restores the primary's parked session onto base
+        // and marks a catch-up as owed so the restored session hears what happened while away.
+        actor.hub.store.kv_set("fallback.on.b", "claude#profile-deleted").expect("mark deleted");
+        actor.hub.store.kv_set("fallback.left.b.claude", "0").expect("mark left seq");
+        let main = Lane::main("b");
+        actor.hub.add_entry(&main, EntryKind::User, 1, &json!({"text": "what changed while away"})).expect("user");
+        actor
+            .hub
+            .add_entry(&main, EntryKind::Agent, 1, &json!({"text": "fallback finished the patch", "final": true}))
+            .expect("agent");
+        actor.hub.store.set_session("b", Some("sid-deleted")).expect("save deleted session");
+        let resumed = resume_step(&actor.hub, &base, Some("sid-deleted".into()));
+        assert_eq!(fallback::login::of(&resumed.cfg), "claude");
+        assert_eq!(resumed.session_id.as_deref(), Some("sid-primary"));
+        assert_eq!(resumed.recap, Some(("claude".into(), Some("sid-deleted".into()))));
+        assert_eq!(actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id).as_deref(), Some("sid-primary"));
+
+        actor.cfg = resumed.cfg;
+        actor.session_id = resumed.session_id;
+        actor.relay = Relay::with_recap(resumed.recap);
+        actor.session_fresh = false;
+        actor.carry_in();
+        let carried = actor.relay.carried.as_deref().expect("catch-up owed after deleted-profile recovery");
+        assert!(carried.contains("<catch_up>"), "{carried}");
+        assert!(carried.contains("fallback finished the patch"), "{carried}");
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 }

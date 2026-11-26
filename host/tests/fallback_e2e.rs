@@ -711,3 +711,32 @@ fn manual(e: &Value) -> bool {
 fn state(e: &Value, state: &str) -> bool {
     manual(e) && e["data"]["agentSwitch"]["state"] == state
 }
+
+#[tokio::test]
+async fn new_session_forgets_parked_sessions_of_removed_fallbacks() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+
+    host.reply(&bot, "First").await;
+    wait_for(&host, &bot, "first fallback reply", |e| e["data"]["text"] == "standin answered").await;
+
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    wait_for(&host, &bot, "back line", |e| e["data"]["text"] == "Back on Custom command.").await;
+
+    host.call("updateBot", json!({"id": bot, "fallbacks": []})).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Second").await;
+    let standin = host.log(&bot, "standin.jsonl");
+    assert_eq!(standin.iter().filter(|r| r["method"] == "session/new").count(), 2, "must start a fresh session");
+    assert_eq!(standin.iter().filter(|r| r["method"] == "session/load").count(), 0, "must not resume parked session");
+}

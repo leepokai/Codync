@@ -42,9 +42,13 @@ What their issues taught, and the answer here:
 ## The chain
 
 - Per bot: its agent and model (step 0), then `fallbacks`, up to 3, each `{backend, loginProfile, model, modelOptions}` (a
-  custom `command` is accepted on the wire, not offered in the apps). Empty by default.
+  custom `command` is accepted on the wire, not offered in the apps). Saved `fallbacks` are empty by default; in the
+  effective chain, any signed-in [login profiles](login-profiles.md) (accounts and API keys) of a step's agent not already
+  configured elsewhere in the chain are automatically tried right after that step (inheriting its model and options)
+  before moving on to the next saved fallback, except for custom command steps. Any login already explicitly listed in
+  the bot or saved fallbacks keeps its own saved model and options.
 - Each login appears once, the bot's own included (`fallback::login`: the agent, a custom command's own, or
-  `<agent>#profile-<id>` on an [login profile](login-profiles.md)). So an agent comes again only on another of its
+  `<agent>#profile-<id>` on a [login profile](login-profiles.md)). So an agent comes again only on another of its
   login profiles: Claude Code → Claude Code on a second login profile → Codex. Making a fallback's login the bot's own drops it
   from the list (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode

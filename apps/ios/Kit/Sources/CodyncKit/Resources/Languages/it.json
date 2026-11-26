@@ -71,6 +71,7 @@
   "Linked into each new worktree, so installed packages don't have to be installed again.": "Collegata in ogni nuovo worktree, così i pacchetti installati non vanno reinstallati.",
   "N reject + say why": "N rifiuta + spiega perché",
   "Add account": "Aggiungi account",
+  "All providers": "Tutti i provider",
   "Add connector": "Aggiungi connettore",
   "Add fallback": "Aggiungi agente di riserva",
   "Add files": "Aggiungi file",

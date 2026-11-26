@@ -76,6 +76,22 @@
   padding-left: 12px;
 }
 
+/* The provider filter under the search field: the roster filter's own idiom (ComputerFilterHeader),
+   marked while a provider is chosen. */
+.model-manager-provider {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-s);
+  color: var(--secondary);
+}
+.model-manager-provider.on {
+  color: var(--text);
+  background: rgba(var(--text-rgb), 0.08);
+}
+
 /* The sheet's draggable edges and corners: hairline strips that sit on the card's rim (inside
    the padding, so they never cover a row or the list's scrollbar). Pointer-captured like the
    app's panel ResizeHandle; the arrows step them too. */

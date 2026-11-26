@@ -14,6 +14,7 @@
   "Linked into each new worktree, so installed packages don't have to be installed again.": "새 worktree마다 링크되어 설치된 패키지를 다시 설치할 필요가 없습니다.",
   "N reject + say why": "N 거부 + 이유 말하기",
   "Add account": "계정 추가",
+  "All providers": "모든 공급자",
   "Appearance": "모양",
   "App language": "앱 언어",
   "App language…": "앱 언어…",

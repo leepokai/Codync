@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { AgentModels } from '@shared/agent-models'
 import { isGroup } from '@shared/models'
+import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { AvatarWithStatus } from '../../components/Avatar'
-import { Button, IconButton } from '../../components/Controls'
+import { Button, DropdownMenu, IconButton } from '../../components/Controls'
+import type { MenuItem } from '../../components/Menu'
 import { Icon } from '../../components/Icon'
 import { Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -19,7 +21,7 @@ import { agentModelsRequest } from './agent-models-query.ts'
 import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, needsCatalog, pausePatch, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, needsCatalog, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -161,6 +163,8 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const initialBackend = initialFromBot ? first.bot.backend : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
   const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
+  // The agent filter, composed with the search: `''` is every provider.
+  const [provider, setProvider] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
   const [applying, setApplying] = useState(false)
@@ -187,12 +191,24 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       setPick({ backend: b.id, model: null, modelOptions: {} })
     },
   })
+  // The agents the bots actually run — derived live from the roster, never a hardcoded list — and
+  // the one the filter is narrowed to. A provider whose bots all left is forgotten, so it cannot
+  // silently re-narrow the list when one of them returns; the effect keys on the joined ids so a
+  // new array each render doesn't re-run it.
+  const providers = providerOptions(items, backends)
+  const chosenProvider = providers.find((p) => p.id === provider) ?? null
+  const providerIds = providers.map((p) => p.id).join('\0')
+  useEffect(() => {
+    if (provider && !providerIds.split('\0').includes(provider)) setProvider('')
+  }, [provider, providerIds])
   // The window search's own match — search-items builds each bot's words, palette-items matches
   // them — so the manager's filter always agrees with the search on what a query finds.
   const shown = useMemo(() => {
     const matched = new Set(matchItems(botItems(items, () => {}), query).map((row) => row.key))
-    return items.filter((item) => matched.has(refKey(item.ref)))
-  }, [items, query])
+    return items
+      .filter((item) => matched.has(refKey(item.ref)))
+      .filter((item) => !chosenProvider || item.bot.backend === chosenProvider.id)
+  }, [items, query, chosenProvider])
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
@@ -372,6 +388,25 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />
         <input value={query} placeholder={tr('Search bots')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
       </div>
+      {providers.length > 1 ? (
+        <DropdownMenu
+          items={(): MenuItem[] => [
+            { title: 'All providers', icon: 'square.grid.3x3', selected: !chosenProvider, action: () => setProvider('') },
+            ...providers.map((p) => ({
+              title: p.name,
+              verbatim: true,
+              leading: <AgentIcon registry={store.agentRegistry(p.id)} size={14} color={agentTint(store.agentRegistry(p.id))} />,
+              selected: p.id === chosenProvider?.id,
+              action: () => setProvider(p.id),
+            })),
+          ]}
+          title={chosenProvider?.name ?? tr('All providers')}
+          className={`model-manager-provider${chosenProvider ? ' on' : ''}`}
+        >
+          <Icon name="line.3.horizontal.decrease" size={13} color={chosenProvider ? 'var(--accent)' : 'var(--secondary)'} />
+          <Text size="caption" tone={chosenProvider ? 'text' : 'secondary'}>{chosenProvider?.name ?? tr('All providers')}</Text>
+        </DropdownMenu>
+      ) : null}
       <HStack gap={8} className="model-manager-tools">
         <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>

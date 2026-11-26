@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, pausePatch, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -271,6 +271,20 @@ test('stepSize steps only the axis the handle advertises, toward the drag direct
   // Corners step both axes toward their own outside.
   assert.deepEqual(stepSize('corner-br', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
   assert.deepEqual(stepSize('corner-bl', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
+})
+
+test('providerOptions offers every agent the bots run, in hello order, never a hardcoded list', () => {
+  const backends = [{ id: 'opencode', name: 'OpenCode' }, { id: 'deepseek', name: 'DeepSeek' }, { id: 'claude', name: 'Claude' }]
+  const on = (backend: string, botId: string, name: string): RosterItem =>
+    ({ ref: { computerId: 'mac', botId }, bot: { id: botId, name, backend }, computer: { id: 'mac', name: 'Mac' } }) as unknown as RosterItem
+  const items = [on('deepseek', 'b1', 'A'), on('opencode', 'b2', 'B'), on('deepseek', 'b3', 'C'), on('mystery', 'b4', 'D')]
+  assert.deepEqual(providerOptions(items, backends), [
+    { id: 'opencode', name: 'OpenCode' },
+    { id: 'deepseek', name: 'DeepSeek' },
+    { id: 'mystery', name: 'mystery' },
+  ])
+  assert.deepEqual(providerOptions([], backends), [])
+  assert.deepEqual(providerOptions([on('claude', 'b1', 'A')], backends), [{ id: 'claude', name: 'Claude' }])
 })
 
 test('pausePatch sends only the id and the flag', () => {

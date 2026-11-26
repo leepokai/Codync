@@ -14,6 +14,7 @@
   "Linked into each new worktree, so installed packages don't have to be installed again.": "新しい worktree ごとにリンクされるので、インストール済みのパッケージを入れ直す必要はありません。",
   "N reject + say why": "N 拒否して理由を伝える",
   "Add account": "アカウントを追加",
+  "All providers": "すべてのプロバイダ",
   "Appearance": "外観",
   "App language": "アプリ言語",
   "App language…": "アプリの言語…",

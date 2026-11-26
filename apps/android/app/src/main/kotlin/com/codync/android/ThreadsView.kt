@@ -307,6 +307,8 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
             context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Codync", text))
         }
     }.padding(start = indent), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The coding agent it runs on; its place kept without one, so titles line up.
+        Box(Modifier.size(16.dp)) { task.agentOf(bot)?.let { AgentIcon(agentRegistry(of.state, it), 16.dp) } }
         Text(label, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (task.status != WorkStatus.Done) WorkMark(task.status)
     }

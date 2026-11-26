@@ -23,6 +23,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 在中國大陸也能收到推播通知了。
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：你的訊息和回覆是對話泡泡，需要你核准或選擇的卡片、檔案和 artifact 直接在 thread 裡處理，進行中的步驟顯示在工作中的那一行；右上角「詳情」可打開 Bot 的詳細資訊。返回和詳情是浮在頂端的玻璃按鈕，內容捲動時在頂端柔和地模糊。
 - 電腦的「網路」頁會列出這台電腦上加了 Codync 的程式開發代理（Claude Code、Codex 等）：標題、位址、是否正在執行，以及它們怎麼收信；較早的會話收在最後。
+- Threads 分頁的每個 thread 開頭會顯示它正在使用的 coding agent 圖示；切換到備援 agent 時，顯示最後換到的那個。
 
 ### en-US
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
@@ -40,6 +41,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Push notifications now reach phones and computers in mainland China.
 - A thread now opens full screen as a chat, like on the desktop: your messages and its replies as bubbles, its approval and choice cards, files and artifacts right there to answer and open, and its steps in the working line while it works; Details at the top right opens the bot's details. Back and Details float at the top as glass buttons, and the thread fades softly under them as it scrolls.
 - The computer's Network page lists the coding agents (Claude Code, Codex and others) that use Codync there: each session's title, address, whether it's running and how it gets its mail, with older sessions folded at the end.
+- Each thread on the Threads tab starts with the icon of the coding agent it runs on; after it falls back, the one it switched to.
 
 ## 2.53.0
 ### zh-Hant

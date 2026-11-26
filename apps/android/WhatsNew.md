@@ -25,6 +25,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 在中國大陸也能收到推播通知了。
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。返回和詳情是浮在頂端的玻璃按鈕，內容捲動時在頂端柔和地模糊。
 - 電腦的「網路」頁會列出這台電腦上的程式開發代理會話（Claude Code、Codex 等）：標題、位址和是否正在執行。
+- Threads 分頁的每個 thread 開頭會顯示它正在使用的 coding agent 圖示；切換到備援 agent 時，顯示最後換到的那個。
 
 ### en-US
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
@@ -43,6 +44,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Push notifications now reach phones and computers in mainland China.
 - A thread now opens full screen as a chat, like on the desktop: messages and replies as bubbles, its cards, files and artifacts right there; Details at the top right opens the bot's details. Back and Details float at the top as glass buttons, and the thread fades softly under them as it scrolls.
 - A computer's Network page lists its coding agents' sessions (Claude Code, Codex…) and whether they run.
+- Each thread on the Threads tab starts with the icon of the coding agent it runs on; after it falls back, the one it switched to.
 
 ## 2.53.0
 ### zh-Hant

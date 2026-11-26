@@ -219,9 +219,10 @@ pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value
     let threads: Vec<Value> = found
         .into_iter()
         .map(|(bot, task)| {
-            let cwd = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id)).map(|c| c.cwd);
+            let thread = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id));
+            let runs_on = thread.as_ref().map(|c| tasks::agent_of(&hub.store, c));
             let status = task.status;
-            let mut row = tasks::row(task, status, "", None, false, cwd.as_ref());
+            let mut row = tasks::row(task, status, "", None, false, thread.as_ref().map(|c| &c.cwd), runs_on);
             row["botId"] = bot.into();
             row
         })

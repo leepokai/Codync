@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
-import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
+import type { ApplyPlan, CatalogCheck, PlanRow } from './bots/model-manager-logic'
 import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
@@ -13,6 +13,19 @@ const item = (computerId: string, computerName: string, botId: string, name: str
     computer: { id: computerId, name: computerName },
     store: { computer: { id: computerId } },
   }) as unknown as RosterItem
+
+/** A refused row, asserted: a test that expects a reason fails on a save instead of reading `undefined`. */
+const refusalOf = (row: PlanRow | undefined, what = 'the row'): Extract<PlanRow, { ok: false }> => {
+  assert.ok(row, `${what} is there`)
+  assert.ok(!row.ok, `${what} is a refusal, not a save`)
+  return row
+}
+
+/** A row nobody refused: the other arm, asserted the same way. */
+const assertSaved = (row: PlanRow | undefined, what = 'the row') => {
+  assert.ok(row, `${what} is there`)
+  assert.ok(row.ok, `${what} is a save, not a refusal`)
+}
 
 const catalog = (...ids: string[]): AgentModels => ({ models: ids.map((id) => ({ id, name: id })) })
 const ok = (ids: string[]): CatalogCheck => ({ kind: 'ok', catalog: catalog(...ids) })
@@ -101,7 +114,7 @@ test('planRows saves a model the computer advertises', () => {
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: { effort: 'high' } }
   const rows = planRows(plan, () => effortCatalog('opus', ['low', 'high']))
   assert.deepEqual(rows.map((r) => r.ok), [true, true])
-  assert.equal(rows[0]?.reason, undefined)
+  assertSaved(rows[0])
 })
 
 test('planRows skips the computer without the model, and says which computer', () => {
@@ -110,8 +123,8 @@ test('planRows skips the computer without the model, and says which computer', (
   const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: 'opus', options: {} }
   const rows = planRows(plan, (row) => (row.ref.computerId === 'mac' ? ok(['opus']) : ok(['sonnet'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
-  assert.equal(rows[0]?.reason, undefined)
-  assert.match(rows[1]?.reason ?? '', /Linux Studio/)
+  assertSaved(rows[0])
+  assert.match(refusalOf(rows[1]).reason, /Linux Studio/)
 })
 
 test('planRows refuses a computer whose catalog could not be read', () => {
@@ -119,7 +132,7 @@ test('planRows refuses a computer whose catalog could not be read', () => {
   const plan: ApplyPlan = { items: [mac], backend: 'claude', model: 'opus', options: {} }
   const rows = planRows(plan, () => bad)
   assert.deepEqual(rows.map((r) => r.ok), [false])
-  assert.match(rows[0]?.reason ?? '', /Mac/)
+  assert.match(refusalOf(rows[0]).reason, /Mac/)
 })
 
 test('planRows refuses a computer whose catalog has not loaded, rather than saving unverified', () => {
@@ -127,7 +140,7 @@ test('planRows refuses a computer whose catalog has not loaded, rather than savi
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: {} }
   const rows = planRows(plan, () => no)
   assert.deepEqual(rows.map((r) => r.ok), [false])
-  assert.match(rows[0]?.reason ?? '', /Mac/)
+  assert.match(refusalOf(rows[0]).reason, /Mac/)
 })
 
 test('planRows never checks a custom command, which has no catalog', () => {
@@ -142,7 +155,7 @@ test('planRows checks each bot on its own login profile, even on one computer', 
   const plan: ApplyPlan = { items: [work, home], backend: 'claude', model: 'opus', options: {} }
   const rows = planRows(plan, (row) => (row.bot.loginProfile === 'work' ? ok(['opus']) : ok(['sonnet'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
-  assert.match(rows[1]?.reason ?? '', /Mac/)
+  assert.match(refusalOf(rows[1]).reason, /Mac/)
 })
 
 /** A catalog whose one model lists `effort` as exactly `values`. */
@@ -171,8 +184,8 @@ test('planRows refuses settings a computer does not list for that model', () => 
   const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: 'opus', options: { effort: 'high' } }
   const rows = planRows(plan, (row) => (row.ref.computerId === 'mac' ? effortCatalog('opus', ['low', 'high']) : effortCatalog('opus', ['low'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
-  assert.equal(rows[0]?.reason, undefined)
-  assert.match(rows[1]?.reason ?? '', /Those settings aren't available on Linux Studio/)
+  assertSaved(rows[0])
+  assert.match(refusalOf(rows[1]).reason, /Those settings aren't available on Linux Studio/)
 })
 
 test('planRows checks settings sent with the agent default, and refuses them when the catalog was not loaded', () => {
@@ -183,10 +196,10 @@ test('planRows checks settings sent with the agent default, and refuses them whe
     row.ref.computerId === 'mac' ? effortCatalog('opus', ['high'], 'opus') : effortCatalog('opus', ['low'], 'opus')
   ))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
-  assert.match(rows[1]?.reason ?? '', /Those settings aren't available on Linux Studio/)
+  assert.match(refusalOf(rows[1]).reason, /Those settings aren't available on Linux Studio/)
   const unread = planRows({ ...plan, items: [mac] }, () => no)
   assert.deepEqual(unread.map((r) => r.ok), [false])
-  assert.match(unread[0]?.reason ?? '', /Couldn't check Mac's models/)
+  assert.match(refusalOf(unread[0]).reason, /Couldn't check Mac's models/)
 })
 
 test('loginProfileFor keeps a bot\'s login only while its agent stays the same', () => {
@@ -387,14 +400,14 @@ test('planRows names the kind each refusal counts as, never the reason text', ()
   const plan: ApplyPlan = { items: [item('mac', 'Mac', 'b1', 'Alpha')], backend: 'claude', model: 'ghost', options: {} }
   const missing = planRows(plan, () => ok(['opus']))
   assert.equal(missing[0]?.ok, false)
-  assert.equal(missing[0]?.ok === false && missing[0].refusal, 'modelMissing')
+  assert.equal(refusalOf(missing[0]).refusal, 'modelMissing')
 
   const unreadable = planRows(plan, () => bad)
-  assert.equal(unreadable[0]?.ok === false && unreadable[0].refusal, 'catalogUnreadable')
+  assert.equal(refusalOf(unreadable[0]).refusal, 'catalogUnreadable')
 
   const withSettings: ApplyPlan = { ...plan, model: 'opus', options: { effort: 'high' } }
   const refused = planRows(withSettings, () => effortCatalog('opus', ['low']))
-  assert.equal(refused[0]?.ok === false && refused[0].refusal, 'settingsRejected')
+  assert.equal(refusalOf(refused[0]).refusal, 'settingsRejected')
 })
 
 test('an apply run counts applied once and every failure once in failed and in its kind', () => {

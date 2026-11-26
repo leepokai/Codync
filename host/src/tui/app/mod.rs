@@ -176,8 +176,11 @@ pub struct App {
     history_done: HashSet<String>,
     /// The `since` the current events connection requested.
     stream_since: i64,
-    /// The rev up through the current stream's replay, as announced in its hello.
+    /// The replay cutoff from hosts that don't send a catch-up count.
     replay_rev: i64,
+    catch_up_left: Option<u64>,
+    replayed_deletions: HashMap<String, i64>,
+    completions_before_live: HashSet<String>,
     /// Per bot, the lowest seq of its loaded main chat when this connection's catch-up began
     /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
     floors: HashMap<String, i64>,
@@ -271,6 +274,9 @@ impl App {
             history_done: HashSet::new(),
             stream_since: 0,
             replay_rev: 0,
+            catch_up_left: None,
+            replayed_deletions: HashMap::new(),
+            completions_before_live: HashSet::new(),
             floors: HashMap::new(),
             hint: None,
             analytics: None,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import ts from 'typescript'
 import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
-import { test } from 'node:test'
+import { test, type TestContext } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
 import type { IslandSummary } from '@shared/island'
 import type { HostEvent, HostTransport } from '../client/host-client'
@@ -41,6 +41,29 @@ function storeWithAlerts() {
 }
 
 const alert = (botId: string): HostAlert => ({ botId, kind: 'done', title: botId, body: 'Finished.' })
+
+function storeWithStream(t: TestContext) {
+  let onData!: (line: string) => void
+  let opened!: () => void
+  const transport: HostTransport = {
+    call: async () => ({ version: '2.54.0', name: 'Mac', backends: [] }),
+    stream: (_path, receive) => { onData = receive; opened(); return () => {} },
+  }
+  const store = new BotSync({ id: 'stream', name: 'Mac', signKey: '', urls: [] }, false, () => transport, '2.54.0')
+  t.after(() => store.retire())
+  const send = (event: object) => onData(JSON.stringify(event))
+  const connect = async (rev: number, catchUp?: number) => {
+    const ready = new Promise<void>((resolve) => { opened = resolve })
+    store.restartStream()
+    await ready
+    send({ type: 'hello', hostId: 'host', rev, catchUp })
+  }
+  const update = (id: string, rev: number, status: Bot['status'], completionReplyId?: string | null) => {
+    send({ type: 'bot', rev, bot: { id, rev, status, completionReplyId } })
+    return store.completionFor(store.bots.get(id)!)
+  }
+  return { store, send, connect, update }
+}
 
 test("an alert passes on unless that bot's chat is on screen in a focused window", () => {
   const { store, passed, receive } = storeWithAlerts()
@@ -86,6 +109,54 @@ test('only a changed completion received live can reach the island', () => {
   store.retire()
 })
 
+test('a live completion can precede the hello revision after the counted catch-up', async (t) => {
+  const { store, send, connect, update } = storeWithStream(t)
+  await connect(120, 3)
+  send({ type: 'icons' })
+  assert.equal(update('a', 117, 'working', null), null)
+  send({ type: 'futureEvent' })
+  assert.equal(update('a', 119, 'idle', 'during-connect'), 'during-connect')
+  store.consumeCompletion('a', 'during-connect')
+  assert.equal(update('a', 119, 'idle', 'during-connect'), null)
+  assert.equal(update('a', 122, 'working', null), null)
+  assert.equal(update('a', 124, 'idle', 'next-reply'), 'next-reply')
+})
+
+test('older buffered bot states and duplicate replies stay quiet after catch-up', async (t) => {
+  const { store, send, connect, update } = storeWithStream(t)
+  await connect(110, 0)
+  assert.equal(update('kept', 111, 'idle', 'already-held'), 'already-held')
+  await connect(120, 4)
+  assert.equal(update('replayed', 116, 'idle', 'in-snapshot'), null)
+  send({ type: 'bot', rev: 117, bot: { id: 'deleted', rev: 117, deleted: true } })
+  send({ type: 'futureEvent' })
+  send({ type: 'usage', usage: { providers: [] } })
+
+  assert.equal(update('kept', 109, 'idle', 'older-reply'), null)
+  assert.equal(update('kept', 110, 'working', null), null)
+  assert.equal(update('kept', 111, 'idle', 'already-held'), null)
+  assert.equal(update('kept', 112, 'working', null), null)
+  assert.equal(update('replayed', 113, 'working', null), null)
+  send({ type: 'bot', rev: 114, bot: { id: 'deleted', rev: 114, status: 'working' } })
+  assert.equal(store.bots.has('deleted'), false)
+  assert.equal(update('kept', 115, 'idle', 'already-held'), null)
+  assert.equal(update('replayed', 118, 'working', null), null)
+  assert.equal(update('replayed', 119, 'idle', 'in-snapshot'), null)
+  assert.equal(update('replayed', 121, 'idle', 'in-snapshot'), null, 'later metadata stays quiet')
+})
+
+test('the transcript fallback uses the count when present and the hello revision otherwise', async (t) => {
+  const { connect, update } = storeWithStream(t)
+  await connect(120, 1)
+  assert.equal(update('a', 117, 'working'), null)
+  assert.equal(update('a', 119, 'idle'), undefined)
+
+  await connect(130)
+  assert.equal(update('a', 129, 'working'), null)
+  assert.equal(update('a', 130, 'idle'), null)
+  assert.equal(update('a', 131, 'working'), undefined)
+})
+
 test('a live reply appears once when the next turn starts between island summaries', async (t) => {
   Object.assign(globalThis, {
     window: { addEventListener: () => {}, codync: { speech: { available: false }, island: { setShape: () => {} } } },
@@ -98,7 +169,7 @@ test('a live reply appears once when the next turn starts between island summari
   t.mock.timers.enable({ apis: ['setTimeout'] })
 
   const island = new IslandModel()
-  const connect = (rev: number) => receive({ type: 'hello', hostId: 'host', rev, usage: { providers: [] }, screen: null, network: null, catchUp: 1 })
+  const connect = (rev: number, catchUp: number) => receive({ type: 'hello', hostId: 'host', rev, usage: { providers: [] }, screen: null, network: null, catchUp })
   const update = (rev: number, status: Bot['status'], completionReplyId: string | null, workingChat: string | null = null) => {
     const bot = { id: 'a', rev, status, completionReplyId, workingChat, unread: 0, waiting: 0 } as Bot
     receive({ type: 'bot', bot })
@@ -125,7 +196,7 @@ test('a live reply appears once when the next turn starts between island summari
     if (completion) store.consumeCompletion(bot.id, completion.id)
   }
 
-  connect(10)
+  connect(10, 1)
   update(10, 'idle', null)
   sample()
   update(11, 'working', null, 'a')
@@ -158,7 +229,7 @@ test('a live reply appears once when the next turn starts between island summari
   sample()
   assert.equal(island.mode, 'hidden', 'delegated work and reactions leave no completion')
 
-  connect(25)
+  connect(25, 2)
   save('offline-reply', 24, 'Reply while disconnected')
   update(25, 'idle', 'offline-reply')
   sample()

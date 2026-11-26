@@ -64,6 +64,10 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private replayRev = Infinity
+  private catchUpLeft: number | null = null
+  private readonly replayedDeletions = new Map<string, number>()
+  private readonly completionsBeforeLive = new Set<string>()
+  private readonly liveLegacyBots = new Set<string>()
   /** The latest live reply per bot, kept through a queued start until sent to the island. */
   private readonly pendingCompletionReplies = new Map<string, string>()
   private readingViews = new Map<string, string>()
@@ -71,7 +75,10 @@ export class BotSync extends BotMirror {
   get replayedThrough() { return this.replayRev }
 
   completionFor(bot: Bot): string | null | undefined {
-    if (bot.completionReplyId === undefined) return bot.rev > this.replayRev ? undefined : null
+    if (bot.completionReplyId === undefined) {
+      const live = this.catchUpLeft === null ? bot.rev > this.replayRev : this.liveLegacyBots.has(bot.id)
+      return live ? undefined : null
+    }
     return this.pendingCompletionReplies.get(bot.id) ?? null
   }
 
@@ -220,7 +227,6 @@ export class BotSync extends BotMirror {
           if (this.refetched) this.refetchAll()
           this.requestedSince = this.rev
           this.floors = new Map()
-          let catchUpLeft = 0
           this.closeEvents = client.events(
             this.requestedSince,
             'desktop',
@@ -228,15 +234,10 @@ export class BotSync extends BotMirror {
               if (!alive()) return
               this.setConnection({ kind: 'online' })
               backoff = 1000
-              this.apply(event)
+              const finishedCatchUp = this.apply(event)
               this.finishRefresh?.()
               // An event that restarted the stream leaves the refetch to the new one.
-              if (!alive()) return
-              // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
-              if (event.type === 'hello') catchUpLeft = event.catchUp ?? 0
-              else if (catchUpLeft > 0) catchUpLeft--
-              else return
-              if (catchUpLeft === 0) this.finishRefetch()
+              if (alive() && finishedCatchUp) this.finishRefetch()
             },
             (error) => (error ? reject(error) : resolve()),
           )
@@ -296,14 +297,27 @@ export class BotSync extends BotMirror {
   }
 
   private apply(event: HostEvent) {
+    const catchUpLeft = this.catchUpLeft
+    const replaying = catchUpLeft !== null && catchUpLeft > 0
+    if (event.type !== 'hello' && replaying) this.catchUpLeft = catchUpLeft - 1
+
     switch (event.type) {
       case 'icons':
         this.applyIcons(event.icons, event.iconsRevision)
         break
       case 'hello':
         this.replayRev = event.rev
+        this.catchUpLeft = event.catchUp
+        this.replayedDeletions.clear()
+        this.completionsBeforeLive.clear()
+        this.liveLegacyBots.clear()
         this.pendingCompletionReplies.clear()
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
+        if (event.catchUp !== null) {
+          for (const { completionReplyId } of this.bots.values()) {
+            if (completionReplyId) this.completionsBeforeLive.add(completionReplyId)
+          }
+        }
         this.hostId = event.hostId
         if (event.icons) this.applyIcons(event.icons)
         this.usage = event.usage
@@ -318,18 +332,26 @@ export class BotSync extends BotMirror {
       case 'bot': {
         const bot = event.bot
         const previous = this.bots.get(bot.id)
-        if (bot.completionReplyId && bot.rev > this.replayRev && bot.completionReplyId !== previous?.completionReplyId) {
-          this.pendingCompletionReplies.set(bot.id, bot.completionReplyId)
+        const previousRev = previous?.rev ?? this.replayedDeletions.get(bot.id)
+        this.bump(bot.rev)
+        if (catchUpLeft === 0 && previousRev !== undefined && bot.rev <= previousRev) break
+        const live = catchUpLeft === null ? bot.rev > this.replayRev : !replaying
+        if (catchUpLeft === 0 && bot.completionReplyId === undefined) this.liveLegacyBots.add(bot.id)
+        const reply = bot.completionReplyId
+        if (reply && replaying) this.completionsBeforeLive.add(reply)
+        if (live && reply && reply !== previous?.completionReplyId && !this.completionsBeforeLive.has(reply)) {
+          this.pendingCompletionReplies.set(bot.id, reply)
         }
         this.putHostBot(bot)
-        this.bump(bot.rev)
         this.onRosterChanged?.()
         if (unseen(bot) > 0) this.acknowledgeVisible(bot.id)
         break
       }
       case 'botDeleted':
+        if (replaying) this.replayedDeletions.set(event.id, event.rev)
         this.composerDrafts.removeBot(event.id)
         this.bots.delete(event.id)
+        this.liveLegacyBots.delete(event.id)
         this.pendingCompletionReplies.delete(event.id)
         this.entries.delete(event.id)
         this.floors.delete(event.id)
@@ -412,6 +434,7 @@ export class BotSync extends BotMirror {
     }
     this.changed()
     this.scheduleSave()
+    return (event.type === 'hello' || replaying) && !this.catchUpLeft
   }
 
   private resetMirror() {

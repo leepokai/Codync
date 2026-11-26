@@ -76,9 +76,20 @@ impl App {
     }
 
     fn on_event(&mut self, v: &Value) {
+        let catch_up_left = self.catch_up_left;
+        if let Some(left) = &mut self.catch_up_left {
+            *left = left.saturating_sub(1);
+        }
         match v["type"].as_str() {
             Some("hello") => {
                 self.replay_rev = v["rev"].as_i64().unwrap_or_default();
+                self.catch_up_left = v["catchUp"].as_u64();
+                self.replayed_deletions.clear();
+                self.completions_before_live.clear();
+                if self.catch_up_left.is_some() {
+                    self.completions_before_live
+                        .extend(self.bots.values().filter_map(|bot| bot.completion_reply_id.clone()));
+                }
                 self.snapshot_floors();
                 self.network = v["network"].clone();
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
@@ -106,12 +117,7 @@ impl App {
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("threadKeepDays") => self.thread_keep_days = super::thread_keep::days(&v["days"]),
             Some("pairingRequests") => self.pairing_requests_changed(v),
-            Some("bot") => {
-                let live = v["rev"].as_i64().is_none_or(|rev| rev > self.replay_rev);
-                self.upsert_bot(&v["bot"], live);
-                self.close_idle_work_page();
-                self.memory_moved(&v["bot"]);
-            }
+            Some("bot") => self.on_bot_event(v, catch_up_left),
             Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("threadEntry") => self.thread_entries.keep(v["thread"].as_str(), &v["entry"]),
             Some("entry") => {
@@ -130,6 +136,31 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn on_bot_event(&mut self, event: &Value, catch_up_left: Option<u64>) {
+        let bot = &event["bot"];
+        let rev = event["rev"].as_i64();
+        if catch_up_left.is_some_and(|left| left > 0)
+            && let Some(reply) = bot["completionReplyId"].as_str()
+        {
+            self.completions_before_live.insert(reply.to_owned());
+        }
+        if let (Some(left), Some(id), Some(rev)) = (catch_up_left, bot["id"].as_str(), rev) {
+            if left == 0 {
+                let previous_rev =
+                    self.bots.get(id).and_then(|bot| bot.rev).or_else(|| self.replayed_deletions.get(id).copied());
+                if previous_rev.is_some_and(|previous| rev <= previous) {
+                    return;
+                }
+            } else if bot["deleted"] == true {
+                self.replayed_deletions.insert(id.to_owned(), rev);
+            }
+        }
+        let live = catch_up_left.map_or_else(|| rev.is_none_or(|rev| rev > self.replay_rev), |left| left == 0);
+        self.upsert_bot(bot, live);
+        self.close_idle_work_page();
+        self.memory_moved(bot);
     }
 
     /// A catch-up from `since > 0` starts: remember where each bot's loaded chat begins.
@@ -190,7 +221,9 @@ impl App {
         let away = old.away().is_some() || new.away().is_some();
         if live && new.status == Status::Idle {
             let replied = if v.get("completionReplyId").is_some() {
-                new.completion_reply_id.is_some() && new.completion_reply_id != old.completion_reply_id
+                new.completion_reply_id.as_deref().is_some_and(|reply| {
+                    old.completion_reply_id.as_deref() != Some(reply) && !self.completions_before_live.contains(reply)
+                })
             } else {
                 !away && old.status == Status::Working && turn_replied(&old, &new)
             };
@@ -665,6 +698,59 @@ mod tests {
         app.toasts.clear();
         app.on_event(&event);
         assert!(app.toasts.is_empty(), "the same completion only toasts once");
+    }
+
+    fn completion_event(id: &str, rev: i64, status: &str, reply: Option<&str>) -> Msg {
+        Msg::Event(json!({"type": "bot", "rev": rev, "bot": {
+            "id": id, "rev": rev, "name": id, "status": status, "completionReplyId": reply
+        }}))
+    }
+
+    #[test]
+    fn a_live_completion_can_precede_hello_rev_after_the_counted_catch_up() {
+        let mut app = test_app();
+        app.on_msg(Msg::Event(json!({"type": "hello", "rev": 120, "catchUp": 3})));
+        app.on_msg(Msg::Event(json!({"type": "icons"})));
+        app.on_msg(completion_event("Alpha", 117, "working", None));
+        app.on_msg(Msg::Event(json!({"type": "futureEvent"})));
+        assert!(app.toasts.is_empty());
+
+        app.on_msg(completion_event("Alpha", 119, "idle", Some("during-connect")));
+        assert_eq!(app.toasts.len(), 1);
+        assert_eq!(app.toasts[0].text, "Alpha is done");
+        app.toasts.clear();
+        app.on_msg(completion_event("Alpha", 119, "idle", Some("during-connect")));
+        assert!(app.toasts.is_empty());
+        app.on_msg(completion_event("Alpha", 122, "working", None));
+        app.on_msg(completion_event("Alpha", 124, "idle", Some("next-reply")));
+        assert_eq!(app.toasts.len(), 1);
+    }
+
+    #[test]
+    fn older_buffered_bot_states_and_duplicate_replies_stay_quiet_after_catch_up() {
+        let mut app = test_app();
+        app.on_msg(Msg::Event(json!({"type": "hello", "rev": 110, "catchUp": 0})));
+        app.on_msg(completion_event("kept", 111, "idle", Some("already-held")));
+        app.on_msg(Msg::Event(json!({"type": "hello", "rev": 120, "catchUp": 4})));
+        app.on_msg(completion_event("replayed", 116, "idle", Some("in-snapshot")));
+        app.on_msg(Msg::Event(
+            json!({"type": "bot", "rev": 117, "bot": {"id": "deleted", "rev": 117, "deleted": true}}),
+        ));
+        app.on_msg(Msg::Event(json!({"type": "futureEvent"})));
+        app.on_msg(Msg::Event(json!({"type": "usage", "usage": {"providers": []}})));
+
+        app.on_msg(completion_event("kept", 109, "idle", Some("older-reply")));
+        app.on_msg(completion_event("kept", 110, "working", None));
+        app.on_msg(completion_event("kept", 111, "idle", Some("already-held")));
+        app.on_msg(completion_event("kept", 112, "working", None));
+        app.on_msg(completion_event("replayed", 113, "working", None));
+        app.on_msg(completion_event("deleted", 114, "working", None));
+        assert!(!app.bots.contains_key("deleted"));
+        app.on_msg(completion_event("kept", 115, "idle", Some("already-held")));
+        app.on_msg(completion_event("replayed", 118, "working", None));
+        app.on_msg(completion_event("replayed", 119, "idle", Some("in-snapshot")));
+        app.on_msg(completion_event("replayed", 121, "idle", Some("in-snapshot")));
+        assert!(app.toasts.is_empty());
     }
 
     #[test]

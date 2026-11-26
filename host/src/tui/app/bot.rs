@@ -23,6 +23,7 @@ pub enum OwnMemory {
 #[allow(clippy::struct_excessive_bools, reason = "mirrors the host's bot JSON")]
 pub struct Bot {
     pub id: String,
+    pub(super) rev: Option<i64>,
     pub name: String,
     pub description: String,
     pub color: String,
@@ -237,6 +238,7 @@ impl Bot {
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
+            rev: v["rev"].as_i64(),
             name: s("name"),
             description: s("description"),
             color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),

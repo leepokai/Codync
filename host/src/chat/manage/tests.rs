@@ -329,7 +329,7 @@ fn a_config_change_keeps_names_and_private_models_off_the_analytics_event() {
     let mut fields = Map::new();
     fields.insert("model".into(), after.model.clone().into());
     fields.insert("fallbacks".into(), json!(after.fallbacks));
-    audit_change(&hub, &source, &before, &after, &fields);
+    audit_change(&hub, &source, &before, &after, &fields, 0);
 
     let notes = notices(&hub, "dev");
     let timeline = notes.iter().filter_map(|n| n.as_str()).collect::<Vec<_>>().join("\n");
@@ -386,8 +386,8 @@ fn a_change_by_a_manager_that_is_not_the_lead_is_not_recorded_as_one() {
     after.paused = true;
     let mut changed = Map::new();
     changed.insert("paused".into(), json!(true));
-    audit_change(&hub, &lead, &before, &after, &changed);
-    audit_change(&hub, &made, &before, &after, &changed);
+    audit_change(&hub, &lead, &before, &after, &changed, 0);
+    audit_change(&hub, &made, &before, &after, &changed, 0);
 
     let sent = crate::analytics::queued_for_test(&hub);
     let kinds: Vec<&str> = sent
@@ -396,5 +396,27 @@ fn a_change_by_a_manager_that_is_not_the_lead_is_not_recorded_as_one() {
         .map(|e| e["properties"]["actorKind"].as_str().unwrap_or("missing"))
         .collect();
     assert_eq!(kinds, ["lead", "manager"], "the lead is a lead; a manager it made is not");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A routines-only change is a change like any other: the target's own timeline records who made it and what
+/// moved. Only the config fields used to reach the audit, so a manager that changed nothing but routines left the
+/// audit empty: no line naming it, and no `bot_config_changed` behind the generic notice.
+#[tokio::test]
+async fn a_manager_routine_change_reaches_the_targets_audit() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-routines-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let routine =
+        json!({"name": "Scan", "instruction": "Scan the repo", "triggers": [{"type": "interval", "seconds": 1800}]});
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "routines": [routine]})).await.unwrap();
+
+    assert_eq!(hub.routines.list("dev")["routines"].as_array().unwrap().len(), 1, "the routine was saved");
+    let timeline = notices(&hub, "dev").iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n");
+    assert!(
+        timeline.contains("Changed by lead (lead) via update_bot"),
+        "the target's timeline names the manager and the change: {timeline}"
+    );
+    assert!(timeline.contains("routines"), "the timeline says what moved: {timeline}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

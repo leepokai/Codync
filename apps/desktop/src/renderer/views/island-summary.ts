@@ -75,13 +75,14 @@ function pendingCards({ ref, bot, store }: RosterItem): IslandPermission[] {
     .filter((e) => e.kind === 'permission' && e.data.status === 'pending')
     .map((e) => {
       const author = (e.data.author ? store.bots.get(e.data.author) : undefined) ?? bot
+      const options = sortedOptions(e.data.options ?? [])
       return {
         ref: refKey(ref),
         entryId: e.id,
         bot: { customIcon: author.customIcon, name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
         headline: permissionHeadline(e.data.toolKind),
         title: e.data.title ?? '',
-        options: sortedOptions(e.data.options ?? []).map((o) => ({ id: o.optionId, label: optionLabel(o), kind: o.kind })),
+        options: options.map((o) => ({ id: o.optionId, label: optionLabel(o, options), kind: o.kind })),
         answering: store.answering.get(e.id) ?? null,
       }
     })

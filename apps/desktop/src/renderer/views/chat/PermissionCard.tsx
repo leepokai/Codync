@@ -8,7 +8,7 @@ import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
 import { fill } from '@shared/fill'
-import { requestDetail, requestIcon, requestName, requestParams } from './requests'
+import { permissionOptionLabel, permissionOutcomeLabel, requestDetail, requestIcon, requestName, requestParams } from './requests'
 import { OptionBadge } from './DecisionCard'
 
 
@@ -36,19 +36,8 @@ const rank: Record<string, number> = { allow_once: 0, allow_always: 1, reject_on
 /** Allow before deny, once before always. */
 export const sortedOptions = (options: PermissionOption[]) => [...options].sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9))
 
-export function optionLabel(o: PermissionOption) {
-  switch (o.kind) {
-    case 'allow_once':
-      return trNow('Allow once')
-    case 'allow_always':
-      return trNow('Always allow')
-    case 'reject_once':
-      return trNow('Deny')
-    case 'reject_always':
-      return trNow('Never')
-    default:
-      return o.name
-  }
+export function optionLabel(o: PermissionOption, options?: PermissionOption[]) {
+  return permissionOptionLabel(o, options, trNow)
 }
 
 /** Under what a thread put in the chat (its approval or choice card, a file, an artifact): that it comes from the bot's
@@ -160,7 +149,7 @@ export function PermissionCard({ entry, hostName, answering, respond, result }: 
               onClick={() => respond(o.optionId)}
             >
               <OptionBadge>{answering === o.optionId ? <Spinner size={12} /> : i + 1}</OptionBadge>
-              <Text size="body" tone="text" className="decision-option-label">{optionLabel(o)}</Text>
+              <Text size="body" tone="text" className="decision-option-label">{optionLabel(o, options)}</Text>
             </button>
           ))}
         </VStack>
@@ -185,27 +174,7 @@ function ParamRows({ params, clamp }: { params: [string, string][]; clamp: boole
 
 function outcome(entry: Entry) {
   const d = entry.data
-  switch (d.status) {
-    case 'answered': {
-      const chosen = d.options?.find((o) => o.optionId === d.selected)
-      switch (chosen?.kind) {
-        case 'allow_once':
-          return trNow('Allowed once')
-        case 'allow_always':
-          return trNow('Always allowed')
-        case 'reject_once':
-          return trNow('Denied')
-        case 'reject_always':
-          return trNow('Never allowed')
-        default:
-          return chosen?.name ?? trNow('Answered')
-      }
-    }
-    case 'cancelled':
-      return trNow('Cancelled')
-    default:
-      return trNow('Expired')
-  }
+  return permissionOutcomeLabel(d.status, d.selected ?? undefined, d.options, trNow)
 }
 
 export function CodeBox({ text }: { text: string }) {

@@ -16,6 +16,12 @@ use std::time::Duration;
 const SWEEP_EVERY: Duration = Duration::from_secs(15);
 
 pub fn start(hub: &Arc<Hub>) {
+    // A host that stopped after firing a message but before handing it to its bot left the durable queued
+    // marker. The actors are fresh now, so handing these on once is safe: a message whose turn had started
+    // is already `sent` and is not here.
+    if let Err(error) = dispatch_pending(hub) {
+        tracing::warn!(error = format!("{error:#}"), "couldn't recover scheduled sends");
+    }
     let hub = hub.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(SWEEP_EVERY);
@@ -27,6 +33,26 @@ pub fn start(hub: &Arc<Hub>) {
             }
         }
     });
+}
+
+/// Hands on scheduled messages whose durable flip landed before the last host stopped. Called once at
+/// start, while every actor's live queue is empty; the per-entry ID keeps a retry idempotent.
+pub fn dispatch_pending(hub: &Arc<Hub>) -> anyhow::Result<()> {
+    for entry in hub.store.scheduled_dispatched()? {
+        let Some(row) = hub.store.bot(&entry.bot_id)? else { continue };
+        if row.deleted || row.config.is_group() || !hub.has_actor(&entry.bot_id) {
+            continue;
+        }
+        if let Err(error) = crate::chat::messages::hand_on(hub, &row.config, &entry) {
+            tracing::warn!(
+                bot = %entry.bot_id,
+                entry = %entry.id,
+                error = format!("{error:#}"),
+                "couldn't recover a scheduled message; it stays held for the next start"
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Fires every scheduled message whose time has come, oldest first. A bot that has an actor gets its
@@ -415,6 +441,77 @@ mod tests {
         f.until(|| f.prompts().len() == 1).await;
         assert!(f.prompts()[0].contains("now please"));
         assert_eq!(f.status_of(&e.id), "sent");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// "Clear the time" in the edit sheet sends the text currently in the sheet, not the saved draft.
+    #[tokio::test]
+    async fn send_scheduled_now_carries_the_sheet_edit() {
+        let f = Fixture::new();
+        let e = f.schedule("the old draft", 60_000);
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "sendScheduledNow",
+            json!({"botId": "b", "entryId": e.id, "text": "the edited words"}),
+        )
+        .await
+        .unwrap();
+        f.until(|| f.prompts().len() == 1).await;
+        assert!(f.prompts()[0].contains("the edited words"), "{:?}", f.prompts());
+        assert!(!f.prompts()[0].contains("the old draft"));
+        assert_eq!(f.status_of(&e.id), "sent");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// The due sweep and Send-now racing on the same scheduled row deliver exactly one turn: both use the
+    /// revision-checked one-way flip, and the loser finds the row is no longer scheduled.
+    #[tokio::test]
+    async fn a_due_sweep_and_send_now_deliver_once() {
+        let f = Fixture::new();
+        let e = f.schedule("only once", 1);
+        let snapshot = f.hub.store.entry(&e.id).unwrap();
+        let fired = crate::chat::messages::fire_scheduled(&f.hub, &snapshot).unwrap();
+        assert!(fired.is_some(), "the sweep's flip wins");
+        let late = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "sendScheduledNow",
+            json!({"botId": "b", "entryId": e.id}),
+        )
+        .await;
+        assert!(late.is_err(), "Send-now loses to the message that already fired");
+        f.until(|| f.prompts().len() == 1 && f.status_of(&e.id) == "sent").await;
+        sweep(&f.hub).unwrap();
+        assert_eq!(f.prompts().len(), 1, "{:?}", f.prompts());
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// A crash after the durable flip but before hand-on leaves a queued marker; the next start hands it on
+    /// once, and running recovery again cannot deliver it a second time.
+    #[tokio::test]
+    async fn a_restart_recovers_a_fired_message_once() {
+        let f = Fixture::new();
+        let e = f.schedule("after the restart", 60_000);
+        let current = f.hub.store.entry(&e.id).unwrap();
+        let mut data = current.data.clone();
+        data["status"] = "queued".into();
+        data["scheduledFired"] = true.into();
+        if let Some(o) = data.as_object_mut() {
+            o.remove("notBefore");
+        }
+        let fired = f.hub.store.flip_scheduled(&e.id, Some(2), &data, current.rev).unwrap().expect("the fire lands");
+        assert_eq!(fired.data["status"], "queued");
+        f.hub.store.expire_pending().unwrap();
+        assert_eq!(f.status_of(&e.id), "queued", "restart does not expire a fired scheduled message");
+        dispatch_pending(&f.hub).unwrap();
+        f.until(|| f.prompts().len() == 1 && f.status_of(&e.id) == "sent").await;
+        dispatch_pending(&f.hub).unwrap();
+        sweep(&f.hub).unwrap();
+        assert_eq!(f.prompts().len(), 1, "the entry id keeps recovery idempotent: {:?}", f.prompts());
         f.hub.shutdown().await;
         let _ = std::fs::remove_dir_all(&f.dir);
     }

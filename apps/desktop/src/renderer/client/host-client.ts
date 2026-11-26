@@ -311,9 +311,10 @@ export class HostClient {
     await this.call('cancelScheduled', { botId, entryId })
   }
 
-  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would. */
-  async sendScheduledNow(botId: string, entryId: string) {
-    return (await this.call<{ entry: Entry }>('sendScheduledNow', { botId, entryId })).entry
+  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would, with the text
+   * the user has just edited, when given. */
+  async sendScheduledNow(botId: string, entryId: string, text?: string) {
+    return (await this.call<{ entry: Entry }>('sendScheduledNow', { botId, entryId, ...(text !== undefined ? { text } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

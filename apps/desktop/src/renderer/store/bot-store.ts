@@ -489,16 +489,19 @@ export class BotStore extends BotSync {
       this.upsert(e)
       this.changed()
     }
+    // The removed row is hidden from the chat; its old copy in hello.held must leave at the same time.
+    this.forgetHeld(entry.id)
     show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
     this.perform((c) => c.cancelScheduled(entry.botId, entry.id), true, () => {
       if (this.entries.get(entry.botId)?.find((x) => x.id === entry.id)?.rev === entry.rev) show(entry)
     })
   }
 
-  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would. */
-  sendScheduledNow(entry: Entry) {
+  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would, with the text
+   * the user has just edited when that differs from the saved draft. */
+  sendScheduledNow(entry: Entry, text?: string) {
     this.answer(entry, 'sendScheduledNow', async (c) => {
-      const e = await c.sendScheduledNow(entry.botId, entry.id)
+      const e = await c.sendScheduledNow(entry.botId, entry.id, text?.trim())
       this.upsert(e)
       this.changed()
     })

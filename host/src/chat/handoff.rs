@@ -86,9 +86,12 @@ pub fn draft(hub: &Hub, cfg: &BotConfig, session: &str, reason: Reason) -> Resul
 fn build(store: &Store, bot: &str, session: &str) -> Result<String> {
     let entries = store.history(bot, i64::MAX, READ)?;
     let user = EntryKind::User.as_str();
+    // A message still held for later is not one of the user's requests yet: it must not reach the new
+    // conversation's handoff before its time, nor become the bookmark the next conversation resumes at.
+    let said = |e: &Entry| e.data["status"] != "scheduled";
     let requests: Vec<(String, String)> = entries
         .iter()
-        .filter(|e| e.kind == user)
+        .filter(|e| e.kind == user && said(e))
         .rev()
         .take(REQUESTS)
         .map(|e| (crate::chat::memory::ymd(e.created_at), e.data["text"].as_str().unwrap_or_default().to_owned()))
@@ -100,7 +103,8 @@ fn build(store: &Store, bot: &str, session: &str) -> Result<String> {
     let reply = entries.iter().rev().find(|e| e.kind == "agent" && e.data["final"] == true);
     let plan = entries.iter().rev().find(|e| e.kind == "plan").map(|e| plan_text(&e.data));
     let summary = store.kv_get(&summary_key(bot, session));
-    let bookmark = entries.iter().rev().find(|e| e.kind == user || (e.kind == "agent" && e.data["final"] == true));
+    let bookmark =
+        entries.iter().rev().find(|e| (e.kind == user && said(e)) || (e.kind == "agent" && e.data["final"] == true));
     Ok(Handoff {
         summary: summary.as_deref(),
         requests: &requests,
@@ -188,6 +192,35 @@ pub fn call(hub: &Hub, method: &str, b: &Value) -> Result<Value> {
 mod tests {
     use super::*;
     use crate::remote::identity::Identity;
+
+    #[test]
+    fn a_held_message_is_not_carried_into_the_new_conversation() {
+        let dir = std::env::temp_dir().join(format!("codync-handoff-held-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "codex"})).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        store.save_bot(&cfg).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+        let lane = Lane::main("b");
+        hub.store
+            .insert_entry(&lane, EntryKind::User, 1, &json!({"text": "the real request", "status": "sent"}))
+            .unwrap();
+        hub.store
+            .insert_entry(
+                &lane,
+                EntryKind::User,
+                2,
+                &json!({"text": "the secret scheduled words", "status": "scheduled", "notBefore": 9_999_999_999_i64}),
+            )
+            .unwrap();
+
+        let card = draft(&hub, &cfg, "s1", Reason::Cold).unwrap();
+        let carried = card.data["handoff"]["text"].as_str().unwrap();
+        assert!(carried.contains("the real request"), "{carried}");
+        assert!(!carried.contains("the secret scheduled words"), "not before its time: {carried}");
+        drop(hub);
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn a_withdrawn_card_is_not_the_user_keeping_the_conversation() {

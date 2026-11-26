@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
+import type { Entry } from '@shared/models'
 import type { HostEvent, HostTransport } from '../client/host-client'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
@@ -38,6 +39,27 @@ function storeWithAlerts() {
 }
 
 const alert = (botId: string): HostAlert => ({ botId, kind: 'done', title: botId, body: 'Finished.' })
+
+test('a held message that stops being scheduled leaves hello.held, and an older hello keeps scheduleSend', () => {
+  const { store, receive } = storeWithAlerts()
+  const held: Entry = {
+    id: 'held-1', seq: 1, botId: 'b', rev: 1, kind: 'user', turn: 1,
+    data: { text: 'later', status: 'scheduled', notBefore: 9_999_999_999_999 }, createdAt: 0, updatedAt: 0,
+  }
+  ;(store as unknown as { hello: unknown }).hello = { version: '2.51.0', scheduleSend: true, held: [held] }
+  // An older host's hello omits the capability: the one already known must stand.
+  receive({
+    type: 'hello', hostId: 'h', rev: 0, usage: {} as never, screen: null, network: null,
+    catchUp: null, scheduleSend: undefined, held: [held],
+  } as HostEvent)
+  assert.equal(store.hello?.scheduleSend, true)
+  // The host says it fired or was cancelled: its scheduled copy in hello.held must go with it.
+  receive({
+    type: 'entry',
+    entry: { ...held, rev: 2, data: { ...held.data, status: 'cancelled', removed: true } },
+  })
+  assert.deepEqual(store.hello?.held, [])
+})
 
 test("an alert passes on unless that bot's chat is on screen in a focused window", () => {
   const { store, passed, receive } = storeWithAlerts()

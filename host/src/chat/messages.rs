@@ -93,6 +93,9 @@ pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Option<Entry>> {
     let row = hub.store.bot(&e.bot_id)?.ok_or_else(|| anyhow!("unknown bot"))?;
     let mut data = e.data.clone();
     data["status"] = "queued".into();
+    // The durable outbox mark: if this host stops between the flip and `hand_on`, the next start hands this
+    // message on exactly once from `dispatch_pending` instead of expiring it with ordinary live-queue sends.
+    data["scheduledFired"] = true.into();
     // Remove the scheduling fields: the message is an ordinary queued send from here on.
     if let Some(o) = data.as_object_mut() {
         o.remove("notBefore");

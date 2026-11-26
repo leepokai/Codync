@@ -597,11 +597,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "sendScheduledNow" => {
             let bot = str_arg(&b, "botId")?;
             let entry_id = str_arg(&b, "entryId")?;
-            let e = hub
+            let mut e = hub
                 .store
                 .entry(entry_id)
                 .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            // The sheet's "Clear the time" sends the text the user just edited, not the saved draft. The edit
+            // lives on the same rev the one-way fire checks, so a stale sheet still loses to a newer change.
+            if let Some(text) = b["text"].as_str() {
+                let text = text.trim();
+                if text.is_empty() {
+                    bail!("the message is empty");
+                }
+                crate::chat::messages::set_text(&mut e.data, text);
+            }
             json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?
                 .ok_or_else(|| anyhow!("that message changed underneath you; take another look"))?})
         }

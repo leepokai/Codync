@@ -293,7 +293,7 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
-        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows, scheduleSend: event.scheduleSend, held: event.held ?? this.hello.held }
+        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows, scheduleSend: event.scheduleSend ?? this.hello.scheduleSend, held: event.held ?? this.hello.held }
         if (event.workflows) void this.reloadWorkflowMirror()
         else this.workflows = []
         if (event.rev < this.rev) this.rev = 0
@@ -315,6 +315,9 @@ export class BotSync extends BotMirror {
         this.onRosterChanged?.()
         break
       case 'entry':
+        // A held message that fired, was cancelled or became a queued send is no longer in `hello.held`. Drop
+        // the hello copy before hiding its removed entry, or the tray re-adds the stale scheduled row.
+        if (event.entry.data.status !== 'scheduled') this.forgetHeld(event.entry.id)
         // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
         if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
         this.bump(event.entry.rev)

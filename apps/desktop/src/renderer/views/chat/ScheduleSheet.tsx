@@ -76,8 +76,10 @@ export function ScheduleSheet({
             // Back to an ordinary queued message: it goes out as one typed now would.
             <button
               className="press schedule-cancel"
+              disabled={!text.trim()}
               onClick={() => {
-                store.sendScheduledNow(entry)
+                // Clearing the time is a send now: it carries the edit in the sheet, not the saved draft.
+                store.sendScheduledNow(entry, text.trim())
                 onClose()
               }}
             >

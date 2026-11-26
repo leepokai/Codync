@@ -296,6 +296,14 @@ export class BotMirror extends Observable {
     return this.hello?.backends.find((b) => b.id === id)?.registry ?? id
   }
 
+  /** A held message stopped being held (fired, cancelled, edited into a send): its `hello.held` copy must go so
+   * the tray cannot put the old scheduled row back once `allEntries` hides the removed entry. */
+  protected forgetHeld(id: string) {
+    const held = this.hello?.held
+    if (!this.hello || !held?.some((e) => e.id === id)) return
+    this.hello = { ...this.hello, held: held.filter((e) => e.id !== id) }
+  }
+
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
     const list = this.entries.get(botId)

@@ -180,7 +180,7 @@ internal fun canAnswerStub(entry: Entry): Boolean {
 }
 
 /** What an approval asks for, in Codync's words. */
-private fun approvalHeadline(kind: String?): String = when (kind) {
+internal fun approvalHeadline(kind: String?): String = when (kind) {
     "execute" -> "Wants to run a command"
     "edit", "delete", "move" -> "Wants to change files"
     "fetch" -> "Wants to access the web"

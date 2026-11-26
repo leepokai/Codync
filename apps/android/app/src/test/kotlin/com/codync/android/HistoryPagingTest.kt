@@ -313,5 +313,67 @@ class HistoryPagingTest {
         assertTrue(queued.isQueued)
     }
 
+    @Test fun `a stubbed pending approval keeps the title and tool kind that name it`() {
+        val filler = "F".repeat(PER_MESSAGE_CHARS)
+        val approval = row(2, "permission").copy(data = buildJsonObject {
+            put("status", "pending")
+            put("toolKind", "execute")
+            put("title", "npm test")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", filler)
+        })
+        val payload = WireJson.encodeToString(approval)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        val kept = newestWindow(sequenceOf(payload), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertEquals("npm test", kept.data.text("title"))
+        assertEquals("execute", kept.data.text("toolKind"))
+        assertEquals(null, kept.data["detail"])
+        assertEquals(null, kept.data["command"])
+        assertEquals("Wants to run a command", approvalHeadline(kept.data.text("toolKind")))
+        assertTrue(canAnswerStub(kept))
+        val unnamed = kept.copy(data = JsonObject(kept.data.filterKeys { it != "options" }))
+        assertFalse(canAnswerStub(unnamed))
+        assertTrue(kept.withApprovalReadFailure().approvalReadFailed)
+        assertFalse(canAnswerStub(kept.withApprovalReadFailure()))
+
+        val plain = row(4, "permission").copy(data = buildJsonObject {
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", filler)
+        })
+        val generic = newestWindow(sequenceOf(WireJson.encodeToString(plain)), 10, Long.MAX_VALUE).single()
+        assertEquals(null, generic.data.text("title"))
+        assertEquals(null, generic.data.text("toolKind"))
+        assertEquals("Wants to use a tool", approvalHeadline(generic.data.text("toolKind")))
+
+        // The name sits after the body, so only the tail can see it. It is not copied from there.
+        val late = row(5, "permission").copy(data = buildJsonObject {
+            put("detail", filler)
+            put("title", "npm test")
+            put("toolKind", "execute")
+        })
+        val latePayload = WireJson.encodeToString(late)
+        assertTrue(latePayload.takeLast(PAYLOAD_TAIL_CHARS).contains("\"title\""))
+        assertFalse(latePayload.take(PAYLOAD_HEAD_CHARS).contains("\"title\""))
+        val fromTail = windowRows(sequenceOf(StoredRow(
+            latePayload.take(PAYLOAD_HEAD_CHARS), latePayload.length.toLong(), latePayload.takeLast(PAYLOAD_TAIL_CHARS),
+        )), 10, Long.MAX_VALUE).single().entry
+        assertEquals(null, fromTail.data.text("title"))
+        assertEquals(null, fromTail.data.text("toolKind"))
+
+        val older = WireJson.encodeToString(row(1, "user"))
+        val named = windowRows(sequenceOf(
+            StoredRow(payload.take(PAYLOAD_HEAD_CHARS), payload.length.toLong(), payload.takeLast(PAYLOAD_TAIL_CHARS)),
+            StoredRow(older, older.length.toLong()),
+        ), 10, kept.text.length + older.length.toLong())
+        assertEquals(listOf(2L), named.map { it.entry.seq })
+        assertEquals(kept.text.length + "execute".length + "npm test".length, named.single().cost)
+        assertEquals(named.sumOf { it.cost }, named.sumOf { retainedStubChars(it.entry) })
+    }
+
     private fun row(seq: Long, kind: String) = Entry("e-$seq", seq, "a", rev = seq, kind = kind)
 }

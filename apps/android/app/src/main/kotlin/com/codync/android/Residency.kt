@@ -143,7 +143,7 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
             row.routingKnown || row.routingAmbiguous,
             offerAnswers = !row.routingAmbiguous,
         )?.threadNamed() ?: continue
-        val cost = entry.text.length
+        val cost = retainedStubChars(entry)
         if (decoded.isNotEmpty() && bytes + cost > budget) break
         decoded += KeptRow(entry, cost, entry.routingThreadId(), row.routingAmbiguous)
         bytes += cost
@@ -234,21 +234,33 @@ private fun boundedEntry(
     )
 }
 
-/** Fields a stub keeps from the card. The large body is replaced; these still say whether it can be answered or queued. */
-private val STUB_KEPT_KEYS = setOf("status", "options", "selected", "clientNonce", "removed")
+/** Fields a stub keeps from the card. The large body is replaced. `toolKind` and `title` name it; the rest say whether it can be answered or queued. */
+private val STUB_KEPT_KEYS = setOf("status", "options", "selected", "clientNonce", "removed", "toolKind", "title")
 
 /** The fields that offer an answer. They stay off a stub whose route was not proven. */
 private val ANSWER_KEYS = setOf("options", "selected")
 
+/** A name copied only when the head holds it whole. The tail is not a source for it. */
+private val HEAD_ONLY_KEYS = setOf("toolKind", "title")
+
+/**
+ * Characters a bounded stub counts. The sentence replaces the body. A tool kind and a title kept from the head
+ * count as well, so the name is inside the same sum as every other retained character.
+ */
+internal fun retainedStubChars(entry: Entry): Int {
+    fun chars(key: String) = (entry.data[key] as? JsonPrimitive)?.contentOrNull?.length ?: 0
+    return entry.text.length + chars("toolKind") + chars("title")
+}
+
 /**
  * The stub's `data`: the large text becomes [storedStubText]. Control fields that fit whole in [head] stay, and a
- * field that sits after the body is taken from [tail] when the head never finished it. A cut-off value is left out.
+ * field that sits after the body is taken from [tail] when the head never finished it. A name is not. A cut-off value is left out.
  */
 private fun stubData(head: String, tail: String, fullLength: Long, thread: String?, offerAnswers: Boolean): JsonObject {
     val fromHead = if (offerAnswers) STUB_KEPT_KEYS else STUB_KEPT_KEYS - ANSWER_KEYS
     // Answers sit with the card's fields. A value that only finishes in the tail is not copied: an unproven route's
     // options often land there, and offering them would answer under a thread nothing checked.
-    val fromTail = STUB_KEPT_KEYS - ANSWER_KEYS
+    val fromTail = STUB_KEPT_KEYS - ANSWER_KEYS - HEAD_ONLY_KEYS
     val kept = LinkedHashMap<String, JsonElement>()
     for ((key, value) in completeDataFields(head)) if (key in fromHead) kept[key] = value
     for ((key, value) in trailingDataFields(tail)) if (key in fromTail && key !in kept) kept[key] = value

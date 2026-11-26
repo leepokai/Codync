@@ -29,6 +29,12 @@ test('showing a hidden bot again does not replay its last completion', async () 
     botId = bot.id
     await expect.poll(() => hasBot(island, bot.id)).toBe(true)
 
+    // A hidden island can have zero height. Open it to wait for the renderer's bot summary.
+    await island.getByRole('button', { name: 'Show bots', exact: true }).dispatchEvent('click')
+    await expect(panel.locator('.island-empty').getByRole('button', { name: 'Message a bot', exact: true })).toBeVisible()
+    await panel.getByRole('button', { name: 'Open Codync', exact: true }).click()
+    await expect(panel).toHaveAttribute('data-mode', 'hidden')
+
     const hideAndShow = async () => {
       await api(page, 'updateBot', { id: bot.id, hidden: true })
       await expect.poll(() => hasBot(island, bot.id)).toBe(false)

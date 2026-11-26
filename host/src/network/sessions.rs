@@ -180,7 +180,9 @@ impl Live {
             return Some(live);
         }
         let (pid, started) = s.running.as_ref()?;
-        if all.iter().any(|o| o.key != s.key && o.running == s.running && o.seen > s.seen) {
+        // One Claude Code process runs one session at a time; others (Codex threads) may share one.
+        let moved = |o: &Session| o.key != s.key && o.running == s.running && o.seen > s.seen;
+        if s.kind == AgentKind::ClaudeCode && all.iter().any(moved) {
             return Some(Self::Offline);
         }
         // ponytail: one `ps` per session; one `ps -A` for all if listings grow long.

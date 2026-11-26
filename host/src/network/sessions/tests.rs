@@ -224,9 +224,12 @@ fn the_apps_hear_only_of_a_change_in_what_a_session_does() {
     assert_eq!(sessions.live.locked().get("b").map(|e| e.0), Some(Live::Online));
 }
 
+#[cfg(unix)]
 #[test]
 fn a_session_whose_process_moved_on_to_another_is_offline() {
-    let process = Some((u32::MAX, "never".to_owned()));
+    // This test's own process: it runs.
+    let me = std::process::id();
+    let process = crate::dev_servers::process_start(me).map(|started| (me, started));
     let session = |key: &str, seen: i64| Session {
         key: key.into(),
         kind: AgentKind::ClaudeCode,
@@ -244,4 +247,7 @@ fn a_session_whose_process_moved_on_to_another_is_offline() {
     let (old, new) = (session("old", 1), session("new", 2));
     let all = [old.clone(), new.clone()];
     assert_eq!(Live::read(&old, &all), Some(Live::Offline), "after /clear its process serves the newer one");
+    let codex = |s: Session| Session { kind: AgentKind::Codex, ..s };
+    let all = [codex(old.clone()), codex(new)];
+    assert_eq!(Live::read(&all[0], &all), Some(Live::Online), "Codex threads share a process");
 }

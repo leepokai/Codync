@@ -518,8 +518,12 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                         _ => false,
                     };
                 let thread = task.thread.as_ref().and_then(|thread| threads.get(thread));
-                let runs_on = thread.map(|t| agent_of(&hub.store, t));
-                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), runs_on)
+                // A task waiting for its thread already knows the agent that thread will start on.
+                let runs_on = thread.map_or_else(
+                    || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
+                    |t| agent_of(&hub.store, t),
+                );
+                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on))
             })
             .collect(),
     )
@@ -531,8 +535,8 @@ pub(super) fn agent_of(store: &Store, thread: &BotConfig) -> String {
     crate::agent::fallback::effective(thread, crate::agent::bot::kept_step(store, thread)).backend
 }
 
-/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder and `runs_on` the agent of its thread bot
-/// when it has one.
+/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot and `runs_on` the agent
+/// its thread runs on (or will), when known.
 pub(super) fn row(
     task: Task,
     status: Status,
@@ -881,7 +885,7 @@ mod tests {
     #[test]
     fn a_row_names_the_agent_its_thread_runs_on() {
         let hub = crate::chat::calls::context::tests::hub();
-        let cfg = crate::chat::calls::context::tests::bot("b-agent", "Mika", "/tmp");
+        let mut cfg = crate::chat::calls::context::tests::bot("b-agent", "Mika", "/tmp");
         let mut thread = crate::chat::calls::context::tests::bot("thread-a", "Mika", "/tmp");
         thread.thread_of = Some(cfg.id.clone());
         thread.backend = "claude".into();
@@ -896,6 +900,11 @@ mod tests {
         // On its fallback, as the actor keeps it: still so once the thread's actor and its runtime are gone.
         hub.store.kv_set("fallback.on.thread-a", &crate::agent::fallback::login(&thread, 1)).expect("saved");
         assert_eq!(runs_on(), "codex", "the fallback it switched to");
+        // Waiting for a seat, without a thread yet: the agent its thread will start on, in Advisor mode the threads'.
+        cfg.thread_agent = Some(crate::store::Fallback { backend: "gemini".into(), ..Default::default() });
+        let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
     }
 
     #[test]

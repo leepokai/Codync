@@ -304,8 +304,14 @@ mod tests {
         let page = older(&hub, None, None).expect("a page");
         let row = &page["threads"][0];
         assert_eq!(
-            (row["botId"].as_str(), row["id"].as_str(), row["talk"].as_bool(), row["folder"].as_str()),
-            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"))
+            (
+                row["botId"].as_str(),
+                row["id"].as_str(),
+                row["talk"].as_bool(),
+                row["folder"].as_str(),
+                row["runsOn"].is_string()
+            ),
+            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"), true)
         );
         assert_eq!(page["more"], false);
         let earlier = older(&hub, Some("b1"), row["endedAt"].as_i64()).expect("the next page");

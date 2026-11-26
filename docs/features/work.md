@@ -658,7 +658,9 @@ only recalled, never listed.
   `hello.threadKeepDays`, a `threadKeepDays {days}` event to connected apps) deletes a thread that many days after it
   last ended: the archived task, its parked thread bot with its transcript (`Hub::delete_bot`), its own folder (a
   thread without a bot) and an untouched worktree. A thread that worked a later task stays with it. It runs at host
-  start, once a day and as the choice changes. Writing to a thread reopens it and its clock starts again when it ends.
+  start, once a day and as the choice changes. The `threadKeepDays` event goes out after the deletion, as the choice
+  changes and whenever the daily look deleted some, and apps list their older threads again on every one, the same
+  number or not. Writing to a thread reopens it and its clock starts again when it ends.
 - **Listed.** `olderThreads {botId?, before?}` → `{threads, more}`: the ended threads of `botId`, else of every
   bot on the computer, that ended before `before` (the `endedAt` of the oldest one the app has paged; none for the
   newest), newest first, 30 a page, from the boxes and the archive; a page never splits threads that ended in the same

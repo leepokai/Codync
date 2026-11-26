@@ -47,19 +47,25 @@ fun AppStore.openWorkflows() {
     mutableState.update { it.copy(selectedBot = null, workflow = WorkflowRoute(), workflowMessage = null) }
 }
 
-/** Opens one workflow, and a run when [runId] is set. Clears the open chat. */
-fun AppStore.showWorkflow(id: String?, runId: String? = null) {
-    mutableState.update {
-        it.copy(selectedBot = null, workflow = if (id == null) WorkflowRoute() else WorkflowRoute(id, runId), workflowMessage = null)
-    }
+/** Opens one workflow, and a run when [runId] is set (or a step run on its own, [stepId]). Clears the open chat. */
+fun AppStore.showWorkflow(id: String?, runId: String? = null, stepId: String? = null) {
+    mutableState.update { it.copy(selectedBot = null, workflow = workflowRoute(id, runId, stepId), workflowMessage = null) }
+}
+
+/** Where a workflow opens: a step counts only outside a run (a step's push names its run, or only the step when it ran
+ *  on its own); blank ids are none. */
+internal fun workflowRoute(id: String?, runId: String?, stepId: String?): WorkflowRoute {
+    if (id == null) return WorkflowRoute()
+    val run = runId?.takeIf { it.isNotBlank() }
+    return WorkflowRoute(id, run, stepId?.takeIf { it.isNotBlank() && run == null })
 }
 
 fun AppStore.closeWorkflows() {
     mutableState.update { it.copy(workflow = null) }
 }
 
-/** A notification that names a workflow: leave the chat, land on Bots, open the workflow or its run. */
-fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runId: String?) {
+/** A notification that names a workflow: leave the chat, land on Bots, open the workflow, its run or a step run on its own. */
+fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runId: String?, stepId: String? = null) {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {
         val completed = withTimeoutOrNull(30_000) {
@@ -79,7 +85,7 @@ fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runI
                 return@withTimeoutOrNull true
             }
             if (state.value.generation != ready.generation) return@withTimeoutOrNull true
-            focusWorkflows(destination.computerId, workflowId, runId?.takeIf { id -> id.isNotBlank() })
+            focusWorkflows(destination.computerId, workflowId, runId, stepId)
             true
         }
         if (completed == null) mutableState.update { it.copy(error = "Couldn't open this notification yet. Reconnect and try again.") }
@@ -148,6 +154,12 @@ internal suspend fun AppStore.workflowRuns(id: String, limit: Int, before: Workf
         if (before != null) put("before", buildJsonObject { put("startedAt", before.startedAt); put("id", before.id) })
     })
     return WireJson.decodeFromJsonElement(response)
+}
+
+/** One step run on its own, outside any run. */
+internal suspend fun AppStore.fetchWorkflowStep(stepId: String): WorkflowStep {
+    val response = ready().call("workflowStep", buildJsonObject { put("stepId", stepId) })
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("step"))
 }
 
 internal suspend fun AppStore.fetchWorkflowRun(runId: String): WorkflowRunDetail {

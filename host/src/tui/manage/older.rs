@@ -60,6 +60,26 @@ impl App {
             l.keep_cursor(picked.as_deref(), work, max_threads);
         }
     }
+
+    /// The computer's `threadKeepDays`, sent once it deleted threads (the choice the same or not): each open Details
+    /// page lists its older threads again.
+    pub(in crate::tui) fn relist_older(&mut self) {
+        let loading = self.thread_keep_days.is_some();
+        let mut bots = Vec::new();
+        for o in &mut self.overlays {
+            let Overlay::Details(l) = o else { continue };
+            let (work, max_threads) = self.bots.get(&l.bot).map_or((&[][..], None), |b| (&b.work, b.max_threads));
+            let picked = l.picked(work, max_threads).map(|row| row.id().to_owned());
+            *l.older = OlderThreads { loading, ..Default::default() };
+            l.keep_cursor(picked.as_deref(), work, max_threads);
+            bots.push(l.bot.clone());
+        }
+        if loading {
+            for bot in bots {
+                self.sheet("olderThreads", json!({"botId": bot}), Reply::OlderThreads(bot));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -92,5 +112,17 @@ mod tests {
             .collect();
         assert_eq!(recent, ["w", "o1", "o2"], "the bot's own row first, then the older ones");
         assert_eq!((l.older.before(), l.older.more, l.older.loading), (Some(100), false, false));
+    }
+
+    #[tokio::test]
+    async fn the_computers_keep_days_event_lists_older_threads_again() {
+        let mut app = test_app();
+        bot_with(&mut app, &[("w", "done")]);
+        app.thread_keep_days = Some(30);
+        app.overlays.push(Overlay::Details(DetailsPage { bot: "a".into(), ..Default::default() }));
+        app.older_threads("a", Some(&json!({"threads": [thread("o1", 200)], "more": false})));
+        app.relist_older();
+        let Some(Overlay::Details(l)) = app.overlays.last() else { panic!("the page is open") };
+        assert!(l.older.rows.is_empty() && l.older.loading, "the deleted ones are gone until the page comes again");
     }
 }

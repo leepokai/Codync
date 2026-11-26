@@ -356,6 +356,8 @@ export class BotSync extends BotMirror {
         break
       case 'threadKeepDays':
         this.showThreadKeepDays(event.days)
+        // Sent once the computer deleted threads, the choice the same or not: list them again.
+        this.olderThreads.reset()
         break
       case 'network':
         this.network = event.network

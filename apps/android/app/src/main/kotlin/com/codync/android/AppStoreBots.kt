@@ -295,13 +295,19 @@ internal fun AppStore.setThreadKeepDays(days: Int) {
     command("setThreadKeepDays", buildJsonObject { put("days", days) }, "threadKeepDays", onFailure = { showThreadKeepDays(was) })
 }
 
-/** Delete old threads as the computer has it: chosen here, or its `threadKeepDays` event (chosen on another device). A new
- *  choice may have deleted older threads, so they're read again. */
-internal fun AppStore.showThreadKeepDays(days: Int) = mutableState.update { state ->
-    val hello = state.hello ?: return@update state
-    if (threadKeepDays(hello) == days) state
-    else state.copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days))), olderThreads = null)
+/** Delete old threads as chosen here. A new choice may have deleted older threads, so they're read again. */
+internal fun AppStore.showThreadKeepDays(days: Int) = mutableState.update { it.withThreadKeepDays(days) }
+
+/** The computer's `threadKeepDays` event: sent once it deleted threads, the choice the same or not. */
+internal fun AppStore.heardThreadKeepDays(days: Int) = mutableState.update { it.heardThreadKeepDays(days) }
+
+internal fun AppState.withThreadKeepDays(days: Int): AppState {
+    val hello = hello ?: return this
+    return if (threadKeepDays(hello) == days) this
+    else copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days))), olderThreads = null)
 }
+
+internal fun AppState.heardThreadKeepDays(days: Int): AppState = withThreadKeepDays(days).copy(olderThreads = null)
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

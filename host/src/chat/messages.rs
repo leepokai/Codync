@@ -40,7 +40,18 @@ pub fn hand_on(hub: &Arc<Hub>, cfg: &BotConfig, e: &Entry) -> Result<()> {
     } else {
         // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
         let prompt = crate::chat::prompt::of_entry(hub, cfg, e);
-        hub.send_cmd(&cfg.id, Cmd::Send { lane, entry_id: e.id.clone(), text: prompt })?;
+        // The owner's generation, read once. A thread has no pause generation of its own.
+        let arrived = hub.pause.generation(cfg.owner());
+        hub.send_cmd(
+            &cfg.id,
+            Cmd::Send {
+                lane,
+                entry_id: e.id.clone(),
+                text: prompt,
+                arrived_epoch: arrived.epoch,
+                arrived_blocked: arrived.blocked,
+            },
+        )?;
     }
     Ok(())
 }

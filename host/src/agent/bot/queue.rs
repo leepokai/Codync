@@ -40,15 +40,21 @@ impl Actor {
                 self.enqueue(Queued::Watchdog(stuck), done_tx).await;
             }
             Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
-            Cmd::Send { lane, entry_id, mut text } => {
+            Cmd::Send { lane, entry_id, mut text, arrived_epoch, arrived_blocked } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
                 if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {
-                    // Already paused: this message was not waiting in the queue. It is refused now.
-                    // One that was queued before the pause stays there (`refuse_paused`).
-                    if self.paused() {
+                    // Arrival is the snapshot from `hand_on`, not `paused()` now. A resume does not
+                    // move the epoch, so an equal epoch is not proof the message arrived afterwards:
+                    // `arrived_blocked` is that fact. A message that arrived while admission was open
+                    // is held when this actor only reads it after a later pause began.
+                    let pause_began_after_arrival = self.hub.pause.epoch(self.cfg.owner()) != arrived_epoch;
+                    if arrived_blocked {
                         self.cancel_paused_message(&entry_id);
                     } else {
+                        if pause_began_after_arrival && self.paused() {
+                            tracing::debug!(arrived_epoch, "holding a message that arrived before this pause");
+                        }
                         self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
                     }
                 }
@@ -127,7 +133,7 @@ impl Actor {
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Paused(paused) => self.pause_changed(paused, done_tx).await,
+            Cmd::Paused { paused, pause_epoch } => self.pause_changed(paused, pause_epoch, done_tx).await,
             Cmd::SwitchBack => self.switch_back().await,
             Cmd::CallEnded { call } => {
                 if self.turn_call.as_ref() == Some(&call) {
@@ -135,7 +141,7 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(mut base) => {
+            Cmd::Reconfigure { mut base, pause_epoch } => {
                 // A thread's folder is its own (`enter_worktree`): its bot's changes (`work::fallbacks_changed`) keep it.
                 if self.cfg.is_thread() {
                     base.cwd.clone_from(&self.base.cwd);
@@ -200,7 +206,7 @@ impl Actor {
                 // A pause stops the running turn (nothing more is spent), cancels every run of its routines and
                 // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
                 if old.paused != self.base.paused {
-                    self.pause_changed(self.base.paused, done_tx).await;
+                    self.pause_changed(self.base.paused, pause_epoch, done_tx).await;
                 }
             }
             Cmd::Shutdown => return false,
@@ -588,9 +594,15 @@ impl Actor {
     /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
     /// lets what was already waiting go on. The host's pause transaction already cancelled its routine runs, so a
     /// delayed notification cannot cancel work admitted after a resume.
-    async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
+    async fn pause_changed(&mut self, paused: bool, notice_epoch: u64, done_tx: &mpsc::UnboundedSender<Done>) {
         if paused {
-            self.cancel_turn().await;
+            // `notice_epoch` is the generation `Pause::block` stored for this pause. A turn admitted
+            // at that generation or a later one started after the pause: a resume does not move the
+            // generation. Cancelling it drops work a newer resume already started, and `cancel_turn`
+            // does not put the message back.
+            if !self.stale_pause_notice(notice_epoch) {
+                self.cancel_turn().await;
+            }
             // The running turn is stopped. A resume can admit new work before the queue is refused.
             super::race_gate::wait("before_refuse_paused").await;
             self.refuse_paused();
@@ -600,6 +612,13 @@ impl Actor {
                 work::dispatch(&self.hub, &self.cfg.id);
             }
         }
+        // After the notice's effects, so a test can tell the backlog has been applied.
+        super::race_gate::wait("after_pause_changed").await;
+    }
+
+    /// A pause notice from `notice_epoch` is older than the running turn. It must not cancel it.
+    fn stale_pause_notice(&self, notice_epoch: u64) -> bool {
+        self.turn.is_some() && self.turn_epoch.is_some_and(|started| notice_epoch <= started)
     }
 
     /// A user message that reached an already-paused bot. It was not waiting in the queue, so it does not run

@@ -274,7 +274,17 @@ pub fn send_again<'a>(hub: &Hub, ids: impl IntoIterator<Item = &'a str>) -> Resu
         entry.data["status"] = "queued".into();
         hub.set_entry(&entry.id, &entry.data);
         let lane = Lane::main(&entry.bot_id);
-        hub.send_cmd(&bot.config.id, Cmd::Send { lane, entry_id: entry.id, text: prompt })?;
+        let arrived = hub.pause.generation(bot.config.owner());
+        hub.send_cmd(
+            &bot.config.id,
+            Cmd::Send {
+                lane,
+                entry_id: entry.id,
+                text: prompt,
+                arrived_epoch: arrived.epoch,
+                arrived_blocked: arrived.blocked,
+            },
+        )?;
     }
     Ok(())
 }
@@ -508,7 +518,18 @@ mod tests {
         let lane = Lane::main(&bot);
         invite(&hub, &bot, &lane, &own("junie"), &[], None).unwrap();
         let hi = message(&hub, &lane, "hi");
-        hub.send_cmd(&bot, Cmd::Send { lane, entry_id: hi, text: "hi".into() }).unwrap();
+        let arrived = hub.pause.generation(&bot);
+        hub.send_cmd(
+            &bot,
+            Cmd::Send {
+                lane,
+                entry_id: hi,
+                text: "hi".into(),
+                arrived_epoch: arrived.epoch,
+                arrived_blocked: arrived.blocked,
+            },
+        )
+        .unwrap();
         until("the answered turn to complete the card", || cards(&hub, "junie", &bot).is_empty()).await;
         assert_eq!(backends::signed_in("junie"), Some(true));
         hub.shutdown().await;

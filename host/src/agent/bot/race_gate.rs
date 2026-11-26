@@ -22,6 +22,8 @@
 //!   to the command loop, so a pause notification stays unread.
 //! - `before_startup_pause_read` — a restarted actor has the pause snapshot from `spawn` and has not
 //!   yet taken the paused or not-paused branch.
+//! - `after_pause_changed` — a pause or resume notice has finished its effects. A test counts one
+//!   entry per notice so it can look at the turn only after the whole backlog has been applied.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;

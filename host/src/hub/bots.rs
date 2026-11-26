@@ -172,12 +172,14 @@ impl Hub {
             {
                 crate::chat::work::fallbacks_changed(self, &cfg);
             }
+            // One generation for this save. `block` has already stored it when the save is a pause.
+            let pause_epoch = self.pause.epoch(&id);
             if pause_changed {
                 // The bot's own actor learns from `Reconfigure` below; each live thread that reads its owner's
                 // pause (`Actor::paused`) is told separately, so a running thread turn stops now too.
                 for thread in crate::chat::work::of(&self.store, &id) {
                     if self.has_actor(&thread.id)
-                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused { paused: cfg.paused, pause_epoch })
                     {
                         tracing::warn!(
                             thread = %thread.id, error = format!("{error:#}"),
@@ -186,7 +188,7 @@ impl Hub {
                     }
                 }
             }
-            self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+            self.send_cmd(&id, Cmd::Reconfigure { base: Box::new(cfg), pause_epoch })?;
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);

@@ -34,10 +34,15 @@ pub enum Cmd {
         hops: u8,
     },
     /// The user wrote in the bot's chat.
+    ///
+    /// `arrived_epoch` and `arrived_blocked` are one [`crate::hub::pause::Generation`] from the moment
+    /// the message was handed on. The actor must not decide from the flag it sees when it reads this.
     Send {
         lane: Lane,
         entry_id: String,
         text: String,
+        arrived_epoch: u64,
+        arrived_blocked: bool,
     },
     /// The user wants a queued message of theirs handled now (`steer`).
     Steer {
@@ -123,9 +128,18 @@ pub enum Cmd {
         reply: tokio::sync::oneshot::Sender<bool>,
     },
     NewSession,
-    Reconfigure(Box<BotConfig>),
+    /// `pause_epoch` is the owner's pause generation when this config was saved. A pause notice older
+    /// than the running turn's generation does not cancel that turn.
+    Reconfigure {
+        base: Box<BotConfig>,
+        pause_epoch: u64,
+    },
     /// Its bot's pause changed and this actor is one of its threads: the owner's config is the one that says so.
-    Paused(bool),
+    /// `pause_epoch` is the generation the notice was issued under, the same value as the owner's `Reconfigure`.
+    Paused {
+        paused: bool,
+        pause_epoch: u64,
+    },
     /// The user wants the bot's own agent again (`switchBack`).
     SwitchBack,
     /// A voice call ended (`chat::calls`): its replies show in the chat again, and dreaming reads it.

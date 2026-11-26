@@ -141,6 +141,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig, startup: (bool, Vec<String>)) -> Bo
         announce: None,
         first_prompt: None,
         turn: None,
+        turn_epoch: None,
         queue: VecDeque::new(),
         steers_in_flight: HashMap::new(),
         held_done: None,
@@ -342,6 +343,9 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
+    /// The pause generation the running turn was admitted under (`start_turn`). Empty when no turn runs
+    /// the check; a finished turn's value is ignored while `turn` is empty.
+    turn_epoch: Option<u64>,
     queue: VecDeque<Admitted>,
     /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
     steers_in_flight: HashMap<String, steer::InFlight>,

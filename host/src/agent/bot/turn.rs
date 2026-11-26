@@ -151,6 +151,8 @@ impl Actor {
         }
         self.lane = lane.clone();
         self.turn = Some(turn);
+        // The generation this turn was admitted under. A later pause notice compares against it.
+        self.turn_epoch = Some(pause_epoch);
         // Only the user's own words feed memory: not another bot's, a room's or a routine's.
         let from_user = !hidden && self.source() == TurnSource::User;
         self.turn_text = from_user.then(|| text.to_owned());

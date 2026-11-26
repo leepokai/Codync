@@ -31,6 +31,14 @@ struct State {
     writing: HashMap<String, usize>,
 }
 
+/// One read of a bot's pause generation. Not a second counter: `epoch` is [`Pause::epoch`], and
+/// `blocked` is the admission bit `block` sets in the same update.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Generation {
+    pub epoch: u64,
+    pub blocked: bool,
+}
+
 /// A prompt write admitted before a pause. Dropped once the write has reached the agent (or failed).
 pub struct Admission<'a> {
     pause: &'a Pause,
@@ -80,7 +88,15 @@ impl Pause {
 
     /// The pause generation `bot` is on. It changes only when a pause begins.
     pub fn epoch(&self, bot: &str) -> u64 {
-        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).epochs.get(bot).copied().unwrap_or(0)
+        self.generation(bot).epoch
+    }
+
+    /// The generation and whether admission is closed, from one lock. A resume does not move the
+    /// generation, so the two together are what a message or a notice has to remember: the epoch
+    /// alone cannot tell "arrived during this pause" from "arrived after its resume".
+    pub fn generation(&self, bot: &str) -> Generation {
+        let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        Generation { epoch: state.epochs.get(bot).copied().unwrap_or(0), blocked: state.blocked.contains(bot) }
     }
 
     /// Admits one prompt write only if no pause has begun since `epoch` was read. A pause that started and a resume

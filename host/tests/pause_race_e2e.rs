@@ -539,3 +539,132 @@ async fn a_boxed_routine_starts_while_the_scheduler_holds_the_pause_transition()
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
+
+/// A message handed on while the bot is running stays queued when the actor reads it only after
+/// a pause has begun. The chat delivers it on resume.
+#[tokio::test]
+async fn a_message_that_arrived_while_running_is_held_when_read_during_a_pause() {
+    let gates = Gates::new();
+    let host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+
+    gates.arm("after_inflight_marked");
+    host.call("send", json!({"botId": bot, "text": "HOLD:chat", "clientNonce": "hold-early"})).await;
+    gates.entered("after_inflight_marked").await;
+    host.call("send", json!({"botId": bot, "text": "ARRIVED_WHILE_RUNNING", "clientNonce": "early"})).await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    // The pause notice sits behind the message. Reaching it means the actor has already decided the message.
+    gates.arm("after_pause_changed");
+    gates.release("after_inflight_marked");
+    gates.entered("after_pause_changed").await;
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_ne!(
+        user_status(&history, "ARRIVED_WHILE_RUNNING").as_deref(),
+        Some("cancelled"),
+        "a message that arrived while the bot was running was cancelled because the actor read it during the pause: {history}"
+    );
+    gates.release("after_pause_changed");
+
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    wait_for("the held message to reach the agent after resume", async || {
+        prompt_blob(&host).contains("ARRIVED_WHILE_RUNNING")
+    })
+    .await;
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_ne!(
+        user_status(&history, "ARRIVED_WHILE_RUNNING").as_deref(),
+        Some("cancelled"),
+        "a message held through the pause was cancelled on resume: {history}"
+    );
+}
+
+/// A message handed on while admission is closed stays cancelled even when a resume lands before
+/// the actor reads the command.
+#[tokio::test]
+async fn a_message_that_arrived_during_a_pause_is_refused_after_resume() {
+    let gates = Gates::new();
+    let host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+
+    gates.arm("after_inflight_marked");
+    host.call("send", json!({"botId": bot, "text": "HOLD:chat", "clientNonce": "hold-during"})).await;
+    gates.entered("after_inflight_marked").await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("send", json!({"botId": bot, "text": "ARRIVED_WHILE_PAUSED", "clientNonce": "during"})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    gates.release("after_inflight_marked");
+
+    wait_for("the message sent during the pause to be decided", async || {
+        let history = host.call("history", json!({"botId": bot})).await;
+        let status = user_status(&history, "ARRIVED_WHILE_PAUSED");
+        status.as_deref() == Some("cancelled")
+            || status.as_deref() == Some("sent")
+            || prompt_blob(&host).contains("ARRIVED_WHILE_PAUSED")
+    })
+    .await;
+    let history = host.call("history", json!({"botId": bot})).await;
+    let prompts = prompt_blob(&host);
+    assert_eq!(
+        user_status(&history, "ARRIVED_WHILE_PAUSED").as_deref(),
+        Some("cancelled"),
+        "a message that arrived during the pause was accepted after resume: {history}"
+    );
+    assert!(
+        !prompts.contains("ARRIVED_WHILE_PAUSED"),
+        "a message that arrived during the pause was delivered after resume: {}",
+        around(&prompts, "ARRIVED_WHILE_PAUSED")
+    );
+}
+
+/// Resume, a second pause and another resume all commit while the actor is still finishing the
+/// previous turn. The turn those resumes start must not be cancelled by the older pause notice,
+/// and the message must still be answered.
+#[tokio::test]
+async fn a_stale_pause_notice_does_not_cancel_a_turn_a_later_resume_started() {
+    let gates = Gates::new();
+    let host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+
+    host.call("send", json!({"botId": bot, "text": "HOLD:chat", "clientNonce": "hold-stale"})).await;
+    wait_for("the held turn's prompt", async || prompt_blob(&host).contains("HOLD:chat")).await;
+    host.call("send", json!({"botId": bot, "text": "HOLD:kept", "clientNonce": "kept"})).await;
+    wait_for("the second message to queue behind the turn", async || {
+        let history = host.call("history", json!({"botId": bot})).await;
+        user_status(&history, "HOLD:kept").as_deref() == Some("queued")
+    })
+    .await;
+
+    gates.arm("before_next_in_queue");
+    std::fs::write(host.workspace(&bot).join("release-chat"), "").unwrap();
+    gates.entered("before_next_in_queue").await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    gates.arm("after_pause_changed");
+    gates.release("before_next_in_queue");
+    for _ in 0..4 {
+        gates.entered("after_pause_changed").await;
+        gates.release("after_pause_changed");
+    }
+
+    std::fs::write(host.workspace(&bot).join("release-kept"), "").unwrap();
+    wait_for("the kept turn to finish", async || {
+        prompt_blob(&host).contains("HOLD:kept") && common::bot(&host.snapshot().await, &bot)["status"] == "idle"
+    })
+    .await;
+    let history = host.call("history", json!({"botId": bot})).await;
+    let text = history.to_string();
+    assert!(
+        !text.contains("Stopped."),
+        "a stale pause notice cancelled the turn a later resume started: {}",
+        around(&text, "Stopped.")
+    );
+    assert_ne!(
+        user_status(&history, "HOLD:kept").as_deref(),
+        Some("cancelled"),
+        "the message a later resume started was lost: {history}"
+    );
+    assert!(prompt_blob(&host).contains("HOLD:kept"), "the message a later resume started never reached the agent");
+}

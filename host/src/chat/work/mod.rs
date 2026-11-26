@@ -266,7 +266,8 @@ pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     }
     for thread in threads.into_iter().filter(|thread| hub.has_actor(&thread.id)) {
         let id = thread.id.clone();
-        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure(Box::new(thread))) {
+        let pause_epoch = hub.pause.epoch(thread.owner());
+        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure { base: Box::new(thread), pause_epoch }) {
             tracing::warn!(thread = %id, error = format!("{error:#}"), "couldn't give a thread its bot's fallbacks");
         }
     }

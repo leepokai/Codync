@@ -65,7 +65,7 @@ impl Host {
     }
 
     async fn wait_for(&self, bot: &str, predicate: impl Fn(&Value) -> bool) -> Value {
-        tokio::time::timeout(Duration::from_secs(20), async {
+        match tokio::time::timeout(Duration::from_secs(20), async {
             loop {
                 let history = self.call("history", json!({"botId": bot})).await;
                 if let Some(entry) = history["entries"].as_array().unwrap().iter().find(|e| predicate(e)) {
@@ -75,11 +75,14 @@ impl Host {
             }
         })
         .await
-        .expect("team flow did not finish")
+        {
+            Ok(entry) => entry,
+            Err(elapsed) => panic!("{} ({elapsed})", self.team_timeout("team flow did not finish").await),
+        }
     }
 
     async fn wait_finished(&self) -> Value {
-        let completed = tokio::time::timeout(Duration::from_secs(20), async {
+        match tokio::time::timeout(Duration::from_secs(20), async {
             loop {
                 let sync = common::snapshot(&self.base, &self.token).await;
                 let mut notices =
@@ -92,8 +95,54 @@ impl Host {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         })
-        .await;
-        completed.expect("team flow did not release its turns and notices")
+        .await
+        {
+            Ok(sync) => sync,
+            Err(elapsed) => {
+                panic!("{} ({elapsed})", self.team_timeout("team flow did not release its turns and notices").await)
+            }
+        }
+    }
+
+    /// What a Windows timeout could not tell apart: idle bots with a notice stuck short of completed, or a slow poll
+    /// that had already finished.
+    async fn team_timeout(&self, what: &str) -> String {
+        let sync = common::snapshot(&self.base, &self.token).await;
+        let bots: Vec<String> = sync["bots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|bot| {
+                format!(
+                    "{} status={}",
+                    bot["name"].as_str().unwrap_or(bot["id"].as_str().unwrap_or("?")),
+                    bot["status"].as_str().unwrap_or("?")
+                )
+            })
+            .collect();
+        let notices: Vec<String> = sync["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["data"]["delegationId"].is_string())
+            .map(|entry| {
+                format!(
+                    "{} status={}",
+                    entry["data"]["delegationId"].as_str().unwrap_or("?"),
+                    entry["data"]["status"].as_str().unwrap_or("?")
+                )
+            })
+            .collect();
+        let last_rev = sync["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["rev"].as_i64().or_else(|| entry["seq"].as_i64()))
+            .max();
+        format!(
+            "{what}\nbots: {bots:?}\nnotices: {notices:?}\nlast entry revision: {last_rev:?}\nsnapshot rev: {}",
+            sync["rev"]
+        )
     }
 
     fn fixture_log(&self, bot: &str, file: &str) -> Vec<Value> {

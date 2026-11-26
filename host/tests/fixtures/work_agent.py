@@ -273,6 +273,12 @@ def answer(text, session):
         return elsewhere("Request", text)
     command = re.search(r"^(ADD|STEER|TELL|ASKTASK|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
+        # A user message can hold this turn open (`HOLD:<name>`), the way a routine brief does,
+        # so a test can queue more work behind it. No `HOLD:` and this returns at once.
+        # A reply turn quotes the request, which may itself say HOLD:. The profile mentions the
+        # reply header without a request id, so only a real reply is skipped.
+        if not re.search(r"replied to your message_bot request [0-9a-f]{8}-", text):
+            hold(text)
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
     if name == "ADD":

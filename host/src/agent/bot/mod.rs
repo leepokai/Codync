@@ -31,6 +31,7 @@ mod launch;
 mod lifecycle;
 mod modes;
 mod queue;
+mod race_gate;
 mod session;
 mod sign_in;
 mod steer;
@@ -39,7 +40,7 @@ mod turn;
 mod updates;
 
 pub use cmd::Cmd;
-use cmd::{HostTurn, Queued};
+use cmd::{Admitted, HostTurn, Queued};
 use codync_agent::mcp_names::Renamed;
 pub use commands::listed as agent_commands;
 pub use compaction::{context_window, offers_threshold};
@@ -92,6 +93,10 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    // Read before the task is spawned. A resume that lands before `run` starts must not reopen cut-off work:
+    // `run` decides from this value, not from the flag it would see later.
+    let owner = cfg.owner().to_owned();
+    let was_paused = hub.paused(&owner) || hub.pause.blocked(&owner);
     let actor = Actor {
         hub,
         base,
@@ -156,7 +161,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
     };
-    let task = tokio::spawn(actor.run(rx, interrupted));
+    let task = tokio::spawn(actor.run(rx, interrupted, was_paused));
     BotHandle { tx, task }
 }
 
@@ -325,7 +330,7 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
-    queue: VecDeque<Queued>,
+    queue: VecDeque<Admitted>,
     /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
     steers_in_flight: HashMap<String, steer::InFlight>,
     /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
@@ -359,7 +364,7 @@ struct Actor {
     /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
     // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
     // one joined, refused, still drops it; ACP doesn't say which step read the message.
-    unheard: Vec<Queued>,
+    unheard: Vec<Admitted>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
@@ -413,6 +418,8 @@ impl Actor {
             }
         }
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
+        // A pause can be saved, and a resume can reopen admission, before this failure is retried.
+        race_gate::wait("before_fallback").await;
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -428,14 +435,18 @@ impl Actor {
             _ => {}
         }
         self.stop_spent().await;
+        // Queued work starts here, before any pause or resume still sitting in the command channel.
+        race_gate::wait("before_next_in_queue").await;
         self.next_in_queue(done_tx).await;
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
-    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>) {
+    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>, was_paused: bool) {
+        // `was_paused` was read in `spawn`, before this task ran. The gate only lets a test hold that gap open.
+        race_gate::wait("before_startup_pause_read").await;
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
-        if self.paused() {
+        if was_paused {
             // Paused while the host was down: nothing resumes now (that would spend). A thread's cut-off task is
             // settled here: one of the bot's own waits again and starts only after an explicit resume, while a
             // routine run or request ends as interrupted. The bot's own run that was going says interrupted, and

@@ -38,6 +38,8 @@ struct Attempt {
     lane: Lane,
     entries: Vec<String>,
     text: String,
+    /// The generation the turn was admitted under. A retry uses this, not a generation read when the next agent starts.
+    epoch: u64,
 }
 
 /// The running turn's place in the chain.
@@ -103,7 +105,7 @@ impl Actor {
     }
 
     /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
-    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str) {
+    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str, epoch: u64) {
         if !std::mem::take(&mut self.relay.retrying) {
             self.relay.tried.clear();
             self.relay.failed.clear();
@@ -115,7 +117,8 @@ impl Actor {
         self.relay.line = None;
         self.relay.carried = None;
         self.relay.handing_off = false;
-        self.relay.attempt = Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned() });
+        self.relay.attempt =
+            Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned(), epoch });
         let now = now_ms();
         let target = self.next_step(now).unwrap_or(0);
         self.left_signed_out_before(target, now);
@@ -437,8 +440,15 @@ impl Actor {
             self.relay.stopped = Some((reason, rest.map(|r| r.until)));
             self.close_attempt(true);
             self.relay.retrying = true;
-            match self.start_turn(attempt.lane.clone(), &attempt.entries, &attempt.text, false, done_tx).await {
+            match self
+                .start_turn(attempt.lane.clone(), &attempt.entries, &attempt.text, false, done_tx, attempt.epoch)
+                .await
+            {
                 Ok(()) => return true,
+                Err(e) if e.to_string() == super::PAUSED_BEFORE_PROMPT => {
+                    self.start_paused();
+                    return true;
+                }
                 Err(e) => {
                     let Some(r) = fallback::reason::of(&e) else {
                         self.start_failed(&e);

@@ -1,6 +1,6 @@
 //! The user's queued messages before their turn comes: handled now (`steer`) or taken back (`unqueue`).
 
-use super::{Actor, Cmd, Done, Queued};
+use super::{Actor, Admitted, Cmd, Done, Queued};
 use crate::analytics::{self, Steer, TurnSource};
 use crate::chat::team::RequestStatus;
 use crate::chat::uploads;
@@ -32,7 +32,7 @@ fn steer_outcome(answer: &Result<Steered>) -> Steer {
 impl Actor {
     /// Where the user's queued message `entry_id` waits.
     fn queued_at(&self, entry_id: &str) -> Option<usize> {
-        self.queue.iter().position(|q| matches!(q, Queued::User { entry_id: id, .. } if id == entry_id))
+        self.queue.iter().position(|q| matches!(&q.item, Queued::User { entry_id: id, .. } if id == entry_id))
     }
 
     /// The running turn answers the user's own messages in `lane`: not a routine's, a room's, another bot's or the
@@ -53,7 +53,7 @@ impl Actor {
             return;
         }
         let Some(at) = self.queued_at(&entry_id) else { return };
-        let Some(Queued::User { lane, text, .. }) = self.queue.get(at) else { return };
+        let Some(Admitted { item: Queued::User { lane, text, .. }, .. }) = self.queue.get(at) else { return };
         let own = self.answers_user_in(lane);
         let text = text.clone();
         if own && self.hand_to_agent(entry_id, &text) {
@@ -106,8 +106,9 @@ impl Actor {
     }
 
     /// Puts `item` first in line; a compaction that is due still goes before it.
-    fn put_first(&mut self, item: Queued) {
-        let first = self.queue.iter().position(|q| !matches!(q, Queued::Compact { .. })).unwrap_or(self.queue.len());
+    fn put_first(&mut self, item: Admitted) {
+        let first =
+            self.queue.iter().position(|q| !matches!(&q.item, Queued::Compact { .. })).unwrap_or(self.queue.len());
         self.queue.insert(first, item);
     }
 
@@ -117,7 +118,7 @@ impl Actor {
         let waiting: Vec<_> = self
             .queue
             .iter()
-            .filter_map(|q| match q {
+            .filter_map(|q| match &q.item {
                 Queued::User { entry_id, .. } => self.hub.store.entry(entry_id),
                 _ => None,
             })
@@ -179,7 +180,7 @@ impl Actor {
             return;
         }
         let Some(item) = self.queue.remove(at) else { return };
-        let Queued::User { text, .. } = &item else { return };
+        let Queued::User { text, .. } = &item.item else { return };
         let text = text.clone();
         self.unheard.push(item);
         // The host's copy, never `removed`, also brings it back to a client that took it back meanwhile.
@@ -202,7 +203,7 @@ impl Actor {
         let unheard = std::mem::take(&mut self.unheard);
         let mut words = Vec::new();
         for item in &unheard {
-            let Queued::User { entry_id, .. } = item else { continue };
+            let Queued::User { entry_id, .. } = &item.item else { continue };
             let Some(mut e) = self.hub.store.entry(entry_id) else { continue };
             e.data["status"] = json!(RequestStatus::Queued);
             self.hub.set_entry(entry_id, &e.data);

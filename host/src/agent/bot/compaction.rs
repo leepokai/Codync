@@ -257,7 +257,7 @@ impl Actor {
         self.save_conversation(&sid, &c);
         match rules::at_turn_end(&c, self.threshold(), now) {
             Decision::Compact if self.compact_command().is_some() => {
-                self.queue.push_back(Queued::Compact { idle: false });
+                self.queue.push_back(self.queued(Queued::Compact { idle: false }));
             }
             Decision::Rollover => self.draft_handoff(&sid, handoff::Reason::Full),
             _ => {}
@@ -276,7 +276,7 @@ impl Actor {
         let life = self.cache_life();
         let at = self.threshold();
         if rules::while_idle(&c, at, life, now) == Decision::Compact && self.compact_command().is_some() {
-            self.queue.push_back(Queued::Compact { idle: true });
+            self.queue.push_back(self.queued(Queued::Compact { idle: true }));
         } else if rules::rollover_due(&c, at, life, now) && handoff::pending(&self.hub.store, &self.cfg.id).is_none() {
             let reason = if now - c.last_turn >= life.ms() { handoff::Reason::Cold } else { handoff::Reason::Away };
             self.draft_handoff(&sid, reason);
@@ -341,7 +341,8 @@ impl Actor {
         }
         self.compacting = Some(idle);
         self.raw_prompt = true;
-        if let Err(e) = self.start_turn(Lane::main(&self.cfg.id), &[], &command, true, done_tx).await {
+        let epoch = self.hub.pause.epoch(self.cfg.owner());
+        if let Err(e) = self.start_turn(Lane::main(&self.cfg.id), &[], &command, true, done_tx, epoch).await {
             self.compacting = None;
             self.start_failed(&e);
         }

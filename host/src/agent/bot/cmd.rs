@@ -135,6 +135,15 @@ pub enum Cmd {
     Shutdown,
 }
 
+/// Work waiting on the actor, and the pause generation it was admitted under.
+///
+/// `start_turn` admits with `epoch` for work whose permission is the moment it was queued. A generation read
+/// at start time would compare the epoch with itself. A `BotRequest` keeps `pause_epoch` from when it was made.
+pub(super) struct Admitted {
+    pub item: Queued,
+    pub epoch: u64,
+}
+
 pub(super) enum Queued {
     Routine(String),
     FollowUp(String),

@@ -160,12 +160,35 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
 /// was cancelled.
 pub fn add_request(hub: &Arc<Hub>, bot: &str, request: BotRequest) {
     let source = Source::Request { id: request.sender().map(str::to_owned) };
-    let task = Task { source, ..Task::waiting(&title(request.quote()), &request.prompt, None, None, 0) };
-    let (id, source) = (task.id.clone(), task.source.clone());
-    hub.work.requests.locked().insert(id.clone(), request);
-    if let Err(error) = put(hub, bot, task) {
-        host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
-        hub.work.requests.locked().remove(&id);
+    let mut task =
+        Task { source: source.clone(), ..Task::waiting(&title(request.quote()), &request.prompt, None, None, 0) };
+    let epoch = request.pause_epoch;
+    let mut held = Some(request);
+    let saved = match tasks::change(hub, bot, |tasks| {
+        // Same lock `paused` holds. A pause that already advanced the generation refuses the insert; one that has
+        // not yet will see this task when it clears the box.
+        if hub.pause.epoch(bot) != epoch {
+            return Ok(false);
+        }
+        let Some(request) = held.take() else { return Ok(false) };
+        hub.work.requests.locked().insert(task.id.clone(), request);
+        task.order = tasks::last(tasks);
+        tasks.push(task.clone());
+        Ok(true)
+    }) {
+        Ok(saved) => saved,
+        Err(error) => {
+            host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
+            if let Some(request) = held.take() {
+                request.complete(Err(no_reply::not_started(format!("{error:#}"))), false);
+            }
+            return;
+        }
+    };
+    if !saved {
+        if let Some(request) = held.take() {
+            request.complete(Err(no_reply::not_started("this bot is paused")), false);
+        }
         return;
     }
     added(hub, &source);

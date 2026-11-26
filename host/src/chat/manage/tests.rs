@@ -263,6 +263,43 @@ async fn a_partial_update_preserves_and_a_validate_only_check_changes_nothing() 
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A dry run makes the checks a save makes, so it can't report a change valid that the host would refuse: the lead bot
+/// can't be hidden. It writes nothing either way.
+#[tokio::test]
+async fn a_validate_only_check_refuses_hiding_the_lead() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-lead-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    // "lead" is the computer's lead only once its flag says so.
+    let mut lead = hub.store.bot("lead").unwrap().unwrap().config;
+    lead.lead = true;
+    hub.store.save_bot(&lead).unwrap();
+    let rev = hub.store.bot("lead").unwrap().unwrap().rev;
+    for check in ["validateOnly", "dryRun"] {
+        let mut args = json!({"botId": "lead", "hidden": true});
+        args[check] = json!(true);
+        let checked = call(&hub, "lead", "update_bot", &args).await.unwrap();
+        assert_eq!(checked["valid"], json!(false), "{check}");
+        assert_eq!(checked["applied"], json!(false), "{check}");
+        let reason = checked["reason"].as_str().unwrap();
+        assert!(reason.contains("the lead bot can't be hidden"), "{check}: {reason}");
+        let stored = hub.store.bot("lead").unwrap().unwrap();
+        assert!(!stored.config.hidden, "{check} writes nothing");
+        assert_eq!(stored.rev, rev, "{check} writes no revision");
+    }
+    // The same change for real is refused with that reason, and the bot is still not hidden.
+    let refused =
+        call(&hub, "lead", "update_bot", &json!({"botId": "lead", "hidden": true})).await.unwrap_err().to_string();
+    assert!(refused.contains("the lead bot can't be hidden"), "{refused}");
+    assert!(!hub.store.bot("lead").unwrap().unwrap().config.hidden);
+    // A check for another bot passes, and still writes nothing.
+    let ok =
+        call(&hub, "lead", "update_bot", &json!({"botId": "dev", "hidden": true, "validateOnly": true})).await.unwrap();
+    assert_eq!((ok["valid"].clone(), ok["applied"].clone()), (json!(true), json!(false)));
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.hidden, "the check does not write");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A manager's model and fallback change keeps the strings on the target's timeline and out of analytics.
 /// The event names the fields that moved. It carries no bot name and no model string.
 #[test]

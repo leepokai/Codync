@@ -182,17 +182,19 @@ impl Work {
 /// The bot was just paused: a request that had not started is answered now, and a routine task whose run the pause
 /// cancelled leaves the box. The threads already working it stop through their own actors.
 pub fn paused(hub: &Hub, bot: &str) {
-    let ids: Vec<String> = tasks::load(&hub.store, bot)
-        .into_iter()
-        .filter(|task| task.status == Status::Waiting)
-        .filter(|task| matches!(task.source, Source::Request { .. }))
-        .map(|task| task.id)
-        .collect();
-    let refused: Vec<crate::chat::team::BotRequest> = {
-        let mut requests = hub.work.requests.locked();
-        ids.iter().filter_map(|id| requests.remove(id)).collect()
-    };
-    if let Err(error) = tasks::change(hub, bot, |tasks| {
+    // One change of the box, so an insert that is checking the pause generation cannot land between the snapshot
+    // and the removal.
+    let refused = match tasks::change(hub, bot, |tasks| {
+        let ids: Vec<String> = tasks
+            .iter()
+            .filter(|task| task.status == Status::Waiting)
+            .filter(|task| matches!(task.source, Source::Request { .. }))
+            .map(|task| task.id.clone())
+            .collect();
+        let refused: Vec<crate::chat::team::BotRequest> = {
+            let mut requests = hub.work.requests.locked();
+            ids.iter().filter_map(|id| requests.remove(id)).collect()
+        };
         tasks.retain(|task| {
             if task.status != Status::Waiting {
                 return true;
@@ -203,10 +205,14 @@ pub fn paused(hub: &Hub, bot: &str) {
                 Source::Bot | Source::User => true,
             }
         });
-        Ok(())
+        Ok(refused)
     }) {
-        host_error!(hub, "couldn't clear a paused bot's box", bot, error = format!("{error:#}"));
-    }
+        Ok(refused) => refused,
+        Err(error) => {
+            host_error!(hub, "couldn't clear a paused bot's box", bot, error = format!("{error:#}"));
+            return;
+        }
+    };
     for request in refused {
         request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
     }

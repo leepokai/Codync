@@ -244,17 +244,42 @@ impl Routines {
     /// The bot's Stop: cancels the runs queued behind its turn. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it); so does a run in the box, which the box's own Stop
     /// stops, and a webhook delivery, which its sender was already told was taken.
-    pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
+    /// Cancels the pending runs named in `ids`. A run that is not named stays, including one admitted after a resume
+    /// while a pause notification was still waiting. A retry that is waiting for later, a boxed run, and a webhook
+    /// delivery stay even when named: Stop and a pause do not take those back.
+    pub fn cancel_queued(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
         let now = now_ms();
         self.change(store, |s| {
-            let queued = |r: &&mut Run| {
-                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
-            };
-            for r in s.runs.iter_mut().filter(queued) {
-                cancel_run(r);
+            for run in s.runs.iter_mut().filter(|run| ids.iter().any(|id| id == &run.id)) {
+                if !run.boxed && run.status == Status::Pending && !run.waiting(now) && run.delivery_id.is_none() {
+                    cancel_run(run);
+                }
             }
             Ok(())
         })
+    }
+
+    /// The bot's Stop: every pending unboxed run that is not waiting for later and is not a webhook delivery.
+    pub fn cancel_for_stop(&self, store: &Store, bot: &str) -> Result<()> {
+        let now = now_ms();
+        let ids: Vec<String> = self
+            .state
+            .locked()
+            .runs
+            .iter()
+            .filter(|run| {
+                run.bot_id == bot
+                    && !run.boxed
+                    && run.status == Status::Pending
+                    && !run.waiting(now)
+                    && run.delivery_id.is_none()
+            })
+            .map(|run| run.id.clone())
+            .collect();
+        self.cancel_queued(store, &ids)
     }
 
     /// A pause is not the bot's Stop: it ends every run of the bot, including a run working in a box thread and a
@@ -610,19 +635,23 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let routines = Routines::default();
         let routine = super::super::tests::routine();
+        let queued = new_run(&routine, Value::Null, None);
+        let queued_id = queued.id.clone();
+        let mut retry = new_run(&routine, Value::Null, None);
+        retry.not_before = Some(now_ms() + 60_000);
+        let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+        let fresh = new_run(&routine, Value::Null, None);
         routines
             .change(&store, |s| {
-                let mut retry = new_run(&routine, Value::Null, None);
-                retry.not_before = Some(now_ms() + 60_000);
-                let delivery = new_run(&routine, Value::Null, Some("d1".into()));
-                s.runs.extend([new_run(&routine, Value::Null, None), retry, delivery]);
+                s.runs.extend([queued, retry, delivery, fresh]);
                 s.routines.push(routine);
                 Ok(())
             })
             .unwrap();
-        routines.cancel_queued(&store, "bot").unwrap();
+        routines.cancel_queued(&store, &[queued_id]).unwrap();
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
         assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
+        assert!(state.runs[3].status == Status::Pending, "a run that was not queued for this pause stays");
     }
 }

@@ -110,10 +110,11 @@ impl Actor {
         text: &str,
         hidden: bool,
         done_tx: &mpsc::UnboundedSender<Done>,
+        pause_epoch: u64,
     ) -> Result<()> {
-        // A pause that begins during this setup invalidates the turn, even if a resume finishes before the setup
-        // reaches the prompt.
-        let pause_epoch = self.hub.pause.epoch(self.cfg.owner());
+        // `pause_epoch` is the generation this work was admitted under. A read here would compare the epoch with
+        // itself: a pause and a resume during setup would both be invisible. The caller passes a fresh read only
+        // when it is deciding now (a resume, a compaction, a task report).
         self.task_source = work::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_thread() {
             // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
@@ -185,11 +186,14 @@ impl Actor {
         if hidden {
             self.hidden_turn();
         } else {
-            self.relay_turn(&lane, entry_ids, text).await;
+            self.relay_turn(&lane, entry_ids, text, pause_epoch).await;
         }
         // A reply turn is marked only once its prompt is out and its replies are relayed (`queue`): a restart before
         // that sends them again from their notices, and resuming as well would hand them over twice.
         self.set_inflight(self.resumes() && self.reply_hops.is_none());
+        // The restart mark is saved. This turn has not returned to the command loop, so a pause
+        // notification stays unread and a crash leaves the mark set.
+        super::race_gate::wait("after_inflight_marked").await;
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
         let message = if from_user { entry_ids.iter().rev().find(typed).cloned() } else { None };
@@ -457,7 +461,7 @@ impl Actor {
             // Stop or Remove since took it back).
             _ if self.stop_requested
                 && self.stopped_for_message
-                && self.queue.iter().any(|q| matches!(q, Queued::User { .. })) => {}
+                && self.queue.iter().any(|q| matches!(&q.item, Queued::User { .. })) => {}
             // A stopped turn says so even when its agent still ended it normally: its reply is withheld above.
             (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
             (Ok(_), _) if self.stop_requested => self.stop_notice("Stopped.", "cancelled"),
@@ -573,7 +577,7 @@ impl Actor {
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
-        let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
+        let more = self.queue.iter().any(|q| matches!(&q.item, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
         let held_back = final_text.is_none() && matches!(reacted, Reacted::Refused);
         // A turn the host started that found nothing worth saying (a follow-up's `(pass)`): the same.

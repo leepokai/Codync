@@ -399,7 +399,13 @@ pub(super) fn to_local_session(
 ) -> Result<Value> {
     check_request(hub, turn, message)?;
     // Checked like any request (turn, hop limit); the slot goes back at once, since a session may never answer.
-    let hops = super::reserve(hub, &source.id, turn)?;
+    let hops = match super::reserve(hub, &source.id, turn) {
+        Ok(hops) => hops,
+        Err(error) if super::hop_limit_error(&error) => {
+            return super::on_hop_limit(hub, source, turn, &to.address, message, error);
+        }
+        Err(error) => return Err(error),
+    };
     hub.team.release_message(&source.id);
     let id = uuid::Uuid::new_v4().to_string();
     // ponytail: kept in memory like a request to another computer; a host restart forgets it, and

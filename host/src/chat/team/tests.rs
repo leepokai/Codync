@@ -556,6 +556,30 @@ async fn hop_review_defaults_off_and_continue_still_works() {
     f.shutdown().await;
 }
 
+/// A local coding-agent session is a request like any other: at the limit it must notify the lead, not bypass review.
+#[tokio::test]
+async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("b", Turn::Chat(8));
+    let session = crate::network::sessions::Session {
+        key: "codex:local".into(),
+        kind: codync_network::AgentKind::Codex,
+        address: "local-agent".into(),
+        cwd: ".".into(),
+        title: None,
+        busy: None,
+        temporary: false,
+        named: None,
+        seen: 0,
+    };
+    let source = f.hub.store.bot("b").unwrap().unwrap().config;
+    let err = remote::to_local_session(&f.hub, &source, "b", &session, "blocked").unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.shutdown().await;
+}
+
 #[path = "quota_tests.rs"]
 mod quotas;
 

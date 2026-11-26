@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use tokio_stream::wrappers::BroadcastStream;
 
 /// Entries a fresh client receives per bot before paging with `history`.
-const CATCH_UP_PER_BOT: i64 = 200;
+pub(crate) const CATCH_UP_PER_BOT: u16 = 200;
 
 /// A setup terminal's output: everything so far, then live, ending after `exit`.
 pub fn term_events(hub: &Hub, id: &str) -> Option<impl Stream<Item = Value> + Send + use<>> {
@@ -63,7 +63,7 @@ pub fn events_stream(
     for bot in hub.bots_json(since)? {
         catch_up.push(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
-    for e in hub.store.entries_since(since, CATCH_UP_PER_BOT)? {
+    for e in hub.store.entries_since(since, i64::from(CATCH_UP_PER_BOT))? {
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));

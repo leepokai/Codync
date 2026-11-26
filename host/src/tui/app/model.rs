@@ -1,17 +1,26 @@
 //! What the host sends: transcript entries and the messages that carry them, and the states a bot shows (the bot
 //! itself is in `bot`).
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use serde_json::Value;
 
+use crate::LockExt;
 use crate::chat::decision;
 
 use super::super::manage::Reply;
 
 pub enum Msg {
-    Online(bool),
+    Online,
+    Disconnected {
+        since: i64,
+    },
     /// A new events connection asked for everything after `since`; its `hello` starts the catch-up.
     Connected {
         since: i64,
+        connection: u64,
+        send_receipts: SendReceipts,
     },
     FileDownload {
         id: String,
@@ -27,11 +36,88 @@ pub enum Msg {
         replied: bool,
     },
     /// The stream is starting over from rev 0: drop what we have.
-    Rewind,
+    Rewind(SendReceipts),
+    /// Another replay from zero while holding the confirmed mirror.
+    ReplayStarted,
     /// The recovery replay can confirm receipts, even before a live revision arrives.
     ReplayComplete,
     /// A setup terminal's output or exit.
     Term(String, Value),
+}
+
+/// Connection and unstreamed send evidence for this mirror.
+#[derive(Clone, Default)]
+pub struct SendReceipts(Arc<Mutex<SendReceiptState>>);
+
+#[derive(Default)]
+struct SendReceiptState {
+    connection: u64,
+    rows: HashMap<String, HashMap<i64, SendReceipt>>,
+}
+
+struct SendReceipt {
+    id: String,
+    rev: Option<i64>,
+}
+
+impl SendReceipts {
+    pub(in crate::tui) fn for_connection(connection: u64) -> Self {
+        Self(Arc::new(Mutex::new(SendReceiptState { connection, ..SendReceiptState::default() })))
+    }
+
+    pub(in crate::tui) fn begin_request(&self) -> (u64, i64) {
+        let mut state = self.0.locked();
+        state.connection += 1;
+        let rev = state.rows.values().flat_map(HashMap::values).filter_map(|r| r.rev).max().unwrap_or_default();
+        (state.connection, rev)
+    }
+
+    pub(in crate::tui) fn invalidate_connection(&self) {
+        self.0.locked().connection += 1;
+    }
+
+    pub(super) fn is_current(&self, connection: u64) -> bool {
+        self.0.locked().connection == connection
+    }
+
+    pub(super) fn confirm(&self, connection: u64, row: Option<(&str, &Entry)>) -> bool {
+        let mut state = self.0.locked();
+        if state.connection != connection {
+            return false;
+        }
+        if let Some((bot, entry)) = row {
+            let receipt = SendReceipt { id: entry.id.clone(), rev: entry.rev };
+            state.rows.entry(bot.to_owned()).or_default().insert(entry.seq, receipt);
+        }
+        true
+    }
+
+    pub(super) fn observe(&self, bot: &str, entry: &Entry, held: Option<&Entry>) -> bool {
+        let mut state = self.0.locked();
+        let receipts = &mut state.rows;
+        let Some(rows) = receipts.get_mut(bot) else { return false };
+        let Some(receipt) = rows.get(&entry.seq) else { return false };
+        let replaced = receipt.id != entry.id;
+        let displaces_held = replaced && held.is_some_and(|row| row.id == receipt.id && row.rev == receipt.rev);
+        if replaced || receipt.rev <= entry.rev {
+            rows.remove(&entry.seq);
+        }
+        if rows.is_empty() {
+            receipts.remove(bot);
+        }
+        displaces_held
+    }
+
+    pub(super) fn retain(&self, bot: &str, mut keep: impl FnMut(&i64) -> bool) {
+        let mut state = self.0.locked();
+        let receipts = &mut state.rows;
+        if let Some(rows) = receipts.get_mut(bot) {
+            rows.retain(|seq, _| keep(seq));
+            if rows.is_empty() {
+                receipts.remove(bot);
+            }
+        }
+    }
 }
 
 /// What to do with a command's reply.
@@ -44,6 +130,12 @@ pub enum After {
         key: String,
         nonce: String,
         epoch: u64,
+    },
+    CheckSendReceipt {
+        key: String,
+        request: uuid::Uuid,
+        epoch: u64,
+        connection: u64,
     },
     Connection(String, super::super::connections::Step),
     Hello,

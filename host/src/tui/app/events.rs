@@ -1,12 +1,18 @@
 //! Host messages: the event stream and command replies.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{Value, json};
 
+use crate::api::CATCH_UP_PER_BOT;
+
 use super::bot::CompletionReply;
 use super::completion_history::{LegacyReply, ObservedReply};
-use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
+use super::{
+    After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, ReplayChat, SendReceiptCheck, Status, merge_toggles,
+};
+
+const UNCONFIRMED_SEND: &str = "Couldn't confirm the send. Draft kept. Enter retries.";
 
 fn chat_turn_started_at(bot: &Bot) -> Option<i64> {
     bot.started_at
@@ -46,32 +52,39 @@ fn outside_window(floor: Option<i64>, held: bool, e: &Entry) -> bool {
 impl App {
     pub fn on_msg(&mut self, m: Msg) {
         match m {
-            Msg::Online(on) => {
-                self.online = on;
-                if !on {
-                    // The next connection may reach another host: nothing goes by this one's version.
-                    self.host_version.clear();
-                    for lookup in self.completion_lookups.values_mut() {
-                        lookup.cancel();
-                    }
+            Msg::Online => {
+                self.online = true;
+                self.error = None;
+                // Every reconnect can reach a newer host or another one.
+                self.call("hello", json!({}), After::Hello);
+            }
+            Msg::Disconnected { since } => {
+                self.online = false;
+                self.reset_send_checks(since);
+                self.replay_chats = None;
+                if let Some(receipts) = self.replay_sends.as_mut() {
+                    receipts.clear();
+                    self.replayed_deletions.clear();
                 }
-                if !on && self.error.is_none() && self.bots.is_empty() {
+                // The next connection may reach another host: nothing goes by this one's version.
+                self.host_version.clear();
+                for lookup in self.completion_lookups.values_mut() {
+                    lookup.cancel();
+                }
+                if self.error.is_none() && self.bots.is_empty() {
                     // Say why instead of spinning on "Connecting…".
                     self.call("hello", json!({}), After::Hello);
                 }
-                if on {
-                    self.error = None;
-                    // Every reconnect: the host may have been updated (or replaced) meanwhile.
-                    self.call("hello", json!({}), After::Hello);
-                }
             }
-            Msg::Rewind => {
+            Msg::Rewind(send_receipts) => {
                 self.bots.clear();
                 self.entries.clear();
                 self.reading.clear();
                 self.pending_history.clear();
                 self.history_done.clear();
                 self.mirror_epoch += 1;
+                self.send_receipts = send_receipts;
+                self.send_receipt_ready = false;
                 self.floors.clear();
                 self.legacy_replies.clear();
                 self.completion_lookups.clear();
@@ -80,7 +93,9 @@ impl App {
                 self.find = None;
                 self.replayed_deletions.clear();
                 self.replay_sends = Some(HashSet::new());
+                self.replay_chats = None;
                 for send in self.sends.values_mut() {
+                    send.receipt = SendReceiptCheck::Unverified;
                     if let Some(task) = send.task.take() {
                         task.abort();
                     }
@@ -94,20 +109,34 @@ impl App {
                     }
                 }
             }
+            Msg::ReplayStarted => {
+                self.replay_sends = Some(HashSet::new());
+                self.replay_chats = Some(HashMap::new());
+            }
             Msg::ReplayComplete => {
+                self.finish_window_refresh();
                 if let Some(receipts) = self.replay_sends.take() {
-                    let deleted: Vec<_> =
-                        self.replayed_deletions.keys().filter(|id| !self.bots.contains_key(*id)).cloned().collect();
+                    let deleted: Vec<_> = self
+                        .replayed_deletions
+                        .iter()
+                        .filter(|(id, rev)| self.bots.get(*id).and_then(|bot| bot.rev).is_none_or(|seen| seen <= **rev))
+                        .map(|(id, _)| id.clone())
+                        .collect();
                     for id in deleted {
-                        self.clear_deleted_bot(&id);
+                        self.remove_bot(&id);
+                        self.close_idle_work_page();
                     }
                     for (bot, nonce) in receipts {
                         self.acknowledge_send(&bot, &nonce);
                     }
                 }
+                self.start_send_checks();
             }
-            Msg::Connected { since } => {
+            Msg::Connected { since, connection, send_receipts } => {
+                self.reset_send_checks(since);
                 self.stream_since = since;
+                self.send_receipt_connection = connection;
+                self.send_receipts = send_receipts;
                 self.floors.clear();
                 self.reload_workflows();
             }
@@ -146,6 +175,7 @@ impl App {
             Some("hello") => {
                 self.replay_rev = v["rev"].as_i64().unwrap_or_default();
                 self.catch_up_left = v["catchUp"].as_u64();
+                self.send_receipt_ready = true;
                 self.replayed_deletions.clear();
                 self.completions_before_live.clear();
                 if self.catch_up_left.is_some() {
@@ -159,6 +189,7 @@ impl App {
                 if !v["usage"].is_null() {
                     self.usage = v["usage"].clone();
                 }
+                self.start_send_checks();
             }
             // Not a rev event. An open workflow page loads again; every other screen ignores it.
             Some("workflow") => self.on_workflow_event(v),
@@ -183,34 +214,7 @@ impl App {
             Some("bot") => self.on_bot_event(v, catch_up_left),
             Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("threadEntry") => self.thread_entries.keep(v["thread"].as_str(), &v["entry"]),
-            Some("entry") => {
-                if let Some((bot, e)) = Entry::parse(&v["entry"]) {
-                    let outside = self.outside_window(&bot, &e);
-                    if outside {
-                        self.on_outside_entry(&bot, e);
-                        return;
-                    }
-                    if e.kind == Kind::User
-                        && let Some(nonce) = e.data["clientNonce"].as_str()
-                    {
-                        if let Some(receipts) = self.replay_sends.as_mut() {
-                            if self.sends.get(&bot).is_some_and(|send| send.nonce == nonce) {
-                                receipts.insert((bot.clone(), nonce.to_owned()));
-                            }
-                        } else {
-                            self.acknowledge_send(&bot, nonce);
-                        }
-                    }
-                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
-                        self.entry_added(&bot, &e);
-                        // A routine's run and a follow-up say in the chat that they began or were dropped.
-                        if e.kind == Kind::Notice {
-                            self.reload_details(&bot);
-                        }
-                    }
-                    self.merge_stream_entry(bot, e);
-                }
-            }
+            Some("entry") => self.on_entry_event(&v["entry"]),
             _ => {}
         }
     }
@@ -218,33 +222,52 @@ impl App {
     fn on_bot_event(&mut self, event: &Value, catch_up_left: Option<u64>) {
         let bot = &event["bot"];
         let rev = event["rev"].as_i64();
+        let live = catch_up_left.map_or_else(|| rev.is_none_or(|rev| rev > self.replay_rev), |left| left == 0);
         let replaying = catch_up_left.is_some_and(|left| left > 0);
         let recovering = self.replay_sends.is_some();
+        let deleted = bot["deleted"] == true;
+        let refreshing = !live && !deleted && self.replay_chats.is_some();
         if replaying && let Some(reply) = bot["completionReplyId"].as_str() {
             self.completions_before_live.insert(reply.to_owned());
         }
         if let Some(id) = bot["id"].as_str() {
             let bot_rev = rev.or_else(|| bot["rev"].as_i64());
             let deletion_rev = self.replayed_deletions.get(id).copied();
-            let previous_rev = self.bots.get(id).and_then(|bot| bot.rev).or(deletion_rev);
+            let held_rev = self.bots.get(id).and_then(|bot| bot.rev);
+            let previous_rev = held_rev.max(deletion_rev);
             if (catch_up_left == Some(0) || recovering || deletion_rev.is_some())
-                && bot_rev.zip(previous_rev).is_some_and(|(incoming, previous)| incoming <= previous)
+                && bot_rev.zip(previous_rev).is_some_and(|(incoming, previous)| {
+                    incoming < previous || (incoming == previous && (!refreshing || deletion_rev == Some(incoming)))
+                })
             {
                 return;
             }
-            if (replaying || recovering) && bot["deleted"] == true {
+            if (replaying || recovering) && deleted {
                 self.replayed_deletions.insert(id.to_owned(), bot_rev.unwrap_or_default());
+                if recovering {
+                    return;
+                }
+            }
+            if refreshing && let Some(chats) = self.replay_chats.as_mut() {
+                let chat = chats.entry(id.to_owned()).or_default();
+                if let Some(rev) = bot_rev.filter(|&rev| held_rev == Some(rev)) {
+                    chat.snapshot = Some((rev, bot.clone()));
+                    return;
+                }
             }
         }
-        let live = catch_up_left.map_or_else(|| rev.is_none_or(|rev| rev > self.replay_rev), |left| left == 0);
+        self.apply_bot_event(bot, live);
+    }
+
+    fn apply_bot_event(&mut self, bot: &Value, live: bool) {
         self.upsert_bot(bot, live);
         self.close_idle_work_page();
         self.memory_moved(bot);
     }
 
-    /// A catch-up from `since > 0` starts: remember where each bot's loaded chat begins.
+    /// Keep each loaded chat's floor across catch-up and buffered live updates.
     fn snapshot_floors(&mut self) {
-        self.floors = if self.stream_since > 0 {
+        self.floors = if self.stream_since > 0 || self.replay_chats.is_some() {
             self.entries
                 .iter()
                 .filter_map(|(bot, loaded)| {
@@ -257,6 +280,111 @@ impl App {
         };
     }
 
+    fn on_entry_event(&mut self, row: &Value) {
+        let Some((bot, entry)) = Entry::parse(row) else { return };
+        if let Some(chats) = self.replay_chats.as_mut() {
+            let window = &mut chats.entry(bot).or_default().entries;
+            if window.get(&entry.seq).is_none_or(|held| held.rev <= entry.rev) {
+                window.insert(entry.seq, entry);
+            }
+        } else {
+            self.apply_stream_entry(bot, entry);
+        }
+    }
+
+    fn finish_window_refresh(&mut self) {
+        let Some(chats) = self.replay_chats.take() else { return };
+        for (id, ReplayChat { entries, snapshot, verified_sends }) in chats {
+            if let Some((rev, bot)) = snapshot
+                && self.bots.get(&id).is_some_and(|held| held.rev == Some(rev))
+                && self.replayed_deletions.get(&id).is_none_or(|&deleted| deleted < rev)
+            {
+                self.apply_bot_event(&bot, false);
+            }
+            self.replace_chat_window(&id, entries, &verified_sends);
+        }
+    }
+
+    fn replace_chat_window(&mut self, id: &str, mut window: BTreeMap<i64, Entry>, verified_sends: &HashSet<i64>) {
+        let older = if self.catch_up_left.is_none() {
+            // Older hosts can buffer rewrites below the snapshot's tail before reading hello.rev.
+            let first = window.range(1..).rev().take(usize::from(CATCH_UP_PER_BOT)).last().map(|(&seq, _)| seq);
+            let tail = first.map_or_else(BTreeMap::new, |seq| window.split_off(&seq));
+            std::mem::replace(&mut window, tail)
+        } else {
+            BTreeMap::new()
+        };
+        self.pending_history.remove(id);
+        self.history_done.remove(id);
+        if let Some((&first, _)) = window.first_key_value() {
+            self.floors.insert(id.to_owned(), first);
+        } else {
+            self.floors.remove(id);
+        }
+        let last = window.last_key_value().map(|(&seq, _)| seq);
+        let after_tail = |seq: &i64| last.is_some_and(|last| *seq > last);
+        if let Some(replies) = self.legacy_replies.get_mut(id) {
+            let held = self.entries.get(id);
+            replies.retain(|seq, _| {
+                window.contains_key(seq)
+                    || older.contains_key(seq)
+                    || (after_tail(seq) && held.is_some_and(|rows| rows.contains_key(seq)))
+            });
+        }
+        for entry in older.into_values().filter(|entry| entry.seq > 0) {
+            self.observe_send_receipt(id, &entry);
+            self.on_outside_entry(id, entry);
+        }
+        let keep_entry =
+            |seq: &i64| window.contains_key(seq) || after_tail(seq) || (last.is_none() && verified_sends.contains(seq));
+        if let Some(held) = self.entries.get_mut(id) {
+            // A send reply can already have added a row beyond the snapshot.
+            held.retain(|seq, _| keep_entry(seq));
+        }
+        self.send_receipts.retain(id, keep_entry);
+        for entry in window.into_values() {
+            self.apply_stream_entry(id.to_owned(), entry);
+        }
+    }
+
+    fn apply_stream_entry(&mut self, bot: String, entry: Entry) {
+        self.observe_send_receipt(&bot, &entry);
+        if self.outside_window(&bot, &entry) {
+            self.on_outside_entry(&bot, entry);
+            return;
+        }
+        if let Some(rows) = self.entries.get_mut(&bot)
+            && self.send_receipts.observe(&bot, &entry, rows.get(&entry.seq))
+        {
+            rows.remove(&entry.seq);
+        }
+        if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&entry.seq)) {
+            self.entry_added(&bot, &entry);
+            // A routine notice can change what an open work page shows.
+            if entry.kind == Kind::Notice {
+                self.reload_details(&bot);
+            }
+        }
+        self.merge_stream_entry(bot, entry);
+    }
+
+    fn observe_send_receipt(&mut self, bot: &str, entry: &Entry) {
+        if entry.kind == Kind::User
+            && entry.seq > 0
+            && !entry.id.is_empty()
+            && entry.data["removed"] != true
+            && let Some(nonce) = entry.data["clientNonce"].as_str()
+        {
+            if let Some(receipts) = self.replay_sends.as_mut() {
+                if self.sends.get(bot).is_some_and(|send| send.nonce == nonce) {
+                    receipts.insert((bot.to_owned(), nonce.to_owned()));
+                }
+            } else {
+                self.acknowledge_send(bot, nonce);
+            }
+        }
+    }
+
     fn outside_window(&self, bot: &str, e: &Entry) -> bool {
         let held = self.entries.get(bot).is_some_and(|m| m.contains_key(&e.seq));
         outside_window(self.floors.get(bot).copied(), held, e)
@@ -264,10 +392,11 @@ impl App {
 
     fn on_outside_entry(&mut self, bot: &str, entry: Entry) {
         let buffered = self.pending_history.get(bot).and_then(|page| page.updates.get(&entry.seq));
-        let newer = buffered.filter(|previous| previous.rev > entry.rev);
+        let held = self.entries.get(bot).and_then(|rows| rows.get(&entry.seq));
+        let newer = buffered.into_iter().chain(held).max_by_key(|row| row.rev).filter(|row| row.rev > entry.rev);
         let latest = newer.unwrap_or(&entry);
         let replace = newer.is_none();
-        let observed = self.observe_legacy_reply(bot, latest, std::iter::once(&entry).chain(buffered));
+        let observed = self.observe_legacy_reply(bot, latest, std::iter::once(&entry).chain(buffered).chain(held));
         self.remember_legacy_reply(bot, entry.seq, observed, true);
         if replace && let Some(page) = self.pending_history.get_mut(bot).filter(|page| entry.seq < page.before_seq) {
             page.updates.insert(entry.seq, entry);
@@ -370,18 +499,7 @@ impl App {
     fn upsert_bot(&mut self, v: &Value, live: bool) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
-            if let Some(gone) = self.bots.remove(id) {
-                self.threads_ended(&gone.work, &[]);
-            }
-            self.entries.remove(id);
-            self.pending_history.remove(id);
-            self.history_done.remove(id);
-            self.floors.remove(id);
-            self.legacy_replies.remove(id);
-            self.completion_lookups.remove(id);
-            if self.replay_sends.is_none() {
-                self.clear_deleted_bot(id);
-            }
+            self.remove_bot(id);
             return;
         }
         let Some(new) = Bot::parse(v) else { return };
@@ -440,7 +558,17 @@ impl App {
         }
     }
 
-    fn clear_deleted_bot(&mut self, id: &str) {
+    fn remove_bot(&mut self, id: &str) {
+        if let Some(gone) = self.bots.remove(id) {
+            self.threads_ended(&gone.work, &[]);
+        }
+        self.entries.remove(id);
+        self.send_receipts.retain(id, |_| false);
+        self.pending_history.remove(id);
+        self.history_done.remove(id);
+        self.floors.remove(id);
+        self.legacy_replies.remove(id);
+        self.completion_lookups.remove(id);
         self.drafts.remove(id);
         self.files.remove(id);
         self.pasted.remove(id);
@@ -465,6 +593,12 @@ impl App {
         if let After::Sent { key, nonce, epoch } = after {
             if epoch == self.mirror_epoch {
                 self.sent(&key, &nonce, r);
+            }
+            return;
+        }
+        if let After::CheckSendReceipt { key, request, epoch, connection } = after {
+            if epoch == self.mirror_epoch {
+                self.finish_send_check(&key, request, connection, r);
             }
             return;
         }
@@ -542,6 +676,7 @@ impl App {
             | After::Network(_)
             | After::UsageOrder(_)
             | After::Sent { .. }
+            | After::CheckSendReceipt { .. }
             | After::History(_, _)
             | After::Connection(_, _)
             | After::Pairing
@@ -702,24 +837,130 @@ impl App {
     fn sent(&mut self, key: &str, nonce: &str, result: Result<Value, String>) {
         let Some(sent) = self.sends.get_mut(key).filter(|s| s.nonce == nonce) else { return };
         sent.task = None;
-        match result {
-            Ok(value) => {
-                self.confirm_send(key, nonce);
-                // The stream may already hold a newer copy (its delivery status).
-                if let Some((bot, e)) = Entry::parse(&value["entry"]) {
-                    super::kofi::sent();
-                    self.insert_missing_entry(bot, e);
-                }
-                self.flash("Sent");
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                self.flash(&format!("{error} Draft kept; Enter retries, Ctrl+C clears text."));
+                return;
             }
-            Err(error) => self.flash(&format!("{error} Draft kept; Enter retries, Ctrl+C clears text.")),
+        };
+        let entry = Entry::parse(&value["entry"]).filter(|(bot, row)| {
+            bot == key
+                && row.kind == Kind::User
+                && row.data["clientNonce"].as_str().is_none_or(|returned| returned == nonce)
+        });
+        let evidence = entry
+            .as_ref()
+            .filter(|(bot, row)| self.entries.get(bot).is_none_or(|rows| !rows.contains_key(&row.seq)))
+            .map(|(bot, row)| (bot.as_str(), row));
+        if let SendReceiptCheck::Direct(connection) = sent.receipt
+            && self.send_receipts.confirm(connection, evidence)
+        {
+            self.confirm_send(key, nonce);
+            // The stream may already hold a newer copy (its delivery status).
+            if let Some((bot, row)) = entry {
+                super::kofi::sent();
+                self.insert_missing_entry(bot, row);
+            }
+            self.flash("Sent");
+        } else if let Some((_, row)) = entry
+            .filter(|(_, row)| !row.id.is_empty() && (1..i64::MAX).contains(&row.seq) && row.data["removed"] != true)
+        {
+            sent.receipt = SendReceiptCheck::Pending { id: row.id, seq: row.seq, request: None };
+            self.start_send_checks();
+        } else {
+            self.flash(UNCONFIRMED_SEND);
         }
+    }
+
+    fn reset_send_checks(&mut self, since: i64) {
+        self.send_receipt_ready = false;
+        for send in self.sends.values_mut() {
+            if let SendReceiptCheck::Pending { request, .. } = &mut send.receipt {
+                *request = None;
+            } else if since == 0 {
+                send.receipt = SendReceiptCheck::Unverified;
+            }
+        }
+    }
+
+    fn start_send_checks(&mut self) {
+        // Give counted replay a chance to confirm the send directly.
+        if !self.send_receipt_ready
+            || (self.replay_sends.is_some() && self.catch_up_left.is_some())
+            || !self.send_receipts.is_current(self.send_receipt_connection)
+        {
+            return;
+        }
+        for (key, send) in &mut self.sends {
+            let SendReceiptCheck::Pending { seq, request, .. } = &mut send.receipt else { continue };
+            if request.is_some() {
+                continue;
+            }
+            let request_id = uuid::Uuid::new_v4();
+            *request = Some(request_id);
+            self.client.spawn_call(
+                "history",
+                json!({"botId": key, "beforeSeq": *seq + 1, "limit": 1}),
+                After::CheckSendReceipt {
+                    key: key.clone(),
+                    request: request_id,
+                    epoch: self.mirror_epoch,
+                    connection: self.send_receipt_connection,
+                },
+                self.tx.clone(),
+            );
+        }
+    }
+
+    fn finish_send_check(&mut self, key: &str, request: uuid::Uuid, connection: u64, result: Result<Value, String>) {
+        let Some(send) = self.sends.get_mut(key) else { return };
+        let SendReceiptCheck::Pending { id, seq, request: Some(active) } = &send.receipt else { return };
+        if request != *active {
+            return;
+        }
+        let matches = |row: &Entry| {
+            row.id == *id
+                && row.seq == *seq
+                && row.kind == Kind::User
+                && row.data["clientNonce"].as_str() == Some(send.nonce.as_str())
+                && row.data["removed"] != true
+        };
+        let staged = self.replay_chats.as_ref().and_then(|chats| chats.get(key)).and_then(|chat| chat.entries.get(seq));
+        let held = self.entries.get(key).and_then(|rows| rows.get(seq));
+        let checked = result
+            .ok()
+            .and_then(|value| {
+                let [row] = value["entries"].as_array()?.as_slice() else { return None };
+                Entry::parse(row)
+            })
+            .filter(|(bot, row)| bot == key && matches(row) && staged.or(held).is_none_or(matches));
+        let evidence = checked
+            .as_ref()
+            .filter(|(_, row)| held.is_none() && !outside_window(self.floors.get(key).copied(), false, row))
+            .map(|(bot, row)| (bot.as_str(), row));
+        if !self.send_receipts.confirm(connection, evidence) {
+            return;
+        }
+        let Some((bot, row)) = checked else {
+            send.receipt = SendReceiptCheck::Unverified;
+            self.flash(UNCONFIRMED_SEND);
+            return;
+        };
+        let nonce = send.nonce.clone();
+        if !self.outside_window(key, &row) {
+            if let Some(chats) = self.replay_chats.as_mut() {
+                chats.entry(bot.clone()).or_default().verified_sends.insert(row.seq);
+            }
+            self.insert_missing_entry(bot, row);
+        }
+        self.acknowledge_send(key, &nonce);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Editor, FIELDS, Field, PendingSend, test_app};
+    use super::super::{Editor, FIELDS, Field, PendingSend, SendReceipts, test_app};
     use super::*;
     use axum::http::StatusCode;
     use std::time::Duration;
@@ -769,7 +1010,11 @@ mod tests {
     }
 
     fn connect(app: &mut App, since: i64) {
-        app.on_msg(Msg::Connected { since });
+        app.on_msg(Msg::Connected {
+            since,
+            connection: app.send_receipt_connection,
+            send_receipts: app.send_receipts.clone(),
+        });
         app.on_event(&json!({"type": "hello"}));
     }
 
@@ -851,6 +1096,7 @@ mod tests {
                 files: files.clone(),
                 nonce: "same-nonce".into(),
                 task: Some(tokio::spawn(async {}).abort_handle()),
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
             },
         );
         let reply = After::Sent { key: key.into(), nonce: "same-nonce".into(), epoch: app.mirror_epoch };
@@ -870,7 +1116,13 @@ mod tests {
         app.drafts.insert("bot".into(), Editor::with("new draft"));
         app.sends.insert(
             "bot".into(),
-            PendingSend { text: "old draft".into(), files: vec![], nonce: "n".into(), task: None },
+            PendingSend {
+                text: "old draft".into(),
+                files: vec![],
+                nonce: "n".into(),
+                task: None,
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+            },
         );
         app.on_reply(After::Sent { key: "bot".into(), nonce: "n".into(), epoch: app.mirror_epoch }, Ok(json!({})));
         assert_eq!(app.drafts["bot"].text, "new draft");
@@ -893,11 +1145,12 @@ mod tests {
                 files: files.clone(),
                 nonce: "pending".into(),
                 task: Some(old_task.abort_handle()),
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
             },
         );
         let old_reply = After::Sent { key: "a".into(), nonce: "pending".into(), epoch: app.mirror_epoch };
         let old_save = After::Saved(app.mirror_epoch);
-        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
         assert!(old_task.await.unwrap_err().is_cancelled());
         let mut old = entry_event(10);
         old["entry"]["data"] = json!({"clientNonce": "pending", "text": "draft"});
@@ -933,9 +1186,15 @@ mod tests {
         app.files.insert("a".into(), files.clone());
         app.sends.insert(
             "a".into(),
-            PendingSend { text: "original".into(), files: files.clone(), nonce: "pending".into(), task: None },
+            PendingSend {
+                text: "original".into(),
+                files: files.clone(),
+                nonce: "pending".into(),
+                task: None,
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+            },
         );
-        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
         app.on_msg(Msg::ReplayComplete);
         let mut restored = entry_event(2);
         restored["entry"]["data"] = json!({"clientNonce": "unrelated", "text": "other message"});
@@ -972,7 +1231,7 @@ mod tests {
         let old_task = app.sends["a"].task.clone().unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(!old_task.is_finished());
-        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
 
         let listener = TcpListener::bind(addr).await.unwrap();
         assert!(tokio::time::timeout(Duration::from_millis(700), listener.accept()).await.is_err());
@@ -993,7 +1252,7 @@ mod tests {
         .unwrap();
         let request = String::from_utf8(request).unwrap();
         assert!(request.starts_with("POST /api/send ") && request.contains(&nonce));
-        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
         assert_eq!(tokio::time::timeout(Duration::from_secs(5), socket.read(&mut chunk)).await.unwrap().unwrap(), 0);
         assert_eq!(app.drafts["a"].text, "My draft");
         assert_eq!(app.sends["a"].nonce, nonce);
@@ -1032,7 +1291,7 @@ mod tests {
     async fn a_dropped_connection_forgets_the_hosts_version() {
         let mut app = test_app();
         app.host_version = "2.50.1".into();
-        app.on_msg(Msg::Online(false));
+        app.on_msg(Msg::Disconnected { since: 0 });
         assert!(app.host_version.is_empty(), "the host that answers next may be another build");
     }
 
@@ -1099,7 +1358,7 @@ mod tests {
         let window: Vec<_> = (11..=210).collect();
         for (catch_up, reply_rev) in [(None, 211), (Some(2), 211), (None, 213), (Some(1), 213)] {
             let mut app = legacy_chat_window();
-            app.on_msg(Msg::Connected { since: 210 });
+            app.on_msg(Msg::Connected { since: 210, connection: 0, send_receipts: SendReceipts::default() });
             app.on_event(&json!({"type": "hello", "rev": 212, "catchUp": catch_up}));
 
             let reply = entry_at_rev(final_reply_event(10, 210, "Fresh reply"), reply_rev);
@@ -1136,7 +1395,7 @@ mod tests {
     fn an_outside_legacy_completion_that_ended_in_replay_stays_quiet() {
         for catch_up in [None, Some(2)] {
             let mut app = legacy_chat_window();
-            app.on_msg(Msg::Connected { since: 210 });
+            app.on_msg(Msg::Connected { since: 210, connection: 0, send_receipts: SendReceipts::default() });
             app.on_event(&json!({"type": "hello", "rev": 212, "catchUp": catch_up}));
             let reply = entry_at_rev(final_reply_event(10, 210, "Fresh reply"), 211);
             app.on_event(&reply);
@@ -1159,7 +1418,9 @@ mod tests {
     fn an_outside_legacy_reply_is_discarded_with_its_turn() {
         let next_turn = legacy_bot_event(212, Some(300), 215, "Fresh reply");
         let deletion = json!({"type": "bot", "rev": 212, "bot": {"id": "a", "rev": 212, "deleted": true}});
-        for (change, started_at) in [(Msg::Event(next_turn), 300), (Msg::Event(deletion), 200), (Msg::Rewind, 200)] {
+        for (change, started_at) in
+            [(Msg::Event(next_turn), 300), (Msg::Event(deletion), 200), (Msg::Rewind(SendReceipts::default()), 200)]
+        {
             let mut app = legacy_chat_window();
             connect(&mut app, 210);
             app.on_event(&final_reply_event(10, 210, "Fresh reply"));
@@ -1882,20 +2143,25 @@ mod tests {
             initial.send(json!({"type": "icons", "icons": {}})).unwrap();
             initial.send(legacy_bot_event(8, None, 0, "")).unwrap();
             read_events(&mut app, &mut messages, 3).await;
-            drop(initial);
-            let resumed = expect_stream(&mut requests, 8).await;
 
-            // A send RPC can return a newer row before the reconnect's hello arrives.
+            // A confirmed send can set the floor for the next catch-up.
             app.sends.insert(
                 "a".into(),
-                PendingSend { text: "Another message".into(), files: vec![], nonce: "late".into(), task: None },
+                PendingSend {
+                    text: "Another message".into(),
+                    files: vec![],
+                    nonce: "late".into(),
+                    task: None,
+                    receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+                },
             );
             app.on_msg(Msg::Reply(
                 After::Sent { key: "a".into(), nonce: "late".into(), epoch: app.mirror_epoch },
                 Ok(json!({"entry": late_message["entry"]})),
             ));
             assert_eq!(seqs(&app), [late_seq]);
-            resumed
+            drop(initial);
+            expect_stream(&mut requests, 8).await
         } else {
             initial
         };
@@ -2241,7 +2507,7 @@ mod tests {
         let latest = react_to_reply(reply, 213);
         app.on_event(&latest);
         assert!(app.legacy_replies["a"].contains_key(&211));
-        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
         app.on_msg(Msg::ReplayComplete);
         app.on_event(&legacy_bot_event(9, Some(200), 100, "Old reply"));
         app.on_event(&latest);
@@ -2470,7 +2736,7 @@ mod tests {
         for replacement in [
             Msg::Event(legacy_bot_event(213, Some(300), 210, "Saved reply")),
             Msg::Event(json!({"type": "bot", "rev": 213, "bot": {"id": "a", "deleted": true}})),
-            Msg::Rewind,
+            Msg::Rewind(SendReceipts::default()),
         ] {
             let mut turn = history_turn(11, 210).await;
             turn.idle().await;
@@ -2641,6 +2907,784 @@ mod tests {
         .unwrap();
     }
 
+    struct RestoredStream {
+        app: App,
+        requests: UnboundedReceiver<StreamRequest>,
+        messages: UnboundedReceiver<Msg>,
+        events: UnboundedSender<Value>,
+    }
+
+    fn restore_hello(rev: i64, count: u64) -> Value {
+        json!({"type": "hello", "hostId": "host", "rev": rev, "catchUp": count})
+    }
+
+    fn restored_bot(id: &str, name: &str, rev: i64) -> Value {
+        json!({"type": "bot", "rev": rev, "bot": {"id": id, "name": name, "rev": rev}})
+    }
+
+    async fn confirmed_restore_with(
+        rev: i64,
+        snapshots: Vec<Value>,
+    ) -> (RestoredStream, UnboundedReceiver<HistoryRequest>) {
+        let (client, mut requests, pages) = stream_and_history_host("2.54.0").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let original = expect_stream(&mut requests, 0).await;
+        let before = 1000;
+        original.send(restore_hello(before, 0)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        drop(original);
+        let rewind = expect_stream(&mut requests, before).await;
+        rewind.send(restore_hello(rev, 0)).unwrap();
+        let events = expect_stream(&mut requests, 0).await;
+        events.send(restore_hello(rev, snapshots.len().try_into().unwrap())).unwrap();
+        for event in snapshots {
+            events.send(event).unwrap();
+        }
+        finish_recovery(&mut app, &mut messages).await;
+        (RestoredStream { app, requests, messages, events }, pages)
+    }
+
+    async fn confirmed_restore() -> RestoredStream {
+        confirmed_restore_with(
+            26,
+            vec![restored_bot("a", "Alpha", 20), restored_bot("b", "Beta", 21), entry_at_rev(entry_event(2), 22)],
+        )
+        .await
+        .0
+    }
+
+    async fn receipt_replay_fixture() -> (RestoredStream, UnboundedReceiver<HistoryRequest>) {
+        confirmed_restore_with(301, vec![restored_bot("a", "Alpha", 20), entry_at_rev(entry_event(300), 301)]).await
+    }
+
+    fn pending_receipt_send(app: &mut App) -> After {
+        let text = "Send receipt";
+        let nonce = "send-301";
+        let files = vec![std::path::PathBuf::from("receipt.txt")];
+        app.drafts.insert("a".into(), Editor::with(text));
+        app.files.insert("a".into(), files.clone());
+        app.sends.insert(
+            "a".into(),
+            PendingSend {
+                text: text.into(),
+                files,
+                nonce: nonce.into(),
+                task: None,
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+            },
+        );
+        After::Sent { key: "a".into(), nonce: nonce.into(), epoch: app.mirror_epoch }
+    }
+
+    fn send_receipt_entry(rev: i64) -> Value {
+        let mut entry = entry_at_rev(entry_event(301), rev);
+        entry["entry"]["id"] = "rpc-entry".into();
+        entry["entry"]["data"] = json!({"text": "Send receipt", "clientNonce": "send-301"});
+        entry
+    }
+
+    async fn receipt_page(pages: &mut UnboundedReceiver<HistoryRequest>) -> oneshot::Sender<(StatusCode, Value)> {
+        let (request, reply) = tokio::time::timeout(Duration::from_secs(2), pages.recv()).await.unwrap().unwrap();
+        assert_eq!(request, json!({"botId": "a", "beforeSeq": 302, "limit": 1}));
+        reply
+    }
+
+    async fn read_receipt_check(app: &mut App, messages: &mut UnboundedReceiver<Msg>) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let msg = messages.recv().await.unwrap();
+                let checked = matches!(msg, Msg::Reply(After::CheckSendReceipt { .. }, _));
+                app.on_msg(msg);
+                if checked {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_late_receipt_missing_from_current_chat_keeps_the_same_draft() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            receipt_replay_fixture().await;
+        let after = pending_receipt_send(&mut app);
+        drop(events);
+        let resumed = expect_stream(&mut requests, 0).await;
+        replay_through_300(&resumed);
+        finish_recovery(&mut app, &mut messages).await;
+
+        let manual = prepare_history(&mut app, "a");
+        app.on_msg(Msg::Reply(after, Ok(json!({"entry": send_receipt_entry(305)["entry"]}))));
+        assert_eq!(seqs(&app), [300], "the unverified receipt is hidden");
+        let reply = receipt_page(&mut pages).await;
+        reply.send((StatusCode::OK, json!({"entries": [entry_at_rev(entry_event(300), 301)["entry"]]}))).unwrap();
+        read_receipt_check(&mut app, &mut messages).await;
+        assert_eq!(seqs(&app), [300]);
+        assert_eq!(app.drafts["a"].text, "Send receipt");
+        assert_eq!(app.files["a"], app.sends["a"].files);
+        assert_eq!(app.sends["a"].nonce, "send-301");
+        assert!(!app.sends["a"].is_busy());
+        assert!(app.hint.as_ref().is_some_and(|(text, _)| text.contains("Draft kept")));
+        assert!(matches!(manual, After::History(_, id) if id == app.pending_history["a"].request));
+    }
+
+    #[tokio::test]
+    async fn queued_receipt_from_send_waits_for_the_connection_that_already_reopened() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            receipt_replay_fixture().await;
+        let after = pending_receipt_send(&mut app);
+        let queued = Msg::Reply(after, Ok(json!({"entry": send_receipt_entry(305)["entry"]})));
+        drop(events);
+        let resumed = expect_stream(&mut requests, 0).await;
+
+        app.on_msg(queued);
+        assert_eq!(seqs(&app), [300]);
+        assert!(app.hint.as_ref().is_none_or(|(text, _)| text != "Sent"));
+        replay_through_300(&resumed);
+        finish_recovery(&mut app, &mut messages).await;
+        receipt_page(&mut pages).await.send((StatusCode::OK, json!({"entries": [entry_event(300)["entry"]]}))).unwrap();
+        read_receipt_check(&mut app, &mut messages).await;
+        assert_eq!(seqs(&app), [300]);
+        assert_eq!(app.drafts["a"].text, "Send receipt");
+        assert_eq!(app.files["a"], app.sends["a"].files);
+        assert_eq!(app.sends["a"].nonce, "send-301");
+        assert!(!app.sends["a"].is_busy());
+    }
+
+    #[tokio::test]
+    async fn queued_receipt_from_history_respects_the_order_of_the_next_request() {
+        for confirmed_before_request in [true, false] {
+            let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+                receipt_replay_fixture().await;
+            let epoch = app.mirror_epoch;
+            let after = pending_receipt_send(&mut app);
+            drop(events);
+            let checking = expect_stream(&mut requests, 0).await;
+            replay_through_300(&checking);
+            finish_recovery(&mut app, &mut messages).await;
+            let row = send_receipt_entry(305);
+            app.on_msg(Msg::Reply(after, Ok(json!({"entry": row["entry"]}))));
+            receipt_page(&mut pages).await.send((StatusCode::OK, json!({"entries": [row["entry"]]}))).unwrap();
+            let queued = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    let msg = messages.recv().await.unwrap();
+                    if matches!(msg, Msg::Reply(After::CheckSendReceipt { .. }, _)) {
+                        break msg;
+                    }
+                    app.on_msg(msg);
+                }
+            })
+            .await
+            .unwrap();
+            let queued = if confirmed_before_request {
+                app.on_msg(queued);
+                assert_eq!(seqs(&app), [300, 301]);
+                None
+            } else {
+                Some(queued)
+            };
+            drop(checking);
+            let restored = expect_stream(&mut requests, 0).await;
+            if let Some(queued) = queued {
+                app.on_msg(queued);
+                assert_eq!(seqs(&app), [300]);
+                assert!(app.hint.as_ref().is_none_or(|(text, _)| text != "Sent"));
+            }
+            replay_through_300(&restored);
+            finish_recovery(&mut app, &mut messages).await;
+            assert_eq!(app.mirror_epoch, epoch + u64::from(confirmed_before_request));
+            if !confirmed_before_request {
+                receipt_page(&mut pages).await.send((StatusCode::OK, json!({"entries": []}))).unwrap();
+                read_receipt_check(&mut app, &mut messages).await;
+                assert_eq!(app.drafts["a"].text, "Send receipt");
+                assert_eq!(app.files["a"], app.sends["a"].files);
+                assert_eq!(app.sends["a"].nonce, "send-301");
+                assert!(!app.sends["a"].is_busy());
+            }
+            assert_eq!(seqs(&app), [300]);
+        }
+    }
+
+    fn receive_send_receipt(app: &mut App, rev: i64) {
+        let after = pending_receipt_send(app);
+        app.on_msg(Msg::Reply(after, Ok(json!({"entry": send_receipt_entry(rev)["entry"]}))));
+    }
+
+    fn replay_through_300(events: &UnboundedSender<Value>) {
+        events.send(restore_hello(301, 2)).unwrap();
+        events.send(restored_bot("a", "Alpha", 20)).unwrap();
+        events.send(entry_at_rev(entry_event(300), 301)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn receipt_replay_rewinds_a_send_confirmed_before_the_request() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, _) = receipt_replay_fixture().await;
+        let epoch = app.mirror_epoch;
+        receive_send_receipt(&mut app, 302);
+        assert_eq!(seqs(&app), [300, 301]);
+        drop(events);
+
+        let restored = expect_stream(&mut requests, 0).await;
+        replay_through_300(&restored);
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(seqs(&app), [300]);
+        assert_eq!(app.mirror_epoch, epoch + 1);
+        restored.send(restored_bot("a", "Alpha", 302)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        drop(restored);
+        let live = expect_stream(&mut requests, 302).await;
+        live.send(restore_hello(302, 0)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.mirror_epoch, epoch + 1);
+        assert_eq!(seqs(&app), [300]);
+    }
+
+    #[tokio::test]
+    async fn receipt_replay_accepts_a_send_confirmed_after_the_request() {
+        for hello_rev in [301, 303] {
+            let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+                receipt_replay_fixture().await;
+            let epoch = app.mirror_epoch;
+            let after = pending_receipt_send(&mut app);
+            drop(events);
+
+            let resumed = expect_stream(&mut requests, 0).await;
+            resumed.send(restore_hello(hello_rev, 2)).unwrap();
+            read_events(&mut app, &mut messages, 1).await;
+            let buffered = send_receipt_entry(302);
+            app.on_msg(Msg::Reply(after, Ok(json!({"entry": buffered["entry"]}))));
+            assert_eq!(seqs(&app), [300]);
+            assert!(pages.try_recv().is_err());
+            resumed.send(restored_bot("a", "Alpha", 20)).unwrap();
+            resumed.send(entry_at_rev(entry_event(300), 301)).unwrap();
+            finish_recovery(&mut app, &mut messages).await;
+            if hello_rev == 303 {
+                app.drafts.insert("a".into(), Editor::with("New draft"));
+            }
+            let checked = send_receipt_entry(303);
+            receipt_page(&mut pages).await.send((StatusCode::OK, json!({"entries": [checked["entry"]]}))).unwrap();
+            read_receipt_check(&mut app, &mut messages).await;
+            assert_eq!(app.mirror_epoch, epoch);
+            assert_eq!(app.entries["a"][&301].id, "rpc-entry");
+            assert!(!app.sends.contains_key("a"));
+            assert_eq!(app.drafts.get("a").map(|d| d.text.as_str()), (hello_rev == 303).then_some("New draft"));
+            resumed.send(buffered).unwrap();
+            read_events(&mut app, &mut messages, 1).await;
+            assert_eq!(app.entries["a"][&301].rev, Some(303));
+            drop(resumed);
+            let _live = expect_stream(&mut requests, 302).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn receipt_replay_prefers_the_current_entry_when_a_sequence_is_reused() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            receipt_replay_fixture().await;
+        let epoch = app.mirror_epoch;
+        let after = pending_receipt_send(&mut app);
+        drop(events);
+
+        let resumed = expect_stream(&mut requests, 0).await;
+        replay_through_300(&resumed);
+        finish_recovery(&mut app, &mut messages).await;
+        let old = send_receipt_entry(305);
+        app.on_msg(Msg::Reply(after, Ok(json!({"entry": old["entry"]}))));
+        let reply = receipt_page(&mut pages).await;
+        let mut current = entry_at_rev(entry_event(301), 302);
+        current["entry"]["id"] = "current-entry".into();
+        current["entry"]["data"]["text"] = "New content".into();
+        resumed.send(current).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        reply.send((StatusCode::OK, json!({"entries": [old["entry"]]}))).unwrap();
+        read_receipt_check(&mut app, &mut messages).await;
+        assert_eq!(app.sends["a"].nonce, "send-301");
+        assert!(!app.sends["a"].is_busy());
+        assert_eq!(app.entries["a"][&301].id, "current-entry");
+        assert_eq!(app.entries["a"][&301].text(), "New content");
+        drop(resumed);
+
+        let live = expect_stream(&mut requests, 302).await;
+        live.send(restore_hello(302, 0)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.mirror_epoch, epoch);
+        assert_eq!(app.entries["a"][&301].id, "current-entry");
+    }
+
+    #[tokio::test]
+    async fn a_current_stream_can_confirm_a_send_before_its_late_receipt() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            receipt_replay_fixture().await;
+        let after = pending_receipt_send(&mut app);
+        drop(events);
+        let resumed = expect_stream(&mut requests, 0).await;
+        let entry = send_receipt_entry(302);
+        resumed.send(restore_hello(302, 2)).unwrap();
+        resumed.send(restored_bot("a", "Alpha", 20)).unwrap();
+        resumed.send(entry.clone()).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert!(!app.sends.contains_key("a"));
+        assert!(!app.drafts.contains_key("a"));
+        app.on_msg(Msg::Reply(after, Ok(json!({"entry": entry["entry"]}))));
+        assert_eq!(seqs(&app), [301]);
+        assert!(pages.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_lookup_reply_from_an_abandoned_connection_cannot_confirm_a_send() {
+        for rewind in [false, true] {
+            let mut app = test_app();
+            pending_receipt_send(&mut app);
+            let request = uuid::Uuid::new_v4();
+            let after = After::CheckSendReceipt {
+                key: "a".into(),
+                request,
+                epoch: app.mirror_epoch,
+                connection: app.send_receipt_connection,
+            };
+            app.sends.get_mut("a").unwrap().receipt =
+                SendReceiptCheck::Pending { id: "rpc-entry".into(), seq: 301, request: Some(request) };
+            if rewind {
+                app.on_msg(Msg::Rewind(SendReceipts::default()));
+            } else {
+                app.on_msg(Msg::Disconnected { since: 0 });
+                app.sends.get_mut("a").unwrap().receipt =
+                    SendReceiptCheck::Pending { id: "rpc-entry".into(), seq: 301, request: Some(uuid::Uuid::new_v4()) };
+            }
+            app.on_msg(Msg::Reply(after, Ok(json!({"entries": [send_receipt_entry(302)["entry"]]}))));
+            assert_eq!(seqs(&app), [] as [i64; 0]);
+            assert_eq!(app.drafts["a"].text, "Send receipt");
+            assert_eq!(app.sends["a"].nonce, "send-301");
+        }
+    }
+
+    #[test]
+    fn a_send_check_requires_the_matching_current_row() {
+        let entry = send_receipt_entry(302)["entry"].clone();
+        let mut wrong_chat = entry.clone();
+        wrong_chat["botId"] = "b".into();
+        let mut wrong_id = entry.clone();
+        wrong_id["id"] = "replacement".into();
+        let mut wrong_nonce = entry.clone();
+        wrong_nonce["data"]["clientNonce"] = "other".into();
+        let mut removed = entry;
+        removed["data"]["removed"] = true.into();
+        for result in [
+            Ok(json!({"entries": [wrong_chat]})),
+            Ok(json!({"entries": [wrong_id]})),
+            Ok(json!({"entries": [wrong_nonce]})),
+            Ok(json!({"entries": [removed]})),
+            Err("Can't reach the host.".to_owned()),
+        ] {
+            let mut app = test_app();
+            pending_receipt_send(&mut app);
+            let request = uuid::Uuid::new_v4();
+            app.sends.get_mut("a").unwrap().receipt =
+                SendReceiptCheck::Pending { id: "rpc-entry".into(), seq: 301, request: Some(request) };
+            app.on_msg(Msg::Reply(
+                After::CheckSendReceipt {
+                    key: "a".into(),
+                    request,
+                    epoch: app.mirror_epoch,
+                    connection: app.send_receipt_connection,
+                },
+                result,
+            ));
+            assert_eq!(seqs(&app), [] as [i64; 0]);
+            assert_eq!(app.drafts["a"].text, "Send receipt");
+            assert!(!app.sends["a"].is_busy());
+        }
+    }
+
+    #[tokio::test]
+    async fn receipt_replay_clears_the_previous_hosts_receipts() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, _) = receipt_replay_fixture().await;
+        let epoch = app.mirror_epoch;
+        events.send(restored_bot("a", "Alpha", 302)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        receive_send_receipt(&mut app, 310);
+        drop(events);
+
+        let other_hello = |rev, count| json!({"type": "hello", "hostId": "other", "rev": rev, "catchUp": count});
+        let first = expect_stream(&mut requests, 302).await;
+        first.send(other_hello(315, 0)).unwrap();
+        let other = expect_stream(&mut requests, 0).await;
+        other.send(other_hello(315, 2)).unwrap();
+        other.send(restored_bot("a", "Other Alpha", 315)).unwrap();
+        other.send(entry_at_rev(entry_event(1), 8)).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(app.mirror_epoch, epoch + 1);
+        assert_eq!(seqs(&app), [1]);
+    }
+
+    #[tokio::test]
+    async fn confirmed_window_refresh_pages_from_the_new_tail() {
+        let entry = |seq| entry_at_rev(entry_event(seq), seq + 10);
+        let mut rows = vec![restored_bot("a", "Alpha", 4), entry_at_rev(final_reply_event(1, 100, "Old reply"), 11)];
+        rows.extend((2..=200).map(entry));
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            confirmed_restore_with(220, rows).await;
+        app.selected = Some("a".into());
+        app.load_history();
+        assert!(app.history_complete("a"));
+        drop(events);
+
+        let replay = expect_stream(&mut requests, 0).await;
+        replay.send(restore_hello(450, 201)).unwrap();
+        replay.send(restored_bot("a", "Alpha", 4)).unwrap();
+        for seq in 202..=401 {
+            replay.send(entry(seq)).unwrap();
+        }
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!((app.oldest("a"), seqs(&app).len()), (Some(202), 200));
+        assert!(!app.history_complete("a"));
+
+        let mut out_of_window = entry(50);
+        out_of_window["rev"] = 417.into();
+        out_of_window["entry"]["rev"] = 417.into();
+        replay.send(out_of_window).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.oldest("a"), Some(202));
+
+        app.load_history();
+        let (request, send_page) = tokio::time::timeout(Duration::from_secs(2), pages.recv()).await.unwrap().unwrap();
+        assert_eq!(request, json!({"botId": "a", "beforeSeq": 202, "limit": 200}));
+        let old_reply = react_to_reply(final_reply_event(1, 100, "Old reply"), 415);
+        let history: Vec<_> = std::iter::once(old_reply["entry"].clone())
+            .chain((2..=201).filter(|&seq| seq != 3).map(|seq| entry(seq)["entry"].clone()))
+            .collect();
+        send_page.send(history_page(&history, 202, 200)).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while app.pending_history.contains_key("a") {
+                app.on_msg(messages.recv().await.unwrap());
+            }
+        })
+        .await
+        .unwrap();
+        assert!(app.entries["a"].contains_key(&201));
+        assert!(!app.entries["a"].contains_key(&3), "history omits the withdrawn row");
+        assert_eq!(app.entries["a"][&1].data["reactions"], json!(["👍"]));
+        drop(replay);
+        let _live = expect_stream(&mut requests, 417).await;
+    }
+
+    #[tokio::test]
+    async fn confirmed_window_refresh_updates_equal_bot_revision_without_live_duplicates() {
+        let mut old = restored_bot("a", "Alpha", 20);
+        old["bot"]["unread"] = 1.into();
+        old["bot"]["lastMessage"] = "Old preview".into();
+        old["bot"]["completionReplyId"] = "old-reply".into();
+        let (RestoredStream { mut app, mut requests, mut messages, events }, _) =
+            confirmed_restore_with(26, vec![old.clone()]).await;
+        app.term_focused = true;
+        drop(events);
+
+        let refreshed = expect_stream(&mut requests, 0).await;
+        let mut snapshot = old.clone();
+        snapshot["bot"]["unread"] = 0.into();
+        snapshot["bot"]["lastMessage"] = "Updated preview".into();
+        snapshot["bot"]["completionReplyId"] = "reply-during-disconnect".into();
+        let tombstone = json!({"type": "bot", "rev": 20, "bot": {"id": "a", "rev": 20, "deleted": true}});
+        refreshed.send(restore_hello(28, 2)).unwrap();
+        refreshed.send(snapshot).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!((app.bots["a"].unread, app.bots["a"].last_message.as_str()), (1, "Old preview"));
+        refreshed.send(tombstone.clone()).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!((app.bots["a"].unread, app.bots["a"].last_message.as_str()), (0, "Updated preview"));
+        assert!(app.toasts.is_empty());
+
+        refreshed.send(old).unwrap();
+        refreshed.send(tombstone).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!((app.bots["a"].unread, app.bots["a"].last_message.as_str()), (0, "Updated preview"));
+        assert!(app.toasts.is_empty());
+    }
+
+    async fn page_after_zero_replay(counted: bool, reaction: Option<Value>) {
+        let entry = |seq| entry_at_rev(entry_event(seq), seq + 1);
+        let mut snapshots = vec![legacy_bot_event(1, Some(200), 100, "Alpha")];
+        snapshots.extend((1..=100).map(entry));
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            confirmed_restore_with(102, snapshots).await;
+        app.selected = Some("a".into());
+        drop(events);
+
+        let refreshed = expect_stream(&mut requests, 0).await;
+        let mut hello = restore_hello(302, 202);
+        if !counted {
+            hello.as_object_mut().unwrap().remove("catchUp");
+        }
+        refreshed.send(hello).unwrap();
+        refreshed.send(json!({"type": "icons"})).unwrap();
+        refreshed.send(legacy_bot_event(1, Some(200), 100, "Alpha")).unwrap();
+        for seq in 101..=300 {
+            refreshed.send(entry(seq)).unwrap();
+        }
+        let buffered = usize::from(reaction.is_some());
+        if let Some(event) = reaction {
+            refreshed.send(event).unwrap();
+        }
+        refreshed.send(entry_at_rev(entry_event(301), 303)).unwrap();
+        read_events(&mut app, &mut messages, 204 + buffered).await;
+        drop(refreshed);
+        let _live = expect_stream(&mut requests, 303).await;
+
+        app.load_history();
+        let (request, send_page) = tokio::time::timeout(Duration::from_secs(2), pages.recv()).await.unwrap().unwrap();
+        assert_eq!(request, json!({"botId": "a", "beforeSeq": 101, "limit": 200}));
+        assert_eq!(seqs(&app), (101..=301).collect::<Vec<_>>());
+        let rows: Vec<_> = (1..=100).map(|seq| entry(seq)["entry"].clone()).collect();
+        send_page.send(history_page(&rows, 101, 200)).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while app.pending_history.contains_key("a") {
+                app.on_msg(messages.recv().await.unwrap());
+            }
+        })
+        .await
+        .unwrap();
+        assert!(app.lane("a").iter().any(|entry| entry.seq == 100));
+    }
+
+    #[tokio::test]
+    async fn zero_replay_uncounted_pages_from_the_tail_above_a_buffered_reaction() {
+        let reaction = react_to_reply(final_reply_event(50, 100, "Old reply"), 302);
+        page_after_zero_replay(false, Some(reaction)).await;
+    }
+
+    #[tokio::test]
+    async fn zero_replay_counted_pages_from_the_tail_above_a_buffered_reaction() {
+        let reaction = react_to_reply(final_reply_event(50, 100, "Old reply"), 302);
+        page_after_zero_replay(true, Some(reaction)).await;
+    }
+
+    #[tokio::test]
+    async fn zero_replay_uncounted_pages_from_the_tail_without_a_buffered_reaction() {
+        page_after_zero_replay(false, None).await;
+    }
+
+    fn stage_uncounted_tail(app: &mut App) {
+        app.on_msg(Msg::ReplayStarted);
+        app.on_event(&json!({"type": "hello", "rev": 302}));
+        for seq in 101..=300 {
+            app.on_event(&entry_at_rev(entry_event(seq), seq + 1));
+        }
+    }
+
+    #[test]
+    fn uncounted_tail_keeps_reply_evidence_and_withdrawals_below_the_window() {
+        for withdrawn in [false, true] {
+            let mut app = test_app();
+            app.on_event(&legacy_bot_event(1, Some(200), 100, "Alpha"));
+            let saved = entry_at_rev(final_reply_event(50, 210, "Saved reply"), 51);
+            app.on_event(&saved);
+            if withdrawn {
+                let mut removal = entry_at_rev(saved.clone(), 302);
+                removal["entry"]["data"]["removed"] = true.into();
+                app.on_event(&removal);
+            }
+
+            stage_uncounted_tail(&mut app);
+            app.on_event(&react_to_reply(saved, if withdrawn { 301 } else { 302 }));
+            app.on_msg(Msg::ReplayComplete);
+
+            assert_eq!(app.oldest("a"), Some(101));
+            let observed = &app.legacy_replies["a"][&50];
+            assert_eq!(observed.latest_rev, Some(302));
+            assert_eq!(observed.reply.map(|reply| reply.rev), (!withdrawn).then_some(51));
+            app.on_event(&legacy_bot_event(303, None, 210, "Saved reply"));
+            assert_eq!(app.toasts.len(), usize::from(!withdrawn));
+        }
+    }
+
+    #[tokio::test]
+    async fn uncounted_tail_confirms_a_send_receipt_below_the_window() {
+        let mut app = test_app();
+        let send = pending_file_send(&mut app);
+        stage_uncounted_tail(&mut app);
+        let mut receipt = entry_at_rev(entry_event(50), 302);
+        receipt["entry"]["data"]["clientNonce"] = "pending".into();
+        app.on_event(&receipt);
+        assert!(app.sends.contains_key("a") && app.files.contains_key("a"));
+
+        app.on_msg(Msg::ReplayComplete);
+        assert_eq!(app.oldest("a"), Some(101));
+        assert!(!app.sends.contains_key("a") && !app.files.contains_key("a"));
+        assert!(send.await.unwrap_err().is_cancelled());
+    }
+
+    fn pending_file_send(app: &mut App) -> tokio::task::JoinHandle<()> {
+        let task = tokio::spawn(std::future::pending());
+        let files = vec![std::path::PathBuf::from("report.txt")];
+        app.drafts.insert("a".into(), Editor::with("With attachment"));
+        app.files.insert("a".into(), files.clone());
+        app.sends.insert(
+            "a".into(),
+            PendingSend {
+                text: "With attachment".into(),
+                files,
+                nonce: "pending".into(),
+                task: Some(task.abort_handle()),
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+            },
+        );
+        task
+    }
+
+    #[tokio::test]
+    async fn confirmed_replay_keeps_the_view_and_new_send_until_a_live_cursor() {
+        let RestoredStream { mut app, mut requests, mut messages, events } = confirmed_restore().await;
+        let send = pending_file_send(&mut app);
+        let history = prepare_history(&mut app, "a");
+        let epoch = app.mirror_epoch;
+        drop(events);
+
+        let empty = expect_stream(&mut requests, 0).await;
+        empty.send(restore_hello(27, 0)).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(app.mirror_epoch, epoch, "the confirmed view survives a zero-cursor reconnect");
+        drop(empty);
+
+        let resumed = expect_stream(&mut requests, 0).await;
+        resumed.send(restore_hello(28, 0)).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(app.bots["a"].name, "Alpha");
+        assert!(app.sends["a"].task.is_some());
+        assert!(!send.is_finished());
+        assert_eq!(app.drafts["a"].text, "With attachment");
+        assert_eq!(app.files["a"], app.sends["a"].files);
+        app.on_msg(Msg::Reply(history, Ok(json!({"entries": [entry_event(1)["entry"]]}))));
+        assert_eq!(seqs(&app), [1, 2]);
+
+        resumed.send(restored_bot("a", "Live Alpha", 23)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.bots["a"].name, "Live Alpha");
+        drop(resumed);
+        let _live = expect_stream(&mut requests, 23).await;
+        send.abort();
+    }
+
+    #[tokio::test]
+    async fn an_interrupted_replay_over_a_confirmed_view_discards_unconfirmed_deletions_and_receipts() {
+        let RestoredStream { mut app, mut requests, mut messages, events } = confirmed_restore().await;
+        let send = pending_file_send(&mut app);
+        let history = prepare_history(&mut app, "a");
+        app.drafts.insert("b".into(), Editor::with("Keep until confirmed"));
+        let epoch = app.mirror_epoch;
+        let mut receipt = entry_at_rev(entry_event(3), 31);
+        receipt["entry"]["data"] = json!({"clientNonce": "pending", "text": "With attachment"});
+        let deletion = json!({"type": "bot", "rev": 32, "bot": {"id": "b", "rev": 32, "deleted": true}});
+        let mut updated = entry_at_rev(entry_event(2), 34);
+        updated["entry"]["data"] = json!({"text": "Newer transcript"});
+        drop(events);
+
+        let partial = expect_stream(&mut requests, 0).await;
+        partial.send(restore_hello(40, 5)).unwrap();
+        partial.send(receipt.clone()).unwrap();
+        partial.send(deletion.clone()).unwrap();
+        partial.send(updated).unwrap();
+        partial.send(restored_bot("a", "Newer Alpha", 35)).unwrap();
+        read_events(&mut app, &mut messages, 5).await;
+        assert!(app.bots.contains_key("b") && app.drafts.contains_key("b"));
+        assert!(app.sends["a"].task.is_some());
+        assert_eq!(seqs(&app), [2]);
+        assert_eq!(app.entries["a"][&2].rev, Some(22));
+        assert!(app.pending_history.contains_key("a"));
+        drop(partial);
+
+        let retry = expect_stream(&mut requests, 0).await;
+        retry.send(restore_hello(36, 2)).unwrap();
+        retry.send(restored_bot("a", "Stale Alpha", 20)).unwrap();
+        retry.send(entry_at_rev(entry_event(2), 21)).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(app.mirror_epoch, epoch);
+        assert_eq!(app.bots["a"].name, "Newer Alpha");
+        assert_eq!(app.entries["a"][&2].rev, Some(22));
+        app.on_msg(Msg::Reply(history, Ok(json!({"entries": [entry_event(1)["entry"]]}))));
+        assert_eq!(seqs(&app), [2], "a reply to the old window cannot alter the replacement");
+        assert_eq!(app.drafts["b"].text, "Keep until confirmed");
+        assert!(app.sends["a"].task.is_some() && app.files.contains_key("a"));
+        drop(retry);
+
+        let confirmed = expect_stream(&mut requests, 0).await;
+        confirmed.send(restore_hello(40, 2)).unwrap();
+        confirmed.send(deletion).unwrap();
+        confirmed.send(receipt).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert!(!app.bots.contains_key("b") && !app.drafts.contains_key("b"));
+        assert!(!app.drafts.contains_key("a") && !app.files.contains_key("a") && !app.sends.contains_key("a"));
+        assert!(send.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn an_uncounted_window_refresh_applies_live_entries_after_replacing_the_tail() {
+        let (RestoredStream { mut app, mut requests, mut messages, events }, mut pages) =
+            confirmed_restore_with(26, vec![restored_bot("a", "Alpha", 20), entry_at_rev(entry_event(2), 22)]).await;
+        let send = pending_file_send(&mut app);
+        drop(events);
+
+        let replay = expect_stream(&mut requests, 0).await;
+        replay.send(json!({"type": "hello", "hostId": "host", "rev": 28})).unwrap();
+        replay.send(entry_at_rev(entry_event(2), 25)).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!(app.entries["a"][&2].rev, Some(22));
+
+        let mut delivered = entry_at_rev(entry_event(3), 27);
+        delivered["entry"]["data"]["clientNonce"] = "pending".into();
+        let after = After::Sent { key: "a".into(), nonce: "pending".into(), epoch: app.mirror_epoch };
+        app.on_msg(Msg::Reply(after, Ok(json!({"entry": delivered["entry"]}))));
+        let (request, history_response) =
+            tokio::time::timeout(Duration::from_secs(2), pages.recv()).await.unwrap().unwrap();
+        assert_eq!(request, json!({"botId": "a", "beforeSeq": 4, "limit": 1}));
+        history_response.send((StatusCode::OK, json!({"entries": [delivered["entry"]]}))).unwrap();
+        read_receipt_check(&mut app, &mut messages).await;
+        assert!(!app.sends.contains_key("a"));
+        send.abort();
+
+        replay.send(entry_at_rev(entry_event(4), 29)).unwrap();
+        finish_recovery(&mut app, &mut messages).await;
+        assert_eq!(seqs(&app), [2, 3]);
+        assert_eq!(app.entries["a"][&2].rev, Some(25));
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(seqs(&app), [2, 3, 4]);
+        drop(replay);
+        let _live = expect_stream(&mut requests, 29).await;
+    }
+
+    #[tokio::test]
+    async fn a_second_restore_rewinds_from_zero_if_hello_is_behind_the_mirror() {
+        for seen_newer_row in [false, true] {
+            let RestoredStream { mut app, mut requests, mut messages, events } = confirmed_restore().await;
+            let send = pending_file_send(&mut app);
+            let epoch = app.mirror_epoch;
+            drop(events);
+
+            if seen_newer_row {
+                let partial = expect_stream(&mut requests, 0).await;
+                partial.send(restore_hello(40, 2)).unwrap();
+                partial.send(restored_bot("a", "Newer Alpha", 35)).unwrap();
+                read_events(&mut app, &mut messages, 2).await;
+                assert_eq!(app.bots["a"].name, "Newer Alpha");
+                drop(partial);
+            }
+
+            let restored = expect_stream(&mut requests, 0).await;
+            restored.send(restore_hello(if seen_newer_row { 32 } else { 25 }, 1)).unwrap();
+            restored.send(restored_bot("a", "Restored again", 19)).unwrap();
+            finish_recovery(&mut app, &mut messages).await;
+            assert_eq!(app.mirror_epoch, epoch + 1);
+            assert_eq!(app.bots["a"].name, "Restored again");
+            assert!(!app.bots.contains_key("b"));
+            assert_eq!(seqs(&app), [] as [i64; 0]);
+            assert!(app.sends["a"].task.is_none());
+            assert_eq!(app.drafts["a"].text, "With attachment");
+            assert_eq!(app.files["a"], app.sends["a"].files);
+            assert!(send.await.unwrap_err().is_cancelled());
+        }
+    }
+
     async fn recovery_deletion_after_interrupted_replay(counted: bool) {
         let (client, mut requests) = stream_host().await;
         let (tx, mut messages) = unbounded_channel();
@@ -2661,7 +3705,13 @@ mod tests {
             app.pasted.insert(id.into(), vec!["Unsent".into()]);
             app.sends.insert(
                 id.into(),
-                PendingSend { text: "Unsent draft".into(), files: files.clone(), nonce: "pending".into(), task: None },
+                PendingSend {
+                    text: "Unsent draft".into(),
+                    files: files.clone(),
+                    nonce: "pending".into(),
+                    task: None,
+                    receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+                },
             );
         }
         drop(original);
@@ -2747,7 +3797,7 @@ mod tests {
         let live = if catch_up.is_some() { 24 } else { 27 };
         second.send(json!({"type": "bot", "rev": live, "bot": {"id": "a", "rev": live, "name": "Restored"}})).unwrap();
         read_events(&mut app, &mut messages, 3).await;
-        assert_eq!(app.bots["a"].name, "Restored");
+        assert_eq!(app.bots["a"].name, if catch_up.is_some() { "Alpha" } else { "Restored" });
         assert_eq!(seqs(&app), [2]);
         drop(second);
         let _normal = expect_stream(&mut requests, live).await;
@@ -2778,7 +3828,13 @@ mod tests {
         app.files.insert("a".into(), files.clone());
         app.sends.insert(
             "a".into(),
-            PendingSend { text: "Retry me".into(), files: files.clone(), nonce: "pending".into(), task: None },
+            PendingSend {
+                text: "Retry me".into(),
+                files: files.clone(),
+                nonce: "pending".into(),
+                task: None,
+                receipt: SendReceiptCheck::Direct(app.send_receipt_connection),
+            },
         );
         drop(original);
 

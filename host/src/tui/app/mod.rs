@@ -41,7 +41,7 @@ pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group
 pub use find::{Find, match_ranges};
 pub use kofi::KofiSheet;
 pub(in crate::tui) use kofi::URL as KOFI_URL;
-pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use model::{After, Entry, Kind, Mark, Msg, SendReceipts, Status};
 pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
@@ -87,6 +87,26 @@ struct PendingSend {
     files: Vec<std::path::PathBuf>,
     nonce: String,
     task: Option<tokio::task::AbortHandle>,
+    receipt: SendReceiptCheck,
+}
+
+impl PendingSend {
+    fn is_busy(&self) -> bool {
+        self.task.is_some() || matches!(self.receipt, SendReceiptCheck::Pending { request: Some(_), .. })
+    }
+}
+
+enum SendReceiptCheck {
+    Direct(u64),
+    Unverified,
+    Pending { id: String, seq: i64, request: Option<uuid::Uuid> },
+}
+
+#[derive(Default)]
+struct ReplayChat {
+    entries: BTreeMap<i64, Entry>,
+    snapshot: Option<(i64, Value)>,
+    verified_sends: HashSet<i64>,
 }
 
 /// Whose model list it is: the agent and its login profile (`None`: the default login).
@@ -136,7 +156,11 @@ pub struct App {
     /// Each artifact's newest title, for its cards.
     pub artifact_titles: super::manage::ArtifactTitles,
     sends: HashMap<String, PendingSend>,
+    send_receipts: SendReceipts,
+    send_receipt_connection: u64,
+    send_receipt_ready: bool,
     replay_sends: Option<HashSet<(String, String)>>,
+    replay_chats: Option<HashMap<String, ReplayChat>>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
     pub trace_scroll: usize,
@@ -199,8 +223,7 @@ pub struct App {
     completions_before_live: HashSet<String>,
     legacy_replies: HashMap<String, HashMap<i64, completion_history::ObservedReply>>,
     completion_lookups: HashMap<String, completion_history::CompletionLookup>,
-    /// Per bot, the lowest seq of its loaded main chat when this connection's catch-up began
-    /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
+    /// Each retained chat starts here, so rewrites of earlier rows wait for paging.
     floors: HashMap<String, i64>,
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
@@ -257,7 +280,11 @@ impl App {
             files: HashMap::new(),
             pasted: HashMap::new(),
             sends: HashMap::new(),
+            send_receipts: SendReceipts::default(),
+            send_receipt_connection: 0,
+            send_receipt_ready: false,
             replay_sends: None,
+            replay_chats: None,
             chat_scroll: 0,
             trace_scroll: 0,
             trace: TraceMode::Off,

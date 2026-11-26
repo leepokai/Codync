@@ -134,7 +134,7 @@ impl App {
                 if !self.bots.contains_key(&key) {
                     return;
                 }
-                if self.sends.get(&key).is_some_and(|s| s.task.is_some()) {
+                if self.sends.get(&key).is_some_and(PendingSend::is_busy) {
                     self.flash("Sending…");
                     return;
                 }
@@ -153,7 +153,12 @@ impl App {
                 }
                 let after = After::Sent { key: key.clone(), nonce: nonce.clone(), epoch: self.mirror_epoch };
                 let task = self.send_message(body, files.clone(), after);
-                self.sends.insert(key, PendingSend { text: original, files, nonce, task: Some(task) });
+                let receipt = if self.send_receipt_ready && self.replay_sends.is_none() {
+                    super::SendReceiptCheck::Direct(self.send_receipt_connection)
+                } else {
+                    super::SendReceiptCheck::Unverified
+                };
+                self.sends.insert(key, PendingSend { text: original, files, nonce, task: Some(task), receipt });
                 self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {

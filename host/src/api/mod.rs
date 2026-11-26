@@ -14,6 +14,7 @@ mod network;
 mod remote;
 mod workflows;
 
+pub(crate) use events::CATCH_UP_PER_BOT;
 pub use events::{events_stream, term_events};
 pub use http::router;
 

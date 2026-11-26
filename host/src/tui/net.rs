@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::app::{After, Msg};
+use super::app::{After, Msg, SendReceipts};
 use super::manage::Reply;
 
 /// Methods that start an agent or download something: they can take minutes.
@@ -32,12 +32,19 @@ pub const NOT_INSTALLED: &str = "The Codync host isn't set up on this computer y
 /// How long a command keeps trying while the host can't be reached (it is restarting, say).
 const PATIENCE: Duration = Duration::from_secs(20);
 
+#[derive(PartialEq, Eq)]
+enum Recovery {
+    Current,
+    Rebuilding,
+    Retaining,
+}
+
 #[derive(Clone)]
 pub struct Client {
     base: Arc<str>,
     /// `None`: this computer's token file, read on every use so an install mid-session is picked up.
     token: Option<Arc<str>>,
-    /// Highest rev seen; the stream reconnects from here (0 = full catch-up).
+    /// The stream's resume cursor (0 = full catch-up).
     pub rev: Arc<AtomicI64>,
 }
 
@@ -239,24 +246,40 @@ impl Client {
         let c = self.clone();
         tokio::spawn(async move {
             let mut host_id: Option<String> = None;
-            let mut recovering = false;
-            let rewind = || {
-                c.rev.store(0, Ordering::Relaxed);
-                tx.send(Msg::Rewind).is_ok()
-            };
+            // Restore detection still needs a revision while the resume cursor is zero.
+            let mut mirror_rev = 0;
+            let mut send_receipts = SendReceipts::default();
+            let mut recovery = Recovery::Current;
+            let rewind =
+                |recovery: &mut Recovery, mirror_rev: &mut i64, send_receipts: &mut SendReceipts, connection| {
+                    *recovery = Recovery::Rebuilding;
+                    *mirror_rev = 0;
+                    send_receipts.invalidate_connection();
+                    *send_receipts = SendReceipts::for_connection(connection);
+                    c.rev.store(0, Ordering::Relaxed);
+                    tx.send(Msg::Rewind(send_receipts.clone())).is_ok()
+                };
             'connect: loop {
                 let since = c.rev.load(Ordering::Relaxed);
+                // A send can commit after the host has read the catch-up window.
+                let (connection, receipt_rev) = send_receipts.begin_request();
+                let before_request = since.max(mirror_rev).max(receipt_rev);
                 let url = format!("{}/events?since={since}&client=tui", c.base);
                 if let Some(token) = c.token()
                     && let Ok(res) = crate::http().get(url).bearer_auth(token).send().await
                     && res.status().is_success()
                 {
-                    if tx.send(Msg::Online(true)).is_err() || tx.send(Msg::Connected { since }).is_err() {
+                    if tx.send(Msg::Online).is_err()
+                        || tx.send(Msg::Connected { since, connection, send_receipts: send_receipts.clone() }).is_err()
+                    {
+                        return;
+                    }
+                    if recovery == Recovery::Retaining && tx.send(Msg::ReplayStarted).is_err() {
                         return;
                     }
                     let mut catch_up_left: Option<u64> = None;
-                    let mut hello_rev = i64::MAX;
-                    let mut confirming_replay = recovering;
+                    let mut hello_rev = None;
+                    let mut confirming_replay = recovery != Recovery::Current;
                     let mut unreadable = false;
                     let mut events = std::pin::pin!(sse_values(res));
                     while let Some(v) = events.next().await {
@@ -275,52 +298,82 @@ impl Client {
                             Some("resync") => break,
                             Some("hello") => {
                                 let id = v["hostId"].as_str();
-                                if id.is_some() && id == host_id.as_deref() && rev.is_some_and(|rev| rev < since) {
-                                    if !rewind() {
+                                let same_host = id.is_some() && id == host_id.as_deref();
+                                let restored = same_host && rev.is_some_and(|rev| rev < before_request);
+                                let replaced = id.is_some() && host_id.is_some() && !same_host;
+                                if let Some(id) = id.filter(|_| !same_host) {
+                                    host_id = Some(id.to_owned());
+                                    mirror_rev = 0;
+                                }
+                                if restored || replaced {
+                                    if !rewind(&mut recovery, &mut mirror_rev, &mut send_receipts, connection) {
                                         return;
                                     }
-                                    recovering = true;
-                                    continue 'connect;
+                                    if since > 0 {
+                                        continue 'connect;
+                                    }
+                                    confirming_replay = true;
                                 }
-                                host_id = id.map(str::to_owned);
-                                hello_rev = rev.unwrap_or(i64::MAX);
+                                hello_rev = rev;
                                 catch_up_left = v["catchUp"].as_u64();
                                 false
                             }
                             _ => {
-                                let live =
-                                    rev.is_some_and(|r| r > 0 && catch_up_left.map_or(r > hello_rev, |left| left == 0));
+                                if recovery != Recovery::Current
+                                    && let Some(rev) = rev
+                                {
+                                    mirror_rev = mirror_rev.max(rev);
+                                }
+                                let live = rev.is_some_and(|r| {
+                                    r > 0
+                                        && catch_up_left
+                                            .map_or_else(|| hello_rev.is_some_and(|h| r > h), |left| left == 0)
+                                });
                                 if let Some(left) = &mut catch_up_left {
                                     *left = left.saturating_sub(1);
                                 }
                                 live
                             }
                         };
+                        let replay_complete = confirming_replay && (catch_up_left == Some(0) || live_revision);
+                        let commit_before_live = replay_complete && live_revision && recovery == Recovery::Retaining;
+                        if replay_complete {
+                            confirming_replay = false;
+                            mirror_rev = mirror_rev.max(hello_rev.unwrap_or_default());
+                            if !live_revision {
+                                recovery = Recovery::Retaining;
+                            }
+                        }
                         // Snapshot revisions can run ahead of buffered live events.
                         if live_revision {
-                            recovering = false;
+                            recovery = Recovery::Current;
                         }
-                        if !recovering && let Some(rev) = rev {
+                        if recovery == Recovery::Current
+                            && let Some(rev) = rev
+                        {
                             c.rev.fetch_max(rev, Ordering::Relaxed);
+                        }
+                        if commit_before_live && tx.send(Msg::ReplayComplete).is_err() {
+                            return;
                         }
                         if tx.send(Msg::Event(v)).is_err() {
                             return;
                         }
-                        if confirming_replay && (catch_up_left == Some(0) || live_revision) {
-                            confirming_replay = false;
-                            if tx.send(Msg::ReplayComplete).is_err() {
-                                return;
-                            }
-                        }
-                    }
-                    if unreadable || (since == 0 && (recovering || catch_up_left.is_some_and(|left| left > 0))) {
-                        if !rewind() {
+                        if replay_complete && !commit_before_live && tx.send(Msg::ReplayComplete).is_err() {
                             return;
                         }
-                        recovering = true;
+                    }
+                    let incomplete = since == 0
+                        && recovery != Recovery::Retaining
+                        && (recovery == Recovery::Rebuilding || catch_up_left.is_some_and(|left| left > 0));
+                    if (unreadable || incomplete)
+                        && !rewind(&mut recovery, &mut mirror_rev, &mut send_receipts, connection)
+                    {
+                        return;
                     }
                 }
-                if tx.send(Msg::Online(false)).is_err() {
+                send_receipts.invalidate_connection();
+                if tx.send(Msg::Disconnected { since: c.rev.load(Ordering::Relaxed) }).is_err() {
                     return;
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;

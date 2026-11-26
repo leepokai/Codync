@@ -16,7 +16,7 @@ use super::{
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::network::Recipient;
-use crate::network::sessions::{Caller, Session};
+use crate::network::sessions::{Caller, Live, Session};
 use crate::remote::cloud::{self, CloudStatus};
 use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Result, anyhow, bail};
@@ -157,10 +157,21 @@ impl Asker {
     /// The caller's session, registered with its address on its first call.
     async fn session(hub: &Hub, caller: &Caller) -> Result<Self> {
         let looking = caller.clone();
-        let (info, base) = tokio::task::spawn_blocking(move || looking.look()).await?;
+        let (info, base, running) = tokio::task::spawn_blocking(move || {
+            let (info, base) = looking.look();
+            (info, base, looking.running())
+        })
+        .await?;
+        // It calls, so it runs: online where its agent doesn't say more and its process can be told.
+        let live = Live::of_busy(info.busy).or(running.is_some().then_some(Live::Online));
         let owner = format!("session:{}", caller.key());
         let reserve = || hub.network.reserve(&hub.store, &base, &owner);
-        let (s, registered) = hub.network.sessions.register(&hub.store, caller, info.title, reserve)?;
+        let (s, registered) = hub.network.sessions.register(&hub.store, caller, info.title, running, reserve)?;
+        let woke = hub.network.sessions.set_live(&s.key, live);
+        // The apps show it: a new session, a new title, one forgotten, or what its agent does now.
+        if registered.new || registered.offer || woke {
+            crate::network::emit(hub);
+        }
         if registered.new {
             tracing::info!(kind = s.kind.as_str(), temporary = s.temporary, "a session joined the Network");
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Registered, s.kind);

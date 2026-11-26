@@ -13,6 +13,7 @@ import {
   type Usage,
 } from '@shared/models'
 import { parseAlert, type HostAlert } from '@shared/alerts'
+import type { AgentModels } from '@shared/agent-models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
@@ -118,6 +119,8 @@ export type HostEvent =
   /** One entry of a thread's transcript (never a chat's); the catch-up has none. */
   | { type: 'threadEntry'; thread: string; entry: Entry }
   | { type: 'usage'; usage: Usage }
+  /** An agent's model list the computer just read (`loginProfile` null: the default login); no rev. */
+  | { type: 'models'; backend: string; loginProfile: string | null; models: AgentModels }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
@@ -183,6 +186,11 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
+    case 'models': {
+      const models = raw.models as AgentModels | undefined
+      if (typeof raw.backend !== 'string' || !Array.isArray(models?.models)) return null
+      return { type, backend: raw.backend, loginProfile: typeof raw.loginProfile === 'string' ? raw.loginProfile : null, models }
+    }
     case 'artifact': {
       const artifact = raw.artifact as Artifact | undefined
       return artifact && typeof artifact.id === 'string' && typeof artifact.botId === 'string' ? { type, artifact } : null

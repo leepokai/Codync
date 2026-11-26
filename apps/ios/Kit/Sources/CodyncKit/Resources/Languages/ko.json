@@ -2498,5 +2498,19 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "모든 thread가 자체 worktree에서 작업하며, 내 체크아웃은 건드리지 않습니다",
   "Its chat, routines and files live here.": "채팅, 루틴, 파일이 여기에 있습니다.",
   "Add folder": "폴더 추가",
-  "Remove folder": "폴더 제거"
+  "Remove folder": "폴더 제거",
+  "Fewer models": "모델 접기",
+  "More models (%d)": "모델 더 보기(%d)",
+  "Search or enter a model ID": "검색하거나 모델 ID 입력",
+  "Approvals": "승인",
+  "Speed": "속도",
+  "Close search": "검색 닫기",
+  "Coding agents": "코딩 에이전트",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "봇과 다른 코딩 에이전트는 이 세션들의 주소로 메시지를 보냅니다. 각 세션은 메일을 직접 읽습니다.",
+  "Checks its mail": "메일을 직접 확인",
+  "Told of mail at its next step": "다음 단계에서 새 편지를 알림받음",
+  "Told of mail as it comes": "편지가 오면 바로 알림받음",
+  "Idle": "대기 중",
+  "Older sessions: {count}": "이전 세션 {count}개",
+  "More sessions: {count}": "다른 세션 {count}개"
 }

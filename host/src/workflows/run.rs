@@ -613,18 +613,7 @@ fn settle_run(hub: &Hub, run: &RunRow, steps: &[StepRow], effects: &mut Effects)
         return Ok(());
     }
     let steps = load_steps(&hub.store, &run.id)?;
-    let status = if stopping
-        || (steps.iter().any(|s| s.status == StepStatus::Stopped)
-            && steps.iter().all(|s| s.status != StepStatus::Failed))
-    {
-        RunStatus::Stopped
-    } else if let Some(failed) = steps.iter().find(|s| s.status == StepStatus::Failed) {
-        let _ = failed;
-        RunStatus::Failed
-    } else {
-        RunStatus::Done
-    };
-    let error = steps.iter().find(|s| s.status == StepStatus::Failed).and_then(|s| s.error.clone());
+    let (status, error) = outcome(stopping, &steps);
     let now = now_ms();
     hub.store.with_immediate(|tx| {
         tx.execute(
@@ -656,6 +645,27 @@ fn settle_run(hub: &Hub, run: &RunRow, steps: &[StepRow], effects: &mut Effects)
     hub.emit_workflow(json!({"type": "workflow", "change": "run", "workflowId": run.workflow, "runId": run.id}));
     let _ = status;
     Ok(())
+}
+
+/// The run's status and error, read from each node's latest attempt: a retried step's older attempt no longer counts.
+fn outcome(stopping: bool, steps: &[StepRow]) -> (RunStatus, Option<String>) {
+    // Rows are in attempt order: a row is its node's latest when no later row has the same node.
+    // Kept in row order so the first failed step's error is stable.
+    let latest: Vec<&StepRow> = steps
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| !steps[i + 1..].iter().any(|t| t.node_id == s.node_id))
+        .map(|(_, s)| s)
+        .collect();
+    let failed = latest.iter().find(|s| s.status == StepStatus::Failed);
+    let status = if stopping || (failed.is_none() && latest.iter().any(|s| s.status == StepStatus::Stopped)) {
+        RunStatus::Stopped
+    } else if failed.is_some() {
+        RunStatus::Failed
+    } else {
+        RunStatus::Done
+    };
+    (status, failed.and_then(|s| s.error.clone()))
 }
 
 fn write_terminal(
@@ -1542,4 +1552,45 @@ fn upstream_text(store: &Store, workflow: &str, graph: &Graph, node: &str) -> Re
         parts.push(output);
     }
     Ok(Some(parts.join("\n\n")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, node: &str, status: StepStatus, error: Option<&str>) -> StepRow {
+        StepRow {
+            id: id.into(),
+            node_id: node.into(),
+            attempt: 1,
+            request_id: id.into(),
+            kind: "agent".into(),
+            bot: None,
+            status,
+            input: String::new(),
+            output: None,
+            branch: None,
+            passes: 1,
+            truncated: false,
+            error: error.map(str::to_owned),
+            started: None,
+            ended: None,
+        }
+    }
+
+    #[test]
+    fn a_retried_step_that_succeeds_finishes_the_run() {
+        let steps = [row("1", "a", StepStatus::Failed, Some("boom")), row("2", "a", StepStatus::Done, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Done, None));
+        let steps = [row("1", "a", StepStatus::Stopped, None), row("2", "a", StepStatus::Done, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Done, None));
+        let steps = [row("1", "a", StepStatus::Done, None), row("2", "b", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(false, &steps), (RunStatus::Failed, Some("boom".into())));
+        let steps = [row("1", "a", StepStatus::Done, None), row("2", "b", StepStatus::Stopped, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Stopped, None));
+        let steps = [row("1", "a", StepStatus::Stopped, None), row("2", "b", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(false, &steps), (RunStatus::Failed, Some("boom".into())));
+        let steps = [row("1", "a", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(true, &steps), (RunStatus::Stopped, Some("boom".into())));
+    }
 }

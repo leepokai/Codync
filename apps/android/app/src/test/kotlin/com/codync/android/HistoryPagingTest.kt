@@ -7,6 +7,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -275,6 +277,40 @@ class HistoryPagingTest {
         pages = 0
         pageUntil(found = { false }, more = { true }) { pages++ }
         assertEquals("never found", 5, pages)
+    }
+
+    @Test fun `an oversized pending approval stub keeps its status and options`() {
+        val filler = "F".repeat(PER_MESSAGE_CHARS)
+        val approval = row(2, "permission").copy(data = buildJsonObject {
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+                add(buildJsonObject { put("optionId", "deny"); put("name", "Deny"); put("kind", "reject_once") })
+            })
+            put("detail", filler)
+        })
+        val payload = WireJson.encodeToString(approval)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        val kept = newestWindow(sequenceOf(payload), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertTrue(kept.isStoredStub)
+        assertEquals(storedStubText(payload.length.toLong()), kept.text)
+        assertFalse(filler in kept.text)
+        assertEquals("pending", kept.status)
+        val options = kept.data["options"] as JsonArray
+        assertEquals(listOf("allow", "deny"), options.map { (it as JsonObject).text("optionId") })
+
+        // A queued message carries its action fields after the body. The stub must still be queued.
+        val queuedPayload = WireJson.encodeToString(row(3, "user").copy(data = buildJsonObject {
+            put("text", filler)
+            put("clientNonce", "nonce-1")
+            put("status", "queued")
+        }))
+        val queued = newestWindow(sequenceOf(queuedPayload), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertEquals(storedStubText(queuedPayload.length.toLong()), queued.text)
+        assertFalse(filler in queued.text)
+        assertEquals("queued", queued.status)
+        assertEquals("nonce-1", queued.clientNonce)
+        assertTrue(queued.isQueued)
     }
 
     private fun row(seq: Long, kind: String) = Entry("e-$seq", seq, "a", rev = seq, kind = kind)

@@ -330,44 +330,59 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     /** A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table; the budget grows with the window, up to a fixed ceiling. */
     private fun residentEntries(db: SQLiteDatabase, bot: String, target: Int): List<Entry> {
         val budget = (target * BYTES_PER_SHOWN).coerceIn(RESIDENT_BYTES, RESIDENT_BYTES_MAX)
-        return answerable(db, newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { windowRows(it, target, budget) }).map { it.entry }
+        return answerable(db, newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { windowRows(it, target, budget) }, budget).map { it.entry }
     }
 
     /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large. */
     private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<KeptRow> =
-        answerable(db, newestPayloads(db, bot, limit.toLong()) { windowRows(it, limit, PREVIEW_BYTES) })
+        answerable(db, newestPayloads(db, bot, limit.toLong()) { windowRows(it, limit, PREVIEW_BYTES) }, PREVIEW_BYTES)
 
     /**
-     * [rows] with each kept approval read whole: its options and status sit past the head, so a card the computer still
-     * waits on could not be answered from its stub. One row at a time, and the row stays for as long as its card does,
-     * so an approval may take a chat past its window budget by its own size. An approval whose row is gone stays a stub;
-     * one whose stored row cannot be read says so on its card instead of failing silently.
+     * [rows] with each approval the computer still waits on read whole, when that row fits in [budget] together with
+     * every retained row. An answered or expired card stays the stub [windowRows] already counted. One row at a time,
+     * newest first, so the card on screen gets the room. An approval whose row is gone stays a stub; one whose stored
+     * row cannot be read says so on its card instead of failing silently.
      */
-    private fun answerable(db: SQLiteDatabase, rows: List<KeptRow>): List<KeptRow> = rows.map { row ->
-        if (!row.entry.isApprovalStub) return@map row
-        // Routing metadata the schema could not trust (too long, or a NUL that hides its real length) keeps the stub:
-        // the row is not brought back as an answerable card under a route nothing proved.
-        if (row.routingAmbiguous) return@map row
-        // Reading the whole value can fail before decoding (a cursor window too small for the row): that row must not
-        // abort the snapshot and hide every other chat either.
-        val payload = try {
-            storedPayload(row.entry.botId, row.entry.id)
-        } catch (error: Exception) {
-            android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
-            return@map KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
-        } ?: return@map row
-        val decoded = try {
-            WireJson.decodeFromString<Entry>(payload)
-        } catch (error: Exception) {
-            android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
-            return@map KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+    private fun answerable(db: SQLiteDatabase, rows: List<KeptRow>, budget: Long): List<KeptRow> {
+        val kept = rows.toMutableList()
+        var spent = kept.sumOf { it.cost.toLong() }
+        for (index in kept.indices.reversed()) {
+            val row = kept[index]
+            if (!row.entry.isApprovalStub) continue
+            // Routing metadata the schema could not trust (too long, or a NUL that hides its real length) keeps the stub:
+            // the row is not brought back as an answerable card under a route nothing proved.
+            if (row.routingAmbiguous) continue
+            // A status the stub already has is enough. Only a card that can still be answered is worth its whole row.
+            // No status means the head never finished one, so the row is read and kept only when it is still pending.
+            if (row.entry.status != null && row.entry.status != "pending") continue
+            // Reading the whole value can fail before decoding (a cursor window too small for the row): that row must not
+            // abort the snapshot and hide every other chat either.
+            val payload = try {
+                storedPayload(row.entry.botId, row.entry.id)
+            } catch (error: Exception) {
+                android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+                continue
+            } ?: continue
+            val decoded = try {
+                WireJson.decodeFromString<Entry>(payload)
+            } catch (error: Exception) {
+                android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+                continue
+            }
+            // WireJson takes the last of two duplicate keys, so it can name a thread the strict walk rejected. A row whose
+            // decoded route disagrees stays the read-only stub the window built: no answers under an unproven thread, and
+            // it appears in the owner chat only. The checked route is what a decoded row keeps everywhere else.
+            val named = decoded.threadNamed()
+            if (named.routingThreadId() != row.routingThread) continue
+            if (named.status != "pending") continue
+            val next = spent - row.cost + payload.length
+            if (next > budget) continue
+            spent = next
+            kept[index] = KeptRow(named.withCheckedThread(row.routingThread), payload.length, row.routingThread)
         }
-        // WireJson takes the last of two duplicate keys, so it can name a thread the strict walk rejected. A row whose
-        // decoded route disagrees stays the read-only stub the window built: no answers under an unproven thread, and
-        // it appears in the owner chat only. The checked route is what a decoded row keeps everywhere else.
-        val named = decoded.threadNamed()
-        if (named.routingThreadId() != row.routingThread) return@map row
-        KeptRow(named.withCheckedThread(row.routingThread), payload.length, row.routingThread)
+        return kept
     }
 
     /**

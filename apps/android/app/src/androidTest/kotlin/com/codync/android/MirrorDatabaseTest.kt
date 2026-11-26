@@ -821,6 +821,46 @@ class MirrorDatabaseTest {
         db.close()
     }
 
+    @Test fun anAnsweredOversizedApprovalIsNotReplacedAndStaysInsideTheWindowBudget() {
+        val filler = "A".repeat(200_000)
+        val answered = Entry("answered", 2, "bot", rev = 2, kind = "permission", data = buildJsonObject {
+            put("status", "answered")
+            put("selected", "allow")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", filler)
+        })
+        val pending = Entry("pending", 3, "bot", rev = 3, kind = "permission", data = buildJsonObject {
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", "P".repeat(200_000))
+        })
+        val fits = Entry("fits", 4, "bot", rev = 4, kind = "permission", data = buildJsonObject {
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", "Q".repeat(PER_MESSAGE_CHARS + 1))
+        })
+        mirror.receive(listOf(chat("bot", 1), answered, pending, fits))
+        val kept = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries.filter { it.botId == "bot" }
+        val card = kept.single { it.id == "answered" }
+        assertTrue("an answered card is not replaced by its full payload", card.isStoredStub)
+        assertFalse(filler in card.data.toString())
+        assertEquals("answered", card.status)
+        val waiting = kept.single { it.id == "pending" }
+        assertTrue("a pending card past the window budget stays a stub", waiting.isStoredStub)
+        assertEquals("pending", waiting.status)
+        val answerable = kept.single { it.id == "fits" }
+        assertFalse("a pending card that fits is still read whole", answerable.isStoredStub)
+        assertEquals("pending", answerable.status)
+        // window 10 uses the resident floor: max(160_000, 10 * 2_000).
+        assertTrue(kept.sumOf { WireJson.encodeToString(it).length.toLong() } <= 160_000L)
+    }
+
     @Test fun anOversizedApprovalComesBackWholeSoItsAnswersStayOnThePhone() {
         val filler = "D".repeat(PER_MESSAGE_CHARS + 1)
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {

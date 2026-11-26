@@ -3,6 +3,7 @@ package com.codync.android
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
 import com.codync.android.core.threadNamed
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -116,15 +117,16 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
                 WireJson.decodeFromString<Entry>(row.text).threadNamed()
             } catch (_: Exception) {
                 // This row fits in memory whole: a structural walk of it can find `data.thread` wherever it sits.
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, row.routingKnown)
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, row.routingKnown,
+                    offerAnswers = false)
                     ?.threadNamed() ?: continue
             }
             // WireJson accepts duplicate object keys and other routing evidence the strict walk rejected. An approval
             // whose decoded route disagrees keeps a non-actionable stub in the owner chat instead of offering answers
             // under a thread nothing checked; every other row follows the checked route.
             val entry = if (read.isApproval && read.routingThreadId() != checked) {
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, checked, true)?.threadNamed()
-                    ?: continue
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, checked, true, offerAnswers = false)
+                    ?.threadNamed() ?: continue
             } else read.withCheckedThread(checked)
             decoded += KeptRow(entry, row.chars.toInt(), entry.routingThreadId())
             bytes += row.chars
@@ -139,6 +141,7 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
             row.chars,
             row.routingThread,
             row.routingKnown || row.routingAmbiguous,
+            offerAnswers = !row.routingAmbiguous,
         )?.threadNamed() ?: continue
         val cost = entry.text.length
         if (decoded.isNotEmpty() && bytes + cost > budget) break
@@ -208,6 +211,8 @@ private fun boundedEntry(
     fullLength: Long,
     storedThread: String? = null,
     routingKnown: Boolean = false,
+    /** False when the route is unproven: the stub must not carry answers. */
+    offerAnswers: Boolean = true,
 ): Entry? {
     val fields = headFields(head)
     val seq = fields["seq"]?.toLongOrNull() ?: return null
@@ -223,16 +228,207 @@ private fun boundedEntry(
         rev = fields["rev"]?.toLongOrNull() ?: 0L,
         kind = fields["kind"].orEmpty(),
         turn = fields["turn"]?.toLongOrNull() ?: 0L,
-        data = buildJsonObject {
-            put("text", storedStubText(fullLength))
-            put("storedOnly", true)
-            // What a thread put in its bot's chat must stay there even when its row cannot be read: the warning card
-            // belongs in the affected thread, not only in the owner's main chat.
-            thread?.let { put("thread", buildJsonObject { put("id", it) }) }
-        },
+        data = stubData(head, tail, fullLength, thread, offerAnswers),
         createdAt = times["createdAt"] ?: 0L,
         updatedAt = times["updatedAt"] ?: 0L,
     )
+}
+
+/** Fields a stub keeps from the card. The large body is replaced; these still say whether it can be answered or queued. */
+private val STUB_KEPT_KEYS = setOf("status", "options", "selected", "clientNonce", "removed")
+
+/** The fields that offer an answer. They stay off a stub whose route was not proven. */
+private val ANSWER_KEYS = setOf("options", "selected")
+
+/**
+ * The stub's `data`: the large text becomes [storedStubText]. Control fields that fit whole in [head] stay, and a
+ * field that sits after the body is taken from [tail] when the head never finished it. A cut-off value is left out.
+ */
+private fun stubData(head: String, tail: String, fullLength: Long, thread: String?, offerAnswers: Boolean): JsonObject {
+    val fromHead = if (offerAnswers) STUB_KEPT_KEYS else STUB_KEPT_KEYS - ANSWER_KEYS
+    // Answers sit with the card's fields. A value that only finishes in the tail is not copied: an unproven route's
+    // options often land there, and offering them would answer under a thread nothing checked.
+    val fromTail = STUB_KEPT_KEYS - ANSWER_KEYS
+    val kept = LinkedHashMap<String, JsonElement>()
+    for ((key, value) in completeDataFields(head)) if (key in fromHead) kept[key] = value
+    for ((key, value) in trailingDataFields(tail)) if (key in fromTail && key !in kept) kept[key] = value
+    return buildJsonObject {
+        for ((key, value) in kept) put(key, value)
+        put("text", storedStubText(fullLength))
+        put("storedOnly", true)
+        // What a thread put in its bot's chat must stay there even when its row cannot be read: the warning card
+        // belongs in the affected thread, not only in the owner's main chat.
+        thread?.let { put("thread", buildJsonObject { put("id", it) }) }
+    }
+}
+
+/** Complete members of the top-level `data` object in [head]. A member the head cuts off is dropped, and so is the rest. */
+private fun completeDataFields(head: String): Map<String, JsonElement> {
+    var i = 0
+    while (i < head.length && head[i].isWhitespace()) i++
+    if (i >= head.length || head[i] != '{') return emptyMap()
+    i++
+    while (i < head.length) {
+        while (i < head.length && (head[i].isWhitespace() || head[i] == ',')) i++
+        if (i >= head.length || head[i] == '}') break
+        if (head[i] != '"') break
+        val key = readJsonString(head, i) ?: return emptyMap()
+        i = key.next
+        while (i < head.length && head[i].isWhitespace()) i++
+        if (i >= head.length || head[i] != ':') return emptyMap()
+        i++
+        while (i < head.length && head[i].isWhitespace()) i++
+        if (i >= head.length) return emptyMap()
+        if (key.text == "data" && head[i] == '{') return readCompleteObject(head, i)
+        i = skipJsonValue(head, i) ?: return emptyMap()
+    }
+    return emptyMap()
+}
+
+/** Complete members of the object that starts at [start], stopping at the first value [text] does not finish. */
+private fun readCompleteObject(text: String, start: Int): Map<String, JsonElement> {
+    val fields = LinkedHashMap<String, JsonElement>()
+    var i = start + 1
+    while (i < text.length) {
+        while (i < text.length && (text[i].isWhitespace() || text[i] == ',')) i++
+        if (i >= text.length || text[i] == '}') break
+        if (text[i] != '"') break
+        val key = readJsonString(text, i) ?: break
+        i = key.next
+        while (i < text.length && text[i].isWhitespace()) i++
+        if (i >= text.length || text[i] != ':') break
+        i++
+        while (i < text.length && text[i].isWhitespace()) i++
+        if (i >= text.length) break
+        val value = readCompleteElement(text, i) ?: break
+        fields[key.text] = value.element
+        i = value.next
+    }
+    return fields
+}
+
+private class JsonSlice(val element: JsonElement, val next: Int)
+
+/** The JSON value at [start], or null when [text] ends inside it. */
+private fun readCompleteElement(text: String, start: Int): JsonSlice? {
+    val end = skipJsonValue(text, start) ?: return null
+    val element = try {
+        WireJson.parseToJsonElement(text.substring(start, end))
+    } catch (_: Exception) {
+        return null
+    }
+    return JsonSlice(element, end)
+}
+
+/** The index just after the JSON value at [start], or null when [text] ends inside it. */
+private fun skipJsonValue(text: String, start: Int): Int? = when (text.getOrNull(start)) {
+    '"' -> readJsonString(text, start)?.next
+    '{', '[' -> skipJsonContainer(text, start)
+    else -> {
+        var i = start
+        while (i < text.length && text[i] != ',' && text[i] != '}' && text[i] != ']' && !text[i].isWhitespace()) i++
+        if (i == start) null else i
+    }
+}
+
+/**
+ * Control fields that sit after a large body, read from the end of [tail] back to the first value it does not finish.
+ * The times follow `data`, so the walk starts at the brace that closes `data` and never treats a time as a data field.
+ */
+private fun trailingDataFields(tail: String): Map<String, JsonElement> {
+    val marker = tail.lastIndexOf("\"createdAt\":")
+    if (marker < 0) return emptyMap()
+    var i = marker
+    while (i > 0 && tail[i - 1].isWhitespace()) i--
+    if (i > 0 && tail[i - 1] == ',') i--
+    while (i > 0 && tail[i - 1].isWhitespace()) i--
+    if (i == 0 || tail[i - 1] != '}') return emptyMap()
+    val found = LinkedHashMap<String, JsonElement>()
+    var pos = i - 2
+    while (pos >= 0) {
+        while (pos >= 0 && tail[pos].isWhitespace()) pos--
+        if (pos < 0) break
+        val valueEnd = pos
+        val valueStart = startOfValueBackward(tail, valueEnd) ?: break
+        pos = valueStart - 1
+        while (pos >= 0 && tail[pos].isWhitespace()) pos--
+        if (pos < 0 || tail[pos] != ':') break
+        pos--
+        while (pos >= 0 && tail[pos].isWhitespace()) pos--
+        if (pos < 0 || tail[pos] != '"') break
+        val keyStart = startOfStringBackward(tail, pos) ?: break
+        val key = try {
+            (WireJson.parseToJsonElement(tail.substring(keyStart, pos + 1)) as? JsonPrimitive)?.contentOrNull
+        } catch (_: Exception) {
+            null
+        } ?: break
+        val element = try {
+            WireJson.parseToJsonElement(tail.substring(valueStart, valueEnd + 1))
+        } catch (_: Exception) {
+            break
+        }
+        if (key in STUB_KEPT_KEYS) found[key] = element
+        pos = keyStart - 1
+        while (pos >= 0 && tail[pos].isWhitespace()) pos--
+        if (pos < 0 || tail[pos] == '{') break
+        if (tail[pos] != ',') break
+        pos--
+    }
+    return found
+}
+
+/** The index of the value that ends at [end], or null when [text] does not hold that value whole. */
+private fun startOfValueBackward(text: String, end: Int): Int? {
+    if (end < 0 || end >= text.length) return null
+    return when (text[end]) {
+        '"' -> startOfStringBackward(text, end)
+        '}', ']' -> startOfContainerBackward(text, end)
+        else -> {
+            var i = end
+            while (i >= 0 && text[i] != ',' && text[i] != '{' && text[i] != '[' && text[i] != ':' && !text[i].isWhitespace()) i--
+            if (i == end) null else i + 1
+        }
+    }
+}
+
+/** The opening quote of the string whose closing quote is at [endQuote]. An escaped quote stays inside the string. */
+private fun startOfStringBackward(text: String, endQuote: Int): Int? {
+    var i = endQuote - 1
+    while (i >= 0) {
+        if (text[i] == '"') {
+            var slashes = 0
+            var j = i - 1
+            while (j >= 0 && text[j] == '\\') {
+                slashes++
+                j--
+            }
+            if (slashes % 2 == 0) return i
+        }
+        i--
+    }
+    return null
+}
+
+/** The opening brace or bracket of the container that ends at [end], or null when [text] starts inside it. */
+private fun startOfContainerBackward(text: String, end: Int): Int? {
+    if (text.getOrNull(end) != '}' && text.getOrNull(end) != ']') return null
+    var depth = 0
+    var i = end
+    while (i >= 0) {
+        when (text[i]) {
+            '"' -> {
+                i = startOfStringBackward(text, i)?.minus(1) ?: return null
+                continue
+            }
+            '}', ']' -> depth++
+            '{', '[' -> {
+                depth--
+                if (depth == 0) return i
+            }
+        }
+        i--
+    }
+    return null
 }
 
 /** The times a payload's last [PAYLOAD_TAIL_CHARS] hold, written after its body. Each is taken from its last mention. */
@@ -257,8 +453,8 @@ internal val Entry.isStoredStub: Boolean
     get() = data["storedOnly"]?.jsonPrimitive?.booleanOrNull == true
 
 /**
- * An approval the chat kept as a stub. Its options and status sit past the head, so the card must read the row whole
- * (`MirrorDatabase.answerable`) before anything answers it.
+ * An approval the chat kept as a stub. Status and options are copied onto it when they fit in the head. A pending card
+ * is still read whole (`MirrorDatabase.answerable`) when that row fits the window budget.
  */
 internal val Entry.isApprovalStub: Boolean
     get() = isStoredStub && kind == "permission"

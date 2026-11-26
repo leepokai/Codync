@@ -78,6 +78,7 @@ impl App {
     fn on_event(&mut self, v: &Value) {
         match v["type"].as_str() {
             Some("hello") => {
+                self.replay_rev = v["rev"].as_i64().unwrap_or_default();
                 self.snapshot_floors();
                 self.network = v["network"].clone();
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
@@ -99,7 +100,8 @@ impl App {
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
-                self.upsert_bot(&v["bot"]);
+                let live = v["rev"].as_i64().is_none_or(|rev| rev > self.replay_rev);
+                self.upsert_bot(&v["bot"], live);
                 self.close_idle_work_page();
                 self.memory_moved(&v["bot"]);
             }
@@ -143,7 +145,7 @@ impl App {
         outside_window(self.floors.get(bot).copied(), held, e)
     }
 
-    fn upsert_bot(&mut self, v: &Value) {
+    fn upsert_bot(&mut self, v: &Value, live: bool) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
             if let Some(gone) = self.bots.remove(id) {
@@ -175,17 +177,25 @@ impl App {
         self.keep_details_cursor(&new.id, (&old.work, old.max_threads));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
-        if !new.notify || watching || old.away().is_some() || new.away().is_some() {
+        if !new.notify || watching {
+            return;
+        }
+        let away = old.away().is_some() || new.away().is_some();
+        if live && new.status == Status::Idle {
+            let replied = if v.get("completionReplyId").is_some() {
+                new.completion_reply_id.is_some() && new.completion_reply_id != old.completion_reply_id
+            } else {
+                !away && old.status == Status::Working && turn_replied(&old, &new)
+            };
+            if replied {
+                self.toast(format!("{} is done", new.name), false);
+            }
+        }
+        if away {
             return;
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working
-            && new.status == Status::Idle
-            && !new.turn_stopped
-            && turn_replied(&old, &new)
-        {
-            self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
         }
@@ -377,7 +387,7 @@ impl App {
                 }
                 if let Some(id) = v["bot"]["id"].as_str() {
                     let id = id.to_owned();
-                    self.upsert_bot(&v["bot"]);
+                    self.upsert_bot(&v["bot"], false);
                     if created {
                         self.select(&id);
                         self.chat_page = true;
@@ -534,7 +544,7 @@ mod tests {
     #[test]
     fn computer_permission_survives_loading_the_editor() {
         let mut app = test_app();
-        app.upsert_bot(&json!({"id":"b", "computer":true}));
+        app.upsert_bot(&json!({"id":"b", "computer":true}), false);
         assert!(app.bots["b"].computer);
         assert!(FIELDS.contains(&Field::Computer));
     }
@@ -542,7 +552,7 @@ mod tests {
     #[test]
     fn fast_mode_survives_loading_the_editor() {
         let mut app = test_app();
-        app.upsert_bot(&json!({"id":"b", "fastMode":true}));
+        app.upsert_bot(&json!({"id":"b", "fastMode":true}), false);
         assert!(app.bots["b"].fast_mode);
         assert!(FIELDS.contains(&Field::Fast));
     }
@@ -552,10 +562,11 @@ mod tests {
         let mut app = test_app();
         app.upsert_bot(
             &json!({"id":"b", "fastMode":true, "fastModeSupport":"refused", "fastModeIssue":"requires extra usage"}),
+            false,
         );
         assert!(app.bots["b"].fast_shown());
         assert!(app.bots["b"].fast_refusal().is_some_and(|why| why.contains("requires extra usage")));
-        app.upsert_bot(&json!({"id":"g", "kind":"group", "fastModeSupport":"offered"}));
+        app.upsert_bot(&json!({"id":"g", "kind":"group", "fastModeSupport":"offered"}), false);
         assert!(!app.bots["g"].fast_shown());
     }
 
@@ -568,43 +579,78 @@ mod tests {
     }
 
     #[test]
+    fn a_reaction_on_an_old_reply_does_not_toast_as_done() {
+        let mut app = test_app();
+        app.on_event(&json!({"type":"bot", "bot": {
+            "id":"a", "name":"Alpha", "status":"working", "startedAt":200,
+            "lastAt":100, "lastMessage":"Old reply", "completionReplyId":null
+        }}));
+        app.on_event(&json!({"type":"bot", "bot": {
+            "id":"a", "name":"Alpha", "status":"idle",
+            "lastAt":210, "lastMessage":"Old reply", "completionReplyId":null
+        }}));
+        assert!(app.toasts.is_empty());
+    }
+
+    #[test]
     fn stopped_turn_with_a_reply_does_not_toast_as_done() {
         let mut app = test_app();
-        app.upsert_bot(&json!({
-            "id": "a", "name": "Alpha", "status": "working", "startedAt": 200,
-            "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1,
-        }));
-        app.upsert_bot(&json!({
-            "id": "a", "name": "Alpha", "status": "idle", "stoppedTurn": {"throughSeq": 3, "latest": true},
-            "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1,
-        }));
+        app.upsert_bot(
+            &json!({
+                "id": "a", "name": "Alpha", "status": "working", "startedAt": 200,
+                "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1, "completionReplyId": null,
+            }),
+            true,
+        );
+        app.upsert_bot(
+            &json!({
+                "id": "a", "name": "Alpha", "status": "idle", "completionReplyId": null,
+                "lastAt": 210, "lastMessage": "Sent before Stop", "unread": 1,
+            }),
+            true,
+        );
         assert!(app.toasts.is_empty(), "a stopped turn is not done");
         assert_eq!(app.bots["a"].last_message, "Sent before Stop");
+    }
 
-        app.upsert_bot(&json!({"id": "a", "name": "Alpha", "status": "working", "startedAt": 300}));
-        app.upsert_bot(&json!({
-            "id": "a", "name": "Alpha", "status": "idle", "stoppedTurn": {"throughSeq": 3, "latest": false},
-            "lastAt": 310, "lastMessage": "New reply", "unread": 2,
-        }));
+    #[test]
+    fn a_completion_toast_only_uses_a_new_live_reply() {
+        let mut app = test_app();
+        app.on_event(&json!({"type":"bot", "rev":5, "bot":{"id":"a", "status":"working", "completionReplyId":null}}));
+        app.on_event(&json!({"type":"hello", "rev":8}));
+        let mut event = json!({"type":"bot", "rev":7, "bot":{
+            "id":"a", "name":"Alpha", "status":"idle", "completionReplyId":"replayed"
+        }});
+        app.on_event(&event);
+        event["rev"] = 9.into();
+        app.on_event(&event);
+        assert!(app.toasts.is_empty(), "catch-up and later bot metadata stay quiet");
+
+        event["rev"] = 10.into();
+        event["bot"]["completionReplyId"] = "new-reply".into();
+        app.on_event(&event);
         assert_eq!(app.toasts.len(), 1);
         assert_eq!(app.toasts[0].text, "Alpha is done");
+        app.toasts.clear();
+        app.on_event(&event);
+        assert!(app.toasts.is_empty(), "the same completion only toasts once");
     }
 
     #[test]
     fn done_toast_skips_turns_that_left_no_new_reply_in_this_chat() {
         let mut app = test_app();
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":200, "lastAt":100, "lastMessage":"old X", "unread":0}));
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":100, "lastMessage":"old X", "unread":0}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":200, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
         assert!(app.toasts.is_empty(), "bot-to-bot or silent turn must not toast with stale chat preview");
 
         // User queued a message while Alpha worked on another bot's request.
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":300, "lastAt":310, "lastMessage":"You: hey", "unread":0}));
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":310, "lastMessage":"You: hey", "unread":0}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":300, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
         assert!(app.toasts.is_empty(), "a queued user message is not a bot reply");
 
         // A real reply in Alpha's own chat (including mid-turn send_message) toasts as done.
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":400, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}));
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":400, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}), true);
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}), true);
         assert_eq!(app.toasts.len(), 1);
         assert_eq!(app.toasts[0].text, "Alpha is done");
     }

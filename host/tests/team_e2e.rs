@@ -272,6 +272,75 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
 }
 
 #[tokio::test]
+async fn completion_identifies_the_sent_reply_and_is_empty_for_the_adjacent_request() {
+    if common::python_missing() {
+        return;
+    }
+    let host = common::host::Host::start().await;
+    let recipient = host.fixture_bot("Recipient", "team_agent.py", "").await;
+    host.works_in_chat(&recipient).await;
+    let sender = host.fixture_bot("Sender", "team_agent.py", "").await;
+    let mut events = host.events().await;
+
+    host.reply(&recipient, "REPORT").await;
+    common::eventually("the own-chat turn finished", Duration::from_secs(20), async || {
+        common::bot(&host.snapshot().await, &recipient)["status"] == "idle"
+    })
+    .await;
+    let snapshot = host.snapshot().await;
+    let sent = snapshot["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["data"]["text"] == "Second report for the user")
+        .unwrap();
+    assert_eq!(common::bot(&snapshot, &recipient)["completionReplyId"], sent["id"]);
+
+    host.call("send", json!({"botId": sender, "text": format!("DELEGATE {recipient} BLOCK")})).await;
+    let working = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut own_completed = false;
+        loop {
+            let event = events.recv().await.unwrap();
+            let bot = &event["bot"];
+            if bot["id"] != recipient {
+                continue;
+            }
+            if bot["status"] == "idle" && bot["completionReplyId"] == sent["id"] {
+                own_completed = true;
+            }
+            if own_completed && bot["status"] == "working" {
+                break bot.clone();
+            }
+        }
+    })
+    .await
+    .expect("live snapshots show own-chat completion followed by delegated work");
+    assert_eq!(working.get("completionReplyId"), Some(&Value::Null));
+
+    let reacted = host.call("react", json!({"entryId": sent["id"], "emoji": "👍"})).await;
+    assert_eq!(reacted["entry"]["id"], sent["id"]);
+    let cwd = PathBuf::from(working["cwd"].as_str().unwrap());
+    std::fs::write(cwd.join("release"), "").unwrap();
+    common::eventually("the request finished and its reply was relayed", Duration::from_secs(20), async || {
+        let snapshot = host.snapshot().await;
+        common::bot(&snapshot, &recipient)["status"] == "idle"
+            && snapshot["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["botId"] == sender && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Relayed:")))
+    })
+    .await;
+
+    let snapshot = host.snapshot().await;
+    let idle = common::bot(&snapshot, &recipient);
+    assert_eq!(idle["status"], "idle");
+    assert_eq!(idle["lastMessage"], "Second report for the user");
+    assert!(idle["lastAt"].as_i64().unwrap() >= working["startedAt"].as_i64().unwrap());
+    assert_eq!(idle.get("completionReplyId"), Some(&Value::Null));
+}
+
+#[tokio::test]
 async fn delegated_request_emits_no_stale_alert_or_final_reply_for_recipient() {
     use futures::StreamExt as _;
 

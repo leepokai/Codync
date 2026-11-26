@@ -51,6 +51,7 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
   const away = isWorking(bot) && Boolean(bot.workingChat && bot.workingChat !== bot.id)
   const workingEntries = away && bot.workingChat ? store.allEntries(bot.workingChat) : entries
   const lastErr = islandLastError(entries)
+  const completionId = store.completionFor(bot)
   return {
     ref,
     name,
@@ -59,9 +60,10 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     color: bot.avatarColor,
     status: outsideStatus(bot),
     chat: bot.status,
-    turnStopped: bot.stoppedTurn?.latest,
     away,
-    reply: islandReply(entries, messagePreview, bot.stoppedTurn?.throughSeq),
+    completion: typeof completionId === 'string' ? islandReply(entries, messagePreview, completionId) : completionId,
+    reply: bot.completionReplyId === undefined ? islandReply(entries, messagePreview) : undefined,
+    legacyStreamRev: bot.completionReplyId === undefined ? store.replayedThrough : undefined,
     backend: store.backendName(bot.backend),
     folder: folderName(bot, trNow),
     detail: botDetail(bot),

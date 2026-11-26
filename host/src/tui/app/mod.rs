@@ -173,6 +173,8 @@ pub struct App {
     history_done: HashSet<String>,
     /// The `since` the current events connection requested.
     stream_since: i64,
+    /// The rev up through the current stream's replay, as announced in its hello.
+    replay_rev: i64,
     /// Per bot, the lowest seq of its loaded main chat when this connection's catch-up began
     /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
     floors: HashMap<String, i64>,
@@ -258,6 +260,7 @@ impl App {
             answering: HashMap::new(),
             history_done: HashSet::new(),
             stream_since: 0,
+            replay_rev: 0,
             floors: HashMap::new(),
             hint: None,
             analytics: None,

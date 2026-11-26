@@ -11,7 +11,7 @@ export interface IslandStep {
   kind: string
 }
 
-/** The newest final agent reply in a bot's own chat. */
+/** A final agent reply in a bot's own chat. */
 export interface IslandReply {
   id: string
   text: string
@@ -30,11 +30,13 @@ export interface IslandBot {
   status: BotStatus | string
   /** Its chat's own status: done and failed follow the chat's turns. */
   chat: BotStatus | string
-  turnStopped?: boolean
   /** True while the bot's running turn talks in another conversation (e.g. a group room). */
   away?: boolean
-  /** The newest final agent reply in this bot's own chat after its last stop. */
+  /** The reply from a live turn completion, or null when there is none. */
+  completion?: IslandReply | null
+  /** The newest final reply on a host that doesn't report completions. */
   reply?: IslandReply | null
+  legacyStreamRev?: number
   /** The agent it runs, as the app names it ("Claude Code"). */
   backend: string
   /** Its working folder's name. */
@@ -113,6 +115,8 @@ export interface IslandNotice {
 export interface BotTurnState {
   chat: string
   away: boolean
+  completionId?: string
+  legacyStreamRev?: number
   baselineReplyId: string | null
   baselineErrorId: string | null
 }
@@ -161,14 +165,14 @@ export function islandMode(
   return summary.bots.some(isActive) ? 'overview' : 'empty'
 }
 
-/** The newest final reply after `afterSeq`, excluding calls and removed entries. */
+/** The indicated final reply, or the newest one on hosts without a completion id. */
 export function islandReply(
   entries: readonly Entry[],
   formatPreview: (text: string) => string = (t) => t,
-  afterSeq?: number,
+  replyId?: string,
 ): IslandReply | null {
   const entry = entries.findLast((e) =>
-    e.kind === 'agent' && e.data.final === true && !e.data.call && !e.data.removed && (afterSeq == null || e.seq > afterSeq),
+    e.kind === 'agent' && e.data.final === true && !e.data.call && !e.data.removed && (replyId === undefined || e.id === replyId),
   )
   if (!entry) return null
   const raw =
@@ -209,21 +213,15 @@ export function nextTurnStates(before: ReadonlyMap<string, BotTurnState> | null,
   const next = new Map<string, BotTurnState>()
   for (const b of bots) {
     const prev = before?.get(b.ref)
-    if (inTurn(b.chat)) {
-      next.set(b.ref, {
-        chat: b.chat,
-        away: Boolean(b.away),
-        baselineReplyId: prev ? prev.baselineReplyId : (b.reply?.id ?? null),
-        baselineErrorId: prev ? prev.baselineErrorId : (b.errorId ?? null),
-      })
-    } else {
-      next.set(b.ref, {
-        chat: b.chat,
-        away: false,
-        baselineReplyId: b.reply?.id ?? null,
-        baselineErrorId: b.errorId ?? null,
-      })
-    }
+    const active = inTurn(b.chat)
+    next.set(b.ref, {
+      chat: b.chat,
+      away: active && Boolean(b.away),
+      completionId: b.completion?.id,
+      legacyStreamRev: b.legacyStreamRev,
+      baselineReplyId: active && prev && prev.legacyStreamRev === b.legacyStreamRev ? prev.baselineReplyId : (b.reply?.id ?? null),
+      baselineErrorId: active && prev ? prev.baselineErrorId : (b.errorId ?? null),
+    })
   }
   return next
 }
@@ -232,9 +230,13 @@ export function nextTurnStates(before: ReadonlyMap<string, BotTurnState> | null,
 export function transitions(before: ReadonlyMap<string, BotTurnState>, bots: IslandBot[]): IslandNotice[] {
   return bots.flatMap((b): IslandNotice[] => {
     const prev = before.get(b.ref)
+    if (b.chat === 'idle' && b.completion !== undefined) {
+      const reply = b.completion
+      return reply && reply.id !== prev?.completionId ? [{ kind: 'finished', ref: b.ref, text: reply.text || null }] : []
+    }
     if (!prev || !inTurn(prev.chat) || prev.away) return []
     if (b.chat === 'idle') {
-      if (b.turnStopped || !b.reply || b.reply.id === prev.baselineReplyId) return []
+      if (b.legacyStreamRev !== prev.legacyStreamRev || !b.reply || b.reply.id === prev.baselineReplyId) return []
       return [{ kind: 'finished', ref: b.ref, text: b.reply.text || null }]
     }
     if (b.chat === 'error') {

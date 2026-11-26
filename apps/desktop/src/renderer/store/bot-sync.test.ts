@@ -5,6 +5,7 @@ import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
 import type { HostEvent, HostTransport } from '../client/host-client'
+import type { Bot } from '@shared/models'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('@shared/')) return nextResolve(new URL(`../../shared/${specifier.slice(8)}.ts`, import.meta.url).href, context)
@@ -49,4 +50,28 @@ test("an alert passes on unless that bot's chat is on screen in a focused window
   store.setReading('view', 'open', false)
   receive({ type: 'alert', alert: alert('open') })
   assert.deepEqual(passed.map((a) => a.botId), ['other', 'open'])
+})
+
+test('only a changed completion received live can reach the island', () => {
+  const { store, receive } = storeWithAlerts()
+  const connect = (rev: number) => receive({ type: 'hello', hostId: 'host', rev, usage: { providers: [] }, screen: null, network: null, catchUp: 1 })
+  const update = (rev: number, completionReplyId?: string | null) => {
+    const bot = { id: 'a', rev, completionReplyId, unread: 0, waiting: 0 } as Bot
+    receive({ type: 'bot', bot })
+    return store.completionFor(bot)
+  }
+
+  connect(10)
+  assert.equal(update(9, 'before-connect'), null)
+  assert.equal(update(11, 'before-connect'), null, 'new metadata for a replayed completion stays quiet')
+  assert.equal(update(12, null), null)
+  assert.equal(update(13, 'live'), 'live')
+  assert.equal(update(14, 'live'), 'live', 'metadata before the next summary keeps the live completion')
+  assert.equal(update(15, null), null, 'the next turn clears the live completion before the next summary')
+
+  connect(20)
+  assert.equal(update(20, 'while-offline'), null)
+  assert.equal(update(21, 'while-offline'), null)
+  assert.equal(update(22), undefined, 'an older host still uses the transcript fallback for live updates')
+  store.retire()
 })

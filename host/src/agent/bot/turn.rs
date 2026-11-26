@@ -7,9 +7,9 @@ use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
 use crate::chat::team::no_reply;
 use crate::chat::work::{self, Failure, Outcome, Source};
-use crate::hub::{BotStatus, StoppedTurn};
+use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{BotConfig, EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
@@ -174,6 +174,7 @@ impl Actor {
         self.plan_entry = None;
         self.last_text = None;
         self.sent.clear();
+        self.completion_reply_id = None;
         self.reacted = Reacted::No;
         self.joined = false;
         self.unheard.clear();
@@ -199,9 +200,7 @@ impl Actor {
             }
             .into();
             r.started_at = Some(now_ms());
-            if let Some(stop) = &mut r.stopped_turn {
-                stop.latest = false;
-            }
+            r.completion_reply_id = None;
             r.lane = Some(lane.clone());
             r.message = message;
         });
@@ -411,7 +410,9 @@ impl Actor {
                 // A bot request's answer belongs to the bot that sent it and the exchange notice.
                 if !delegated {
                     e.data["final"] = true.into();
-                    self.hub.set_entry(&id, &e.data);
+                    if let Some(saved) = self.hub.set_entry(&id, &e.data) {
+                        self.record_completion_reply(&saved);
+                    }
                 }
                 final_text = text;
             }
@@ -460,6 +461,8 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
+        let completion_reply_id =
+            self.completion_reply_id.take().filter(|_| reply.is_ok() && !grouped && !compacting && self.in_own_chat());
         if let Some(step) = self.active_workflow.clone() {
             let timed_out = self.routine_timed_out;
             let stopped_step = !timed_out && (stopped || self.stop_requested);
@@ -534,7 +537,6 @@ impl Actor {
             let _ = self.dreamer.send(memory::DreamEvent::Turn(turn));
         }
         let needs = goes_on.as_ref().and_then(Held::needs);
-        let stop = stopped.then(|| StoppedTurn { through_seq: self.hub.store.last_seq(&self.cfg.id), latest: true });
         self.hub.set_runtime(&self.id(), |r| {
             r.status = if needs.is_some() {
                 BotStatus::NeedsInput
@@ -545,7 +547,7 @@ impl Actor {
             };
             r.activity = needs.unwrap_or_default();
             r.started_at = None;
-            r.stopped_turn = stop.or(r.stopped_turn);
+            r.completion_reply_id = completion_reply_id;
             r.lane = None;
             r.message = None;
             r.session = None;
@@ -576,6 +578,12 @@ impl Actor {
 }
 
 impl Actor {
+    pub(super) fn record_completion_reply(&mut self, entry: &Entry) {
+        if entry.bot_id == self.cfg.id && entry.data["final"] == true && entry.data["call"].is_null() {
+            self.completion_reply_id = Some(entry.id.clone());
+        }
+    }
+
     /// Says why the running turn ended early; `stopReason` tells scripts (`codync-host send`) without the words.
     fn stop_notice(&self, text: &str, reason: &str) {
         self.notice_data(json!({"text": text, "style": NoticeStyle::Info, "stopReason": reason}));

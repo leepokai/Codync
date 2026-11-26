@@ -1,4 +1,4 @@
-import { isChat, unseen, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
+import { isChat, unseen, type AccessRequest, type Bot, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { fetchWorkflow, fetchWorkflowRun, listWorkflows, workflowRuns } from '../views/workflows/api'
@@ -63,7 +63,16 @@ export class BotSync extends BotMirror {
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
   private floors = new Map<string, number>()
+  private replayRev = Infinity
+  private readonly liveCompletionReplies = new Map<string, string>()
   private readingViews = new Map<string, string>()
+
+  get replayedThrough() { return this.replayRev }
+
+  completionFor(bot: Bot): string | null | undefined {
+    if (bot.completionReplyId === undefined) return bot.rev > this.replayRev ? undefined : null
+    return this.liveCompletionReplies.get(bot.id) === bot.completionReplyId ? bot.completionReplyId : null
+  }
 
   // MARK: lifecycle
 
@@ -286,6 +295,8 @@ export class BotSync extends BotMirror {
         this.applyIcons(event.icons, event.iconsRevision)
         break
       case 'hello':
+        this.replayRev = event.rev
+        this.liveCompletionReplies.clear()
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
         this.hostId = event.hostId
         if (event.icons) this.applyIcons(event.icons)
@@ -298,15 +309,23 @@ export class BotSync extends BotMirror {
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
-      case 'bot':
-        this.putHostBot(event.bot)
-        this.bump(event.bot.rev)
+      case 'bot': {
+        const bot = event.bot
+        const previous = this.bots.get(bot.id)
+        if (!bot.completionReplyId) this.liveCompletionReplies.delete(bot.id)
+        else if (bot.rev > this.replayRev && bot.completionReplyId !== previous?.completionReplyId) {
+          this.liveCompletionReplies.set(bot.id, bot.completionReplyId)
+        }
+        this.putHostBot(bot)
+        this.bump(bot.rev)
         this.onRosterChanged?.()
-        if (unseen(event.bot) > 0) this.acknowledgeVisible(event.bot.id)
+        if (unseen(bot) > 0) this.acknowledgeVisible(bot.id)
         break
+      }
       case 'botDeleted':
         this.composerDrafts.removeBot(event.id)
         this.bots.delete(event.id)
+        this.liveCompletionReplies.delete(event.id)
         this.entries.delete(event.id)
         this.floors.delete(event.id)
         this.bump(event.rev)

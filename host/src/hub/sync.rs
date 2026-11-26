@@ -47,10 +47,10 @@ impl Hub {
         v["status"] = json!(rt.status);
         v["activity"] = rt.activity.clone().into();
         v["startedAt"] = rt.started_at.into();
-        v["stoppedTurn"] = json!(rt.stopped_turn);
         v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
         v["fastModeSupport"] = rt.fast_mode.as_str().into();
         if !cfg.is_group() {
+            v["completionReplyId"] = json!(rt.completion_reply_id);
             // The commands of the agent the bot runs on now: a fallback's while it answers.
             let agent = rt.agent_step.as_ref().map_or(cfg.backend.as_str(), |s| s.agent.as_str());
             v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));

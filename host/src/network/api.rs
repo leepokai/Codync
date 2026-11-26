@@ -38,12 +38,13 @@ pub fn status(hub: &Hub) -> Value {
 fn refresh_live(hub: &Arc<Hub>) {
     let hub = hub.clone();
     tokio::spawn(async move {
+        let started = crate::store::now_ms();
         let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
         let read = tokio::task::spawn_blocking(move || {
             listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s)?))).collect::<HashMap<_, _>>()
         });
         if let Ok(now) = read.await
-            && hub.network.sessions.renew_live(now)
+            && hub.network.sessions.renew_live(now, started)
         {
             emit(&hub);
         }
@@ -51,11 +52,13 @@ fn refresh_live(hub: &Arc<Hub>) {
 }
 
 /// The coding agents' sessions on this computer the apps show (`Sessions::listed`), a rule that
-/// opens one keeping it listed.
+/// names one (allowing or denying it) keeping it listed.
 fn listed(hub: &Hub) -> Vec<Listed> {
     let slots = hub.network.slots();
-    let opened = |s: &Session| slots.iter().any(|slot| codync_network::rules::opens(&slot.node.rules(), &s.address));
-    hub.network.sessions.listed(&hub.store, opened)
+    let named = |s: &Session| {
+        slots.iter().any(|slot| slot.node.rules().iter().any(|r| r.to_agent.eq_ignore_ascii_case(&s.address)))
+    };
+    hub.network.sessions.listed(&hub.store, named)
 }
 
 /// The sessions in the apps' order: each with its address, title, kind (and the registry id of its
@@ -66,7 +69,7 @@ fn sessions(hub: &Hub) -> Vec<Value> {
         .map(|Listed { session: s, state, older }| {
             json!({
                 "address": s.address, "title": s.title, "kind": s.kind,
-                "registry": super::sessions::registry(s.kind), "tier": "pull",
+                "registry": super::sessions::registry(s.kind), "tier": "pull", "levels": super::sessions::LEVELS,
                 "state": state, "runs": state.is_some_and(Live::runs), "older": older, "seen": s.seen,
             })
         })
@@ -238,8 +241,7 @@ pub fn recover(hub: &Hub, network: Option<&str>, code: &str) -> Result<Value> {
 pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Result<Value> {
     let rules: Vec<Rule> =
         serde_json::from_value(rules.clone()).context("rules are {fromComputer, fromAgent, toAgent, access}")?;
-    // A session reads its own mail: no one is there to hold it to a ceiling, so its letters would all be refused.
-    let held = |r: &&Rule| matches!(r.access, codync_network::Access::Auto | codync_network::Access::Ask);
+    let held = |r: &&Rule| !super::sessions::LEVELS.contains(&r.access);
     if let Some(r) =
         rules.iter().filter(held).find(|r| hub.network.sessions.by_address(&hub.store, &r.to_agent).is_some())
     {

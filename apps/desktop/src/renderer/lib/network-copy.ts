@@ -35,11 +35,16 @@ export const ANY = '*'
 export const sessionStateTitle = (state: NetworkSession['state']) =>
   state ? (({ working: 'Working', idle: 'Idle' }) as Record<string, string>)[state] ?? null : null
 
+/** What a session's dot says to a screen reader, untranslated, where no word shows (online or offline); null: no dot. */
+export const sessionDotTitle = (state: NetworkSession['state']) =>
+  state ? (({ online: 'Online', offline: 'Offline' }) as Record<string, string>)[state] ?? null : null
+
 /** How a session gets its mail, untranslated; null for a tier this app doesn't know. */
 export const tierTitle = (tier: string) => ({ pull: 'Checks its mail' } as Record<string, string>)[tier] ?? null
 
-/** The levels a rule can take: a coding agent's session reads its own mail, so no one is there to hold it to Auto or Ask. */
-export const levelsFor = (toSession: boolean): NetworkRule['access'][] => (toSession ? ['allow', 'deny'] : ['allow', 'auto', 'ask', 'deny'])
+/** The levels a rule to `session` can take, as the host sends them; to anyone else, every level. */
+export const levelsFor = (session?: NetworkSession): NetworkRule['access'][] =>
+  session ? (session.levels ?? ['allow', 'deny']) : ['allow', 'auto', 'ask', 'deny']
 
 /** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
 export const rulesFooter = (net: Network) =>

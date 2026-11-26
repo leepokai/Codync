@@ -63,6 +63,8 @@ export interface NetworkSession {
   state?: 'working' | 'idle' | 'online' | 'offline' | (string & {}) | null
   /** Running now, as far as the host can tell. */
   runs?: boolean
+  /** The levels a rule to it can take, as the host decides (Allow and Deny). */
+  levels?: NetworkRule['access'][]
   /** Folded under the older ones: neither running nor called in the last day. The host lists running ones first, then the most recent. */
   older?: boolean
   /** Its last call (Unix ms). */

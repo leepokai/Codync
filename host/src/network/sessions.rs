@@ -29,6 +29,9 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const TEMPORARY_FOR_MS: i64 = DAY_MS;
 /// A session with an id and no mail waiting is forgotten this long after its last call.
 const KEPT_FOR_MS: i64 = 30 * DAY_MS;
+/// The levels a rule to a session can take: it reads its own mail, so no one is there to hold it
+/// to Auto or Ask (its letters would all be refused). The apps' rule pickers show these.
+pub const LEVELS: [codync_network::Access; 2] = [codync_network::Access::Allow, codync_network::Access::Deny];
 /// How long after its last call a session still shows in the apps.
 const LISTED_FOR_MS: i64 = 7 * DAY_MS;
 
@@ -230,8 +233,8 @@ pub struct Sessions {
     lock: Mutex<()>,
     /// Woken when mail arrives, for `check_inbox` waits.
     pub arrived: tokio::sync::Notify,
-    /// What each session's agent was doing when last looked at, by key; never kept.
-    live: Mutex<HashMap<String, Live>>,
+    /// What each session's agent was doing when last looked at, by key, and when (Unix ms); never kept.
+    live: Mutex<HashMap<String, (Live, i64)>>,
 }
 
 impl Sessions {
@@ -282,18 +285,24 @@ impl Sessions {
     pub fn set_live(&self, key: &str, state: Option<Live>) -> bool {
         let mut live = self.live.locked();
         let before = match state {
-            Some(state) => live.insert(key.to_owned(), state),
+            Some(state) => live.insert(key.to_owned(), (state, now_ms())),
             None => live.remove(key),
         };
-        before != state
+        before.map(|(state, _)| state) != state
     }
 
-    /// Takes what the listed sessions' agents do now, forgetting the rest; true when that changed
-    /// what the apps show.
-    pub fn renew_live(&self, now: HashMap<String, Live>) -> bool {
+    /// Takes what the listed sessions' agents did when a look `started` (Unix ms), forgetting the
+    /// rest, except what a session's own call said since; true when that changed what the apps show.
+    pub fn renew_live(&self, now: HashMap<String, Live>, started: i64) -> bool {
         let mut live = self.live.locked();
-        let changed = *live != now;
-        *live = now;
+        let mut renewed: HashMap<String, (Live, i64)> =
+            now.into_iter().map(|(key, state)| (key, (state, started))).collect();
+        renewed.extend(live.iter().filter(|(_, (_, at))| *at > started).map(|(key, entry)| (key.clone(), *entry)));
+        let states = |map: &HashMap<String, (Live, i64)>| -> HashMap<String, Live> {
+            map.iter().map(|(key, (state, _))| (key.clone(), *state)).collect()
+        };
+        let changed = states(&live) != states(&renewed);
+        *live = renewed;
         changed
     }
 
@@ -310,7 +319,7 @@ impl Sessions {
             .into_values()
             .filter(|s| !s.temporary && (now - s.seen < LISTED_FOR_MS || kept(s)))
             .map(|session| {
-                let state = live.get(&session.key).copied();
+                let state = live.get(&session.key).map(|(state, _)| *state);
                 let runs = state.is_some_and(Live::runs);
                 Listed { older: !runs && now - session.seen >= DAY_MS, state, session }
             })

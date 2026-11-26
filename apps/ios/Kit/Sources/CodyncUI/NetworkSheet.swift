@@ -84,10 +84,13 @@ private struct NetworkSessionRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // No state, no dot: unknown isn't offline.
             Circle()
                 .fill(session.runs == true ? Palette.added : Palette.tertiary)
                 .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
+                .opacity(session.state == nil ? 0 : 1)
+                .accessibilityLabel(session.dotTitle.map { L10n.tr($0) } ?? "")
+                .accessibilityHidden(session.dotTitle == nil)
             AgentIcon(registry: session.registry, size: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title ?? session.address).font(.body).foregroundStyle(Palette.text).lineLimit(1)

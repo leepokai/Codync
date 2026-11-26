@@ -54,6 +54,9 @@ data class NetworkSession(
     /** What its agent does, untranslated, where it says; the dot alone shows online or offline. */
     val stateTitle: String? get() = when (state) { "working" -> "Working"; "idle" -> "Idle"; else -> null }
 
+    /** What the dot says to a screen reader, untranslated, where no word shows (online or offline); with no state, there is no dot. */
+    val dotTitle: String? get() = when (state) { "online" -> "Online"; "offline" -> "Offline"; else -> null }
+
     /** How it gets its mail, untranslated; null for a tier this app doesn't know. */
     val tierTitle: String? get() = if (tier == "pull") "Checks its mail" else null
 }

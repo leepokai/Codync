@@ -33,12 +33,13 @@ export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
   const me = net.computers.find((c) => c.me)
   const from = others.find((c) => c.name === fromComputer)
   const sessions = store.network?.sessions ?? []
-  const isSession = (id: string) => sessions.some((s) => s.address === id)
-  const accessChoices = ACCESS.filter((a) => levelsFor(isSession(toAgent)).includes(a.id))
+  const sessionAt = (id: string) => sessions.find((s) => s.address === id)
+  const isSession = (id: string) => sessionAt(id) !== undefined
+  const accessChoices = ACCESS.filter((a) => levelsFor(sessionAt(toAgent)).includes(a.id))
 
   const pickTo = (id: string) => {
     setToAgent(id)
-    if (!levelsFor(isSession(id)).includes(access)) setAccess('deny')
+    if (!levelsFor(sessionAt(id)).includes(access)) setAccess('deny')
   }
 
   const pickComputer = (name: string) => {

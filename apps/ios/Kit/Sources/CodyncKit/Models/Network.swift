@@ -46,6 +46,16 @@ public struct NetworkView: Codable, Hashable, Sendable {
             }
         }
 
+        /// What the dot says to a screen reader, untranslated, where no word shows (online or
+        /// offline); with no state, there is no dot.
+        public var dotTitle: String? {
+            switch state {
+            case "online": "Online"
+            case "offline": "Offline"
+            default: nil
+            }
+        }
+
         /// How it gets its mail, untranslated; nil for a tier this app doesn't know.
         public var tierTitle: String? {
             switch tier {

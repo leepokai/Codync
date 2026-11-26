@@ -59,10 +59,10 @@ impl Default for RuleForm {
     }
 }
 
-/// The levels a rule to `to_agent` can take: a coding agent's session reads its own mail, so no
-/// one is there to hold it to Auto or Ask.
-pub fn levels(n: &NetworkSheet, to_agent: &str) -> &'static [Access] {
-    if n.session(to_agent) { &[Access::Allow, Access::Deny] } else { &LEVELS }
+/// The levels a rule to `to_agent` can take: a coding agent's session's are the ones the host
+/// sends with it (`levels`).
+pub fn levels(n: &NetworkSheet, to_agent: &str) -> Vec<Access> {
+    n.session_levels(to_agent).unwrap_or_else(|| LEVELS.to_vec())
 }
 
 /// How the form shows the pick `id` of `list`: its name, or the id itself once it's gone.
@@ -119,7 +119,7 @@ impl NetworkSheet {
         }
         let mut mine = vec![any("Any bot here")];
         if let Some(me) = self.me() {
-            mine.extend(agents_of(me).into_iter().filter(|(id, _)| !self.session(id)));
+            mine.extend(agents_of(me).into_iter().filter(|(id, _)| self.session_levels(id).is_none()));
         }
         // This computer's coding agents' sessions, by address (a rule can only allow or deny them).
         mine.extend(self.sessions().iter().map(|session| (s(session, "address"), s(session, "address"))));
@@ -131,9 +131,11 @@ impl NetworkSheet {
         self.view.as_ref().and_then(|v| v["sessions"].as_array()).map_or(&[], Vec::as_slice)
     }
 
-    /// Whether `address` is one of this computer's coding agents' sessions.
-    fn session(&self, address: &str) -> bool {
-        self.sessions().iter().any(|s| s["address"] == address)
+    /// The levels a rule to `address` can take, when it is one of this computer's coding agents'
+    /// sessions.
+    fn session_levels(&self, address: &str) -> Option<Vec<Access>> {
+        let session = self.sessions().iter().find(|s| s["address"] == address)?;
+        Some(serde_json::from_value(session["levels"].clone()).unwrap_or_else(|_| vec![Access::Allow, Access::Deny]))
     }
 
     /// How a rule reads: "Deny: any bot on laptop → any bot here".
@@ -213,7 +215,7 @@ impl App {
                 let by = if k.code == KeyCode::Left { -1 } else { 1 };
                 let ids = |list: &[(String, String)]| list.iter().map(|c| c.0.clone()).collect::<Vec<_>>();
                 match form.field {
-                    RuleField::Access => form.access = step(levels(n, &form.to_agent), &form.access, by),
+                    RuleField::Access => form.access = step(&levels(n, &form.to_agent), &form.access, by),
                     RuleField::FromComputer => {
                         form.from_computer = step(&ids(&choices.computers), &form.from_computer, by);
                         form.from_agent = ANY.into();

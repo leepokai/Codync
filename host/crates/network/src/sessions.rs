@@ -187,6 +187,8 @@ mod tests {
             .unwrap();
         std::fs::write(dir.join("sessions/999999999.json"), entry("killed", 4, "Gone", "busy").to_string()).unwrap();
         assert_eq!(claude_busy(&dir, "running"), Some(false));
+        // Windows doesn't look at the process (`alive` says yes there).
+        #[cfg(unix)]
         assert_eq!(claude_busy(&dir, "killed"), None, "a killed Claude Code leaves its entry behind");
         let _ = std::fs::remove_dir_all(dir);
     }

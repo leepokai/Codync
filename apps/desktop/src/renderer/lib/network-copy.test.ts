@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Network, NetworkComputer, NetworkRule } from '@shared/network'
-import { beforeCeilings, botsTemplate, connectorFor, levelsFor, moved, presenceTitle, ruleLine, rulesFooter, sessionStateTitle, tierTitle } from './network-copy.ts'
+import { beforeCeilings, botsTemplate, connectorFor, levelsFor, moved, presenceTitle, ruleLine, rulesFooter, sessionDotTitle, sessionStateTitle, tierTitle } from './network-copy.ts'
 
 const computer = (c: Partial<NetworkComputer>): NetworkComputer => ({
   name: 'laptop', role: 'member', me: false, online: false, agents: [], canRemove: false, canPromote: false, ...c,
@@ -53,6 +53,9 @@ test('a session says what its agent does and how it gets its mail, and a rule to
   assert.equal(sessionStateTitle('working'), 'Working')
   assert.equal(sessionStateTitle('online'), null, 'the dot alone says running')
   assert.equal(tierTitle('later'), null, "a tier this app doesn't know shows nothing")
-  assert.deepEqual(levelsFor(true), ['allow', 'deny'])
-  assert.deepEqual(levelsFor(false), ['allow', 'auto', 'ask', 'deny'])
+  const session = { address: 'api-codex', kind: 'codex', tier: 'pull' }
+  assert.deepEqual(levelsFor({ ...session, levels: ['allow', 'deny'] }), ['allow', 'deny'], "the host's levels")
+  assert.deepEqual(levelsFor(session), ['allow', 'deny'], 'an older host')
+  assert.deepEqual(levelsFor(undefined), ['allow', 'auto', 'ask', 'deny'])
+  assert.deepEqual([sessionDotTitle('online'), sessionDotTitle('offline'), sessionDotTitle('working'), sessionDotTitle(null)], ['Online', 'Offline', null, null])
 })

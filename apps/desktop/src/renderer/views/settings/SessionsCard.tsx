@@ -5,7 +5,7 @@ import { AgentIcon } from '../../components/AgentIcon'
 import { CardSection, Disclosure } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { sessionStateTitle, tierTitle } from '../../lib/network-copy'
+import { sessionDotTitle, sessionStateTitle, tierTitle } from '../../lib/network-copy'
 import { useTr } from '../../lib/use-language'
 
 /**
@@ -48,9 +48,16 @@ function SessionRow({ session: s }: { session: NetworkSession }) {
   const state = sessionStateTitle(s.state)
   const tier = tierTitle(s.tier)
   const detail = [s.title ? s.address : null, state ? tr(state) : null, tier ? tr(tier) : null].filter(Boolean).join(' · ')
+  const dot = sessionDotTitle(s.state)
   return (
     <HStack gap={8} className="settings-row settings-appear">
-      <span className={`network-dot${s.runs ? ' online' : ''}`} aria-hidden />
+      {/* No state, no dot: unknown isn't offline. */}
+      <span
+        className={`network-dot${s.runs ? ' online' : ''}${s.state ? '' : ' unknown'}`}
+        role={dot ? 'img' : undefined}
+        aria-label={dot ? tr(dot) : undefined}
+        aria-hidden={dot ? undefined : true}
+      />
       <AgentIcon registry={s.registry} size={16} />
       <VStack grow className="settings-stack">
         <Text truncate title={s.title ?? undefined}>{s.title ?? s.address}</Text>

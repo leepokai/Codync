@@ -214,9 +214,14 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             .flatten()
             .collect();
         let name = if s["older"] == true { t.dim } else { t.text };
+        let detail = detail.join(" · ");
         let x = put(buf, body.x, y, 2, if runs { "●" } else { "○" }, if runs { t.text } else { t.dim }.patch(t.panel));
-        let x = put(buf, x, y, 36, &md::truncate(title.unwrap_or(address), 34), name.patch(t.panel));
-        put(buf, x.max(body.x + 38), y, body.width.saturating_sub(38), &detail.join(" · "), t.secondary.patch(t.panel));
+        // The address and the rest go in whole where they can: the title gives way first (down to 12).
+        let rest = u16::try_from(detail.chars().count()).unwrap_or(u16::MAX);
+        let room = body.width.saturating_sub(2 + 2 + rest).clamp(12, 34);
+        let x =
+            put(buf, x, y, room + 2, &md::truncate(title.unwrap_or(address), usize::from(room)), name.patch(t.panel));
+        put(buf, x, y, body.right().saturating_sub(x), &detail, t.secondary.patch(t.panel));
         y += 1;
     }
     if fit < all.len() {

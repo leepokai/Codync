@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Alignment
@@ -88,8 +89,11 @@ import com.kyant.shapes.Capsule
     val detail = listOfNotNull(session.title?.let { session.address }, session.stateTitle?.let { tr(it) }, session.tierTitle?.let { tr(it) })
         .joinToString(" · ")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // No state, no dot: unknown isn't offline.
+        val dot = session.dotTitle?.let { tr(it) }
         Box(Modifier.padding(horizontal = 2.dp).size(8.dp).clip(Capsule())
-            .background(if (session.runs) Palette.added else Palette.tertiary))
+            .then(if (session.state == null) Modifier else Modifier.background(if (session.runs) Palette.added else Palette.tertiary))
+            .then(if (dot == null) Modifier else Modifier.semantics { contentDescription = dot }))
         AgentIcon(session.registry, 18.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(session.title ?: session.address, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

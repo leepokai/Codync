@@ -211,6 +211,15 @@ fn the_apps_hear_only_of_a_change_in_what_a_session_does() {
     assert!(sessions.set_live("a", None), "nothing can tell any more");
     assert!(!sessions.set_live("a", None));
     sessions.set_live("gone", Some(Live::Online));
-    assert!(sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)])), "one no longer listed is forgotten");
-    assert!(!sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)])));
+    let later = now_ms() + 1;
+    assert!(
+        sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)]), later),
+        "one no longer listed is forgotten"
+    );
+    assert!(!sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)]), later));
+    // A session's own call during a look wins over what the look found.
+    let started = now_ms() - 1;
+    sessions.set_live("b", Some(Live::Online));
+    sessions.renew_live(HashMap::from([("b".to_owned(), Live::Offline)]), started);
+    assert_eq!(sessions.live.locked().get("b").map(|e| e.0), Some(Live::Online));
 }

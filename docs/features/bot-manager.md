@@ -85,7 +85,9 @@ change's own audit record (actor, target, old→new, timestamp) — this sheet a
 
 Row results (✓ *Paused*, ✓ *Resumed*, or the save's error) stay on the rows until the sheet closes
 or a new pick clears them; a bot that was already in the target state is saved the same way, and its
-row outcome says where it ended.
+row outcome says where it ended. A host that does not echo `paused` (it ignored the field and still
+answered success) is not shown as paused: the row says *Not applied on this computer* and the call
+counts as failed. The roster toggle and the settings switch do the same with the echoed bot, so the row shows the true state.
 
 ## Analytics
 

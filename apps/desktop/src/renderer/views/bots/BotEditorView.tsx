@@ -28,6 +28,7 @@ import { GitStateLine } from './GitStateLine'
 import { HomeFolderRow, ProjectsRow, WorktreeModeRow } from './ProjectsRows'
 import { withProject } from './projects'
 import './bots.css'
+import { trNow } from '../../lib/l10n.ts'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
 
@@ -90,7 +91,14 @@ export function BotSettingsPanel({ botId }: { botId: string }) {
     const timer = setTimeout(() => {
       store
         .save(normalized(draft))
-        .then(() => setError(null))
+        .then((bot) => {
+          setError(null)
+          // The host's bot is the truth. A success that omits `paused` did not pause it.
+          if (typeof draft.paused === 'boolean' && bot.paused !== draft.paused) {
+            change((d) => ({ ...d, paused: bot.paused }))
+            setError(trNow('Not applied on this computer'))
+          }
+        })
         .catch((e: unknown) => setError(errorText(e)))
     }, 600)
     return () => clearTimeout(timer)

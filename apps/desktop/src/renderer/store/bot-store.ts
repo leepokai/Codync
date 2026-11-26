@@ -25,6 +25,7 @@ import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
 import { noteActiveDay } from '../lib/use-kofi-ask'
+import { pauseEcho } from '@shared/old-host'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -566,9 +567,26 @@ export class BotStore extends BotSync {
     this.patchBot(bot, { hidden })
   }
 
-  /** Paused: the bot answers nothing and spends nothing until it is resumed. */
+  /** Paused: the bot answers nothing and spends nothing until it is resumed.
+   * Shown at once, then replaced by the host's echo. A successful `updateBot` whose bot omits
+   * `paused` did not apply it (an older host ignores the field): the row keeps the true state.
+   */
   setPaused(bot: Bot, paused: boolean) {
-    this.patchBot(bot, { paused })
+    const current = this.bots.get(bot.id)
+    const before = current ? { ...current } : undefined
+    if (current) this.bots.set(bot.id, { ...current, paused })
+    this.changed()
+    this.perform(async (c) => {
+      const res = await c.call<{ bot?: Partial<Bot> & { id?: string } }>('updateBot', { ...updatePayload(bot), paused })
+      const echoed = res?.bot
+      if (echoed && typeof echoed.id === 'string') this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
+      else if (before) this.bots.set(bot.id, before)
+      if (!pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
+      this.changed()
+    }, true, () => {
+      if (before) this.bots.set(bot.id, before)
+      this.changed()
+    })
   }
 
   setFastMode(bot: Bot, fastMode: boolean) {

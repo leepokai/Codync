@@ -19,6 +19,7 @@ import type { AgentModels } from '@shared/agent-models'
 import { useAgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
+import { pauseEcho } from '@shared/old-host'
 import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
@@ -231,14 +232,25 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
             .ready()
             .then((client) => {
               // The wait for a reconnect may outlast the run: re-check before anything is sent.
-              if (!alive.current || run.current !== myRun) return 'skipped'
-              return client.call('updateBot', pausePatch(item.ref.botId, paused)).then((): 'sent' | 'skipped' => 'sent')
+              if (!alive.current || run.current !== myRun) return 'skipped' as const
+              return client.call('updateBot', pausePatch(item.ref.botId, paused)).then((res) => {
+                if (!alive.current || run.current !== myRun) return 'skipped' as const
+                // Trust the echo. A host that ignored `paused` still returns success; that is not Paused.
+                return pauseEcho(paused, res).applied ? 'applied' as const : 'ignored' as const
+              })
             })
-            .then((sent) => {
-              if (sent !== 'sent') return
-              applied++
+            .then((result) => {
+              if (result === 'skipped') return
+              if (result === 'applied') {
+                applied++
+                if (alive.current && run.current === myRun) {
+                  setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr(paused ? 'Paused' : 'Resumed') } }))
+                }
+                return
+              }
+              failed++
               if (alive.current && run.current === myRun) {
-                setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr(paused ? 'Paused' : 'Resumed') } }))
+                setOutcomes((o) => ({ ...o, [key]: { ok: false, text: tr('Not applied on this computer') } }))
               }
             })
         } catch (e) {

@@ -133,3 +133,33 @@ fn an_outdated_cli_is_told_to_update() {
     assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
     assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));
 }
+
+#[test]
+fn doubao_uses_its_own_acp_server() {
+    let h = harness("doubao").unwrap();
+    assert_eq!(
+        (h.local, h.registry, h.login, h.bins),
+        (Some("{bin} acp serve"), None, Some("{bin} login"), &["doubao"][..])
+    );
+    assert!(matches!(h.install, Some(Install::Npm("@bytedance/doubao-cli"))));
+    assert_eq!(h.signed_in.map(|check| check.args), Some("auth status"));
+}
+
+#[test]
+fn doubao_is_offered_only_where_its_cli_ships() {
+    let offered = list().iter().any(|agent| agent["id"] == "doubao");
+    let ships = cfg!(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+    ));
+    assert_eq!(offered, ships);
+}
+
+#[test]
+fn an_outdated_doubao_is_told_to_update() {
+    let why = exit_reason("doubao", "未知命令或选项: acp").expect("a reason");
+    assert!(why.starts_with("The Doubao on this computer is too old to run in Codync."));
+    assert!(why.contains("@bytedance/doubao-cli@latest"), "{why}");
+    assert_eq!(exit_reason("kilo", "未知命令或选项").as_deref(), Some("未知命令或选项"));
+}

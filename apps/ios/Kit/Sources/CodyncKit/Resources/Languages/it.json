@@ -564,6 +564,7 @@
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Installa Auggie (npm install -g @augmentcode/auggie) ed esegui `auggie login`.",
   "Install Claude Code and run `claude auth login`.": "Installa Claude Code ed esegui `claude auth login`.",
   "Install Cline CLI (npm install -g cline) and run `cline auth`.": "Installa Cline CLI (npm install -g cline) ed esegui `cline auth`.",
+  "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.": "Installa Doubao CLI (npm install -g @bytedance/doubao-cli) ed esegui `doubao login`.",
   "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.": "Installa CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) e accedi con `codebuddy`.",
   "Install Codex CLI and run `codex login --device-auth`.": "Installa Codex CLI ed esegui `codex login --device-auth`.",
   "Install Codync\non your computer": "Installa Codync\nsul tuo computer",

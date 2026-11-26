@@ -21,6 +21,7 @@ export function agentTint(registry: string | null | undefined) {
     case 'amp-acp': return 'rgb(242, 79, 64)'
     case 'kiro': return 'rgb(143, 69, 255)'
     case 'dsh': return 'rgb(77, 107, 254)'
+    case 'doubao': return 'rgb(0, 168, 232)'
     case 'cortex-code': return 'rgb(41, 181, 232)'
     case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
     default: return 'var(--text)'

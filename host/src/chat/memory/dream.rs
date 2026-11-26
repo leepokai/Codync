@@ -374,7 +374,9 @@ fn typed(data: &serde_json::Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{dated, messages};
-    use crate::store::{Entry, EntryKind};
+    use crate::hub::Hub;
+    use crate::remote::identity::Identity;
+    use crate::store::{BotConfig, Entry, EntryKind, Lane, Store};
     use serde_json::json;
 
     fn entry(kind: EntryKind, data: serde_json::Value) -> Entry {
@@ -416,5 +418,52 @@ mod tests {
         assert!(dated("Dentist on Oct 21"));
         assert!(!dated("Prompt is too long: Provided 10,389 tokens"));
         assert!(!dated("Has 2 cats"));
+    }
+
+    /// The first pause check has already passed. A pause that lands while the run waits on the shared lock
+    /// must still come back `Later` and must not start the model.
+    #[tokio::test]
+    async fn a_pause_during_the_shared_wait_does_not_start_the_dream() {
+        let dir = std::env::temp_dir().join(format!("codync-dream-pause-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "dream-pause".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "b",
+            "name": "b",
+            "backend": "not-an-agent",
+            "cwd": dir,
+            "sharedMemory": true,
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+        hub.store
+            .insert_entry(
+                &Lane::main("b"),
+                EntryKind::User,
+                1,
+                &json!({"text": "I swim every Sunday morning at the lake"}),
+            )
+            .unwrap();
+
+        let hold = super::SHARED.lock().await;
+        let hub_run = hub.clone();
+        let running = tokio::spawn(async move { super::run(&hub_run, "b").await });
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !running.is_finished(),
+            "the dream finished before the shared lock, so this never reaches the second pause check"
+        );
+
+        let mut paused = hub.store.bot("b").unwrap().unwrap().config;
+        paused.paused = true;
+        hub.store.save_bot(&paused).unwrap();
+        drop(hold);
+
+        let ran = running.await.unwrap().unwrap();
+        assert!(matches!(ran, super::Ran::Later));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -26,13 +26,6 @@ export function pauseMarkSize(size: number) {
   return Math.max(9, size * 0.3)
 }
 
-/** The same mark where the row draws it beside the bot's name (BotRow): it follows the icon size
- *  too, so the two marks never disagree about scale, and it never shrinks below the 11px it was,
- *  which is the floor for reading it against the row's body text. */
-export function rowPauseMarkSize(size: number) {
-  return Math.max(11, pauseMarkSize(size))
-}
-
 /** How far down the pause mark sits, so a crown straddling the frame's top edge cannot cover it.
  *  The crown's box hangs 44% of its width above that edge (avatar.css), so about 56% of its width
  *  reaches below it; the mark starts at 0.62 of the crown's width - just past that overhang, and

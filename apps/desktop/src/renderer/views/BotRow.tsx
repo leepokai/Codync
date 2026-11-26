@@ -8,7 +8,6 @@ import { Text } from '../components/Text'
 import { ThinkingOrb } from '../components/ThinkingOrb'
 import { UnreadBadge } from '../components/UnreadBadge'
 import { messagePreview } from '../lib/message-preview'
-import { rowPauseMarkSize } from '../lib/avatar-marks'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
@@ -19,7 +18,6 @@ import type { BotStore } from '../store/bot-store'
 export const BotRow = memo(function BotRow({ bot, store, usingComputer, members, agent }: { bot: Bot; store: BotStore; usingComputer: boolean; members: Bot[]; agent: string | null }) {
   // The cached roster paints before hello names the agents. Follow the store so that arrival replaces "Custom agent".
   useModel(store)
-  const tr = useTr()
   const paused = bot.paused && !isGroup(bot)
   // The row's icon follows the user's size choice (Settings › Appearance); 30 is the default.
   const [iconSize] = usePref(prefs.rosterIconSize)
@@ -30,7 +28,6 @@ export const BotRow = memo(function BotRow({ bot, store, usingComputer, members,
         <HStack align="baseline" gap={4} shrink>
           {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
           <Text size="body" weight={bot.lead ? 'bold' : bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
-          {paused ? <Icon name="pause.circle" size={rowPauseMarkSize(iconSize)} color="var(--attention)" title={tr(`Paused`)} /> : null}
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
         </HStack>
         <HStack gap={6} shrink>

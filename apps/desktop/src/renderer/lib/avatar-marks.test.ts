@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { crownSize, pauseMarkSize, pauseMarkTop, rowPauseMarkSize } from './avatar-marks.ts'
+import { crownSize, pauseMarkSize, pauseMarkTop } from './avatar-marks.ts'
 
 /** The roster icon sizes the Appearance slider can reach: 24 to 44, step 2. */
 const SIZES = Array.from({ length: 11 }, (_, i) => 24 + i * 2)
@@ -44,20 +44,6 @@ test('the pause mark scales with the icon too, so the smallest icon still reads'
   assert.equal(pauseMarkSize(44), 13.2)
   for (let i = 1; i < SIZES.length; i++)
     assert.ok(pauseMarkSize(SIZES[i]!) >= pauseMarkSize(SIZES[i - 1]!), `mark grows from ${SIZES[i - 1]} to ${SIZES[i]}`)
-})
-
-test('the mark beside the name follows the icon size and never shrinks below 11px', () => {
-  // Ryan saw it "jump to the right of the bot name" at the smallest icon: it was a fixed 11px
-  // mark that no longer matched the icon beside it. Now both scale together, and the row's mark
-  // keeps its 11px floor so it never becomes unreadable against the body text.
-  for (const size of SIZES) {
-    assert.ok(rowPauseMarkSize(size) >= 11, `the row's mark at ${size} stays readable`)
-    assert.ok(rowPauseMarkSize(size) >= pauseMarkSize(size), `the row's mark at ${size} is never smaller than the avatar's`)
-  }
-  assert.equal(rowPauseMarkSize(24), 11)
-  assert.equal(rowPauseMarkSize(44), 13.2)
-  for (let i = 1; i < SIZES.length; i++)
-    assert.ok(rowPauseMarkSize(SIZES[i]!) >= rowPauseMarkSize(SIZES[i - 1]!), `row mark grows from ${SIZES[i - 1]}`)
 })
 
 test('a lead bot that is paused keeps its mark, at every icon size', () => {

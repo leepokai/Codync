@@ -201,7 +201,11 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     // The hover tip says what the row cannot when the sidebar is narrow: the name it truncates,
     // and the agent and model a bot runs, which otherwise take a right-click and the editor.
     const heading = many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name
-    const path = modelPath(item.bot, item.store.backendName(item.bot.backend))
+    // While a fallback answers, the row's logo already follows `runningAgent`; the tip must too,
+    // or it names the agent and model that are resting rather than the ones doing the work.
+    const backend = runningAgent(item.bot)
+    const model = item.bot.agentStep ? item.bot.agentStep.model : item.bot.model
+    const path = modelPath({ backend, model }, item.store.backendName(backend))
     return (
       <RosterRow
         key={key}

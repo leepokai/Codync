@@ -20,6 +20,12 @@ pub enum Msg {
     },
     Event(Value),
     Reply(After, Result<Value, String>),
+    CompletionHistory {
+        bot: String,
+        epoch: u64,
+        request: uuid::Uuid,
+        replied: bool,
+    },
     /// The stream is starting over from rev 0: drop what we have.
     Rewind,
     /// The recovery replay can confirm receipts, even before a live revision arrives.
@@ -47,7 +53,7 @@ pub enum After {
     AutoOrder,
     ThreadKeep,
     CredentialsReset,
-    History(String, u64),
+    History(String, uuid::Uuid),
     Dirs(String),
     WorkspaceSelected(String),
     Pairing,
@@ -118,6 +124,7 @@ pub enum Kind {
 pub struct Entry {
     pub id: String,
     pub seq: i64,
+    pub(in crate::tui) rev: Option<i64>,
     pub turn: i64,
     pub kind: Kind,
     pub data: Value,
@@ -142,6 +149,7 @@ impl Entry {
             Self {
                 id: v["id"].as_str()?.to_owned(),
                 seq: v["seq"].as_i64()?,
+                rev: v["rev"].as_i64(),
                 turn: v["turn"].as_i64().unwrap_or(0),
                 kind,
                 data: v["data"].clone(),
@@ -319,6 +327,7 @@ mod tests {
                 {"optionId": "r", "name": "Reject", "kind": "reject_once"},
                 {"optionId": "a", "name": "Allow", "kind": "allow_once"},
             ]}),
+            rev: None,
             created_at: 0,
         };
         assert!(e.pending());

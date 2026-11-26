@@ -20,6 +20,21 @@ pub enum OwnMemory {
 }
 
 #[derive(Clone, Debug)]
+pub(super) enum CompletionReply {
+    Exact(Option<String>),
+    Legacy,
+}
+
+impl CompletionReply {
+    pub(super) fn exact_id(&self) -> Option<&str> {
+        match self {
+            Self::Exact(reply) => reply.as_deref(),
+            Self::Legacy => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 #[allow(clippy::struct_excessive_bools, reason = "mirrors the host's bot JSON")]
 pub struct Bot {
     pub id: String,
@@ -91,7 +106,7 @@ pub struct Bot {
     pub status: Status,
     pub activity: String,
     pub started_at: Option<i64>,
-    pub completion_reply_id: Option<String>,
+    pub(super) completion_reply: CompletionReply,
     pub unread: i64,
     /// How many of `unread` are cards waiting on the user: the badge turns amber.
     pub waiting: i64,
@@ -301,7 +316,10 @@ impl Bot {
             outside: status(&v["outside"]["status"]),
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
-            completion_reply_id: v["completionReplyId"].as_str().map(str::to_owned),
+            completion_reply: match v.get("completionReplyId") {
+                Some(reply) => CompletionReply::Exact(reply.as_str().map(str::to_owned)),
+                None => CompletionReply::Legacy,
+            },
             unread: v["unread"].as_i64().unwrap_or(0),
             waiting: v["waiting"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),

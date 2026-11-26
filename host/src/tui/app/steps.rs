@@ -115,7 +115,7 @@ mod tests {
     use serde_json::json;
 
     fn entry(id: &str, turn: i64, kind: Kind, data: Value) -> Entry {
-        Entry { id: id.into(), seq: 0, turn, kind, data, created_at: 0 }
+        Entry { id: id.into(), seq: 0, turn, kind, data, rev: None, created_at: 0 }
     }
 
     #[test]

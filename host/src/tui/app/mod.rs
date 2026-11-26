@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod completion_history;
 mod computer_name;
 mod credentials;
 mod editor;
@@ -66,6 +67,20 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::manage::Shell;
 use super::net::Client;
+
+const TOAST_DURATION: Duration = Duration::from_secs(4);
+
+struct PendingHistory {
+    request: uuid::Uuid,
+    before_seq: i64,
+    updates: HashMap<i64, Entry>,
+}
+
+impl PendingHistory {
+    fn new(before_seq: i64) -> Self {
+        Self { request: uuid::Uuid::new_v4(), before_seq, updates: HashMap::new() }
+    }
+}
 
 struct PendingSend {
     text: String,
@@ -170,7 +185,7 @@ pub struct App {
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
-    history_busy: HashSet<String>,
+    pending_history: HashMap<String, PendingHistory>,
     mirror_epoch: u64,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
@@ -182,6 +197,8 @@ pub struct App {
     catch_up_left: Option<u64>,
     replayed_deletions: HashMap<String, i64>,
     completions_before_live: HashSet<String>,
+    legacy_replies: HashMap<String, HashMap<i64, completion_history::ObservedReply>>,
+    completion_lookups: HashMap<String, completion_history::CompletionLookup>,
     /// Per bot, the lowest seq of its loaded main chat when this connection's catch-up began
     /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
     floors: HashMap<String, i64>,
@@ -271,7 +288,7 @@ impl App {
             modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
-            history_busy: HashSet::new(),
+            pending_history: HashMap::new(),
             mirror_epoch: 0,
             answering: HashMap::new(),
             history_done: HashSet::new(),
@@ -280,6 +297,8 @@ impl App {
             catch_up_left: None,
             replayed_deletions: HashMap::new(),
             completions_before_live: HashSet::new(),
+            legacy_replies: HashMap::new(),
+            completion_lookups: HashMap::new(),
             floors: HashMap::new(),
             hint: None,
             analytics: None,
@@ -418,6 +437,10 @@ impl App {
         self.selected.is_some() && (self.width != Width::Narrow || self.chat_page) && self.trace != TraceMode::Full
     }
 
+    fn watching_chat(&self, id: &str) -> bool {
+        self.selected.as_deref() == Some(id) && self.chat_visible() && self.term_focused
+    }
+
     pub fn animating(&self) -> bool {
         !self.toasts.is_empty()
             || self.hint.is_some()
@@ -475,7 +498,7 @@ impl App {
             let _ = out.flush();
         }
         self.toasts.retain(|t| t.text != text);
-        self.toasts.push(Toast { text, need, until: Instant::now() + Duration::from_secs(4) });
+        self.toasts.push(Toast { text, need, until: Instant::now() + TOAST_DURATION });
         if self.toasts.len() > 2 {
             self.toasts.remove(0);
         }
@@ -510,7 +533,7 @@ impl App {
 
     fn load_history(&mut self) {
         let Some(id) = self.selected.clone() else { return };
-        if self.history_busy.contains(&id) || self.history_done.contains(&id) {
+        if self.pending_history.contains_key(&id) || self.history_done.contains(&id) {
             return;
         }
         let oldest = self.oldest(&id).unwrap_or(i64::MAX);
@@ -518,12 +541,10 @@ impl App {
             self.history_done.insert(id);
             return;
         }
-        self.history_busy.insert(id.clone());
-        self.call(
-            "history",
-            json!({"botId": id, "beforeSeq": oldest, "limit": 200}),
-            After::History(id, self.mirror_epoch),
-        );
+        let pending = PendingHistory::new(oldest);
+        let request = pending.request;
+        self.pending_history.insert(id.clone(), pending);
+        self.call("history", json!({"botId": id, "beforeSeq": oldest, "limit": 200}), After::History(id, request));
     }
 }
 

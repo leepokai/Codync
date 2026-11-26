@@ -83,6 +83,7 @@ mod tests {
             turn: 1,
             kind: Kind::Tool,
             data: json!({"title": "rg TODO", "bookkeeping": false}),
+            rev: None,
             created_at: 0,
         }];
         app.steps_open = Some(("bot".into(), 1));
@@ -100,13 +101,14 @@ mod tests {
             "id": "bot", "name": "Bot", "activity": "Searching files…"
         }})));
         let entries = [
-            Entry { id: "old".into(), seq: 1, turn: 1, kind: Kind::Tool, data: json!({}), created_at: 0 },
+            Entry { id: "old".into(), seq: 1, turn: 1, kind: Kind::Tool, data: json!({}), rev: None, created_at: 0 },
             Entry {
                 id: "tool".into(),
                 seq: 2,
                 turn: 2,
                 kind: Kind::Tool,
                 data: json!({"title": "rg TODO", "bookkeeping": false}),
+                rev: None,
                 created_at: 0,
             },
             Entry {
@@ -115,6 +117,7 @@ mod tests {
                 turn: 2,
                 kind: Kind::Thought,
                 data: json!({"text": "Looking for the parser"}),
+                rev: None,
                 created_at: 0,
             },
             Entry {
@@ -123,6 +126,7 @@ mod tests {
                 turn: 3,
                 kind: Kind::User,
                 data: json!({"status": "queued"}),
+                rev: None,
                 created_at: 0,
             },
         ];
@@ -147,8 +151,15 @@ mod tests {
         let (tx, _) = tokio::sync::mpsc::unbounded_channel();
         let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
         app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "bot", "name": "Bot", "activity": "Thinking…"}})));
-        let entries =
-            [Entry { id: "u".into(), seq: 1, turn: 1, kind: Kind::User, data: json!({"text": "hi"}), created_at: 0 }];
+        let entries = [Entry {
+            id: "u".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::User,
+            data: json!({"text": "hi"}),
+            rev: None,
+            created_at: 0,
+        }];
         let (folded, buttons) = render(&app, &entries);
         assert!(folded.contains("Thinking…  >") && folded.contains("> show") && !folded.contains("Nothing yet."));
         assert_eq!(buttons, 1);
@@ -167,6 +178,7 @@ mod tests {
             turn: 1,
             kind: Kind::Tool,
             data,
+            rev: None,
             created_at: 0,
         };
         let entries = [

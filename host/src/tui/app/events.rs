@@ -4,15 +4,36 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
+use super::bot::CompletionReply;
+use super::completion_history::{LegacyReply, ObservedReply};
 use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
 
-/// Whether a finished turn left a new bot reply in this chat (not a bot-to-bot turn, pass, or queued user send).
-fn turn_replied(old: &Bot, new: &Bot) -> bool {
-    let from_bot = !new.last_message.is_empty() && !new.last_message.starts_with("You: ");
-    if let Some(started_at) = old.started_at {
-        return new.unread > old.unread || (new.last_at >= started_at && from_bot);
-    }
-    new.unread > old.unread || ((new.last_at != old.last_at || new.last_message != old.last_message) && from_bot)
+fn chat_turn_started_at(bot: &Bot) -> Option<i64> {
+    bot.started_at
+        .filter(|&at| at > 0 && matches!(bot.status, Status::Working | Status::NeedsInput) && bot.works_here())
+}
+
+fn keep_legacy_reply(bot: &Bot, reply: &LegacyReply) -> bool {
+    // Catch-up can already hold the next reply when a buffered Idle arrives.
+    matches!(bot.completion_reply, CompletionReply::Legacy)
+        && chat_turn_started_at(bot)
+            .map_or_else(|| bot.rev.is_none_or(|rev| reply.rev > rev), |started_at| reply.created_at > started_at)
+}
+
+fn keep_legacy_observation(bot: Option<&Bot>, observed: &mut ObservedReply, outside: bool) -> bool {
+    observed.reply = observed.reply.filter(|reply| {
+        (outside || Some(reply.rev) != observed.latest_rev) && bot.is_none_or(|bot| keep_legacy_reply(bot, reply))
+    });
+    // Below the window, keep the revision even if it invalidates a final that may arrive later.
+    observed.reply.is_some()
+        || outside
+            && observed.latest_rev.is_some_and(|rev| {
+                rev > 0
+                    && bot.is_none_or(|bot| {
+                        matches!(bot.completion_reply, CompletionReply::Legacy)
+                            && (chat_turn_started_at(bot).is_some() || bot.rev.is_none_or(|seen| rev > seen))
+                    })
+            })
 }
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
@@ -30,6 +51,9 @@ impl App {
                 if !on {
                     // The next connection may reach another host: nothing goes by this one's version.
                     self.host_version.clear();
+                    for lookup in self.completion_lookups.values_mut() {
+                        lookup.cancel();
+                    }
                 }
                 if !on && self.error.is_none() && self.bots.is_empty() {
                     // Say why instead of spinning on "Connecting…".
@@ -45,10 +69,12 @@ impl App {
                 self.bots.clear();
                 self.entries.clear();
                 self.reading.clear();
-                self.history_busy.clear();
+                self.pending_history.clear();
                 self.history_done.clear();
                 self.mirror_epoch += 1;
                 self.floors.clear();
+                self.legacy_replies.clear();
+                self.completion_lookups.clear();
                 self.reply = None;
                 self.pick = None;
                 self.find = None;
@@ -96,6 +122,9 @@ impl App {
                 }
                 self.on_reply(after, r);
             }
+            Msg::CompletionHistory { bot, epoch, request, replied } => {
+                self.completion_history_result(&bot, epoch, request, replied);
+            }
             Msg::FileDownload { id, status, done } => {
                 if self.download.as_ref().is_some_and(|job| job.id == id) {
                     self.flash(&status.unwrap_or_else(|error| format!("Download failed: {error}")));
@@ -120,8 +149,9 @@ impl App {
                 self.replayed_deletions.clear();
                 self.completions_before_live.clear();
                 if self.catch_up_left.is_some() {
-                    self.completions_before_live
-                        .extend(self.bots.values().filter_map(|bot| bot.completion_reply_id.clone()));
+                    self.completions_before_live.extend(
+                        self.bots.values().filter_map(|bot| bot.completion_reply.exact_id().map(str::to_owned)),
+                    );
                 }
                 self.snapshot_floors();
                 self.network = v["network"].clone();
@@ -154,9 +184,12 @@ impl App {
             Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("threadEntry") => self.thread_entries.keep(v["thread"].as_str(), &v["entry"]),
             Some("entry") => {
-                if let Some((bot, e)) = Entry::parse(&v["entry"])
-                    && !self.outside_window(&bot, &e)
-                {
+                if let Some((bot, e)) = Entry::parse(&v["entry"]) {
+                    let outside = self.outside_window(&bot, &e);
+                    if outside {
+                        self.on_outside_entry(&bot, e);
+                        return;
+                    }
                     if e.kind == Kind::User
                         && let Some(nonce) = e.data["clientNonce"].as_str()
                     {
@@ -175,7 +208,7 @@ impl App {
                             self.reload_details(&bot);
                         }
                     }
-                    self.entries.entry(bot).or_default().insert(e.seq, e);
+                    self.merge_stream_entry(bot, e);
                 }
             }
             _ => {}
@@ -229,6 +262,111 @@ impl App {
         outside_window(self.floors.get(bot).copied(), held, e)
     }
 
+    fn on_outside_entry(&mut self, bot: &str, entry: Entry) {
+        let buffered = self.pending_history.get(bot).and_then(|page| page.updates.get(&entry.seq));
+        let newer = buffered.filter(|previous| previous.rev > entry.rev);
+        let latest = newer.unwrap_or(&entry);
+        let replace = newer.is_none();
+        let observed = self.observe_legacy_reply(bot, latest, std::iter::once(&entry).chain(buffered));
+        self.remember_legacy_reply(bot, entry.seq, observed, true);
+        if replace && let Some(page) = self.pending_history.get_mut(bot).filter(|page| entry.seq < page.before_seq) {
+            page.updates.insert(entry.seq, entry);
+        }
+    }
+
+    fn observe_legacy_reply<'a>(
+        &self,
+        id: &str,
+        latest: &'a Entry,
+        versions: impl IntoIterator<Item = &'a Entry>,
+    ) -> ObservedReply {
+        let saved = self.legacy_replies.get(id).and_then(|replies| replies.get(&latest.seq));
+        LegacyReply::observed(latest, versions, saved)
+    }
+
+    fn remember_legacy_reply(&mut self, id: &str, seq: i64, mut observed: ObservedReply, outside: bool) {
+        if keep_legacy_observation(self.bots.get(id), &mut observed, outside) {
+            self.legacy_replies.entry(id.to_owned()).or_default().insert(seq, observed);
+        } else if let Some(replies) = self.legacy_replies.get_mut(id) {
+            replies.remove(&seq);
+            if replies.is_empty() {
+                self.legacy_replies.remove(id);
+            }
+        }
+    }
+
+    fn merge_stream_entry(&mut self, bot: String, entry: Entry) {
+        let held = self.entries.get(&bot).and_then(|entries| entries.get(&entry.seq));
+        let newer = held.filter(|previous| previous.rev > entry.rev);
+        let latest = newer.unwrap_or(&entry);
+        let replace = newer.is_none();
+        let observed = self.observe_legacy_reply(&bot, latest, std::iter::once(&entry).chain(held));
+        self.remember_legacy_reply(&bot, entry.seq, observed, false);
+        if replace {
+            self.entries.entry(bot).or_default().insert(entry.seq, entry);
+        }
+    }
+
+    fn insert_missing_entry(&mut self, bot: String, entry: Entry) {
+        if !self.entries.get(&bot).is_some_and(|entries| entries.contains_key(&entry.seq)) {
+            self.merge_stream_entry(bot, entry);
+        }
+    }
+
+    fn finish_history(&mut self, id: &str, request: uuid::Uuid, result: Result<Value, String>) {
+        if self.pending_history.get(id).is_none_or(|page| page.request != request) {
+            return;
+        }
+        let Some(mut page) = self.pending_history.remove(id) else { return };
+        let Ok(value) = result else { return };
+        let entries = value["entries"].as_array().map(Vec::as_slice).unwrap_or_default();
+        if entries.is_empty() {
+            self.history_done.insert(id.to_owned());
+        }
+        for value in entries {
+            let Some((bot, row)) = Entry::parse(value) else { continue };
+            if bot != id || row.seq <= 0 || row.seq >= page.before_seq {
+                continue;
+            }
+            let (candidate, other) = match page.updates.remove(&row.seq) {
+                Some(buffered) if buffered.rev >= row.rev => (buffered, Some(row)),
+                buffered => (row, buffered),
+            };
+            let held = self.entries.get(id).and_then(|entries| entries.get(&candidate.seq));
+            let newer = held.filter(|entry| entry.rev >= candidate.rev);
+            let latest = newer.unwrap_or(&candidate);
+            let replace = newer.is_none();
+            let versions = std::iter::once(&candidate).chain(other.as_ref()).chain(held);
+            let observed = self.observe_legacy_reply(id, latest, versions);
+            self.remember_legacy_reply(id, candidate.seq, observed, false);
+            if replace {
+                self.entries.entry(bot).or_default().insert(candidate.seq, candidate);
+            }
+        }
+    }
+
+    fn legacy_turn_replied(&mut self, old: &Bot, idle: &Bot) -> bool {
+        let (Some(started_at), Some(idle_rev)) = (chat_turn_started_at(old), idle.rev.filter(|&rev| rev > 0)) else {
+            return false;
+        };
+        if self.completion_lookups.get(&idle.id).is_some_and(|lookup| lookup.started_at >= started_at) {
+            return false;
+        }
+        let completes = |reply: LegacyReply| reply.completes_turn(started_at, idle_rev);
+        let replied = self
+            .legacy_replies
+            .get(&idle.id)
+            .is_some_and(|replies| replies.values().filter_map(|observed| observed.reply).any(completes))
+            || self
+                .entries
+                .get(&idle.id)
+                .is_some_and(|entries| entries.values().rev().filter_map(LegacyReply::from_entry).any(completes));
+        if !replied {
+            self.look_up_legacy_completion(idle, started_at, idle_rev);
+        }
+        replied
+    }
+
     fn upsert_bot(&mut self, v: &Value, live: bool) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
@@ -236,35 +374,57 @@ impl App {
                 self.threads_ended(&gone.work, &[]);
             }
             self.entries.remove(id);
+            self.pending_history.remove(id);
+            self.history_done.remove(id);
             self.floors.remove(id);
+            self.legacy_replies.remove(id);
+            self.completion_lookups.remove(id);
             if self.replay_sends.is_none() {
                 self.clear_deleted_bot(id);
             }
             return;
         }
         let Some(new) = Bot::parse(v) else { return };
+        if !self.can_show_legacy_completion(&new)
+            && let Some(lookup) = self.completion_lookups.get_mut(id)
+        {
+            lookup.cancel();
+        }
+        let previous = self.bots.get(id);
         // Marked read once per change.
-        if self.bots.get(&new.id).is_none_or(|old| old.unread != new.unread) {
+        if previous.is_none_or(|old| old.unread != new.unread) {
             self.reading.remove(&new.id);
         }
-        let old = self.bots.insert(new.id.clone(), new.clone());
-        let Some(old) = old else { return };
-        self.threads_ended(&old.work, &new.work);
-        self.follow_threads(&new.id);
-        self.keep_details_cursor(&new.id, (&old.work, old.max_threads));
-        let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
+        if let Some(old) = self.bots.insert(new.id.clone(), new.clone()) {
+            self.threads_ended(&old.work, &new.work);
+            self.follow_threads(&new.id);
+            self.keep_details_cursor(&new.id, (&old.work, old.max_threads));
+            self.notify_bot_change(&old, &new, live);
+        }
+        if let Some(replies) = self.legacy_replies.get_mut(id) {
+            let entries = self.entries.get(id);
+            replies.retain(|seq, observed| {
+                let outside = entries.is_none_or(|entries| !entries.contains_key(seq));
+                keep_legacy_observation(Some(&new), observed, outside)
+            });
+            if replies.is_empty() {
+                self.legacy_replies.remove(id);
+            }
+        }
+    }
+
+    fn notify_bot_change(&mut self, old: &Bot, new: &Bot, live: bool) {
         // A member's turn in a group is the group's: it alone says done / needs you.
-        if !new.notify || watching {
+        if !new.notify || self.watching_chat(&new.id) {
             return;
         }
         let away = old.away().is_some() || new.away().is_some();
         if live && new.status == Status::Idle {
-            let replied = if v.get("completionReplyId").is_some() {
-                new.completion_reply_id.as_deref().is_some_and(|reply| {
-                    old.completion_reply_id.as_deref() != Some(reply) && !self.completions_before_live.contains(reply)
-                })
-            } else {
-                !away && old.status == Status::Working && turn_replied(&old, &new)
+            let replied = match &new.completion_reply {
+                CompletionReply::Exact(reply) => reply.as_deref().is_some_and(|reply| {
+                    old.completion_reply.exact_id() != Some(reply) && !self.completions_before_live.contains(reply)
+                }),
+                CompletionReply::Legacy => !away && old.status == Status::Working && self.legacy_turn_replied(old, new),
             };
             if replied {
                 self.toast(format!("{} is done", new.name), false);
@@ -331,7 +491,11 @@ impl App {
             self.pair_reply(&after, r);
             return;
         }
-        if let After::History(_, epoch) | After::Saved(epoch) = after
+        if let After::History(id, request) = after {
+            self.finish_history(&id, request, r);
+            return;
+        }
+        if let After::Saved(epoch) = after
             && epoch != self.mirror_epoch
         {
             return;
@@ -342,9 +506,6 @@ impl App {
                 match after {
                     After::Hello => self.error = Some(e),
                     After::Tracked => {}
-                    After::History(id, _) => {
-                        self.history_busy.remove(&id);
-                    }
                     After::Saved(_) => match self.overlays.last_mut() {
                         Some(Overlay::Form(f)) => {
                             f.saving = false;
@@ -381,6 +542,7 @@ impl App {
             | After::Network(_)
             | After::UsageOrder(_)
             | After::Sent { .. }
+            | After::History(_, _)
             | After::Connection(_, _)
             | After::Pairing
             | After::Cloud
@@ -426,18 +588,6 @@ impl App {
                 Some(version) => self.flash(&format!("Version {version} is available: run codync-host update")),
                 None => self.flash("The host is up to date."),
             },
-            After::History(id, _) => {
-                self.history_busy.remove(&id);
-                let list = v["entries"].as_array().cloned().unwrap_or_default();
-                if list.is_empty() {
-                    self.history_done.insert(id);
-                }
-                for e in &list {
-                    if let Some((bot, e)) = Entry::parse(e) {
-                        self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
-                    }
-                }
-            }
             After::WorkspaceSelected(id) => {
                 if matches!(self.overlays.last(), Some(Overlay::Folder(p)) if p.request_id == id)
                     && let Some(path) = v["path"].as_str().filter(|p| !p.is_empty())
@@ -558,7 +708,7 @@ impl App {
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
                     super::kofi::sent();
-                    self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
+                    self.insert_missing_entry(bot, e);
                 }
                 self.flash("Sent");
             }
@@ -571,16 +721,51 @@ impl App {
 mod tests {
     use super::super::{Editor, FIELDS, Field, PendingSend, test_app};
     use super::*;
+    use axum::http::StatusCode;
     use std::time::Duration;
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+    use tokio::sync::oneshot;
 
     fn entry_event(seq: i64) -> Value {
         json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
             "kind": "user"}})
     }
 
+    fn final_reply_event(seq: i64, created_at: i64, text: &str) -> Value {
+        json!({"type": "entry", "entry": {
+            "botId": "a", "id": format!("e{seq}"), "seq": seq, "rev": seq, "turn": seq, "kind": "agent",
+            "data": {"final": true, "text": text}, "createdAt": created_at, "updatedAt": created_at
+        }})
+    }
+
+    fn entry_at_rev(mut event: Value, rev: i64) -> Value {
+        event["rev"] = rev.into();
+        event["entry"]["rev"] = rev.into();
+        event
+    }
+
+    fn legacy_bot_event(rev: i64, started_at: Option<i64>, last_at: i64, preview: &str) -> Value {
+        let status = if started_at.is_some() { "working" } else { "idle" };
+        json!({"type": "bot", "rev": rev, "bot": {
+            "id": "a", "rev": rev, "name": "Alpha", "status": status,
+            "startedAt": started_at, "lastAt": last_at, "lastMessage": preview
+        }})
+    }
+
     fn seqs(app: &App) -> Vec<i64> {
         app.entries.get("a").map(|m| m.keys().copied().collect()).unwrap_or_default()
+    }
+
+    fn prepare_history(app: &mut App, bot: &str) -> After {
+        let page = super::super::PendingHistory::new(app.oldest(bot).unwrap_or(i64::MAX));
+        let request = page.request;
+        app.pending_history.insert(bot.to_owned(), page);
+        After::History(bot.to_owned(), request)
+    }
+
+    fn apply_history_row(app: &mut App, row: &Value) {
+        let after = prepare_history(app, "a");
+        app.on_reply(after, Ok(json!({"entries": [row]})));
     }
 
     fn connect(app: &mut App, since: i64) {
@@ -602,7 +787,7 @@ mod tests {
         app.on_event(&update);
         app.on_event(&entry_event(7));
         assert_eq!(seqs(&app), [5, 6, 7], "held updates and newer entries apply");
-        app.on_reply(After::History("a".into(), app.mirror_epoch), Ok(json!({"entries": [entry_event(3)["entry"]]})));
+        apply_history_row(&mut app, &entry_event(3)["entry"]);
         assert_eq!(seqs(&app), [3, 5, 6, 7], "history inserts older entries");
     }
 
@@ -854,14 +1039,245 @@ mod tests {
     #[test]
     fn a_reaction_on_an_old_reply_does_not_toast_as_done() {
         let mut app = test_app();
-        app.on_event(&json!({"type":"bot", "bot": {
-            "id":"a", "name":"Alpha", "status":"working", "startedAt":200,
-            "lastAt":100, "lastMessage":"Old reply", "completionReplyId":null
-        }}));
-        app.on_event(&json!({"type":"bot", "bot": {
-            "id":"a", "name":"Alpha", "status":"idle",
-            "lastAt":210, "lastMessage":"Old reply", "completionReplyId":null
-        }}));
+        let mut reply = final_reply_event(1, 100, "Old reply");
+        app.on_event(&reply);
+        app.on_event(&legacy_bot_event(2, Some(200), 100, "Old reply"));
+        reply["entry"]["data"]["reactions"] = json!(["👍"]);
+        reply["entry"]["updatedAt"] = 210.into();
+        app.on_event(&reply);
+        app.on_event(&legacy_bot_event(4, None, 210, "Old reply"));
+        assert_eq!(app.toasts.iter().map(|toast| toast.text.as_str()).collect::<Vec<_>>(), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn a_legacy_saved_reply_toasts_on_live_idle_even_with_the_same_text() {
+        for catch_up in [None, Some(3)] {
+            let mut app = test_app();
+            let text = "Same reply";
+            app.on_event(&json!({"type": "hello", "rev": 3, "catchUp": catch_up}));
+            app.on_event(&legacy_bot_event(1, Some(50), 0, text));
+            let previous = entry_at_rev(final_reply_event(1, 100, text), 2);
+            app.on_event(&previous);
+            app.on_event(&legacy_bot_event(3, None, 100, text));
+            assert!(app.toasts.is_empty(), "historical working through idle stays quiet");
+
+            app.on_event(&legacy_bot_event(4, Some(200), 100, text));
+            let mut reply = entry_at_rev(final_reply_event(2, 210, text), 5);
+            reply["entry"]["data"]["final"] = false.into();
+            app.on_event(&reply);
+            reply["entry"]["data"]["final"] = true.into();
+            let reply = entry_at_rev(reply, 6);
+            app.on_event(&reply);
+            app.on_event(&legacy_bot_event(7, Some(200), 210, text));
+            assert!(app.toasts.is_empty(), "a saved reply still needs a live idle snapshot");
+            let idle = legacy_bot_event(8, None, 210, text);
+            app.on_event(&idle);
+            assert_eq!(app.toasts.len(), 1);
+            assert_eq!(app.toasts[0].text, "Alpha is done");
+            app.toasts.clear();
+            app.on_event(&reply);
+            app.on_event(&idle);
+            assert!(app.toasts.is_empty(), "repeated entry and idle events stay quiet");
+        }
+    }
+
+    fn legacy_chat_window() -> App {
+        let mut app = test_app();
+        app.on_event(&json!({"type": "hello", "rev": 210}));
+        app.on_event(&legacy_bot_event(9, Some(200), 100, "Old reply"));
+        for seq in 11..=210 {
+            let mut tool = entry_event(seq);
+            tool["rev"] = seq.into();
+            tool["entry"]["kind"] = "tool".into();
+            app.on_event(&tool);
+        }
+        app
+    }
+
+    #[test]
+    fn a_legacy_reply_below_the_window_toasts_after_reconnect() {
+        let window: Vec<_> = (11..=210).collect();
+        for (catch_up, reply_rev) in [(None, 211), (Some(2), 211), (None, 213), (Some(1), 213)] {
+            let mut app = legacy_chat_window();
+            app.on_msg(Msg::Connected { since: 210 });
+            app.on_event(&json!({"type": "hello", "rev": 212, "catchUp": catch_up}));
+
+            let reply = entry_at_rev(final_reply_event(10, 210, "Fresh reply"), reply_rev);
+            let working = legacy_bot_event(212, Some(200), 215, "Fresh reply");
+            if reply_rev < 212 {
+                app.on_event(&reply);
+                app.on_event(&working);
+            } else {
+                app.on_event(&working);
+                app.on_event(&reply);
+            }
+            assert_eq!(seqs(&app), window, "the saved final stays below the loaded window");
+            assert!(app.toasts.is_empty(), "the working turn may have a saved final");
+
+            let idle = legacy_bot_event(214, None, 215, "Fresh reply");
+            app.on_event(&idle);
+            assert_eq!(
+                app.toasts.iter().map(|toast| toast.text.as_str()).collect::<Vec<_>>(),
+                ["Alpha is done"],
+                "live idle needs the saved reply from catchUp={catch_up:?}, rev={reply_rev}"
+            );
+            app.toasts.clear();
+            app.on_event(&reply);
+            app.on_event(&idle);
+            assert!(app.toasts.is_empty(), "duplicates are quiet");
+            assert_eq!(seqs(&app), window);
+            apply_history_row(&mut app, &reply["entry"]);
+            assert_eq!(seqs(&app), (10..=210).collect::<Vec<_>>(), "normal paging loads the final");
+            assert!(app.toasts.is_empty(), "history is quiet");
+        }
+    }
+
+    #[test]
+    fn an_outside_legacy_completion_that_ended_in_replay_stays_quiet() {
+        for catch_up in [None, Some(2)] {
+            let mut app = legacy_chat_window();
+            app.on_msg(Msg::Connected { since: 210 });
+            app.on_event(&json!({"type": "hello", "rev": 212, "catchUp": catch_up}));
+            let reply = entry_at_rev(final_reply_event(10, 210, "Fresh reply"), 211);
+            app.on_event(&reply);
+            app.on_event(&legacy_bot_event(212, None, 215, "Fresh reply"));
+            assert!(app.toasts.is_empty(), "replayed final through idle stays quiet");
+
+            app.on_event(&legacy_bot_event(213, None, 215, "Fresh reply"));
+            app.on_event(&legacy_bot_event(214, Some(300), 215, "Fresh reply"));
+            let mut reply = entry_at_rev(reply, 215);
+            reply["entry"]["updatedAt"] = 310.into();
+            reply["entry"]["data"]["reactions"] = json!(["👍"]);
+            app.on_event(&reply);
+            app.on_event(&legacy_bot_event(216, None, 310, "Fresh reply"));
+            assert!(app.toasts.is_empty(), "a replayed reply reacted to in the next turn stays quiet");
+            assert_eq!(seqs(&app), (11..=210).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn an_outside_legacy_reply_is_discarded_with_its_turn() {
+        let next_turn = legacy_bot_event(212, Some(300), 215, "Fresh reply");
+        let deletion = json!({"type": "bot", "rev": 212, "bot": {"id": "a", "rev": 212, "deleted": true}});
+        for (change, started_at) in [(Msg::Event(next_turn), 300), (Msg::Event(deletion), 200), (Msg::Rewind, 200)] {
+            let mut app = legacy_chat_window();
+            connect(&mut app, 210);
+            app.on_event(&final_reply_event(10, 210, "Fresh reply"));
+            app.on_msg(change);
+            app.on_msg(Msg::ReplayComplete);
+            app.on_event(&legacy_bot_event(213, Some(started_at), 215, "Fresh reply"));
+            app.on_event(&legacy_bot_event(214, None, 215, "Fresh reply"));
+            assert!(app.toasts.is_empty(), "a replaced or removed turn cannot complete");
+        }
+    }
+
+    #[test]
+    fn a_legacy_reply_removed_after_paging_stays_quiet() {
+        let mut app = legacy_chat_window();
+        connect(&mut app, 210);
+        let mut reply = final_reply_event(10, 210, "Fresh reply");
+        app.on_event(&reply);
+        apply_history_row(&mut app, &reply["entry"]);
+        reply["entry"]["data"]["removed"] = true.into();
+        app.on_event(&reply);
+        app.on_event(&legacy_bot_event(213, None, 215, "Fresh reply"));
+        assert!(app.toasts.is_empty());
+    }
+
+    #[test]
+    fn a_legacy_reply_removed_before_working_stays_quiet() {
+        let mut app = legacy_chat_window();
+        app.bots.remove("a");
+        connect(&mut app, 210);
+        let mut reply = final_reply_event(10, 210, "Fresh reply");
+        app.on_event(&reply);
+        reply["entry"]["data"]["removed"] = true.into();
+        app.on_event(&reply);
+        app.on_event(&legacy_bot_event(213, Some(200), 240, "Fresh reply"));
+        app.on_event(&legacy_bot_event(214, None, 240, "Fresh reply"));
+        assert!(app.toasts.is_empty());
+        assert_eq!(seqs(&app), (11..=210).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_legacy_completion_requires_positive_raw_revisions_in_the_mirror_and_outside_it() {
+        for seq in [10, 211] {
+            for (entry_rev, idle_rev) in [(None, Some(214)), (Some(0), Some(214)), (Some(212), None)] {
+                let mut app = legacy_chat_window();
+                connect(&mut app, 210);
+                let mut reply = entry_at_rev(final_reply_event(seq, 210, "Fresh reply"), 212);
+                reply["entry"]["rev"] = json!(entry_rev);
+                app.on_event(&reply);
+                let mut idle = legacy_bot_event(214, None, 210, "Fresh reply");
+                idle["bot"]["rev"] = json!(idle_rev);
+                app.on_event(&idle);
+                assert!(app.toasts.is_empty(), "seq {seq}, entry rev {entry_rev:?}, Idle rev {idle_rev:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_exact_completion_field_governs_the_idle_snapshot_after_a_legacy_turn() {
+        for reply_id in [None, Some("exact-reply")] {
+            let mut app = legacy_chat_window();
+            connect(&mut app, 210);
+            app.on_event(&final_reply_event(10, 210, "Fresh reply"));
+            let mut idle = legacy_bot_event(212, None, 215, "Fresh reply");
+            idle["bot"]["completionReplyId"] = json!(reply_id);
+            app.on_event(&idle);
+            assert_eq!(app.toasts.len(), usize::from(reply_id.is_some()));
+        }
+    }
+
+    #[test]
+    fn a_legacy_turn_with_paged_history_and_a_queued_message_stays_quiet() {
+        let mut app = test_app();
+        app.on_event(&entry_event(5));
+        connect(&mut app, 8);
+        app.on_event(&legacy_bot_event(9, Some(200), 100, "Old reply"));
+        let mut reaction = final_reply_event(2, 100, "Old reply");
+        reaction["entry"]["data"]["reactions"] = json!(["👍"]);
+        reaction["entry"]["updatedAt"] = 210.into();
+        app.on_event(&reaction);
+        assert_eq!(seqs(&app), [5], "the older reaction waits for history");
+        let mut queued = entry_event(6);
+        queued["entry"]["createdAt"] = 220.into();
+        queued["entry"]["data"] = json!({"text": "Queued message", "status": "queued"});
+        app.on_event(&queued);
+        let mut idle = legacy_bot_event(12, None, 220, "You: Queued message");
+        idle["bot"]["unread"] = 1.into();
+        app.on_event(&idle);
+        apply_history_row(&mut app, &reaction["entry"]);
+        assert_eq!(seqs(&app), [2, 5, 6]);
+        assert!(app.toasts.is_empty(), "the queue, unread count, and history are quiet");
+    }
+
+    #[test]
+    fn a_legacy_idle_snapshot_without_saved_evidence_stays_quiet() {
+        let mut app = test_app();
+        app.on_event(&legacy_bot_event(1, Some(200), 100, "Old reply"));
+        app.on_event(&legacy_bot_event(2, None, 210, "Unsynced reply"));
+        assert!(app.toasts.is_empty());
+        let reply = final_reply_event(1, 210, "Unsynced reply");
+        apply_history_row(&mut app, &reply["entry"]);
+        assert!(app.toasts.is_empty(), "history after idle cannot trigger a late toast");
+
+        let mut working = legacy_bot_event(3, None, 210, "Unsynced reply");
+        working["bot"]["status"] = "working".into();
+        app.on_event(&working);
+        app.on_event(&final_reply_event(2, 230, "Unattributed reply"));
+        app.on_event(&legacy_bot_event(5, None, 230, "Unattributed reply"));
+        assert!(app.toasts.is_empty(), "a missing turn start cannot identify the reply");
+    }
+
+    #[test]
+    fn a_legacy_turn_in_another_chat_does_not_toast_here() {
+        let mut app = test_app();
+        let mut working = legacy_bot_event(1, Some(200), 100, "Old reply");
+        working["bot"]["workingChat"] = "group".into();
+        app.on_event(&working);
+        app.on_event(&final_reply_event(1, 210, "A concurrent reply"));
+        app.on_event(&legacy_bot_event(3, None, 210, "A concurrent reply"));
         assert!(app.toasts.is_empty());
     }
 
@@ -875,6 +1291,7 @@ mod tests {
             }),
             true,
         );
+        app.on_event(&final_reply_event(1, 210, "Sent before Stop"));
         app.upsert_bot(
             &json!({
                 "id": "a", "name": "Alpha", "status": "idle", "completionReplyId": null,
@@ -916,8 +1333,16 @@ mod tests {
     }
 
     type StreamRequest = (i64, UnboundedSender<Value>);
+    type HistoryRequest = (Value, oneshot::Sender<(StatusCode, Value)>);
 
     async fn stream_host() -> (crate::tui::net::Client, UnboundedReceiver<StreamRequest>) {
+        let (client, events, _) = stream_and_history_host("2.54.0").await;
+        (client, events)
+    }
+
+    async fn stream_and_history_host(
+        version: &'static str,
+    ) -> (crate::tui::net::Client, UnboundedReceiver<StreamRequest>, UnboundedReceiver<HistoryRequest>) {
         use axum::extract::Query;
         use axum::response::sse::{Event, Sse};
         use axum::routing::{get, post};
@@ -926,7 +1351,18 @@ mod tests {
         use tokio_stream::wrappers::UnboundedReceiverStream;
 
         let (opened, requests) = unbounded_channel();
-        let router = Router::new().route("/api/hello", post(|| async { Json(json!({"version": "2.54.0"})) })).route(
+        let (history, pages) = unbounded_channel::<HistoryRequest>();
+        let router = Router::new().route("/api/hello", post(move || async move { Json(json!({"version": version})) })).route(
+            "/api/history",
+            post(move |Json(body): Json<Value>| {
+                let (send, receive) = oneshot::channel();
+                let _ = history.send((body, send));
+                async move {
+                    let (status, body) = receive.await.unwrap_or((StatusCode::NOT_FOUND, Value::Null));
+                    (status, Json(body))
+                }
+            }),
+        ).route(
             "/events",
             get(move |Query(query): Query<HashMap<String, String>>| {
                 let (send, receive) = unbounded_channel::<Value>();
@@ -937,7 +1373,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        (crate::tui::net::Client::new(&url, Some("fixture")), requests)
+        (crate::tui::net::Client::new(&url, Some("fixture")), requests, pages)
     }
 
     async fn expect_stream(requests: &mut UnboundedReceiver<StreamRequest>, since: i64) -> UnboundedSender<Value> {
@@ -961,6 +1397,1233 @@ mod tests {
         })
         .await
         .expect("the client receives the expected events");
+    }
+
+    struct HistoryTurn {
+        app: App,
+        events: UnboundedSender<Value>,
+        messages: UnboundedReceiver<Msg>,
+        pages: UnboundedReceiver<HistoryRequest>,
+        idle: Value,
+    }
+
+    fn history_tool(seq: i64) -> Value {
+        let mut tool = entry_at_rev(entry_event(seq), seq);
+        tool["entry"]["kind"] = "tool".into();
+        tool["entry"]["createdAt"] = 211.into();
+        tool
+    }
+
+    fn stored_history(replies: impl IntoIterator<Item = Value>, next_seq: i64) -> Vec<Value> {
+        replies.into_iter().chain((11..next_seq).map(|seq| history_tool(seq)["entry"].clone())).collect()
+    }
+
+    fn history_page(rows: &[Value], before: i64, limit: usize) -> (StatusCode, Value) {
+        let end = rows.partition_point(|row| row["seq"].as_i64().unwrap() < before);
+        (StatusCode::OK, json!({"entries": &rows[end.saturating_sub(limit)..end]}))
+    }
+
+    async fn history_turn(floor: i64, last_at: i64) -> HistoryTurn {
+        let (client, mut requests, mut pages) = stream_and_history_host("2.20.1").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+
+        let events = expect_stream(&mut requests, 0).await;
+        let working_rev = floor + 200;
+        events.send(json!({"type": "hello", "rev": working_rev})).unwrap();
+        for seq in floor..working_rev {
+            events.send(history_tool(seq)).unwrap();
+        }
+        events.send(legacy_bot_event(working_rev, Some(200), last_at, "Saved reply")).unwrap();
+        read_events(&mut app, &mut messages, 202).await;
+        assert_eq!(seqs(&app), (floor..working_rev).collect::<Vec<_>>());
+        assert_eq!(app.bots["a"].status, Status::Working);
+        assert!(pages.try_recv().is_err());
+        let idle = legacy_bot_event(working_rev + 1, None, last_at, "Saved reply");
+        HistoryTurn { app, events, messages, pages, idle }
+    }
+
+    async fn truncated_history_turn(preview: &str) -> (HistoryTurn, Value) {
+        let (client, mut requests, pages) = stream_and_history_host("2.20.1").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+
+        let initial = expect_stream(&mut requests, 0).await;
+        let mut tool = history_tool(11);
+        tool["entry"]["createdAt"] = 205.into();
+        tool["entry"]["turn"] = 1.into();
+        let tool_row = tool["entry"].clone();
+        initial.send(json!({"type": "hello", "rev": 13, "hostId": "legacy"})).unwrap();
+        initial.send(tool).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!(seqs(&app), [11]);
+        assert!(app.bots.is_empty());
+        drop(initial);
+
+        let events = expect_stream(&mut requests, 13).await;
+        events.send(json!({"type": "hello", "rev": 14, "hostId": "legacy"})).unwrap();
+        events.send(legacy_bot_event(14, Some(200), 210, preview)).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!(app.bots["a"].status, Status::Working);
+        assert_eq!(seqs(&app), [11]);
+        let idle = legacy_bot_event(15, None, 210, preview);
+        (HistoryTurn { app, events, messages, pages, idle }, tool_row)
+    }
+
+    impl HistoryTurn {
+        async fn react_to_old_reply(&mut self) -> Value {
+            let rev = self.idle["rev"].as_i64().unwrap();
+            let mut reaction = entry_at_rev(final_reply_event(5, 100, "Saved reply"), rev);
+            reaction["entry"]["updatedAt"] = 240.into();
+            reaction["entry"]["data"]["reactions"] = json!(["👍"]);
+            self.events.send(reaction.clone()).unwrap();
+            read_events(&mut self.app, &mut self.messages, 1).await;
+            self.idle["rev"] = (rev + 1).into();
+            self.idle["bot"]["rev"] = (rev + 1).into();
+            reaction["entry"].clone()
+        }
+
+        async fn idle(&mut self) {
+            self.events.send(self.idle.clone()).unwrap();
+            read_events(&mut self.app, &mut self.messages, 1).await;
+        }
+
+        async fn next_page(&mut self) -> HistoryRequest {
+            let Ok(Some((request, send))) = tokio::time::timeout(Duration::from_secs(2), self.pages.recv()).await
+            else {
+                panic!("live Idle produced no history request and {} toasts", self.app.toasts.len());
+            };
+            (request, send)
+        }
+
+        async fn page(&mut self, before: i64, limit: i64) -> oneshot::Sender<(StatusCode, Value)> {
+            let (request, send) = self.next_page().await;
+            assert_eq!(request, json!({"botId": "a", "beforeSeq": before, "limit": limit}));
+            send
+        }
+
+        async fn completion(&mut self) -> Msg {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    let msg = self.messages.recv().await.unwrap();
+                    if matches!(msg, Msg::CompletionHistory { .. }) {
+                        break msg;
+                    }
+                    self.app.on_msg(msg);
+                }
+            })
+            .await
+            .expect("the completion lookup has a result")
+        }
+
+        async fn no_history_request(&mut self) {
+            assert!(tokio::time::timeout(Duration::from_millis(100), self.pages.recv()).await.is_err());
+        }
+
+        async fn manual_page(&mut self, before: i64, rows: &[Value]) {
+            self.app.tick();
+            self.page(before, 200).await.send(history_page(rows, before, 200)).unwrap();
+            self.read_manual_page().await;
+        }
+
+        async fn read_manual_page(&mut self) {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    let msg = self.messages.recv().await.unwrap();
+                    let history = matches!(msg, Msg::Reply(After::History(_, _), _));
+                    self.app.on_msg(msg);
+                    if history {
+                        break;
+                    }
+                }
+            })
+            .await
+            .expect("the manual history page arrives");
+        }
+    }
+
+    async fn before_paging_reconnect() -> (HistoryTurn, UnboundedReceiver<StreamRequest>) {
+        let (client, mut requests, pages) = stream_and_history_host("2.53.0").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+
+        let initial = expect_stream(&mut requests, 0).await;
+        let mut snapshot: Vec<_> = (11..=210).map(history_tool).collect();
+        snapshot.push(legacy_bot_event(211, Some(200), 190, "You: First message"));
+        send_counted_replay(&initial, 211, snapshot);
+        read_events(&mut app, &mut messages, 203).await;
+        assert_eq!(seqs(&app), (11..=210).collect::<Vec<_>>());
+        let idle = legacy_bot_event(214, None, 220, "Finished reply");
+        let mut turn = HistoryTurn { app, events: initial, messages, pages, idle };
+        turn.app.selected = Some("a".into());
+        turn.app.chat_page = true;
+        turn.app.chat_top = true;
+        (turn, requests)
+    }
+
+    async fn reconnect_paging(
+        turn: HistoryTurn,
+        requests: &mut UnboundedReceiver<StreamRequest>,
+        rev: i64,
+        snapshot: Vec<Value>,
+    ) -> HistoryTurn {
+        let HistoryTurn { mut app, events, mut messages, pages, idle } = turn;
+        drop(events);
+        let events = expect_stream(requests, 211).await;
+        let count = snapshot.len() + 2;
+        send_counted_replay(&events, rev, snapshot);
+        read_events(&mut app, &mut messages, count).await;
+        HistoryTurn { app, events, messages, pages, idle }
+    }
+
+    async fn paging_after_reconnect() -> HistoryTurn {
+        let (turn, mut requests) = before_paging_reconnect().await;
+        reconnect_paging(turn, &mut requests, 211, vec![]).await
+    }
+
+    fn draft_and_promotion() -> (Value, Value) {
+        let mut draft = entry_at_rev(final_reply_event(10, 210, "Unfinished draft"), 10);
+        draft["entry"]["data"]["final"] = false.into();
+        let mut promoted = entry_at_rev(draft.clone(), 212);
+        promoted["entry"]["data"] = json!({"final": true, "text": "Finished reply"});
+        promoted["entry"]["updatedAt"] = 220.into();
+        (draft, promoted)
+    }
+
+    #[tokio::test]
+    async fn an_older_buffered_final_can_prove_completion_with_a_manual_page_pending() {
+        for pending in [false, true] {
+            let (mut turn, mut requests) = before_paging_reconnect().await;
+            let (draft, promoted) = draft_and_promotion();
+            let page = if pending {
+                turn.app.tick();
+                Some(turn.page(11, 200).await)
+            } else {
+                None
+            };
+            let reacted = react_to_reply(promoted.clone(), 215);
+            let mut turn = reconnect_paging(turn, &mut requests, 215, vec![reacted.clone()]).await;
+            turn.events.send(promoted).unwrap();
+            read_events(&mut turn.app, &mut turn.messages, 1).await;
+            assert!(!turn.app.entries["a"].contains_key(&10));
+            if pending {
+                assert_eq!(turn.app.pending_history["a"].updates[&10].rev, Some(215));
+            }
+
+            turn.app.selected = None;
+            turn.idle().await;
+            let history = served_completion_history(&mut turn, &stored_history([reacted["entry"].clone()], 211)).await;
+            let toasts = turn.app.toasts.len();
+            if let Some(page) = page {
+                page.send(history_page(&[draft["entry"].clone()], 11, 200)).unwrap();
+                turn.read_manual_page().await;
+                assert_eq!(turn.app.entries["a"][&10].rev, Some(215));
+                assert_eq!(turn.app.entries["a"][&10].data["reactions"], json!(["👍"]));
+            }
+            assert_eq!((toasts, history), (1, 0), "R212 delivered after replay R215 with a pending page: {pending}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_older_manual_page_can_prove_completion_after_the_newer_final_is_replayed() {
+        for early in [true, false] {
+            let (mut turn, mut requests) = before_paging_reconnect().await;
+            let (_, promoted) = draft_and_promotion();
+            let rows = [promoted["entry"].clone()];
+            if early {
+                turn.manual_page(11, &rows).await;
+            }
+            let page = if early {
+                None
+            } else {
+                turn.app.tick();
+                Some(turn.page(11, 200).await)
+            };
+            let reacted = react_to_reply(promoted, 215);
+            let mut turn = reconnect_paging(turn, &mut requests, 215, vec![reacted.clone()]).await;
+            if let Some(page) = page {
+                page.send(history_page(&rows, 11, 200)).unwrap();
+                turn.read_manual_page().await;
+            }
+            assert_eq!(turn.app.entries["a"][&10].rev, Some(215));
+            assert_eq!(turn.app.entries["a"][&10].data["reactions"], json!(["👍"]));
+            assert_eq!(turn.app.oldest("a"), Some(10));
+
+            turn.app.selected = None;
+            turn.idle().await;
+            let history = served_completion_history(&mut turn, &stored_history([reacted["entry"].clone()], 211)).await;
+            assert_eq!((turn.app.toasts.len(), history), (1, 0), "R212 page before replay R215: {early}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stale_manual_page_keeps_the_live_final_observed_below_the_window() {
+        let mut turn = paging_after_reconnect().await;
+        turn.app.tick();
+        let page = turn.page(11, 200).await;
+        let (draft, promoted) = draft_and_promotion();
+        let held = history_page(&[draft["entry"].clone()], 11, 200);
+
+        turn.events.send(promoted.clone()).unwrap();
+        let mut unrelated = entry_at_rev(entry_event(9), 213);
+        unrelated["entry"]["data"]["removed"] = true.into();
+        turn.events.send(unrelated).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 2).await;
+        assert!(!turn.app.entries["a"].contains_key(&10), "the update is outside the loaded window");
+        assert_eq!(turn.app.legacy_replies["a"][&10].reply.map(|reply| reply.rev), Some(212));
+
+        page.send(held).unwrap();
+        turn.read_manual_page().await;
+        assert!(turn.app.pending_history.is_empty());
+        assert_eq!(turn.app.oldest("a"), Some(10));
+        assert!(!turn.app.entries["a"].contains_key(&9), "only rows on the page are merged");
+        assert!(!turn.app.history_complete("a"), "one row still leaves older history to try");
+        turn.manual_page(10, &[]).await;
+        assert!(turn.app.history_complete("a"));
+
+        let visible = &turn.app.entries["a"][&10];
+        let merged = (visible.rev, visible.text().to_owned());
+        turn.app.selected = None;
+        let reacted = react_to_reply(promoted, 215);
+        let rows = stored_history([reacted["entry"].clone()], 211);
+        turn.idle().await;
+        let history = served_completion_history(&mut turn, &rows).await;
+        assert_eq!(
+            (merged, turn.app.toasts.len(), history),
+            ((Some(212), "Finished reply".to_owned()), 1, 0),
+            "merged row, toasts and automatic history requests at Idle R214"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_manual_page_arriving_first_applies_the_later_stream_promotion() {
+        let mut turn = paging_after_reconnect().await;
+        let (draft, promoted) = draft_and_promotion();
+        turn.manual_page(11, &[draft["entry"].clone()]).await;
+        assert_eq!(turn.app.entries["a"][&10].rev, Some(10));
+        assert!(!turn.app.entries["a"][&10].is_final());
+        turn.events.send(promoted).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 1).await;
+        assert_eq!(turn.app.entries["a"][&10].rev, Some(212));
+        assert!(turn.app.entries["a"][&10].is_final());
+        turn.app.selected = None;
+        turn.idle().await;
+        turn.no_history_request().await;
+        assert_eq!(turn.app.toasts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_stale_manual_page_cannot_restore_a_withdrawn_reply() {
+        let mut turn = paging_after_reconnect().await;
+        let (_, promoted) = draft_and_promotion();
+        turn.app.tick();
+        let page = turn.page(11, 200).await;
+        let held = history_page(&[promoted["entry"].clone()], 11, 200);
+        let mut withdrawn = entry_at_rev(promoted.clone(), 213);
+        withdrawn["entry"]["data"]["removed"] = true.into();
+        for change in [promoted.clone(), withdrawn, promoted] {
+            turn.events.send(change).unwrap();
+        }
+        read_events(&mut turn.app, &mut turn.messages, 3).await;
+        assert!(turn.app.legacy_replies["a"][&10].reply.is_none(), "the withdrawal defeats the older stream duplicate");
+        page.send(held).unwrap();
+        turn.read_manual_page().await;
+        assert_eq!(turn.app.entries["a"][&10].rev, Some(213));
+        assert_eq!(turn.app.entries["a"][&10].data["removed"], true);
+        assert!(turn.app.lane("a").iter().all(|entry| entry.seq != 10));
+        assert_eq!(turn.app.oldest("a"), Some(10), "a hidden row still advances paging");
+        turn.manual_page(10, &[]).await;
+
+        turn.app.selected = None;
+        turn.idle().await;
+        let history = served_completion_history(&mut turn, &stored_history([], 211)).await;
+        assert_eq!((turn.app.toasts.len(), history), (0, 1));
+        assert!(!turn.app.legacy_replies.contains_key("a"));
+    }
+
+    #[tokio::test]
+    async fn a_manual_page_uses_the_latest_raw_revision_without_losing_earlier_completion_evidence() {
+        let mut turn = paging_after_reconnect().await;
+        let (_, promoted) = draft_and_promotion();
+        turn.app.tick();
+        let page = turn.page(11, 200).await;
+        let revision = entry_at_rev(promoted.clone(), 213);
+        let reacted = react_to_reply(promoted.clone(), 215);
+        turn.events.send(promoted).unwrap();
+        turn.events.send(reacted.clone()).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 2).await;
+        page.send(history_page(&[revision["entry"].clone()], 11, 200)).unwrap();
+        turn.read_manual_page().await;
+
+        let row = &turn.app.entries["a"][&10];
+        assert_eq!(row.rev, Some(215));
+        assert_eq!(row.data["reactions"], json!(["👍"]));
+        assert_eq!(turn.app.legacy_replies["a"][&10].reply.map(|reply| reply.rev), Some(212));
+        turn.app.selected = None;
+        turn.idle().await;
+        turn.no_history_request().await;
+        assert_eq!(turn.app.toasts.len(), 1, "the observed final R212 proves completion at R214");
+    }
+
+    #[test]
+    fn manual_paging_compares_the_page_with_a_row_already_in_the_mirror() {
+        for (held_rev, page_rev) in [(12, 13), (13, 12)] {
+            let mut app = test_app();
+            app.on_event(&entry_event(11));
+            let after = prepare_history(&mut app, "a");
+            let reply = final_reply_event(10, 210, "Reply");
+            app.on_event(&entry_at_rev(reply.clone(), held_rev));
+            let row = entry_at_rev(reply, page_rev);
+            app.on_reply(after, Ok(json!({"entries": [row["entry"]]})));
+            assert_eq!(app.entries["a"][&10].rev, Some(13));
+            assert!(app.pending_history.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_manual_page_adds_evidence_to_the_newer_row_already_in_the_mirror() {
+        let mut app = legacy_chat_window();
+        let page = prepare_history(&mut app, "a");
+        let (_, promoted) = draft_and_promotion();
+        let reacted = react_to_reply(promoted.clone(), 215);
+        app.on_event(&reacted);
+        app.on_reply(page, Ok(json!({"entries": [promoted["entry"]]})));
+        assert_eq!(app.legacy_replies["a"][&10].reply.map(|reply| reply.rev), Some(212));
+
+        app.on_event(&promoted);
+        assert_eq!(app.entries["a"][&10].rev, Some(215));
+        assert_eq!(app.entries["a"][&10].data, reacted["entry"]["data"]);
+        app.on_event(&legacy_bot_event(214, None, 220, "Finished reply"));
+        assert_eq!(app.toasts.len(), 1);
+    }
+
+    #[test]
+    fn an_older_final_cannot_restore_evidence_after_the_latest_row_changes() {
+        for change in [
+            json!({"id": "replacement"}),
+            json!({"createdAt": 211}),
+            json!({"data": {"final": false}}),
+            json!({"data": {"final": true, "removed": true}}),
+            json!({"data": {"final": true, "call": "voice"}}),
+        ] {
+            for (pending, from_page) in [(false, false), (true, false), (true, true)] {
+                let mut app = legacy_chat_window();
+                connect(&mut app, 210);
+                let (draft, promoted) = draft_and_promotion();
+                let page = pending.then(|| prepare_history(&mut app, "a"));
+                let mut latest = react_to_reply(promoted.clone(), 215);
+                for (key, value) in change.as_object().unwrap() {
+                    latest["entry"][key] = value.clone();
+                }
+                app.on_event(&latest);
+                if !from_page {
+                    app.on_event(&promoted);
+                }
+                if let Some(page) = page {
+                    let row = if from_page { &promoted } else { &draft };
+                    app.on_reply(page, Ok(json!({"entries": [row["entry"]]})));
+                    let row = &app.entries["a"][&10];
+                    assert_eq!(row.rev, Some(215));
+                    assert_eq!(row.data, latest["entry"]["data"]);
+                    assert_eq!(row.id, latest["entry"]["id"]);
+                    assert_eq!(row.created_at, latest["entry"]["createdAt"]);
+                } else {
+                    assert!(!app.entries["a"].contains_key(&10));
+                }
+                app.on_event(&legacy_bot_event(214, None, 220, "Finished reply"));
+                assert!(app.toasts.is_empty(), "change {change}, pending page {pending}, from page {from_page}");
+            }
+        }
+    }
+
+    #[test]
+    fn history_errors_and_deletions_discard_pending_updates_and_stale_replies() {
+        let mut app = legacy_chat_window();
+        connect(&mut app, 210);
+        let (_, promoted) = draft_and_promotion();
+        let failed = prepare_history(&mut app, "a");
+        app.on_event(&promoted);
+        assert!(app.pending_history["a"].updates.contains_key(&10));
+        app.on_reply(failed, Err("Disconnected".into()));
+        assert!(app.pending_history.is_empty());
+
+        let deleted = prepare_history(&mut app, "a");
+        assert!(app.pending_history["a"].updates.is_empty());
+        app.on_event(&promoted);
+        let deletion = json!({"type": "bot", "rev": 213, "bot": {"id": "a", "rev": 213, "deleted": true}});
+        app.on_event(&deletion);
+        assert!(app.pending_history.is_empty());
+        let next = prepare_history(&mut app, "a");
+        app.on_reply(deleted, Ok(json!({"entries": [promoted["entry"]]})));
+        assert_eq!(seqs(&app), [] as [i64; 0]);
+        assert!(app.pending_history["a"].updates.is_empty());
+        app.on_reply(next, Ok(json!({"entries": []})));
+        assert!(app.history_complete("a"));
+        assert!(app.pending_history.is_empty());
+    }
+
+    async fn overlapping_legacy_turns(has_first_reply: bool, outside: bool) {
+        let (client, mut requests, pages) = stream_and_history_host("2.53.0").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let initial = expect_stream(&mut requests, 0).await;
+
+        let queued_seq = if has_first_reply { 3 } else { 2 };
+        let late_seq = queued_seq + 2;
+        let mut late_message = entry_at_rev(entry_event(late_seq), 17);
+        late_message["entry"]["createdAt"] = 231.into();
+        late_message["entry"]["data"] = json!({"text": "Another message", "status": "queued"});
+        let events = if outside {
+            initial.send(json!({"type": "hello", "rev": 8, "catchUp": 2})).unwrap();
+            initial.send(json!({"type": "icons", "icons": {}})).unwrap();
+            initial.send(legacy_bot_event(8, None, 0, "")).unwrap();
+            read_events(&mut app, &mut messages, 3).await;
+            drop(initial);
+            let resumed = expect_stream(&mut requests, 8).await;
+
+            // A send RPC can return a newer row before the reconnect's hello arrives.
+            app.sends.insert(
+                "a".into(),
+                PendingSend { text: "Another message".into(), files: vec![], nonce: "late".into(), task: None },
+            );
+            app.on_msg(Msg::Reply(
+                After::Sent { key: "a".into(), nonce: "late".into(), epoch: app.mirror_epoch },
+                Ok(json!({"entry": late_message["entry"]})),
+            ));
+            assert_eq!(seqs(&app), [late_seq]);
+            resumed
+        } else {
+            initial
+        };
+
+        let mut first_message = entry_at_rev(entry_event(1), 9);
+        first_message["entry"]["createdAt"] = 190.into();
+        first_message["entry"]["data"] = json!({"text": "First message", "status": "sent"});
+        let mut first_reply = entry_at_rev(final_reply_event(2, 210, "First reply"), 11);
+        first_reply["entry"]["turn"] = 1.into();
+        let mut queued = entry_at_rev(entry_event(queued_seq), 12);
+        queued["entry"]["createdAt"] = 210.into();
+        queued["entry"]["turn"] = 2.into();
+        queued["entry"]["data"] = json!({"text": "Queued message", "status": "queued"});
+        let mut sent = entry_at_rev(queued.clone(), 14);
+        sent["entry"]["updatedAt"] = 220.into();
+        sent["entry"]["data"]["status"] = "sent".into();
+        let mut next_reply = entry_at_rev(final_reply_event(queued_seq + 1, 230, "Next reply"), 16);
+        next_reply["entry"]["turn"] = 2.into();
+
+        let mut replay = vec![
+            json!({"type": "icons", "icons": {}}),
+            first_message.clone(),
+            legacy_bot_event(10, Some(200), 190, "You: First message"),
+        ];
+        if has_first_reply {
+            replay.push(first_reply.clone());
+        }
+        replay.extend([sent.clone(), next_reply.clone()]);
+        let count = replay.len();
+        let hello_rev = if outside { 17 } else { 16 };
+        events.send(json!({"type": "hello", "rev": hello_rev, "catchUp": count})).unwrap();
+        for event in replay {
+            events.send(event).unwrap();
+        }
+        read_events(&mut app, &mut messages, count + 1).await;
+        let window = if outside { vec![late_seq] } else { (1..late_seq).collect() };
+        assert_eq!(seqs(&app), window);
+        assert_eq!(app.bots["a"].rev, Some(10));
+        assert!(app.toasts.is_empty());
+        let idle = legacy_bot_event(13, None, 210, "You: Queued message");
+        let mut turn = HistoryTurn { app, events, messages, pages, idle };
+
+        if has_first_reply {
+            turn.events.send(first_reply.clone()).unwrap();
+        }
+        turn.events.send(queued).unwrap();
+        turn.events.send(turn.idle.clone()).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 2 + usize::from(has_first_reply)).await;
+        assert_eq!(turn.app.bots["a"].rev, Some(13), "buffered Idle is live after the counted replay");
+        let first_lookup = turn.app.completion_lookups.contains_key("a");
+        if first_lookup {
+            let mut rows = vec![first_message["entry"].clone()];
+            if has_first_reply {
+                rows.push(first_reply["entry"].clone());
+            }
+            rows.extend([sent["entry"].clone(), next_reply["entry"].clone()]);
+            if outside {
+                rows.push(late_message["entry"].clone());
+            }
+            turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+            let completion = turn.completion().await;
+            turn.app.on_msg(completion);
+        }
+        let first_toasts = turn.app.toasts.len();
+        turn.app.toasts.clear();
+        turn.no_history_request().await;
+        assert_eq!(seqs(&turn.app), window);
+        if outside {
+            let saved = &turn.app.legacy_replies["a"];
+            let carried: Vec<_> = saved.iter().filter_map(|(seq, observed)| observed.reply.map(|_| *seq)).collect();
+            assert_eq!(carried, [queued_seq + 1], "only the reply beyond A's Idle carries over");
+        }
+
+        let idle_b = if outside {
+            legacy_bot_event(18, None, 231, "You: Another message")
+        } else {
+            legacy_bot_event(17, None, 230, "Next reply")
+        };
+        turn.events.send(sent).unwrap();
+        turn.events.send(legacy_bot_event(15, Some(220), 220, "You: Queued message")).unwrap();
+        turn.events.send(next_reply).unwrap();
+        if outside {
+            turn.events.send(late_message).unwrap();
+        }
+        turn.events.send(idle_b.clone()).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 4 + usize::from(outside)).await;
+        let second_toasts = turn.app.toasts.len();
+        turn.no_history_request().await;
+        assert_eq!(
+            [first_toasts, second_toasts],
+            [usize::from(has_first_reply), 1],
+            "A history lookup: {first_lookup}, replies below the window: {outside}"
+        );
+        assert_eq!(first_lookup, !has_first_reply);
+        assert_eq!(turn.app.toasts[0].text, "Alpha is done");
+        assert_eq!(seqs(&turn.app), window);
+        turn.app.toasts.clear();
+        turn.events.send(idle_b).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 1).await;
+        turn.no_history_request().await;
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn counted_legacy_replay_does_not_complete_the_previous_turn_with_the_next_reply() {
+        overlapping_legacy_turns(false, false).await;
+    }
+
+    #[tokio::test]
+    async fn counted_legacy_replay_still_completes_both_turns_with_saved_replies() {
+        overlapping_legacy_turns(true, false).await;
+    }
+
+    #[tokio::test]
+    async fn counted_legacy_replay_checks_the_idle_revision_below_the_window() {
+        overlapping_legacy_turns(false, true).await;
+        overlapping_legacy_turns(true, true).await;
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ReplyUpdate {
+        Reaction,
+        UnseenReaction,
+        Withdrawal,
+    }
+
+    fn send_counted_replay(events: &UnboundedSender<Value>, rev: i64, replay: Vec<Value>) {
+        let count = replay.len() + 1;
+        events.send(json!({"type": "hello", "hostId": "observed-reply", "rev": rev, "catchUp": count})).unwrap();
+        events.send(json!({"type": "icons", "icons": {}})).unwrap();
+        for event in replay {
+            events.send(event).unwrap();
+        }
+    }
+
+    fn react_to_reply(event: Value, rev: i64) -> Value {
+        let mut event = entry_at_rev(event, rev);
+        event["entry"]["updatedAt"] = 240.into();
+        event["entry"]["data"]["reactions"] = json!(["👍"]);
+        event
+    }
+
+    async fn served_completion_history(turn: &mut HistoryTurn, rows: &[Value]) -> usize {
+        let requested = turn.app.completion_lookups.contains_key("a");
+        if requested {
+            turn.page(i64::MAX, 500).await.send(history_page(rows, i64::MAX, 500)).unwrap();
+            let completion = turn.completion().await;
+            turn.app.on_msg(completion);
+        }
+        turn.no_history_request().await;
+        usize::from(requested)
+    }
+
+    async fn reply_updated_on_reconnect(update: ReplyUpdate) {
+        let (client, mut requests, pages) = stream_and_history_host("2.53.0").await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let saw_original = update != ReplyUpdate::UnseenReaction;
+
+        let mut user = entry_at_rev(entry_event(1), 7);
+        user["entry"]["createdAt"] = 190.into();
+        user["entry"]["data"] = json!({"text": "First message", "status": "sent"});
+        let mut reply = entry_at_rev(final_reply_event(2, 210, "Saved reply"), 9);
+        reply["entry"]["turn"] = 1.into();
+        let initial = expect_stream(&mut requests, 0).await;
+        send_counted_replay(&initial, 8, vec![user.clone(), legacy_bot_event(8, Some(200), 190, "You: First message")]);
+        if saw_original {
+            initial.send(reply.clone()).unwrap();
+        }
+        read_events(&mut app, &mut messages, 4 + usize::from(saw_original)).await;
+        assert_eq!(app.entries["a"].get(&2).and_then(|entry| entry.rev), saw_original.then_some(9));
+        assert_eq!(app.bots["a"].status, Status::Working);
+        assert!(app.toasts.is_empty());
+        drop(initial);
+
+        let latest = if update == ReplyUpdate::Withdrawal {
+            let mut latest = entry_at_rev(reply, 11);
+            latest["entry"]["updatedAt"] = 240.into();
+            latest["entry"]["data"]["removed"] = true.into();
+            latest
+        } else {
+            react_to_reply(reply, 11)
+        };
+        let events = expect_stream(&mut requests, if saw_original { 9 } else { 8 }).await;
+        send_counted_replay(&events, 11, vec![latest.clone()]);
+        read_events(&mut app, &mut messages, 3).await;
+        assert_eq!(app.entries["a"][&2].rev, Some(11));
+        assert_eq!(app.entries["a"][&2].data, latest["entry"]["data"]);
+        assert!(app.toasts.is_empty(), "the rewrite is replayed while the buffered Idle waits");
+
+        let idle = legacy_bot_event(10, None, 210, "Saved reply");
+        let mut turn = HistoryTurn { app, events, messages, pages, idle };
+        turn.idle().await;
+        assert_eq!(turn.app.bots["a"].rev, Some(10));
+        let mut rows = vec![user["entry"].clone()];
+        if update != ReplyUpdate::Withdrawal {
+            rows.push(latest["entry"].clone());
+        }
+        let history = served_completion_history(&mut turn, &rows).await;
+        let expected = usize::from(update == ReplyUpdate::Reaction);
+        assert_eq!(
+            (turn.app.toasts.len(), history),
+            (expected, 1 - expected),
+            "toasts and history requests at Idle R10"
+        );
+        if expected > 0 {
+            assert_eq!(turn.app.toasts[0].text, "Alpha is done");
+        }
+        turn.app.toasts.clear();
+        turn.events.send(latest).unwrap();
+        turn.events.send(turn.idle.clone()).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 2).await;
+        turn.no_history_request().await;
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_uses_the_reply_seen_before_a_reconnect_reaction() {
+        reply_updated_on_reconnect(ReplyUpdate::Reaction).await;
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_stays_quiet_when_reconnect_only_delivers_the_newer_reply() {
+        reply_updated_on_reconnect(ReplyUpdate::UnseenReaction).await;
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_stays_quiet_when_reconnect_replays_a_withdrawal() {
+        reply_updated_on_reconnect(ReplyUpdate::Withdrawal).await;
+    }
+
+    #[tokio::test]
+    async fn an_observed_reply_below_the_window_survives_a_reconnect_reaction() {
+        for saw_earlier in [true, false] {
+            let (client, mut requests, pages) = stream_and_history_host("2.53.0").await;
+            let (tx, mut messages) = unbounded_channel();
+            let mut app = App::new(client.clone(), tx.clone(), String::new());
+            client.spawn_stream(tx);
+            let initial = expect_stream(&mut requests, 0).await;
+            let mut snapshot: Vec<_> = (11..=210).map(history_tool).collect();
+            snapshot.push(legacy_bot_event(211, Some(200), 210, "Saved reply"));
+            send_counted_replay(&initial, 211, snapshot);
+            read_events(&mut app, &mut messages, 203).await;
+            drop(initial);
+
+            let reply = final_reply_event(10, 210, "Saved reply");
+            let window: Vec<_> = (11..=210).collect();
+            if saw_earlier {
+                let mid = expect_stream(&mut requests, 211).await;
+                send_counted_replay(&mid, 212, vec![react_to_reply(reply.clone(), 212)]);
+                read_events(&mut app, &mut messages, 3).await;
+                assert_eq!(seqs(&app), window);
+                assert!(app.toasts.is_empty());
+                drop(mid);
+            }
+
+            let mut latest = react_to_reply(reply, 214);
+            latest["entry"]["data"]["reactions"] = json!(["👍", "🎉"]);
+            let events = expect_stream(&mut requests, if saw_earlier { 212 } else { 211 }).await;
+            send_counted_replay(&events, 214, vec![latest.clone()]);
+            read_events(&mut app, &mut messages, 3).await;
+            assert_eq!(seqs(&app), window);
+            let idle = legacy_bot_event(213, None, 210, "Saved reply");
+            let mut turn = HistoryTurn { app, events, messages, pages, idle };
+            turn.idle().await;
+            let rows = stored_history([latest["entry"].clone()], 211);
+            let history = served_completion_history(&mut turn, &rows).await;
+            assert_eq!((turn.app.toasts.len(), history), (usize::from(saw_earlier), usize::from(!saw_earlier)));
+            assert_eq!(seqs(&turn.app), window);
+        }
+    }
+
+    #[test]
+    fn repeated_reactions_keep_the_first_observed_legacy_final() {
+        for seq in [10, 211] {
+            let mut app = legacy_chat_window();
+            connect(&mut app, 210);
+            let original = entry_at_rev(final_reply_event(seq, 210, "Saved reply"), 211);
+            app.on_event(&original);
+            app.on_event(&react_to_reply(original.clone(), 213));
+            let mut latest = react_to_reply(original, 214);
+            latest["entry"]["data"]["reactions"] = json!(["👍", "🎉"]);
+            app.on_event(&latest);
+            app.on_event(&legacy_bot_event(212, None, 210, "Saved reply"));
+            assert_eq!(app.toasts.len(), 1, "sequence {seq}");
+            if seq == 211 {
+                assert_eq!(app.entries["a"][&seq].rev, Some(214));
+                assert_eq!(app.entries["a"][&seq].data, latest["entry"]["data"]);
+            }
+        }
+    }
+
+    #[test]
+    fn changes_to_a_legacy_reply_discard_earlier_completion_evidence() {
+        for seq in [10, 211] {
+            for change in [
+                json!({"id": "replacement"}),
+                json!({"createdAt": 211}),
+                json!({"data": {"final": false}}),
+                json!({"data": {"final": true, "removed": true}}),
+                json!({"data": {"final": true, "call": "voice"}}),
+            ] {
+                let mut app = legacy_chat_window();
+                connect(&mut app, 210);
+                let original = entry_at_rev(final_reply_event(seq, 210, "Saved reply"), 211);
+                app.on_event(&original);
+                let latest = react_to_reply(original, 213);
+                app.on_event(&latest);
+                let mut replacement = entry_at_rev(latest.clone(), 214);
+                for (key, value) in change.as_object().unwrap() {
+                    replacement["entry"][key] = value.clone();
+                }
+                app.on_event(&replacement);
+                if change["data"].is_object() {
+                    app.on_event(&entry_at_rev(latest, 215));
+                }
+                app.on_event(&legacy_bot_event(212, None, 211, "Saved reply"));
+                assert!(app.toasts.is_empty(), "sequence {seq}, change {change}");
+            }
+        }
+    }
+
+    #[test]
+    fn manual_history_replacing_a_retained_reply_discards_its_evidence() {
+        let mut app = legacy_chat_window();
+        connect(&mut app, 210);
+        let reply = entry_at_rev(final_reply_event(10, 210, "Saved reply"), 211);
+        app.on_event(&reply);
+        let mut replacement = react_to_reply(reply, 213);
+        replacement["entry"]["id"] = "replacement".into();
+        apply_history_row(&mut app, &replacement["entry"]);
+        assert_eq!(app.entries["a"][&10].id, "replacement");
+        app.on_event(&legacy_bot_event(212, None, 210, "Saved reply"));
+        assert!(app.toasts.is_empty());
+    }
+
+    #[test]
+    fn a_mirror_rewind_discards_the_earlier_reply_observation() {
+        let mut app = legacy_chat_window();
+        let reply = entry_at_rev(final_reply_event(211, 210, "Saved reply"), 211);
+        app.on_event(&reply);
+        let latest = react_to_reply(reply, 213);
+        app.on_event(&latest);
+        assert!(app.legacy_replies["a"].contains_key(&211));
+        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::ReplayComplete);
+        app.on_event(&legacy_bot_event(9, Some(200), 100, "Old reply"));
+        app.on_event(&latest);
+        app.on_event(&legacy_bot_event(212, None, 210, "Saved reply"));
+        assert!(app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_finds_the_saved_tail_after_truncated_initial_replay() {
+        let (mut turn, tool) = truncated_history_turn("Saved reply").await;
+        let mut saved = final_reply_event(12, 210, "Saved reply")["entry"].clone();
+        saved["turn"] = 1.into();
+        let rows = [tool, saved];
+
+        turn.idle().await;
+        assert_eq!(turn.app.bots["a"].rev, Some(15));
+        assert!(turn.app.toasts.is_empty());
+        let (request, send) = turn.next_page().await;
+        let before = request["beforeSeq"].as_i64().unwrap();
+        let limit = usize::try_from(request["limit"].as_u64().unwrap()).unwrap();
+        send.send(history_page(&rows, before, limit)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1, "history cursor {before} after reconnecting with since=13");
+        assert_eq!(turn.app.toasts[0].text, "Alpha is done");
+        assert_eq!(request, json!({"botId": "a", "beforeSeq": i64::MAX, "limit": 500}));
+        assert_eq!(seqs(&turn.app), [11], "the lookup leaves the transcript alone");
+    }
+
+    #[tokio::test]
+    async fn legacy_completion_history_ignores_a_later_turn_before_its_working_event() {
+        for saved_reply in [false, true] {
+            let preview = if saved_reply { "Saved reply" } else { "You: Queued message" };
+            let (mut turn, tool) = truncated_history_turn(preview).await;
+            turn.idle().await;
+            let page = turn.page(i64::MAX, 500).await;
+
+            let mut rows = vec![tool];
+            if saved_reply {
+                let mut saved = final_reply_event(12, 210, "Saved reply")["entry"].clone();
+                saved["turn"] = 1.into();
+                rows.push(saved);
+            }
+            // The user message is now sent and the next Working at rev 18 is still buffered in SSE.
+            let queued_seq = if saved_reply { 13 } else { 12 };
+            let mut sent = entry_event(queued_seq)["entry"].clone();
+            sent["rev"] = 17.into();
+            sent["turn"] = 2.into();
+            sent["createdAt"] = 210.into();
+            sent["updatedAt"] = 210.into();
+            sent["data"] = json!({"text": "Queued message", "status": "sent"});
+            let mut later = final_reply_event(queued_seq + 1, 210, "Saved reply")["entry"].clone();
+            later["rev"] = 19.into();
+            later["turn"] = 2.into();
+            rows.extend([sent, later]);
+            page.send(history_page(&rows, i64::MAX, 500)).unwrap();
+            let completion = turn.completion().await;
+            assert_eq!(turn.app.bots["a"].status, Status::Idle);
+            assert_eq!(turn.app.bots["a"].rev, Some(15));
+            turn.app.on_msg(completion);
+            assert_eq!(turn.app.toasts.len(), usize::from(saved_reply));
+            assert_eq!(seqs(&turn.app), [11]);
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_completion_history_requires_positive_host_revisions() {
+        let mut turn = history_turn(11, 210).await;
+        turn.idle["bot"].as_object_mut().unwrap().remove("rev");
+        turn.idle().await;
+        turn.no_history_request().await;
+        assert!(turn.app.toasts.is_empty());
+
+        let mut turn = history_turn(11, 210).await;
+        turn.idle().await;
+        let mut saved = final_reply_event(10, 210, "Saved reply")["entry"].clone();
+        saved["rev"] = 0.into();
+        let rows = stored_history([saved], 211);
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_finds_a_saved_reply_in_a_sparse_initial_window() {
+        let mut turn = history_turn(11, 210).await;
+        let old_reply = turn.react_to_old_reply().await;
+        let window: Vec<_> = std::iter::once(5).chain(11..=210).collect();
+        assert_eq!(seqs(&turn.app), window);
+        assert_eq!(turn.app.bots["a"].status, Status::Working);
+
+        turn.idle().await;
+        assert!(turn.app.toasts.is_empty(), "the same preview text and newer reaction prove nothing");
+        let saved = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([old_reply, saved["entry"].clone()], 211);
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1);
+        assert_eq!(turn.app.toasts[0].text, "Alpha is done");
+        assert_eq!(seqs(&turn.app), window, "the reaction and the tail still bracket the same gap");
+        turn.app.toasts.clear();
+        turn.idle().await;
+        turn.no_history_request().await;
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn completed_manual_paging_below_a_gap_does_not_skip_the_completion_lookup() {
+        let mut turn = history_turn(11, 210).await;
+        let old_reply = turn.react_to_old_reply().await;
+        let mut earlier = entry_event(2);
+        earlier["entry"]["rev"] = 2.into();
+        earlier["entry"]["createdAt"] = 50.into();
+        let saved = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([earlier["entry"].clone(), old_reply, saved["entry"].clone()], 211);
+        turn.app.selected = Some("a".into());
+        turn.app.chat_page = true;
+        turn.app.chat_top = true;
+        turn.manual_page(5, &rows).await;
+        assert_eq!(turn.app.oldest("a"), Some(2));
+        turn.manual_page(2, &rows).await;
+        assert!(turn.app.history_complete("a"));
+        let window = seqs(&turn.app);
+        assert!(!window.contains(&10));
+        turn.app.selected = None;
+        turn.idle().await;
+
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1);
+        assert_eq!(seqs(&turn.app), window);
+        assert!(turn.app.history_complete("a"), "the lookup leaves the manual paging state intact");
+    }
+
+    #[tokio::test]
+    async fn sparse_history_with_only_the_old_reaction_stays_quiet() {
+        let mut turn = history_turn(11, 100).await;
+        let old_reply = turn.react_to_old_reply().await;
+        turn.idle["bot"]["lastAt"] = 240.into();
+        turn.idle().await;
+        let rows = stored_history([old_reply], 211);
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert!(turn.app.toasts.is_empty());
+        turn.no_history_request().await;
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_looks_up_a_reply_omitted_from_the_initial_window() {
+        let mut turn = history_turn(11, 210).await;
+        turn.idle().await;
+        assert!(turn.app.toasts.is_empty(), "the preview by itself cannot prove a reply");
+        let saved = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([saved["entry"].clone()], 211);
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1);
+        assert_eq!(turn.app.toasts[0].text, "Alpha is done");
+        assert_eq!(seqs(&turn.app), (11..=210).collect::<Vec<_>>(), "the lookup leaves the window intact");
+        turn.app.toasts.clear();
+        turn.idle().await;
+        turn.no_history_request().await;
+        assert!(turn.app.toasts.is_empty(), "duplicate Idle stays quiet");
+
+        turn.app.selected = Some("a".into());
+        turn.app.chat_page = true;
+        turn.app.chat_top = true;
+        turn.manual_page(11, &rows).await;
+        assert_eq!(turn.app.oldest("a"), Some(10));
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_pages_past_a_full_page_of_tools() {
+        let mut turn = history_turn(511, 210).await;
+        let old_reply = turn.react_to_old_reply().await;
+        turn.idle().await;
+        let first = turn.page(i64::MAX, 500).await;
+        turn.no_history_request().await;
+        let reply = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([old_reply, reply["entry"].clone()], 711);
+        first.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        turn.page(211, 500).await.send(history_page(&rows, 211, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1);
+        assert_eq!(seqs(&turn.app), std::iter::once(5).chain(511..711).collect::<Vec<_>>());
+    }
+
+    #[tokio::test]
+    async fn legacy_completion_history_with_an_old_reaction_or_api_failure_stays_quiet() {
+        let mut reply = final_reply_event(10, 100, "Saved reply");
+        reply["entry"]["updatedAt"] = 240.into();
+        reply["entry"]["data"]["reactions"] = json!(["👍"]);
+        let rows = stored_history([reply["entry"].clone()], 211);
+        for response in [
+            history_page(&rows, i64::MAX, 500),
+            (StatusCode::SERVICE_UNAVAILABLE, json!({"error": "fixture history unavailable"})),
+        ] {
+            let mut turn = history_turn(11, 240).await;
+            turn.idle().await;
+            turn.page(i64::MAX, 500).await.send(response).unwrap();
+            let completion = turn.completion().await;
+            turn.app.on_msg(completion);
+            assert!(turn.app.toasts.is_empty());
+            assert!(turn.app.hint.is_none());
+            turn.events.send(legacy_bot_event(213, Some(200), 240, "Saved reply")).unwrap();
+            read_events(&mut turn.app, &mut turn.messages, 1).await;
+            turn.idle["rev"] = 214.into();
+            turn.idle["bot"]["rev"] = 214.into();
+            turn.idle().await;
+            turn.no_history_request().await;
+            assert!(turn.app.toasts.is_empty(), "the same turn cannot restart its lookup");
+        }
+    }
+
+    #[tokio::test]
+    async fn late_legacy_completion_history_cannot_toast_after_the_turn_changes() {
+        let reply = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([reply["entry"].clone()], 211);
+        for replacement in [
+            Msg::Event(legacy_bot_event(213, Some(300), 210, "Saved reply")),
+            Msg::Event(json!({"type": "bot", "rev": 213, "bot": {"id": "a", "deleted": true}})),
+            Msg::Rewind,
+        ] {
+            let mut turn = history_turn(11, 210).await;
+            turn.idle().await;
+            turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+            let completion = turn.completion().await;
+            turn.app.on_msg(replacement);
+            if turn.app.bots.get("a").is_some_and(|bot| bot.status == Status::Working) {
+                turn.app.on_msg(Msg::Event(legacy_bot_event(214, None, 210, "Saved reply")));
+            }
+            turn.app.on_msg(completion);
+            assert!(turn.app.toasts.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_legacy_history_completion_stays_quiet_for_a_focused_chat() {
+        let mut watching = history_turn(11, 210).await;
+        watching.app.selected = Some("a".into());
+        watching.app.chat_page = true;
+        watching.idle().await;
+        watching.no_history_request().await;
+        assert!(watching.app.toasts.is_empty());
+
+        let mut turn = history_turn(11, 210).await;
+        turn.idle().await;
+        let reply = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([reply["entry"].clone()], 211);
+        turn.page(i64::MAX, 500).await.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.selected = Some("a".into());
+        turn.app.chat_page = true;
+        assert!(turn.app.watching_chat("a"));
+        turn.app.on_msg(completion);
+        assert!(turn.app.toasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn slow_legacy_completion_history_still_toasts_for_the_same_turn() {
+        let mut turn = history_turn(11, 210).await;
+        let old_reply = turn.react_to_old_reply().await;
+        turn.idle().await;
+        let page = turn.page(i64::MAX, 500).await;
+        tokio::time::sleep(super::super::TOAST_DURATION + Duration::from_millis(200)).await;
+        assert!(turn.app.toasts.is_empty());
+        let reply = final_reply_event(10, 210, "Saved reply");
+        let rows = stored_history([old_reply, reply["entry"].clone()], 211);
+        page.send(history_page(&rows, i64::MAX, 500)).unwrap();
+        let completion = turn.completion().await;
+        turn.app.on_msg(completion);
+        assert_eq!(turn.app.toasts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn local_and_exact_completion_evidence_do_not_query_history() {
+        let mut turn = history_turn(11, 210).await;
+        turn.events.send(final_reply_event(211, 210, "Saved reply")).unwrap();
+        read_events(&mut turn.app, &mut turn.messages, 1).await;
+        turn.idle().await;
+        assert_eq!(turn.app.toasts.len(), 1);
+        turn.no_history_request().await;
+
+        for reply_id in [None, Some("server-reply")] {
+            let mut turn = history_turn(11, 210).await;
+            turn.idle["bot"]["completionReplyId"] = json!(reply_id);
+            turn.idle().await;
+            assert_eq!(turn.app.toasts.len(), usize::from(reply_id.is_some()));
+            turn.no_history_request().await;
+        }
+    }
+
+    async fn legacy_reply_replayed_before_working(
+        previous: Option<Value>,
+        created_at: i64,
+        replay_rev: i64,
+    ) -> Vec<String> {
+        let (client, mut requests) = stream_host().await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        if let Some(bot) = previous {
+            app.on_msg(Msg::Event(bot));
+        }
+        let prior = app.bots.get("a").map(|bot| (bot.status, bot.started_at));
+        client.spawn_stream(tx);
+
+        let hello = |rev| json!({"type": "hello", "hostId": "legacy-window", "rev": rev});
+        let original = expect_stream(&mut requests, 0).await;
+        original.send(hello(211)).unwrap();
+        for seq in 11..=210 {
+            let mut tool = entry_event(seq);
+            tool["rev"] = seq.into();
+            tool["entry"]["kind"] = "tool".into();
+            original.send(tool).unwrap();
+        }
+        read_events(&mut app, &mut messages, 201).await;
+        let window = (11..=210).collect::<Vec<_>>();
+        assert_eq!(seqs(&app), window);
+        assert_eq!(app.bots.get("a").map(|bot| (bot.status, bot.started_at)), prior);
+        drop(original);
+
+        let resumed = expect_stream(&mut requests, 211).await;
+        resumed.send(hello(replay_rev)).unwrap();
+        let mut reply = entry_at_rev(final_reply_event(10, created_at, "Same reply"), 212);
+        reply["entry"]["updatedAt"] = 240.into();
+        reply["entry"]["data"]["reactions"] = json!(["👍"]);
+        resumed.send(reply.clone()).unwrap();
+        resumed.send(legacy_bot_event(213, Some(200), 240, "Same reply")).unwrap();
+        read_events(&mut app, &mut messages, 3).await;
+        assert!(app.toasts.is_empty(), "the replayed final and Working stay quiet");
+        assert_eq!(seqs(&app), window);
+
+        let idle = legacy_bot_event(214, None, 240, "Same reply");
+        resumed.send(idle.clone()).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        let notices = app.toasts.drain(..).map(|toast| toast.text).collect();
+        resumed.send(reply.clone()).unwrap();
+        resumed.send(idle).unwrap();
+        resumed.send(legacy_bot_event(215, None, 240, "Same reply")).unwrap();
+        read_events(&mut app, &mut messages, 3).await;
+        assert!(app.toasts.is_empty(), "duplicates and later idle snapshots stay quiet");
+        assert_eq!(seqs(&app), window);
+        apply_history_row(&mut app, &reply["entry"]);
+        assert_eq!(seqs(&app), (10..=210).collect::<Vec<_>>(), "history loads the saved row");
+        assert!(app.toasts.is_empty(), "paging is quiet");
+        notices
+    }
+
+    #[tokio::test]
+    async fn a_legacy_reply_replayed_before_working_toasts_on_live_idle() {
+        for previous in [
+            None,
+            Some(legacy_bot_event(8, None, 100, "Earlier reply")),
+            Some(legacy_bot_event(8, Some(50), 100, "Earlier reply")),
+        ] {
+            let notices = legacy_reply_replayed_before_working(previous, 210, 213).await;
+            assert_eq!(notices, ["Alpha is done"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn an_old_legacy_reply_replayed_before_working_stays_quiet() {
+        for previous in [
+            None,
+            Some(legacy_bot_event(8, None, 100, "Earlier reply")),
+            Some(legacy_bot_event(8, Some(50), 100, "Earlier reply")),
+        ] {
+            let notices = legacy_reply_replayed_before_working(previous, 100, 213).await;
+            assert!(notices.is_empty(), "an old reaction with an updated lastAt stays quiet");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_legacy_completion_wholly_in_uncounted_replay_stays_quiet() {
+        assert_eq!(legacy_reply_replayed_before_working(None, 210, 214).await, Vec::<String>::new());
     }
 
     async fn finish_recovery(app: &mut App, messages: &mut UnboundedReceiver<Msg>) {
@@ -1196,7 +2859,7 @@ mod tests {
         original.send(bot("later", "Created later", 128, "idle", None)).unwrap();
         read_events(&mut app, &mut messages, 5).await;
         app.drafts.insert("a".into(), Editor::with("Draft to keep"));
-        let old_history = After::History("a".into(), app.mirror_epoch);
+        let old_history = prepare_history(&mut app, "a");
         drop(original);
 
         let abandoned = expect_stream(&mut requests, 130).await;
@@ -1297,18 +2960,19 @@ mod tests {
     #[test]
     fn done_toast_skips_turns_that_left_no_new_reply_in_this_chat() {
         let mut app = test_app();
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":200, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "rev":1, "name":"Alpha", "status":"working", "startedAt":200, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "rev":2, "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":100, "lastMessage":"old X", "unread":0}), true);
         assert!(app.toasts.is_empty(), "bot-to-bot or silent turn must not toast with stale chat preview");
 
         // User queued a message while Alpha worked on another bot's request.
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":300, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "rev":3, "name":"Alpha", "status":"working", "startedAt":300, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
+        app.upsert_bot(&json!({"id":"a", "rev":4, "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
         assert!(app.toasts.is_empty(), "a queued user message is not a bot reply");
 
         // A real reply in Alpha's own chat (including mid-turn send_message) toasts as done.
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":400, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}), true);
-        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}), true);
+        app.upsert_bot(&json!({"id":"a", "rev":5, "name":"Alpha", "status":"working", "startedAt":400, "lastAt":310, "lastMessage":"You: hey", "unread":0}), true);
+        app.on_event(&entry_at_rev(final_reply_event(1, 410, "Fresh reply"), 6));
+        app.upsert_bot(&json!({"id":"a", "rev":7, "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}), true);
         assert_eq!(app.toasts.len(), 1);
         assert_eq!(app.toasts[0].text, "Alpha is done");
     }

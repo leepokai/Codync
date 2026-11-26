@@ -202,7 +202,7 @@ mod tests {
 
     fn notice(id: &str, seq: i64, at: i64, message: &serde_json::Value, status: &str) -> Entry {
         let data = json!({"text": "A rendered notice", "botMessage": message, "status": status});
-        Entry { id: id.into(), seq, turn: 1, kind: Kind::Notice, created_at: at, data }
+        Entry { id: id.into(), seq, turn: 1, kind: Kind::Notice, rev: None, created_at: at, data }
     }
 
     fn msg(source: &str, target: &str, text: &str) -> serde_json::Value {

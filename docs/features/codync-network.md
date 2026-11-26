@@ -248,7 +248,8 @@ that was off learns of a removal.
   else `online`/`offline` by whether its MCP server's process (pid and start time, `Caller::running`) still runs;
   none on Windows. The host sends them in order, running first (`runs`), then the most recent, and marks `older`
   the ones neither running nor called in the last day. The state is kept in memory for the listed sessions only,
-  read again off the async workers when `networkView` is asked (not while a page stays open), and a change is a
+  read again off the async workers when `networkView` is asked and every 10 s while the host runs
+  (`api::follow_live`, so a page left open follows its sessions), and a change is a
   `network` event; so is a new session, a new title or a rename. Every client shows them on its Network page
   (desktop `SessionsCard`, for its own computer only; iPhone and Android `NetworkSheet`, for the computer open;
   TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as

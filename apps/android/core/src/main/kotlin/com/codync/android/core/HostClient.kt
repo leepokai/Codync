@@ -42,6 +42,8 @@ data class Bot(
     val computer: Boolean = false,
     /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
     val manageTeam: Boolean? = null,
+    /** Pauses it: it answers nothing and spends nothing until it is resumed; null from a host without the switch. */
+    val paused: Boolean? = null,
     /** The user's other computers list this bot and may message it; null from an older host. */
     val offeredToNetwork: Boolean? = null,
     /** The user's cloud assistant lists this bot and may message it; null from an older host. */

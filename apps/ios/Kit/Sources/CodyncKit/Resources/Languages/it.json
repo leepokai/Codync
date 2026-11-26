@@ -2504,5 +2504,11 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "Ogni thread lavora in un worktree tutto suo; il tuo checkout non viene mai toccato",
   "Its chat, routines and files live here.": "Qui vivono la sua chat, le sue routine e i suoi file.",
   "Add folder": "Aggiungi cartella",
-  "Remove folder": "Rimuovi cartella"
+  "Remove folder": "Rimuovi cartella",
+  "Fewer models": "Meno modelli",
+  "More models (%d)": "Altri modelli (%d)",
+  "Search or enter a model ID": "Cerca o inserisci un ID modello",
+  "Approvals": "Approvazioni",
+  "Speed": "Velocità",
+  "Close search": "Chiudi ricerca"
 }

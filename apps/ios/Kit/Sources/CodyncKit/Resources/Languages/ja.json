@@ -2504,5 +2504,11 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "すべての thread が専用の worktree で作業し、あなたのチェックアウトには触れません",
   "Its chat, routines and files live here.": "チャット、ルーティン、ファイルはここにあります。",
   "Add folder": "フォルダを追加",
-  "Remove folder": "フォルダを削除"
+  "Remove folder": "フォルダを削除",
+  "Fewer models": "表示を減らす",
+  "More models (%d)": "その他のモデル（%d）",
+  "Search or enter a model ID": "検索またはモデル ID を入力",
+  "Approvals": "承認",
+  "Speed": "速度",
+  "Close search": "検索を閉じる"
 }

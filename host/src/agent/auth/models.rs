@@ -2,7 +2,6 @@
 
 use super::{Started, probe_dir, start_with};
 use crate::LockExt;
-use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
 use codync_agent::acp::Incoming;
@@ -23,7 +22,7 @@ pub struct InFlight(Mutex<HashMap<InFlightKey, Slot>>);
 type Slot = Arc<OnceCell<Result<Value, String>>>;
 
 impl InFlight {
-    async fn get(
+    pub(super) async fn get(
         &self,
         backend: &str,
         login_profile: Option<&str>,
@@ -40,12 +39,6 @@ impl InFlight {
             .await;
         answer.clone().map_err(anyhow::Error::msg)
     }
-}
-
-/// [`models`], shared with the asks for the same agent and login profile meanwhile.
-pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Value> {
-    let login_profile = login_profile.filter(|s| !s.is_empty());
-    Box::pin(hub.model_lists.get(backend, login_profile, Box::pin(models(&hub.store, backend, login_profile)))).await
 }
 
 /// Discover the agent's advertised models in an isolated, prompt-free session.
@@ -80,6 +73,7 @@ pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hub::Hub;
 
     #[tokio::test]
     async fn asks_at_once_start_the_agent_once_and_later_ones_again() {

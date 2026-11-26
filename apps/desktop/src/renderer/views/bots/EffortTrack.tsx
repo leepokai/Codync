@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type PointerEvent } from 'react'
-import type { ModelOption } from './agent-models'
+import type { ModelOption } from '@shared/agent-models'
 
 /** Where the first and last steps' centers sit from the track's ends (half a step in from its padding). */
 const INSET = 13

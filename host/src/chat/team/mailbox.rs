@@ -1,11 +1,13 @@
 //! The pull tier: a coding agent's session on this computer (`codync-host mcp network`) reads its
 //! mail itself. `whoami` and `set_name` are its address, `check_inbox` its letters, and every
-//! tool result says its address and how many letters wait (a count, never their text).
+//! tool result says its address and how many letters wait (a count, never their text). The turn
+//! tier (`hook`) tells it the same count at its next step, from its agent's hook.
 
 use crate::hub::Hub;
 use crate::network::sessions::{Mail, Session};
 use crate::store::now_ms;
 use anyhow::{Result, anyhow, bail};
+use codync_network::AgentKind;
 use serde_json::{Value, json};
 use std::fmt::Write;
 use std::time::Duration;
@@ -53,7 +55,7 @@ pub(super) async fn call(hub: &Hub, session: &Session, tool: &str, args: &Value)
 
 fn whoami(hub: &Hub, s: &Session) -> Value {
     let computer = hub.network.my_name().unwrap_or_else(|| "this computer".into());
-    let mut v = json!({"address": s.address, "kind": s.kind, "computer": computer, "tier": "pull"});
+    let mut v = json!({"address": s.address, "kind": s.kind, "computer": computer, "tier": s.tier()});
     if let Some(title) = &s.title {
         v["title"] = title.clone().into();
     }
@@ -146,6 +148,31 @@ pub(crate) fn post(
     super::remote::dropped_unread(hub, to, &dropped);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Posted, to.kind);
     Ok(id)
+}
+
+/// `networkHook`, the turn tier: what `kind`'s hook (`codync-host network hook`) tells session
+/// `id` — that letters wait, until it confirms it told them (`told`, the newest letter's id) — as
+/// the text its agent reads; nothing for a session its MCP server never registered.
+pub(crate) fn hook(hub: &Hub, kind: AgentKind, id: &str, told: Option<&str>) -> Result<Value> {
+    let key = crate::network::sessions::session_key(kind, id);
+    if let Some(letter) = told {
+        let saved = hub.network.sessions.told(&hub.store, &key, letter)?;
+        if saved {
+            crate::analytics::network_session(hub, crate::analytics::SessionAction::Told, kind);
+        }
+        return Ok(json!({"saved": saved}));
+    }
+    let Some(hooked) = hub.network.sessions.hook(&hub.store, &key)? else { return Ok(json!({})) };
+    if hooked.first {
+        tracing::info!(kind = kind.as_str(), "a session's agent runs our hook");
+        crate::analytics::network_session(hub, crate::analytics::SessionAction::Hooked, kind);
+        crate::network::emit(hub);
+    }
+    let Some(letter) = hooked.newest else { return Ok(json!({})) };
+    let n = hooked.unread;
+    Ok(json!({"letter": letter, "notice": format!(
+        "Codync Network: {n} letter(s) from other agents wait for you. Read them with the check_inbox tool (codync MCP server) when you can."
+    )}))
 }
 
 /// `result` with who the session is and how many letters wait for it.

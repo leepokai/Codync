@@ -124,6 +124,8 @@ data class AppState(
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
+    /** The agents' model lists this computer gave, by [modelListKey]: a model panel opens on one at once. */
+    val modelLists: Map<String, AgentModels> = emptyMap(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
     /** The transcripts of the threads that are open, by thread id; never part of [entries]. */

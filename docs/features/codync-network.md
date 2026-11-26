@@ -236,7 +236,9 @@ that was off learns of a removal.
   TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as
   far as room allows, then "More sessions: N"). A dot shows running; words only for working and idle. The rule
   pickers (desktop, TUI) offer this computer's sessions as targets, with the levels the host sends with each
-  (`levels`: Allow and Deny, `sessions::LEVELS`); `setNetworkRules` refuses the others on a session.
+  (`levels`: Allow and Deny, `sessions::LEVELS`); `setNetworkRules` saves any other level on a session as Deny
+  (an older rule, or one from the API), so the rest of the list still saves and nothing gets more access. Each session's
+  `tier` is `Session::tier()`; every client labels `pull`, `turn` and `push`.
 - Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier
   (plugins), and a setup command: [plan](../plans/agent-sessions.md).
 

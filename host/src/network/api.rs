@@ -69,7 +69,7 @@ fn sessions(hub: &Hub) -> Vec<Value> {
         .map(|Listed { session: s, state, older }| {
             json!({
                 "address": s.address, "title": s.title, "kind": s.kind,
-                "registry": super::sessions::registry(s.kind), "tier": "pull", "levels": super::sessions::LEVELS,
+                "registry": super::sessions::registry(s.kind), "tier": s.tier(), "levels": super::sessions::LEVELS,
                 "state": state, "runs": state.is_some_and(Live::runs), "older": older, "seen": s.seen,
             })
         })
@@ -239,13 +239,15 @@ pub fn recover(hub: &Hub, network: Option<&str>, code: &str) -> Result<Value> {
 /// `setNetworkRules`: who on a network's other computers may write to this computer's bots, in
 /// order (the first match decides); a computer no rule matches gets [`super::DEFAULT_ACCESS`].
 pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Result<Value> {
-    let rules: Vec<Rule> =
+    let mut rules: Vec<Rule> =
         serde_json::from_value(rules.clone()).context("rules are {fromComputer, fromAgent, toAgent, access}")?;
-    let held = |r: &&Rule| !super::sessions::LEVELS.contains(&r.access);
-    if let Some(r) =
-        rules.iter().filter(held).find(|r| hub.network.sessions.by_address(&hub.store, &r.to_agent).is_some())
-    {
-        bail!("{} is a coding agent's session: a rule can only allow or deny it", r.to_agent);
+    // A session can't be held to Auto or Ask: such a rule (an older one, or from the API) denies it
+    // instead, so saving the rest of the list still works and nothing gets more access.
+    for r in &mut rules {
+        let session = || hub.network.sessions.by_address(&hub.store, &r.to_agent).is_some();
+        if !super::sessions::LEVELS.contains(&r.access) && session() {
+            r.access = codync_network::Access::Deny;
+        }
     }
     // The saved list has one writer at a time: a create or join holds it while its node starts.
     let _one = hub.network.changing.lock().await;

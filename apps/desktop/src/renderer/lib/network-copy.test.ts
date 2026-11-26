@@ -52,6 +52,7 @@ test('rules read with the bots by name, and move within the list', () => {
 test('a session says what its agent does and how it gets its mail, and a rule to it only allows or denies', () => {
   assert.equal(sessionStateTitle('working'), 'Working')
   assert.equal(sessionStateTitle('online'), null, 'the dot alone says running')
+  assert.equal(tierTitle('turn'), 'Told of mail at its next step')
   assert.equal(tierTitle('later'), null, "a tier this app doesn't know shows nothing")
   const session = { address: 'api-codex', kind: 'codex', tier: 'pull' }
   assert.deepEqual(levelsFor({ ...session, levels: ['allow', 'deny'] }), ['allow', 'deny'], "the host's levels")

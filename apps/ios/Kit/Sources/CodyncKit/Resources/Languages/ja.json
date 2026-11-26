@@ -2503,6 +2503,8 @@
   "Coding agents": "コーディングエージェント",
   "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "ボットや他のコーディングエージェントは、これらのセッションにアドレスでメッセージを送ります。各セッションは自分でメールを読みます。",
   "Checks its mail": "自分でメールを確認",
+  "Told of mail at its next step": "次のステップで新着を知る",
+  "Told of mail as it comes": "届いたらすぐ知る",
   "Idle": "待機中",
   "Older sessions: {count}": "以前のセッション：{count}",
   "More sessions: {count}": "その他のセッション：{count}"

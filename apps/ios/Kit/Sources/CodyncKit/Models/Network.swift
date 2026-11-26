@@ -60,6 +60,8 @@ public struct NetworkView: Codable, Hashable, Sendable {
         public var tierTitle: String? {
             switch tier {
             case "pull": "Checks its mail"
+            case "turn": "Told of mail at its next step"
+            case "push": "Told of mail as it comes"
             default: nil
             }
         }

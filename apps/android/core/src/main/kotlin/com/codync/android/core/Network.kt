@@ -58,7 +58,12 @@ data class NetworkSession(
     val dotTitle: String? get() = when (state) { "online" -> "Online"; "offline" -> "Offline"; else -> null }
 
     /** How it gets its mail, untranslated; null for a tier this app doesn't know. */
-    val tierTitle: String? get() = if (tier == "pull") "Checks its mail" else null
+    val tierTitle: String? get() = when (tier) {
+        "pull" -> "Checks its mail"
+        "turn" -> "Told of mail at its next step"
+        "push" -> "Told of mail as it comes"
+        else -> null
+    }
 }
 
 /** One network the computer is in. */

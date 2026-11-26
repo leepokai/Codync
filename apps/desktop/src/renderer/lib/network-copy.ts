@@ -40,7 +40,7 @@ export const sessionDotTitle = (state: NetworkSession['state']) =>
   state ? (({ online: 'Online', offline: 'Offline' }) as Record<string, string>)[state] ?? null : null
 
 /** How a session gets its mail, untranslated; null for a tier this app doesn't know. */
-export const tierTitle = (tier: string) => ({ pull: 'Checks its mail' } as Record<string, string>)[tier] ?? null
+export const tierTitle = (tier: string) => ({ pull: 'Checks its mail', turn: 'Told of mail at its next step', push: 'Told of mail as it comes' } as Record<string, string>)[tier] ?? null
 
 /** The levels a rule to `session` can take, as the host sends them; to anyone else, every level. */
 export const levelsFor = (session?: NetworkSession): NetworkRule['access'][] =>

@@ -131,8 +131,12 @@ fn list(buf: &mut Buffer, body: Rect, n: &NetworkSheet) -> &'static str {
         put(buf, body.x, y, body.width, &format!("{me} · {role} · {connector}"), t.secondary.patch(t.panel));
         y += 2;
         let rule_rows = n.rules().len().min(3);
-        // A gap, the sessions' title and at least one of them.
-        let session_rows = if n.sessions().is_empty() { 0 } else { 3 };
+        // A gap, the sessions' title, at least one of them and, with more, how many.
+        let session_rows = match n.sessions().len() {
+            0 => 0,
+            1 => 3,
+            _ => 4,
+        };
         let room = usize::from(body.height).saturating_sub(9 + rule_rows + session_rows).max(1);
         let off = n.cursor.saturating_sub(room.saturating_sub(1));
         for (i, c) in n.computers().iter().enumerate().skip(off).take(room) {
@@ -208,7 +212,12 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
             Some("idle") => Some(tr("Idle")),
             _ => None,
         };
-        let tier = (s["tier"] == "pull").then(|| tr("Checks its mail"));
+        let tier = match s["tier"].as_str() {
+            Some("pull") => Some(tr("Checks its mail")),
+            Some("turn") => Some(tr("Told of mail at its next step")),
+            Some("push") => Some(tr("Told of mail as it comes")),
+            _ => None,
+        };
         let mut detail: Vec<String> = [title.map(|_| address.into()), state.map(Into::into), tier.map(Into::into)]
             .into_iter()
             .flatten()

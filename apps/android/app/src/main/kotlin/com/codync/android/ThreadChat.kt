@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -122,17 +129,22 @@ import kotlinx.coroutines.CancellationException
     val talks = task.talk && threadId != null
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    Column(Modifier.fillMaxSize().background(Palette.background).semantics { testTagsAsResourceId = true }) {
-        ThreadHeader(bot, task, state, showsWhere = !talks, back, openDetails?.takeIf { !inDetails })
-        GlassStage(Modifier.weight(1f).fillMaxWidth(), chrome = {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
-                ThreadFooter(bot, task, state, store, talks, queued, online) { confirming = true }
-            }
-        }) {
+    // Over the Threads tab it fills the screen and the chat scrolls under the status bar; in the bot's details, its sheet.
+    val top = if (inDetails) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // As the bot's chat: the header's glass buttons float over the rows, which blur away under it and over the composer.
+    GlassStage(Modifier.fillMaxSize().background(Palette.background).semantics { testTagsAsResourceId = true }, chrome = {
+        ScrollEdge(Edge.Top, top + 84.dp)
+        ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))
+        ThreadHeader(bot, task, state, showsWhere = !talks, back, openDetails?.takeIf { !inDetails }, Modifier.padding(top = top))
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }
+            .then(if (inDetails) Modifier else Modifier.imePadding().navigationBarsPadding())) {
+            ThreadFooter(bot, task, state, store, talks, queued, online) { confirming = true }
+        }
+    }) {
             // In the thread's own chat, the "Work · <title>" line under its cards says nothing new (iOS `WorkThreadLine`).
             androidx.compose.runtime.CompositionLocalProvider(LocalInThread provides true) {
             ConversationList(list, first = items.firstOrNull()?.id, last = items.lastOrNull()?.id, rev = all.maxOfOrNull { it.rev }, working = live,
-                padding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
+                padding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 76.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
                 val failure = error
                 when {
                     failure != null -> item("note") { LoadFailure(failure) { attempt++ } }
@@ -158,7 +170,6 @@ import kotlinx.coroutines.CancellationException
                 }
             }
             }
-        }
     }
     StopWorkDialog(confirming, { confirming = false }) { store.stopWork(bot.id, taskId) }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
@@ -177,7 +188,7 @@ import kotlinx.coroutines.CancellationException
     val draftKey = threadDraftKey(bot.id, task.id)
     if (talks) ThreadComposer(state, store, draftKey, task.talkFiles, queued, steer = { store.steerThread(bot.id, task.id, it) },
         remove = { store.unqueueThread(bot.id, task.id, it) }, working = live, stop = stop,
-        accessory = { Box(Modifier.weight(1f, fill = false)) { ThreadRunsOn(bot, task, state) } }) { store.sendToThread(bot.id, task.id, draftKey, it) }
+        accessory = { Box(Modifier.weight(1f, fill = false)) { ThreadRunsOn(bot, task, state) } }) { message, clear -> store.sendToThread(bot.id, task.id, draftKey, message); clear() }
     else if (readOnly != null) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
         Text(tr(readOnly), Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
@@ -227,13 +238,17 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
  * how long its thread has run, then where it works when the composer's row doesn't say: [showsWhere]), and Details
  * ([details]) when it opens from here.
  */
-@Composable private fun ThreadHeader(bot: Bot, task: WorkTask, state: AppState, showsWhere: Boolean, back: () -> Unit, details: ((DetailsRequest) -> Unit)?) {
-    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 12.dp, bottom = 6.dp).heightIn(min = 44.dp),
+@Composable private fun ThreadHeader(bot: Bot, task: WorkTask, state: AppState, showsWhere: Boolean, back: () -> Unit, details: ((DetailsRequest) -> Unit)?,
+    modifier: Modifier) {
+    // The Bots tab's header: glass Back and Details, the title between them.
+    Row(modifier.fillMaxWidth().padding(top = 6.dp).padding(horizontal = 16.dp).heightIn(min = 44.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        BackButton(back)
-        if (bot.plain) AgentIcon(agentRegistry(state, task.agent ?: bot.backend), 18.dp) else BotAvatar(bot, state.bots, 22.dp, animated = false)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(task.title, Modifier.semantics { heading() }, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        GlassBackButton(back)
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                if (bot.plain) AgentIcon(agentRegistry(state, task.agent ?: bot.backend), 18.dp) else BotAvatar(bot, state.bots, 22.dp, animated = false)
+                Text(task.title, Modifier.semantics { heading() }, style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.testTag("thread-status").semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // The word beside it says the same.
@@ -244,7 +259,8 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
                 if (showsWhere) whereLine(task, state.home)?.let { WherePath(it, Modifier.weight(1f, fill = false)) }
             }
         }
-        if (details != null) IconButton("Details", "sidebar.right") { details(DetailsRequest()) }
+        // Kept as wide when there are none, so the title stays centered.
+        if (details != null) HeaderButton("sidebar.right", "Details") { details(DetailsRequest()) } else Spacer(Modifier.size(44.dp))
     }
 }
 

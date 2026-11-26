@@ -49,7 +49,7 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
     val open = states.firstOrNull { it.selectedBot != null }
     val workflowDetail = tab == AppTab.Workflows && states.any { it.workflow?.id != null }
     // A thread chat open over the Threads tab.
-    var thread by remember { mutableStateOf<ThreadRef?>(null) }
+    var thread by remember { mutableStateOf<ThreadsRoute?>(null) }
     val covering = open != null || workflowDetail || (tab == AppTab.Threads && thread != null)
     // Opening a bot (notification, widget, link) always lands on the Bots tab.
     if (open != null && tab != AppTab.Bots) onTab(AppTab.Bots)

@@ -5,14 +5,11 @@ import android.content.ClipboardManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -73,8 +70,14 @@ internal fun workingCount(roster: List<WorkingBot>): Int = roster.sumOf { of -> 
 /** The rows of Recent shown before "Show more" (desktop `SHOWN_RECENT`). */
 private const val SHOWN_RECENT = 8
 
+/** A page pushed over the Threads list. */
+internal sealed interface ThreadsRoute
+
 /** A thread open over the Threads tab: [computerId]'s bot [botId]'s (or its box without a bot's) task [taskId]. */
-internal data class ThreadRef(val computerId: String, val botId: String, val taskId: String)
+internal data class ThreadRef(val computerId: String, val botId: String, val taskId: String) : ThreadsRoute
+
+/** The page a new thread starts from, which its thread chat replaces once sent. */
+internal data object NewThreadRoute : ThreadsRoute
 
 /**
  * The Threads tab, the desktop's Threads list: every task of [roster]'s bots, what needs the user first, then the groups the
@@ -83,12 +86,27 @@ internal data class ThreadRef(val computerId: String, val botId: String, val tas
  * it (on this device). Tapping a row a thread has or had pushes its thread chat over the list ([open], which [openThread]
  * sets and clears); one with no thread that needs the user opens the chat at its card, any other the bot's details (the
  * box of threads without a bot: nothing, the desktop's). Touching and holding a row offers what its bot's details do.
+ * The header's + pushes the page a new thread starts from, which the thread's chat replaces once it starts.
  */
 @Composable internal fun ThreadsView(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore,
-    bottomInset: Dp, open: ThreadRef?, active: Boolean, openThread: (ThreadRef?) -> Unit) {
-    NavStack(listOfNotNull<Any>(ThreadsPage, open), key = { (it as? ThreadRef)?.let { t -> "${t.computerId}/${t.botId}/${t.taskId}" } ?: "threads" }, pop = { openThread(null) }) { page ->
-        if (page is ThreadRef) ThreadPage(page, roster, accounts) { openThread(null) }
-        else ThreadsList(app, account, roster, filter, accounts, bottomInset, active, openThread)
+    bottomInset: Dp, open: ThreadsRoute?, active: Boolean, openThread: (ThreadsRoute?) -> Unit) {
+    val bots = threadBots(roster)
+    val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
+    val plain = plainComputer(shown)
+    // A thread that starts once its page was left opens nowhere.
+    val current by rememberUpdatedState(open)
+    NavStack(listOfNotNull<Any>(ThreadsPage, open), key = {
+        when (it) {
+            is ThreadRef -> "${it.computerId}/${it.botId}/${it.taskId}"
+            NewThreadRoute -> "new"
+            else -> "threads"
+        }
+    }, pop = { openThread(null) }) { page ->
+        when (page) {
+            is ThreadRef -> ThreadPage(page, roster, accounts) { openThread(null) }
+            NewThreadRoute -> NewThreadPage(bots, plain, accounts, back = { openThread(null) }) { if (current == NewThreadRoute) openThread(it) }
+            else -> ThreadsList(app, account, roster, filter, accounts, bottomInset, active, shown, bots.isNotEmpty() || plain != null, openThread)
+        }
     }
 }
 
@@ -103,11 +121,9 @@ private data object ThreadsPage
     if (of == null || store == null) return
     var details by remember(ref) { mutableStateOf<DetailsRequest?>(null) }
     var viewing by remember(ref) { mutableStateOf<OpenArtifact?>(null) }
-    Box(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // The box of threads without a bot has no details.
-        ThreadChat(of.bot, ref.taskId, of.state, store, inDetails = false, openDetails = if (of.bot.plain) null else { request -> details = request },
-            openArtifact = { viewing = it }, back = back)
-    }
+    // The box of threads without a bot has no details.
+    ThreadChat(of.bot, ref.taskId, of.state, store, inDetails = false, openDetails = if (of.bot.plain) null else { request -> details = request },
+        openArtifact = { viewing = it }, back = back)
     CodyncSheet(details, { details = null }) { request ->
         BotDetailsView(of.bot, request, of.state, store, openCard = null) { viewing = it }
     }
@@ -115,7 +131,7 @@ private data object ThreadsPage
 }
 
 @Composable private fun ThreadsList(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, active: Boolean,
-    openThread: (ThreadRef) -> Unit) {
+    shown: List<AppState>, startsThreads: Boolean, openThread: (ThreadsRoute) -> Unit) {
     val context = LocalContext.current
     var grouping by remember { mutableStateOf(ThreadsLayout.grouping(context)) }
     var byStatus by remember { mutableStateOf(ThreadsLayout.byStatus(context)) }
@@ -126,8 +142,6 @@ private data object ThreadsPage
     // The search field is open, and what it finds threads by.
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    // The New thread sheet is open.
-    var starting by remember { mutableStateOf(false) }
     fun track(option: LayoutOption, on: Boolean) = Analytics.capture(AnalyticsEvent.ListLayoutChanged(LayoutList.Threads, option, on))
     fun group(by: ThreadGrouping, option: LayoutOption) = layoutOption(groupTitle(by), grouping == by) { on ->
         track(option, on)
@@ -140,10 +154,7 @@ private data object ThreadsPage
         layoutOption("Sort by last active", byActivity) { track(LayoutOption.Activity, it); byActivity = it; ThreadsLayout.setByActivity(context, it) },
     )
     val sections = threadSections(roster, { it.bot }, { "${it.state.computer.id}/${it.bot.id}" }, { it.state.hostName }, grouping, byStatus, byActivity)
-    val bots = threadBots(roster)
-    val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
-    val plain = plainComputer(shown)
-    val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openThread) }
+    val line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit = { row, label, indent -> ThreadLine(row, label, indent, accounts, { question = it }, openThread) }
     val scroll = rememberScrollState()
     OlderThreadsPaging(roster, accounts, active, scroll, more)
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
@@ -152,7 +163,7 @@ private data object ThreadsPage
         ListHeader(app, account, "Threads", summary.filled(tr(summary.template)), searching, query, { query = it }, { searching = false; query = "" }) {
             ComputerFilterHeader(filter.states, filter.hidden, filter.setHidden, filter.reconnect, filter.manage, options)
             HeaderButton("magnifyingglass", "Search") { searching = true }
-            if (bots.isNotEmpty() || plain != null) HeaderButton("plus", "New thread") { starting = true }
+            if (startsThreads) HeaderButton("plus", "New thread") { openThread(NewThreadRoute) }
         }
         // An empty search keeps the list, as on the iPhone.
         if (searching && query.isNotBlank()) {
@@ -165,7 +176,7 @@ private data object ThreadsPage
         }
         Column(Modifier.verticalScroll(scroll).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (sections.needsYou.isNotEmpty()) ThreadSection("Needs you") { for (row in sections.needsYou) line(row, row.task.title) }
+            if (sections.needsYou.isNotEmpty()) ThreadSection("Needs you") { for (row in sections.needsYou) line(row, row.task.title, 0.dp) }
             for (kind in ThreadGroupKind.entries) {
                 val mine = sections.groups.filter { it.kind == kind }
                 if (mine.isNotEmpty()) ThreadSection(kindTitle(kind)) {
@@ -177,14 +188,13 @@ private data object ThreadsPage
             }
             if (sections.recent.isNotEmpty()) ThreadSection("Recent") {
                 val shown = if (more) sections.recent else sections.recent.take(SHOWN_RECENT)
-                for (row in shown) line(row, row.task.title)
+                for (row in shown) line(row, row.task.title, 0.dp)
                 if (sections.recent.size > shown.size) Text(tr("Show more"), Modifier.fillMaxWidth().plainButton { more = true }.padding(vertical = 10.dp),
                     style = Type.body, color = Palette.tertiary)
             }
         }
     }
     WorkQuestionDialogs(question) { question = null }
-    NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openThread)
 }
 
 /**
@@ -206,13 +216,13 @@ private data object ThreadsPage
 }
 
 /** Search's threads, flat and newest first, as the list draws its rows. */
-@Composable private fun ThreadSearchResults(rows: List<ThreadRow<WorkingBot>>, bottomInset: Dp, line: @Composable (ThreadRow<WorkingBot>, String) -> Unit) {
+@Composable private fun ThreadSearchResults(rows: List<ThreadRow<WorkingBot>>, bottomInset: Dp, line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit) {
     if (rows.isEmpty()) {
         EmptyState("magnifyingglass", "No results", Modifier.fillMaxSize())
         return
     }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset)) {
-        for (row in rows) line(row, row.task.title)
+        for (row in rows) line(row, row.task.title, 0.dp)
     }
 }
 
@@ -237,7 +247,7 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
 }
 
 /** A group's heading, which folds its rows; folded, it still marks a row that failed or works. A routine's runs read by when they started. */
-@Composable private fun ThreadGroupRows(group: ThreadGroup<WorkingBot>, folded: Boolean, line: @Composable (ThreadRow<WorkingBot>, String) -> Unit,
+@Composable private fun ThreadGroupRows(group: ThreadGroup<WorkingBot>, folded: Boolean, line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit,
     toggle: () -> Unit) {
     val turn by animateFloatAsState(if (folded) -90f else 0f, Motion.layout(), label = "Chevron")
     val first = group.rows.first().of
@@ -247,7 +257,7 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
     Row(Modifier.fillMaxWidth().plainButton(action = toggle).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         when (group.kind) {
-            ThreadGroupKind.Bot -> if (plain) Symbol("person.crop.circle.dashed", size = 14.dp, tint = Palette.secondary)
+            ThreadGroupKind.Bot -> if (plain) Symbol("app.dashed", size = 18.dp, tint = Palette.secondary)
                 else BotAvatar(first.bot, first.state.bots, 18.dp, animated = false)
             ThreadGroupKind.Folder -> Symbol("folder", size = 14.dp, tint = Palette.secondary)
             ThreadGroupKind.Routine -> Symbol("clock", size = 14.dp, tint = Palette.secondary)
@@ -260,14 +270,15 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
     if (folded) return
     val translate = translator()
     for (row in group.rows) line(row,
-        if (group.kind == ThreadGroupKind.Routine) RelativeTime.separator(row.task.createdAt, translate("Today"), translate("Yesterday")) else row.task.title)
+        if (group.kind == ThreadGroupKind.Routine) RelativeTime.separator(row.task.createdAt, translate("Today"), translate("Yesterday")) else row.task.title,
+        26.dp)
 }
 
 /**
- * One thread: its title ([label]) and, unless it's done, its mark. Stop and Cut in [ask] first; its thread chat opens over
+ * One thread: its title ([label], [indent]ed under a group's heading) and, unless it's done, its mark. Stop and Cut in [ask] first; its thread chat opens over
  * the list ([openThread]).
  */
-@Composable private fun ThreadLine(row: ThreadRow<WorkingBot>, label: String, accounts: AccountStore, ask: (WorkQuestion) -> Unit, openThread: (ThreadRef) -> Unit) {
+@Composable private fun ThreadLine(row: ThreadRow<WorkingBot>, label: String, indent: Dp, accounts: AccountStore, ask: (WorkQuestion) -> Unit, openThread: (ThreadRef) -> Unit) {
     val (of, task) = row
     val store = accounts.store(of.state.computer.id) ?: return
     val bot = of.bot
@@ -287,7 +298,7 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
         threadMenu(task, bot, enabled, showThread, openChat, run = { store.runWork(it, task, bot, ask) }) { text ->
             context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Codync", text))
         }
-    }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    }.padding(start = indent), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (task.status != WorkStatus.Done) WorkMark(task.status)
     }

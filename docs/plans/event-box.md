@@ -496,9 +496,10 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   the chat's own form, as on the Threads page); a thread whose task left the box closes. What follows (one line per
   shared entry) is the terminal's; the desktop and the phones show each shared entry as the chat's own row, answered
   and opened in the thread, with the chat's composer. iPhone: the row pushes `ThreadChatView` inside the details
-  sheet (or, from the Threads tab, in that tab's stack); the system bar is hidden (`hidesSystemNavigationBar`, which
-  keeps the edge swipe back) and the page draws its own header, as Android's: `Back`, the bot, the title over the
-  status line, and `Details` outside the details. Android pushes `ThreadChat.kt` by the design module's `NavStack`.
+  sheet (or, from the Threads tab, in that tab's stack) under the system navigation bar (`threadBar` in
+  `ThreadChatView.swift`: the system back and edge swipe, the bot, the title over the status line in the middle,
+  `Details` trailing outside the details, a soft scroll-edge blur); Android draws the bot chat's glass `Back` and
+  `Details` capsules over a blurred top edge. Android pushes `ThreadChat.kt` by the design module's `NavStack`.
 - **A row that needs you.** In the bot's details it still opens the chat at its card. On the phones' Threads tab a
   row whose task has a thread opens that thread instead (a task without one opens the chat at its card). Wherever a
   needs-you thread is open, the card it waits on is the chat's own row there, paged back for when the chat's loaded

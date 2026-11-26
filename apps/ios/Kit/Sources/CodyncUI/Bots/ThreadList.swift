@@ -45,7 +45,7 @@ public struct ThreadList: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let found {
-                    ForEach(found) { row($0) }
+                    rows(found, in: "found")
                 } else {
                     sectionRows
                 }
@@ -62,7 +62,7 @@ public struct ThreadList: View {
         let recent = showsAll ? sections.recent : Array(sections.recent.prefix(Self.shownRecent))
         if !sections.needsYou.isEmpty {
             label("Needs you")
-            ForEach(sections.needsYou) { row($0) }
+            rows(sections.needsYou, in: "needs")
         }
         ForEach(ThreadSections<RosterItem>.Group.Kind.allCases, id: \.self) { kind in
             let groups = sections.groups.filter { $0.kind == kind }
@@ -73,7 +73,7 @@ public struct ThreadList: View {
         }
         if !sections.recent.isEmpty {
             label("Recent")
-            ForEach(recent) { row($0) }
+            rows(recent, in: "recent")
             if recent.count < sections.recent.count {
                 Button { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { showsAll = true } } label: {
                     Text(L10n.tr("Show more")).foregroundStyle(Palette.tertiary).rowFrame()
@@ -120,7 +120,7 @@ public struct ThreadList: View {
             HStack(spacing: 8) {
                 switch group.kind {
                 case .bot where !plain: BotAvatar(bot: of.bot, size: 18, animated: false)
-                case .bot: Image(systemName: "person.crop.circle.dashed").foregroundStyle(Palette.secondary)
+                case .bot: NoBotAvatar(size: 18)
                 case .folder: Image(systemName: "folder").foregroundStyle(Palette.secondary)
                 case .routine: Image(systemName: "clock").foregroundStyle(Palette.secondary)
                 case .computer: Image(systemName: "desktopcomputer").foregroundStyle(Palette.secondary)
@@ -141,22 +141,31 @@ public struct ThreadList: View {
         .buttonStyle(.plain)
         .accessibilityValue(isFolded ? "Collapsed" : "Expanded")
         if !isFolded {
-            ForEach(group.rows) { item in
-                // A routine's runs are told apart by when they started.
-                row(item, label: group.kind == .routine
-                    ? RelativeTime.separator(Date(milliseconds: item.task.createdAt)) : item.task.title)
-                    .padding(.leading, 26)
+            // A routine's runs are told apart by when they started.
+            rows(group.rows, in: "group/\(group.key)", indent: 26) { item in
+                group.kind == .routine ? RelativeTime.separator(Date(milliseconds: item.task.createdAt)) : item.task.title
             }
         }
     }
 
-    private func row(_ item: ThreadSections<RosterItem>.Item, label: String? = nil) -> some View {
+    /// One part's rows (`part`: Needs you, a group, Recent, the search's), with ids of that part's own: the same thread
+    /// in two parts, or moving between them as it changes, is never a row the lazy stack reuses with the other part's
+    /// layout (a group's row drawn without its indent).
+    private func rows(_ items: [ThreadSections<RosterItem>.Item], in part: String, indent: CGFloat = 0,
+                      label: ((ThreadSections<RosterItem>.Item) -> String)? = nil) -> some View {
+        ForEach(items.map { (id: "\(part)/\($0.id)", item: $0) }, id: \.id) { entry in
+            row(entry.item, label: label?(entry.item), indent: indent)
+        }
+    }
+
+    private func row(_ item: ThreadSections<RosterItem>.Item, label: String?, indent: CGFloat) -> some View {
         Button { open(item) } label: {
             HStack(spacing: 8) {
                 Text(label ?? item.task.title).foregroundStyle(Palette.text).lineLimit(1)
                 Spacer(minLength: 8)
                 if item.task.status != .done { WorkMark(status: item.task.status) }
             }
+            .padding(.leading, indent)
             .rowFrame()
         }
         .buttonStyle(.plain)

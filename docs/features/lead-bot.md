@@ -23,9 +23,9 @@ initiative instead of waiting to be asked. Everything about it lives in the host
 - **Placed like any bot.** The lead has no place of its own in the roster: the user drags, pins and moves it to a
   section like any other bot (a host-made lead starts where any new bot does), and the desktop's **Freeze the lead bot
   at the top** choice keeps it above every other bot on that device. The desktop marks it with a gold crown worn on the
-  avatar's top edge, its roster name bold; the larger badge in details opens the lead agent role explanation. iPhone
+  avatar's top edge, its roster name bold. iPhone
   keeps the gold `star.fill` badge at the avatar's bottom-right, with unread/approval badges beside it. TUI shows a
-  gold `★` below the avatar; click it or press `I` on the lead to read the same explanation, scroll with arrow keys,
+  gold `★` below the avatar; click it or press `I` on the lead to read the role explanation, scroll with arrow keys,
   and close with `Esc`. Its menus have no Hide. Every other bot's menu has **Make lead agent** (`star`; TUI: `*`),
   groups excepted.
 

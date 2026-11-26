@@ -2500,5 +2500,19 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "Каждый thread работает в своём worktree; ваш checkout не затрагивается",
   "Its chat, routines and files live here.": "Здесь хранятся его чат, рутины и файлы.",
   "Add folder": "Добавить папку",
-  "Remove folder": "Убрать папку"
+  "Remove folder": "Убрать папку",
+  "Fewer models": "Меньше моделей",
+  "More models (%d)": "Ещё модели (%d)",
+  "Search or enter a model ID": "Найдите или введите ID модели",
+  "Approvals": "Одобрения",
+  "Speed": "Скорость",
+  "Close search": "Закрыть поиск",
+  "Coding agents": "Агенты для кода",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Боты и другие агенты для кода пишут этим сеансам по их адресу; каждый сеанс сам читает свою почту.",
+  "Checks its mail": "Сам проверяет почту",
+  "Told of mail at its next step": "Узнаёт о письмах на следующем шаге",
+  "Told of mail as it comes": "Узнаёт о письмах сразу",
+  "Idle": "Ожидает",
+  "Older sessions: {count}": "Старых сеансов: {count}",
+  "More sessions: {count}": "Ещё сеансов: {count}"
 }

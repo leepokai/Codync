@@ -166,7 +166,7 @@ that was off learns of a removal.
 - **Kind** from the MCP client's `clientInfo.name` (`AgentKind::of_mcp_client`), never from the environment alone:
   an agent started from a Claude Code shell inherits that session's `CLAUDE_CODE_SESSION_ID`.
 - **Session id**: Claude Code from the session its inbox socket is in now (`~/.claude/sessions/<pid>.json`, so a
-  `/clear` moves it), else `CLAUDE_CODE_SESSION_ID`; Copilot CLI from `COPILOT_AGENT_SESSION_ID`; Codex
+  `/clear` moves it), else `CLAUDE_CODE_SESSION_ID`; Copilot CLI from `COPILOT_AGENT_SESSION_ID`; Grok (`grok-shell-<server>`) from `GROK_SESSION_ID`; Codex
   (`sessionId`) and Antigravity (root conversation id) from each tool call's `_meta`; opencode from
   `ai.opencode/sessionID` when it sends one. No id (pi, Cursor, any other MCP client): the MCP server's process keys
   it, the session is `temporary` (no title in listings, forgotten a day after its last call).
@@ -182,7 +182,25 @@ that was off learns of a removal.
 - **Mailbox** (kv `network_mail`, by session key, 100 letters per session): `message_bot` to a session's address leaves a letter;
   `check_inbox` (`waitSecs` up to 50) returns them, each inside a random boundary with a note that they aren't the
   user's words, and counts them read. Every tool result carries `you` (the address) and, with mail waiting,
-  `unread` (a count, never text). The tier is `pull`.
+  `unread` (a count, never text). The tier is `pull`, or `turn` once its agent runs our hook (below).
+- **Turn tier** (`codync-host network hook <codex|copilot|grok>`, local API `networkHook`, loopback only): the
+  agent's `PostToolUse` and `Stop` hooks run it with the hook's JSON on stdin (`hook_event_name`, `session_id`,
+  the same id its MCP server gives). It tells the session how many letters wait (a count, never their text) and, once it printed that,
+  confirms with a second call (`told`: the newest letter's id, kept as `announced` unless a newer one is; a `Stop`
+  prints its block only once confirmed, so a host that can't save it lets the turn end), so a hook that runs at every
+  step doesn't repeat it and a `Stop` that keeps the turn going (`decision: block`) can't loop, while a notice the
+  hook never got (a timeout) is told again; a hook also counts as the session being seen (saved once a day); the agent reads them with
+  `check_inbox` as before. It never registers a session (only its MCP server does) and prints nothing when the host
+  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook marks the
+  session `hooked` (tier `turn`). What each agent reads back is `codync_network::hooks` (Codex and Grok:
+  `hookSpecificOutput.additionalContext`, Codex refusing any other field; Copilot CLI: top-level
+  `additionalContext`). Checked end to end with each agent's CLI on aimock. Adding the hooks (the setup command) is
+  phase 5; until then, by hand:
+  - Codex `~/.codex/hooks.json`, then approve them once in `/hooks`:
+    `{"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "codync-host network hook codex"}]}], "Stop": [same]}}`
+  - Grok `~/.grok/hooks/codync.json`: the same, with `hook grok`.
+  - Copilot CLI `~/.copilot/hooks/codync.json`:
+    `{"version": 1, "hooks": {"PostToolUse": [{"type": "command", "bash": "codync-host network hook copilot"}], "Stop": [same]}}`
 - **Other computers**: a session is offered to a network only when one of its rules is an `allow` naming the
   session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. Its letters, too, pass only a rule
   that names it (`rules::mailbox_access`: a `*` allow doesn't open it, while a `*` deny or ceiling still applies;
@@ -205,10 +223,24 @@ that was off learns of a removal.
   hadn't taken yet (it was busy) is lost, its notice already completed.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
-- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`) and `kind` ([catalog](../reference/analytics-events.md)).
-- Not yet: the turn tier (hooks) and push tier (plugins), showing sessions in the apps
-  (including picking one as a rule's target: today only `setNetworkRules` can name a session), and a setup command:
-  [plan](../plans/agent-sessions.md).
+- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`, `hooked`, `told`) and `kind` ([catalog](../reference/analytics-events.md)).
+- **In the apps** (`networkView`'s `sessions`, `Sessions::listed`): the sessions not temporary and seen in the last
+  week or named by a rule, each with its address, title, kind and logo (`registry`), tier, last call (`seen`) and
+  `state`: `working`/`idle` where its agent says (Claude Code's registry, unless the process it names is gone),
+  else `online`/`offline` by whether its MCP server's process (pid and start time, `Caller::running`) still runs;
+  none on Windows. The host sends them in order, running first (`runs`), then the most recent, and marks `older`
+  the ones neither running nor called in the last day. The state is kept in memory for the listed sessions only,
+  read again off the async workers when `networkView` is asked (not while a page stays open), and a change is a
+  `network` event; so is a new session, a new title or a rename. Every client shows them on its Network page
+  (desktop `SessionsCard`, for its own computer only; iPhone and Android `NetworkSheet`, for the computer open;
+  TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as
+  far as room allows, then "More sessions: N"). A dot shows running; words only for working and idle. The rule
+  pickers (desktop, TUI) offer this computer's sessions as targets, with the levels the host sends with each
+  (`levels`: Allow and Deny, `sessions::LEVELS`); `setNetworkRules` saves any other level on a session as Deny
+  (an older rule, or one from the API), so the rest of the list still saves and nothing gets more access. Each session's
+  `tier` is `Session::tier()`; every client labels `pull`, `turn` and `push`.
+- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier
+  (plugins), and a setup command: [plan](../plans/agent-sessions.md).
 
 ## Who reaches this computer's bots
 

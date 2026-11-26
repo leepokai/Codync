@@ -1,29 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store/context'
-import type { AgentMode } from '@shared/approvals'
+import type { AgentModels } from '@shared/agent-models'
 import { errorText } from './drafts'
 import { trNow } from '../../lib/l10n.ts'
-import { agentModelsRequest, agentModelsScopeKey, normalizeLoginProfile } from './agent-models-query.ts'
-
-/** A model's own setting (effort, fast…) and the values the agent accepts. */
-export interface ModelOption {
-  id: string
-  name: string
-  values: { id: string; name: string }[]
-  default?: string | null
-  kind?: string
-}
-
-/** Model identifiers and display names advertised by the selected computer's ACP agent. */
-export interface AgentModels {
-  models: { id: string; name: string; description?: string | null; options?: ModelOption[]; optionsError?: string }[]
-  currentModelId?: string | null
-  /** The agent offers Fast mode (absent on older hosts). */
-  fastMode?: boolean
-  defaultModelOptions?: boolean
-  /** The agent's modes, its Auto mode first and listed as `auto` (absent on older hosts). */
-  modes?: AgentMode[]
-}
+import { agentModelsRequest, normalizeLoginProfile } from './agent-models-query.ts'
 
 /** What the agent behind `backend` offers, loaded from the selected computer. */
 export interface AgentModelsState {
@@ -50,24 +30,22 @@ export function modelChoices(catalog: AgentModels | null, selection: string | nu
   return { value, selected, modelOptions, options }
 }
 
-/** Models come from the selected computer's agent, never a bundled provider list. */
+/**
+ * Models come from the selected computer's agent, never a bundled provider list. The list the computer gave last shows
+ * at once (`store.modelsFor`, which the host's `models` events keep current); `reload` asks it to read the agent again.
+ */
 export function useAgentModels(backend: string, loginProfile?: string | null): AgentModelsState {
   const store = useStore()
   const online = store.connection.kind === 'online'
-  const [catalog, setCatalog] = useState<AgentModels | null>(null)
-  const scope = useRef<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
+  const asked = useRef(0)
   const custom = backend === 'custom'
   const profile = normalizeLoginProfile(loginProfile)
+  const catalog = store.modelsFor(backend, profile)
 
   useEffect(() => {
-    const key = agentModelsScopeKey(store.computer.id, backend, profile)
-    if (scope.current !== key) {
-      setCatalog(null)
-      scope.current = key
-    }
     setFailure(null)
     setLoading(false)
     if (custom) return
@@ -76,17 +54,19 @@ export function useAgentModels(backend: string, loginProfile?: string | null): A
       setFailure(trNow('Connect to this computer to load its models. You can still enter a model ID.'))
       return
     }
+    const refresh = retry !== asked.current
+    asked.current = retry
     let cancelled = false
     setLoading(true)
     client
-      .call<AgentModels>('agentModels', agentModelsRequest(backend, profile), 300_000)
-      .then((res) => !cancelled && setCatalog(res))
+      .call<AgentModels>('agentModels', agentModelsRequest(backend, profile, refresh), 300_000)
+      .then((res) => !cancelled && store.keepModels(backend, profile, res))
       .catch((e: unknown) => !cancelled && setFailure(`Couldn't load models: ${errorText(e)}`))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [store.computer.id, store.client, backend, profile, online, retry, custom])
+  }, [store, store.computer.id, store.client, backend, profile, online, retry, custom])
 
   return { catalog, loading, failure, reload: () => setRetry((r) => r + 1) }
 }

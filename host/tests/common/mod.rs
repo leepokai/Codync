@@ -89,10 +89,11 @@ pub async fn ready(base: &str, home: &Path) -> Result<(), String> {
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own
 /// children: a SIGKILL would orphan whatever it had running, such as a harness
-/// sign-in check (`cursor-agent status` then spins forever). Kills it after 5 s.
+/// sign-in check (`cursor-agent status` then spins forever). Kills it after 20 s, as launchd does: unwinding its
+/// agents' process trees can take the host about 10 s.
 pub fn stop(child: &mut Child) {
     let _ = Command::new("kill").arg(child.id().to_string()).status();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if let Ok(Some(_)) = child.try_wait() {
             return;

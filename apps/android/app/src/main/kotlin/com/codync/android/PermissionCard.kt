@@ -72,10 +72,25 @@ internal val Entry.isFromThread: Boolean
 internal val Entry.takesOwnWords: Boolean
     get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
 
+/**
+ * A stored stub draws its answer rows only when its own data already holds a pending choice.
+ * True when [entry] is a stub, `status` is `pending`, and `options` has at least one option with an id.
+ * A missing list, an empty list, or an option with no id stays the placeholder, so the card never
+ * shows a button that cannot be sent. A stub whose row could not be read stays the warning card.
+ * Nothing here copies a field off a tail or fills in an option the payload did not carry.
+ */
+internal fun canAnswerStub(entry: Entry): Boolean {
+    if (!entry.isStoredStub || entry.approvalReadFailed) return false
+    if (entry.data.text("status") != "pending") return false
+    val options = entry.data["options"] as? JsonArray ?: return false
+    return options.any { (it as? JsonObject)?.text("optionId")?.isNotBlank() == true }
+}
+
 /** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
  *  numbered rows, in one tone. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
-    if (entry.isStoredStub) return StoredApproval(entry, hostName)
+    // Answers only when the stub itself carries them. Every other stub stays the placeholder.
+    if (entry.isStoredStub && !canAnswerStub(entry)) return StoredApproval(entry, hostName)
     val d = entry.data
     val pending = d.text("status") == "pending"
     var expanded by remember { mutableStateOf(false) }
@@ -121,7 +136,7 @@ internal val Entry.takesOwnWords: Boolean
                 .sortedBy { rank[it.text("kind")] ?: 9 }
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for ((index, option) in options.withIndex()) {
-                    val id = option.text("optionId") ?: continue
+                    val id = option.text("optionId")?.takeIf(String::isNotBlank) ?: continue
                     val kind = option.text("kind").orEmpty()
                     val waiting = answering && chosen != null
                     val (source, pressed) = rememberPress()

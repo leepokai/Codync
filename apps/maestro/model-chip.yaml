@@ -39,7 +39,8 @@ onFlowComplete:
 # and saved.
 - tapOn: "Search models"
 - inputText: "e2e-typed"
-- tapOn: ".*Model ID"
+# Case-sensitive (Maestro matches text ignoring case): the field's own label, "Search or enter a model ID", would match.
+- tapOn: "(?-i).*Model ID"
 - runScript:
     file: model-chip.js
     env:

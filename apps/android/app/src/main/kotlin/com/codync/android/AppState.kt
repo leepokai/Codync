@@ -135,6 +135,8 @@ data class AppState(
     val threadSends: Map<String, List<PendingSend>> = emptyMap(),
     /** The computer's ended threads past the day its bots' `work` keeps, as far as the Threads list has read them; null until it does. */
     val olderThreads: OlderThreads? = null,
+    /** Counts the times [olderThreads] was dropped ([droppingOlderThreads]), so a page asked before is let go (iOS `olderThreadsGeneration`). */
+    val olderThreadsGeneration: Int = 0,
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */

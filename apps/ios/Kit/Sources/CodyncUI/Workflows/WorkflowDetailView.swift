@@ -246,13 +246,14 @@ public struct WorkflowDetailView: View {
             let loaded = try await client.workflow(workflowId)
             detail = loaded
             error = nil
-            await loadScheduleLines(loaded)
-            let page = try await client.workflowRuns(workflowId, limit: 20)
-            runs = page.runs
+            // The run or step a notification named opens before the run history, which it doesn't need.
             if !didOpenPendingRun, let pending = pendingRunId.map(WorkflowRunView.Target.run) ?? pendingStepId.map(WorkflowRunView.Target.step) {
                 didOpenPendingRun = true
                 openedRun = WorkflowRunRoute(pending)
             }
+            await loadScheduleLines(loaded)
+            let page = try await client.workflowRuns(workflowId, limit: 20)
+            runs = page.runs
         } catch {
             if detail == nil { self.error = error.localizedDescription }
         }

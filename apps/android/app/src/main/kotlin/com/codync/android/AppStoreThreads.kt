@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
@@ -113,24 +114,34 @@ internal fun AppState.receivingThreadEntry(entry: Entry): AppState {
 /**
  * Reads the computer's next page of older threads (`olderThreads`): the newest first, then the ones before the oldest held.
  * Nothing on a host without them, off the link, while a page loads or once none are left. A page that lands after the
- * list was dropped (a new hello, another Delete old threads) is let go.
+ * list was dropped (a new hello, another Delete old threads) is let go and the first page asked again.
  */
 internal fun AppStore.loadOlderThreads() {
     val now = state.value
     if (threadKeepDays(now.hello) == null || now.actualConnection !is LinkState.Ready) return
     val held = now.olderThreads
     if (held?.more == false) return
-    val host = now.hello?.text("hostId")
     action("olderThreads") {
-        val reply = hostQuery("olderThreads", buildJsonObject { held?.before?.let { put("before", it) } })
-        val page = OlderThreads.decode(reply.jsonObject)
-        // Dropped meanwhile (a new hello, another Delete old threads): the page is let go.
-        mutableState.update {
-            if (it.hello?.text("hostId") != host || (held != null && it.olderThreads == null)) it
-            else it.copy(olderThreads = (it.olderThreads ?: OlderThreads(more = true)) + page)
+        var before = held?.before
+        var generation = now.olderThreadsGeneration
+        while (true) {
+            val reply = hostQuery("olderThreads", buildJsonObject { before?.let { put("before", it) } })
+            val next = mutableState.updateAndGet { it.takingOlderThreads(generation, OlderThreads.decode(reply.jsonObject)) }
+            // Dropped meanwhile (a new hello, another Delete old threads): the first page is asked again.
+            if (next.olderThreadsGeneration == generation || threadKeepDays(next.hello) == null) return@action
+            before = null
+            generation = next.olderThreadsGeneration
         }
     }
 }
+
+/** [page] after the older threads held, unless they were dropped since it was asked under [generation]. */
+internal fun AppState.takingOlderThreads(generation: Int, page: OlderThreads): AppState =
+    if (olderThreadsGeneration != generation) this
+    else copy(olderThreads = (olderThreads ?: OlderThreads(more = true)) + page)
+
+/** The older threads are read again from the start; a page on its way is let go. */
+internal fun AppState.droppingOlderThreads(): AppState = copy(olderThreads = null, olderThreadsGeneration = olderThreadsGeneration + 1)
 
 /** [bot] with its computer's older threads it doesn't hold among its `work`, as the Threads list and a thread's page show them. */
 internal fun AppState.withOlder(bot: Bot): Bot =

@@ -304,10 +304,10 @@ internal fun AppStore.heardThreadKeepDays(days: Int) = mutableState.update { it.
 internal fun AppState.withThreadKeepDays(days: Int): AppState {
     val hello = hello ?: return this
     return if (threadKeepDays(hello) == days) this
-    else copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days))), olderThreads = null)
+    else copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days)))).droppingOlderThreads()
 }
 
-internal fun AppState.heardThreadKeepDays(days: Int): AppState = withThreadKeepDays(days).copy(olderThreads = null)
+internal fun AppState.heardThreadKeepDays(days: Int): AppState = withThreadKeepDays(days).droppingOlderThreads()
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

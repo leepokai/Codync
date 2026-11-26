@@ -28,6 +28,11 @@ class ThreadKeepDaysTest {
         val listed = AppState(Computer("fixture", "Studio", "fixture"), hello = hello("""{"threadKeepDays":30}"""), olderThreads = OlderThreads(emptyList(), more = true))
         assertEquals(listed, listed.withThreadKeepDays(30))
         assertNull(listed.heardThreadKeepDays(30).olderThreads)
+        // A page asked before the cleanup is let go, even when the list was not read yet.
+        assertEquals(2, listed.heardThreadKeepDays(30).heardThreadKeepDays(30).olderThreadsGeneration)
+        val dropped = listed.heardThreadKeepDays(30)
+        assertNull(dropped.takingOlderThreads(listed.olderThreadsGeneration, OlderThreads(emptyList(), more = false)).olderThreads)
+        assertEquals(false, dropped.takingOlderThreads(dropped.olderThreadsGeneration, OlderThreads(emptyList(), more = false)).olderThreads?.more)
         val chosen = listed.withThreadKeepDays(7)
         assertEquals(7 to null, threadKeepDays(chosen.hello) to chosen.olderThreads)
     }

@@ -57,7 +57,7 @@ impl Hub {
         if !cfg.is_group() {
             // The commands of the agent the bot runs on now: a fallback's while it answers.
             let agent = rt.agent_step.as_ref().map_or(cfg.backend.as_str(), |s| s.agent.as_str());
-            v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));
+            v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, &cfg.id, agent, &cfg.skills));
             // How it stands to what shows it outside its chat (a Live Activity, an ongoing notification, a tray):
             // the chat's status with its work in the background, as the pushes say it.
             let (status, started_at) = crate::chat::work::outside(self, cfg, &rt);

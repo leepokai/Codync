@@ -643,7 +643,7 @@ mod tests {
 
         let skills_of = |id: &str| store.bot(id).expect("read").expect("bot").config.skills;
         assert_eq!(skills_of("a"), [orphan_id.as_str()]);
-        assert!(skills_of("b").is_empty());
+        assert_eq!(skills_of("b"), Vec::<String>::new());
 
         let mut cfg = store.bot("a").expect("read").expect("bot").config;
         cfg.skills.clear();

@@ -257,7 +257,7 @@ mod tests {
             ]
         );
         assert!(notices("thread-a1").is_empty(), "notices go to the bot's chat, not the thread");
-        assert!(notices("thread-a2").is_empty());
+        assert_eq!(notices("thread-a2"), Vec::<Value>::new());
 
         let second_name = format!("Chat deploy {}", &tag[..8]);
         let from_main =

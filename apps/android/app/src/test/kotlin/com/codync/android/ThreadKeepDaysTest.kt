@@ -33,6 +33,9 @@ class ThreadKeepDaysTest {
         val dropped = listed.heardThreadKeepDays(30)
         assertNull(dropped.takingOlderThreads(listed.olderThreadsGeneration, OlderThreads(emptyList(), more = false)).olderThreads)
         assertEquals(false, dropped.takingOlderThreads(dropped.olderThreadsGeneration, OlderThreads(emptyList(), more = false)).olderThreads?.more)
+        // A page that fails is let go (and the first page asked again) only once the list was dropped since it was asked.
+        assertEquals(false, listed.droppedOlderThreadsSince(listed.olderThreadsGeneration))
+        assertEquals(true, dropped.droppedOlderThreadsSince(listed.olderThreadsGeneration))
         val chosen = listed.withThreadKeepDays(7)
         assertEquals(7 to null, threadKeepDays(chosen.hello) to chosen.olderThreads)
     }

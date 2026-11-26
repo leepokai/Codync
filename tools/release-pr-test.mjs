@@ -10,9 +10,9 @@ const body = new AsyncFunction('args', 'agent', 'parallel', 'phase', 'log', 'wor
 const afterChange = { e2e: { checks: [{ result: 'pass' }] }, review: { confirmed: [] }, fix: {} }
 
 // Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn. The
-// 'after-change' answer is that workflow's report (afterChange when not given). It runs as a merge run unless told otherwise.
+// 'after-change' answer is that workflow's report (afterChange when not given). It runs as a merge run unless told otherwise; `null` runs it with no args at all, as a plain "pr to main".
 const run = async (answers, extra = {}) => {
-  const args = { merge: true, ...extra }
+  const args = extra === null ? {} : { merge: true, ...extra }
   const calls = []
   const seen = {}
   const agent = async (prompt, opts) => {
@@ -167,6 +167,8 @@ for (const status of ['timed_out', 'failed']) {
 }
 
 {
+  const plainCall = await run({ ...base, 'gate:': [ready] }, null)
+  check(plainCall.r.outcome === 'ready' && !['cloud', 'merge', 'follow-up'].some((c) => plainCall.calls.includes(c)), 'a plain "pr to main" with no args stops at the green gate: ' + plainCall.calls)
   const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [fixed] }, { merge: false })
   check(r.outcome === 'ready' && r.pr === 600 && !calls.includes('merge') && !calls.includes('follow-up'), 'without merge: true it stops once the gate passes: ' + calls)
   const cloudRun = await run({ ...base, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] }, { merge: false })

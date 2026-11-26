@@ -117,12 +117,13 @@ mod tests {
             let cwd = dir.join("b");
             std::fs::create_dir_all(&cwd).unwrap();
             let cfg: BotConfig = serde_json::from_value(json!({
-                "id": "b", "name": "b", "backend": "fixture", "cwd": cwd,
+                "id": "b", "name": "b", "backend": "fixture", "cwd": cwd, "skills": ["pdf"],
                 "command": codync_agent::shell::python(&agent),
                 "notify": false, "permission": "ask",
             }))
             .unwrap();
             store.save_bot(&cfg).unwrap();
+            store.kv_set("skills", &json!([{"id": "pdf", "name": "PDF", "source": "custom"}]).to_string()).unwrap();
             let hub = Hub::new(
                 store,
                 "test-host".into(),
@@ -378,6 +379,73 @@ mod tests {
         let _ = std::fs::remove_dir_all(&f.dir);
     }
 
+    /// Editing a queued message rebuilds the prompt waiting in its actor: the new words still carry the
+    /// quote, the expanded skill command and the attachment paths of the entry the user originally sent.
+    #[tokio::test]
+    async fn a_waiting_message_edit_keeps_its_whole_prompt_context() {
+        let f = Fixture::new();
+        // A turn that stays open (the fixture waits for `release`): the second message waits in the queue
+        // while the edit lands, so the test is not racing the first turn's end.
+        f.send("live now BLOCK").await;
+        f.until(|| f.prompts().len() == 1).await;
+        let live = f
+            .hub
+            .store
+            .history("b", i64::MAX, 50)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.kind == "user" && e.data["text"] == "live now BLOCK")
+            .expect("the live message is saved");
+        let upload = uuid::Uuid::new_v4().to_string();
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "upload",
+            json!({"botId": "b", "uploadId": upload, "name": "context.txt", "data": "Y29udGV4dA==", "done": true}),
+        )
+        .await
+        .unwrap();
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "send",
+            json!({"botId": "b", "text": "/pdf original draft", "replyTo": live.id,
+                  "attachments": [upload], "clientNonce": "queued-context"}),
+        )
+        .await
+        .unwrap();
+        let waiting = f
+            .hub
+            .store
+            .history("b", i64::MAX, 50)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.data["text"] == "/pdf original draft")
+            .expect("the waiting message is saved");
+        f.until(|| f.status_of(&waiting.id) == "queued").await;
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": waiting.id, "text": "/pdf edited draft"}),
+        )
+        .await
+        .unwrap();
+        // The first turn was held open by `BLOCK`: release it so the queued message starts.
+        let root = PathBuf::from(f.hub.store.bot("b").unwrap().unwrap().config.cwd);
+        std::fs::write(root.join("release"), "").unwrap();
+        f.until(|| f.prompts().len() == 2).await;
+        let delivered = &f.prompts()[1];
+        assert!(delivered.contains("edited draft"), "the edit reaches the agent: {delivered}");
+        assert!(!delivered.contains("original draft"), "the old words are gone: {delivered}");
+        assert!(delivered.contains("this replies to"), "the quote survives: {delivered}");
+        assert!(delivered.contains("the user picked the \"PDF\" skill"), "the skill expansion survives: {delivered}");
+        assert!(delivered.contains("[Attached files"), "the attachment instruction survives: {delivered}");
+        assert!(delivered.contains("context.txt"), "the attachment path survives: {delivered}");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
     /// `updateScheduled` changes the text and the time; `cancelScheduled` takes it back for good; a fire
     /// after a cancel delivers nothing.
     #[tokio::test]
@@ -462,6 +530,83 @@ mod tests {
         assert!(f.prompts()[0].contains("the edited words"), "{:?}", f.prompts());
         assert!(!f.prompts()[0].contains("the old draft"));
         assert_eq!(f.status_of(&e.id), "sent");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// Two windows hold the same sheet. After one saves newer words, the other's Clear-the-time action is
+    /// rejected as one operation: it neither replaces those words nor fires the message.
+    #[tokio::test]
+    async fn a_stale_clear_time_neither_replaces_nor_fires_a_newer_edit() {
+        let f = Fixture::new();
+        let e = f.schedule("the first window's old words", 60_000);
+        let edited = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": e.id, "text": "the second window's newer words"}),
+        )
+        .await
+        .unwrap();
+        assert!(edited["entry"]["rev"].as_i64().unwrap() > e.rev);
+        let stale = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "sendScheduledNow",
+            json!({"botId": "b", "entryId": e.id, "expectedRev": e.rev, "text": "the first window's stale words"}),
+        )
+        .await;
+        assert!(stale.is_err(), "the stale sheet is refused");
+        let current = f.hub.store.entry(&e.id).unwrap();
+        assert_eq!(current.data["text"], "the second window's newer words");
+        assert_eq!(current.data["status"], "scheduled", "a refused replacement does not fire");
+        assert!(current.data["notBefore"].is_i64());
+        assert!(f.prompts().is_empty(), "nothing reaches the agent: {:?}", f.prompts());
+
+        let sent = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "sendScheduledNow",
+            json!({"botId": "b", "entryId": e.id, "expectedRev": current.rev, "text": "the current final words"}),
+        )
+        .await;
+        assert!(sent.is_ok(), "the current sheet can still send: {sent:?}");
+        f.until(|| f.prompts().len() == 1).await;
+        assert!(f.prompts()[0].contains("the current final words"), "{:?}", f.prompts());
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// An update and a clear-time fire that start from the same sheet rev cannot both land. Whichever wins,
+    /// the loser's snapshot never overwrites it.
+    #[tokio::test]
+    async fn an_edit_and_clear_time_are_atomic_when_they_race() {
+        let f = Fixture::new();
+        let e = f.schedule("before the race", 60_000);
+        let edit = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": e.id, "text": "the edit that raced"}),
+        );
+        let fire = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "sendScheduledNow",
+            json!({"botId": "b", "entryId": e.id, "expectedRev": e.rev, "text": "the clear that raced"}),
+        );
+        let (edit, fire) = tokio::join!(edit, fire);
+        assert_ne!(edit.is_ok(), fire.is_ok(), "exactly one transition lands: edit={edit:?} fire={fire:?}");
+        let current = f.hub.store.entry(&e.id).unwrap();
+        if edit.is_ok() {
+            assert_eq!(current.data["status"], "scheduled");
+            assert_eq!(current.data["text"], "the edit that raced");
+            assert!(f.prompts().is_empty(), "the losing fire delivered nothing");
+        } else {
+            assert_ne!(current.data["status"], "scheduled");
+            assert_eq!(current.data["text"], "the clear that raced");
+            f.until(|| f.prompts().len() == 1).await;
+        }
         f.hub.shutdown().await;
         let _ = std::fs::remove_dir_all(&f.dir);
     }

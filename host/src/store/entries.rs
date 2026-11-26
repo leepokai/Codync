@@ -123,12 +123,15 @@ impl Store {
     /// [`Self::update_entry_turn`] that only lands while the entry is still `scheduled` at the rev the caller
     /// read: a scheduled message's transitions (fire, edit, cancel, send-now) lose the race to anything that
     /// changed it first — a cancel, an edit, even another same-status write — and the caller learns that with
-    /// `None`, so a snapshot taken earlier can never overwrite what landed since.
+    /// `None`, so a snapshot taken earlier can never overwrite what landed since. A fire also takes the newest
+    /// history position and timestamp; an edit or cancel keeps the position it had while it waited.
     pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value, expect_rev: i64) -> Result<Option<Entry>> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         let changed = c.execute(
-            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn)
+            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn),
+                seq = CASE WHEN ?5 IS NOT NULL THEN (SELECT COALESCE(MAX(seq), 0) + 1 FROM entries) ELSE seq END,
+                created_at = CASE WHEN ?5 IS NOT NULL THEN ?4 ELSE created_at END
              WHERE id = ?1 AND rev = ?6 AND json_extract(data, '$.status') = 'scheduled'",
             params![id, rev, data.to_string(), now_ms(), turn, expect_rev],
         )?;
@@ -301,14 +304,15 @@ impl Store {
 
     /// Messages the scheduler moved into their delivery turn, but which no agent has started yet: a crash
     /// between the durable flip and `hand_on` leaves these queued with `scheduledFired`. The scheduler hands
-    /// them on once at the next start, so a due message is neither lost nor sent twice.
+    /// them on once at the next start, so a due message is neither lost nor sent twice. Delivery turn is the
+    /// queue's order before the restart, not the order in which the schedules happened to be created.
     pub fn scheduled_dispatched(&self) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE kind = 'user'
                AND json_extract(data, '$.status') = 'queued'
                AND json_extract(data, '$.scheduledFired') = 1 AND {NOT_REMOVED}
-             ORDER BY seq"
+             ORDER BY turn, seq"
         ))?;
         Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
@@ -619,6 +623,60 @@ mod tests {
         assert!(s.call_entries("b1", "c1", 10).unwrap().is_empty(), "voice context");
         let history = ids(s.history("b1", i64::MAX, 10).unwrap());
         assert_eq!(history, [seen.id, held.id], "the scheduling UI still reads its pending row");
+    }
+
+    #[test]
+    fn firing_a_scheduled_message_moves_it_to_its_delivery_place_in_history() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let scheduled = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                1,
+                &json!({"text": "later", "status": "scheduled", "notBefore": now_ms() + 60_000}),
+            )
+            .unwrap();
+        let newer = s.insert_entry(&main, EntryKind::Agent, 2, &json!({"text": "newer work", "final": true})).unwrap();
+        s.backdate_entry(&scheduled.id, 1);
+        let mut edited = scheduled.data.clone();
+        edited["text"] = "edited while held".into();
+        let edited = s.flip_scheduled(&scheduled.id, None, &edited, scheduled.rev).unwrap().unwrap();
+        assert_eq!(edited.seq, scheduled.seq, "an edit does not move the waiting row");
+        assert_eq!(edited.created_at, 1, "an edit keeps its original timestamp");
+
+        let mut fired = edited.data.clone();
+        fired["status"] = "queued".into();
+        fired["scheduledFired"] = true.into();
+        let fired = s.flip_scheduled(&scheduled.id, Some(3), &fired, edited.rev).unwrap().unwrap();
+        assert!(fired.seq > newer.seq, "delivery is newer than work written after the schedule");
+        assert!(fired.created_at > 1, "the chat shows when it was delivered, not when it was scheduled");
+        let history = s.history("b1", i64::MAX, 10).unwrap();
+        assert_eq!(history.last().map(|e| e.id.as_str()), Some(scheduled.id.as_str()));
+    }
+
+    #[test]
+    fn fired_schedules_recover_in_delivery_turn_order() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let created_first = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                8,
+                &json!({"text": "created first, fired second", "status": "queued", "scheduledFired": true}),
+            )
+            .unwrap();
+        let created_second = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                3,
+                &json!({"text": "created second, fired first", "status": "queued", "scheduledFired": true}),
+            )
+            .unwrap();
+        let recovered = s.scheduled_dispatched().unwrap();
+        assert_eq!(recovered.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), [created_second.id, created_first.id]);
     }
 
     #[test]

@@ -602,8 +602,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .entry(entry_id)
                 .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
-            // The sheet's "Clear the time" sends the text the user just edited, not the saved draft. The edit
-            // lives on the same rev the one-way fire checks, so a stale sheet still loses to a newer change.
+            // The sheet sends the rev it was opened at: a save made in another window since then is newer
+            // than this text, so the fire refuses rather than sending the older words over it.
+            if b["expectedRev"].as_i64().is_some_and(|rev| rev != e.rev) {
+                bail!("that message changed underneath you; take another look");
+            }
+            // The sheet's "Clear the time" sends the text the user just edited, not the saved draft.
             if let Some(text) = b["text"].as_str() {
                 let text = text.trim();
                 if text.is_empty() {

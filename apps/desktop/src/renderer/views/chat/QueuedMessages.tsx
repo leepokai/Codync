@@ -88,6 +88,7 @@ function QueuedRow({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
   const doneRef = useRef(false)
+  const composing = useRef(false)
   const startEdit = () => {
     setDraft(whole)
     setEditing(true)
@@ -110,15 +111,23 @@ function QueuedRow({
     <div className="queued-row" role="listitem">
       <ComposerReveal open={!leaving}>
         {editing ? (
-          <input
+          <textarea
             className="queued-edit"
             autoFocus
+            rows={1}
             value={draft}
             aria-label={tr('Edit')}
+            onCompositionStart={() => { composing.current = true }}
+            onCompositionEnd={() => { composing.current = false }}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') commit()
+              // Enter picks an input-method candidate; it neither saves the partial text nor closes the editor.
+              if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commit()
+              }
               if (e.key === 'Escape') cancelEdit()
             }}
           />

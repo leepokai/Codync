@@ -315,9 +315,9 @@ export class BotSync extends BotMirror {
         this.onRosterChanged?.()
         break
       case 'entry':
-        // A held message that fired, was cancelled or became a queued send is no longer in `hello.held`. Drop
-        // the hello copy before hiding its removed entry, or the tray re-adds the stale scheduled row.
-        if (event.entry.data.status !== 'scheduled') this.forgetHeld(event.entry.id)
+        // A held message's `hello.held` copy follows the event: an edit (even one below the loaded window)
+        // replaces it, and one that fired or was cancelled leaves, so the tray cannot put a stale row back.
+        this.trackHeld(event.entry)
         // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
         if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
         this.bump(event.entry.rev)

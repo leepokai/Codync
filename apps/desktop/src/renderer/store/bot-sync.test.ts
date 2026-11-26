@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import type { HostAlert } from '@shared/alerts'
 import type { Entry } from '@shared/models'
-import type { HostEvent, HostTransport } from '../client/host-client'
+import type { HostEvent, HostTransport } from '../client/host-client.ts'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('@shared/')) return nextResolve(new URL(`../../shared/${specifier.slice(8)}.ts`, import.meta.url).href, context)
@@ -26,6 +26,7 @@ Object.assign(globalThis, {
 })
 
 const { BotSync } = await import('./bot-sync.ts')
+const { HostClient, parseEvent } = await import('../client/host-client.ts')
 
 /** A store whose host is never reached, and the alerts it passes on. */
 function storeWithAlerts() {
@@ -39,6 +40,60 @@ function storeWithAlerts() {
 }
 
 const alert = (botId: string): HostAlert => ({ botId, kind: 'done', title: botId, body: 'Finished.' })
+
+const heldEntry = (id = 'held-1'): Entry => ({
+  id, seq: 1, botId: 'b', rev: 1, kind: 'user', turn: 1,
+  data: { text: 'later', status: 'scheduled', notBefore: 9_999_999_999_999 }, createdAt: 0, updatedAt: 0,
+})
+
+test('the events decoder carries the held-message snapshot and clear-time sends its sheet revision', async () => {
+  const held = heldEntry()
+  const decoded = parseEvent(JSON.stringify({
+    type: 'hello', hostId: 'h', rev: 8, scheduleSend: true, held: [held], catchUp: 0,
+  }))
+  assert.equal(decoded?.type, 'hello')
+  if (decoded?.type !== 'hello') return
+  assert.equal(decoded.scheduleSend, true)
+  assert.deepEqual(decoded.held, [held])
+
+  const calls: { method: string; body: unknown }[] = []
+  const transport: HostTransport = {
+    call: (method, body) => {
+      calls.push({ method, body })
+      return Promise.resolve({ entry: { ...held, rev: 9, data: { ...held.data, status: 'queued' } } })
+    },
+    stream: () => () => {},
+  }
+  const client = new HostClient(transport)
+  await client.sendScheduledNow('b', held.id, held.rev, 'edited in this sheet')
+  assert.deepEqual(calls, [{
+    method: 'sendScheduledNow',
+    body: { botId: 'b', entryId: held.id, expectedRev: held.rev, text: 'edited in this sheet' },
+  }])
+})
+
+test('a held entry event updates its below-window hello copy, then removes it on cancel and fire', () => {
+  const { store, receive } = storeWithAlerts()
+  const held = heldEntry()
+  const newer: Entry = { ...held, id: 'newer', seq: 100, rev: 5, data: { text: 'newest in the loaded window', status: 'sent' } }
+  store.entries.set('b', [newer])
+  ;(store as unknown as { floors: Map<string, number> }).floors = new Map([['b', 100]])
+  ;(store as unknown as { hello: unknown }).hello = { version: '2.54.0', scheduleSend: true, held: [held] }
+
+  const edited = { ...held, rev: 6, data: { ...held.data, text: 'edited outside the window', notBefore: 8_888_888_888_888 } }
+  receive({ type: 'entry', entry: edited })
+  assert.deepEqual(store.hello?.held, [edited], 'the event updates the only visible copy')
+  assert.deepEqual(store.entries.get('b'), [newer], 'the old row does not open a gap in history paging')
+
+  const cancelled = { ...edited, rev: 7, data: { ...edited.data, status: 'cancelled', removed: true } }
+  receive({ type: 'entry', entry: cancelled })
+  assert.deepEqual(store.hello?.held, [], 'a cancellation below the window cannot reappear')
+
+  receive({ type: 'entry', entry: edited })
+  const fired = { ...edited, rev: 8, data: { ...edited.data, status: 'queued', scheduledFired: true } }
+  receive({ type: 'entry', entry: fired })
+  assert.deepEqual(store.hello?.held, [], 'scheduledFired delivery also leaves no stale scheduled row')
+})
 
 test('a held message that stops being scheduled leaves hello.held, and an older hello keeps scheduleSend', () => {
   const { store, receive } = storeWithAlerts()
@@ -59,6 +114,23 @@ test('a held message that stops being scheduled leaves hello.held, and an older 
     entry: { ...held, rev: 2, data: { ...held.data, status: 'cancelled', removed: true } },
   })
   assert.deepEqual(store.hello?.held, [])
+})
+
+test('a fired schedule moves its existing row to the delivery end of the chat', () => {
+  const { store, receive } = storeWithAlerts()
+  const held = heldEntry()
+  const reply: Entry = {
+    ...held, id: 'reply', seq: 2, rev: 2, kind: 'agent', turn: 2,
+    data: { text: 'work that happened meanwhile', final: true }, createdAt: 2,
+  }
+  store.entries.set('b', [held, reply])
+  const fired: Entry = {
+    ...held, seq: 3, rev: 3, turn: 3, createdAt: 3,
+    data: { text: 'later', status: 'queued' },
+  }
+  receive({ type: 'entry', entry: fired })
+  assert.deepEqual(store.allEntries('b').map((e) => e.id), ['reply', 'held-1'])
+  assert.equal(store.allEntries('b')[1]?.createdAt, 3)
 })
 
 test("an alert passes on unless that bot's chat is on screen in a focused window", () => {

@@ -498,10 +498,11 @@ export class BotStore extends BotSync {
   }
 
   /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would, with the text
-   * the user has just edited when that differs from the saved draft. */
+   * the user has just edited when that differs from the saved draft. Its revision goes with it, so a newer
+   * save from another window is not overwritten by this sheet's older words. */
   sendScheduledNow(entry: Entry, text?: string) {
     this.answer(entry, 'sendScheduledNow', async (c) => {
-      const e = await c.sendScheduledNow(entry.botId, entry.id, text?.trim())
+      const e = await c.sendScheduledNow(entry.botId, entry.id, entry.rev, text?.trim())
       this.upsert(e)
       this.changed()
     })

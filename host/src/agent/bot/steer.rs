@@ -266,12 +266,6 @@ impl Actor {
             tracing::warn!(bot = %self.cfg.id, entry = entry_id, "a hold arrived for a message no longer queued");
             return;
         };
-        if let Some(t) = text {
-            // Delivery reads the queue's copy as much as the store's: both say the new text.
-            if let Some(Queued::User { text: waiting, .. }) = self.queue.get_mut(at) {
-                t.clone_into(waiting);
-            }
-        }
         // The store row first: if the row can't be read or written, the message stays live-queued rather
         // than falling out of both paths — a write that doesn't land (the row is gone, or the write
         // errored) leaves the queue row exactly where it was.
@@ -284,9 +278,17 @@ impl Actor {
                 e.data["notBefore"] = json!(at);
             }
             match self.hub.set_entry(entry_id, &e.data) {
-                Some(_) => {
+                Some(saved) => {
                     if not_before.is_some() {
                         self.queue.remove(at);
+                    } else if text.is_some() {
+                        // The queue's copy is the prompt `Cmd::Send` built: its message id, the note it
+                        // answers, an expanded `/skill` and its files' paths. An edit rebuilds that from the
+                        // row that landed rather than replacing all of it with the sheet's bare text.
+                        let prompt = crate::chat::prompt::of_entry(&self.hub, &self.cfg, &saved);
+                        if let Some(Queued::User { text: waiting, .. }) = self.queue.get_mut(at) {
+                            prompt.clone_into(waiting);
+                        }
                     }
                     // The roster previews the chat's newest message.
                     self.hub.emit_bot(&self.cfg.id);

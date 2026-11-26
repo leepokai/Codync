@@ -163,6 +163,9 @@ export function parseEvent(line: string): HostEvent | null {
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
         workflows: raw.workflows === true,
+        // A hello from an older host omits both: left undefined so the value already known stands.
+        scheduleSend: typeof raw.scheduleSend === 'boolean' ? raw.scheduleSend : undefined,
+        held: Array.isArray(raw.held) ? (raw.held as Entry[]) : undefined,
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
         catchUp: typeof raw.catchUp === 'number' ? raw.catchUp : null,
       }
@@ -312,9 +315,17 @@ export class HostClient {
   }
 
   /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would, with the text
-   * the user has just edited, when given. */
-  async sendScheduledNow(botId: string, entryId: string, text?: string) {
-    return (await this.call<{ entry: Entry }>('sendScheduledNow', { botId, entryId, ...(text !== undefined ? { text } : {}) })).entry
+   * the user has just edited, when given. `expectedRev` is the revision the sheet read: a newer save in
+   * another window makes the host refuse this text instead of sending it over that one. */
+  async sendScheduledNow(botId: string, entryId: string, expectedRev?: number, text?: string) {
+    return (
+      await this.call<{ entry: Entry }>('sendScheduledNow', {
+        botId,
+        entryId,
+        ...(expectedRev !== undefined ? { expectedRev } : {}),
+        ...(text !== undefined ? { text } : {}),
+      })
+    ).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

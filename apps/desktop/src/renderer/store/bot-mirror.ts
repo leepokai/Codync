@@ -304,6 +304,18 @@ export class BotMirror extends Observable {
     this.hello = { ...this.hello, held: held.filter((e) => e.id !== id) }
   }
 
+  /** A live entry event for a message `hello.held` carries: the tray's copy follows it — a new time or text on
+   * one still held (even below the chat's loaded window, where the event itself is not kept), and nothing at all
+   * once it fired or was taken back. */
+  protected trackHeld(entry: Entry) {
+    const held = this.hello?.held
+    if (!this.hello || !held?.some((e) => e.id === entry.id)) return
+    this.hello =
+      entry.data.status === 'scheduled'
+        ? { ...this.hello, held: held.map((e) => (e.id === entry.id ? entry : e)) }
+        : { ...this.hello, held: held.filter((e) => e.id !== entry.id) }
+  }
+
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
     const list = this.entries.get(botId)
@@ -357,7 +369,11 @@ export class BotMirror extends Observable {
     if (i >= 0) {
       // A late API response mustn't undo a newer SSE update.
       if (e.rev < list[i]!.rev) return
+      const moved = list[i]!.seq !== e.seq
       list[i] = e
+      // A scheduled message takes a new seq when it fires. Replacing only its row would leave the delivered
+      // text back at the time it was scheduled instead of beside its reply.
+      if (moved) list.sort((a, b) => a.seq - b.seq)
     } else {
       // Replace the optimistic copy of a message we sent.
       const nonce = e.kind === 'user' ? e.data.clientNonce : undefined

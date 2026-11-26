@@ -369,9 +369,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     }
     if !changed.is_empty() {
         notice(hub, &source.id, &format!("Updated {}: {}", target.name, changed.join(", ")));
-        // The audit trail: the target's own timeline gets who changed what and how it was approved, and the
-        // analytics event records the same for queries by actor or target. A validateOnly check or a
-        // refusal never reaches this point.
+        // The audit trail: the target's own timeline gets who changed what and how it was approved. The
+        // analytics event records actor, target and which fields, never the values. A validateOnly check
+        // or a refusal never reaches this point.
         if let Ok(after) = agent_bot(hub, &id) {
             audit_change(hub, source, &target, &after, &audited_fields);
         }
@@ -379,10 +379,10 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))
 }
 
-/// The audit entry for a manager's change to another bot: who (bot id), what moved (old -> new for the
-/// model, its settings, the fallback chain and the pause state), and whether it was approved automatically
-/// or by the user. It lands as a notice on the target bot's own timeline and as a `bot_config_changed`
-/// analytics event the fleet can query by actor or target.
+/// The audit entry for a manager's change to another bot: who (bot id), which fields moved, and whether it
+/// was approved automatically or by the user. The old and new values stay on the target bot's timeline. The
+/// `bot_config_changed` event carries the field names and the pause booleans, never a bot name or a model
+/// string: a custom command accepts any model id, and a catalog that did not load does too.
 fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotConfig, fields: &Map<String, Value>) {
     let mode = if hub.ceilings.approves_by_itself(source) { "auto" } else { "approved" };
     let on = |m: &Option<String>| m.as_deref().unwrap_or("the agent's default").to_owned();
@@ -407,9 +407,9 @@ fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotCo
         names.push(key);
         match *key {
             "model" => {
+                // The id stays on the timeline. Analytics gets the field name only: a custom command
+                // accepts any string, and a catalog that did not load does too.
                 let line = format!("model: {} -> {}", on(&before.model), on(&after.model));
-                props.insert("modelFrom".into(), on(&before.model).into());
-                props.insert("modelTo".into(), on(&after.model).into());
                 moves.push(line);
             }
             "paused" => {
@@ -419,9 +419,8 @@ fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotCo
                 moves.push(line);
             }
             "fallbacks" => {
+                // The chain stays on the timeline. A fallback model is the same kind of string as the bot's own.
                 let line = format!("fallbacks: [{}] -> [{}]", chain(&before.fallbacks), chain(&after.fallbacks));
-                props.insert("fallbacksFrom".into(), chain(&before.fallbacks).into());
-                props.insert("fallbacksTo".into(), chain(&after.fallbacks).into());
                 moves.push(line);
             }
             _ => moves.push((*key).to_owned()),

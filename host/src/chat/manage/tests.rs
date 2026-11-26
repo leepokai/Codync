@@ -299,3 +299,62 @@ async fn a_validate_only_check_refuses_hiding_the_lead() {
     assert!(!hub.store.bot("dev").unwrap().unwrap().config.hidden, "the check does not write");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A manager's model and fallback change keeps the strings on the target's timeline and out of analytics.
+/// The event names the fields that moved. It carries no bot name and no model string.
+#[test]
+fn a_config_change_keeps_names_and_private_models_off_the_analytics_event() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-audit-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let identity = Identity::load_or_create(&dir).unwrap();
+    let hub = Hub::new(store, "audit-test".into(), identity, "test".into(), 0);
+    let source: BotConfig = serde_json::from_value(json!({
+        "id": "lead", "name": "NightingalePrivate", "backend": "claude", "permission": "auto"
+    }))
+    .unwrap();
+    let before: BotConfig = serde_json::from_value(json!({
+        "id": "dev",
+        "name": "FoldPrivateTarget",
+        "backend": "custom",
+        "command": "my-secret-command",
+        "model": "secret-fold-model-9f3a",
+        "permission": "auto",
+        "fallbacks": [{"backend": "claude", "model": "private-fallback-model-7c2e"}]
+    }))
+    .unwrap();
+    let mut after = before.clone();
+    after.model = Some("another-secret-model-bb01".into());
+    after.fallbacks[0].model = Some("another-private-fallback-aa02".into());
+    let mut fields = Map::new();
+    fields.insert("model".into(), after.model.clone().into());
+    fields.insert("fallbacks".into(), json!(after.fallbacks));
+    audit_change(&hub, &source, &before, &after, &fields);
+
+    let notes = notices(&hub, "dev");
+    let timeline = notes.iter().filter_map(|n| n.as_str()).collect::<Vec<_>>().join("\n");
+    assert!(timeline.contains("secret-fold-model-9f3a"), "the timeline keeps the old model: {timeline}");
+    assert!(timeline.contains("another-secret-model-bb01"), "the timeline keeps the new model: {timeline}");
+    assert!(timeline.contains("private-fallback-model-7c2e"), "the timeline keeps the old fallback: {timeline}");
+    assert!(timeline.contains("another-private-fallback-aa02"), "the timeline keeps the new fallback: {timeline}");
+    assert!(timeline.contains("NightingalePrivate"), "the timeline names who changed it: {timeline}");
+
+    let sent = crate::analytics::queued_for_test(&hub);
+    let event = sent.iter().find(|e| e["event"] == "bot_config_changed").expect("the change is captured");
+    let raw = serde_json::to_string(event).unwrap();
+    let private_bits = [
+        "NightingalePrivate",
+        "FoldPrivateTarget",
+        "secret-fold-model-9f3a",
+        "another-secret-model-bb01",
+        "private-fallback-model-7c2e",
+        "another-private-fallback-aa02",
+        "my-secret-command",
+    ];
+    for bit in private_bits {
+        assert!(!raw.contains(bit), "analytics carried {bit}: {raw}");
+    }
+    let fields = event["properties"]["fields"].as_array().expect("fields");
+    assert!(fields.iter().any(|f| f == "model") && fields.iter().any(|f| f == "fallbacks"), "{raw}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -571,29 +571,33 @@ export class BotStore extends BotSync {
    * Shown at once, then replaced by the host's echo. A successful `updateBot` whose bot omits
    * `paused` did not apply it (an older host ignores the field): the row keeps the true state.
    * A reply can arrive after the row has moved. Failure puts only `paused` back, and only while
-   * that row is still there, so a bot deleted meanwhile stays deleted. An echo is stored only
-   * when the row is still there and the echo's `rev`, if it has one, is not older than the row.
+   * that row is still there at the same `rev`, so a bot deleted or replaced meanwhile stays as it is.
+   * An echo is stored only when the row is still there and the echo's `rev`, if it has one, is not
+   * older than the row. A numeric echo that is already older does not raise "Not applied": the row
+   * moved on, and the stale body is not a failure of this pause.
    */
   setPaused(bot: Bot, paused: boolean) {
     const current = this.bots.get(bot.id)
     const beforePaused = current?.paused
+    const beforeRev = current?.rev
     if (current) this.bots.set(bot.id, { ...current, paused })
     this.changed()
     const restorePaused = () => {
       if (beforePaused === undefined) return
       const row = this.bots.get(bot.id)
-      if (!row) return
+      if (!row || row.rev !== beforeRev) return
       this.bots.set(bot.id, { ...row, paused: beforePaused })
     }
     this.perform(async (c) => {
       const res = await c.call<{ bot?: Partial<Bot> & { id?: string; rev?: number } }>('updateBot', { ...updatePayload(bot), paused })
       const echoed = res?.bot
-      if (echoed && typeof echoed.id === 'string') {
-        const row = this.bots.get(bot.id)
-        const echoedRev = typeof echoed.rev === 'number' ? echoed.rev : undefined
-        if (row && (echoedRev === undefined || echoedRev >= row.rev)) this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
-      } else restorePaused()
-      if (!pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
+      const row = echoed && typeof echoed.id === 'string' ? this.bots.get(bot.id) : undefined
+      const echoedRev = echoed && typeof echoed.rev === 'number' ? echoed.rev : undefined
+      const stale = !!row && echoedRev !== undefined && echoedRev < row.rev
+      if (row && !stale && (echoedRev === undefined || echoedRev >= row.rev)) {
+        this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
+      } else if (!row) restorePaused()
+      if (!stale && !pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
       this.changed()
     }, true, () => {
       restorePaused()

@@ -187,3 +187,38 @@ test('a pause echo whose rev is not older than the row replaces that row', async
   assert.equal(store.bots.get('b')?.paused, true)
   assert.equal(store.bots.get('b')?.rev, 5)
 })
+
+test('a stale numeric echo does not raise Not applied over a newer row', async () => {
+  const { store, update, started } = pausingStore()
+  const bot = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false })
+  store.bots.set(bot.id, bot)
+
+  store.setPaused(bot, true)
+  await ticks()
+  assert.equal(started(), true)
+  store.bots.set('b', { ...store.bots.get('b')!, name: 'Newer', paused: false, rev: 8 })
+  update.resolve({ bot: { id: 'b', name: 'Bee', rev: 4 } })
+  await ticks()
+
+  assert.equal(store.bots.get('b')?.name, 'Newer')
+  assert.equal(store.bots.get('b')?.paused, false)
+  assert.equal(store.bots.get('b')?.rev, 8)
+  assert.equal(store.lastError, null)
+})
+
+test('a pause that throws after a newer event leaves that row', async () => {
+  const { store, update, started } = pausingStore()
+  const bot = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false })
+  store.bots.set(bot.id, bot)
+
+  store.setPaused(bot, true)
+  await ticks()
+  assert.equal(started(), true)
+  store.bots.set('b', { ...store.bots.get('b')!, name: 'Newer', paused: true, rev: 8 })
+  update.reject(new Error('refused'))
+  await ticks()
+
+  assert.equal(store.bots.get('b')?.name, 'Newer')
+  assert.equal(store.bots.get('b')?.paused, true)
+  assert.equal(store.bots.get('b')?.rev, 8)
+})

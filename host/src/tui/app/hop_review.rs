@@ -22,3 +22,22 @@ impl App {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Action, Editor, Goto, GotoItem, test_app};
+
+    #[tokio::test]
+    async fn the_palette_hides_hop_review_until_the_host_advertises_it() {
+        let mut app = test_app();
+        let offered = |app: &super::super::App| {
+            let g = Goto { query: Editor::with(""), filter: 0, cursor: 0 };
+            app.goto_items(&g).iter().any(|item| matches!(item, GotoItem::Action(Action::HopReview)))
+        };
+        assert!(!offered(&app), "a host that does not advertise hopReview hides the row");
+        app.hop_review = Some(false);
+        assert!(offered(&app), "an advertised off switch still shows");
+        app.hop_review = Some(true);
+        assert!(offered(&app));
+    }
+}

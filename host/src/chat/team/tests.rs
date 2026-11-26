@@ -579,6 +579,56 @@ async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
     f.shutdown().await;
 }
 
+/// The lead's tools require `botId`. Both notice prompts name the blocked actor's id, not only its name.
+#[tokio::test]
+async fn hop_limit_notices_name_the_blocked_actors_id() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.until(|| f.prompts_of("c").iter().any(|p| p.contains("botId a"))).await;
+    let opening = f.prompts_of("c").into_iter().find(|p| p.contains("Hop limit reached")).unwrap();
+    assert!(opening.contains("Blocked bot: a (botId a)"), "{opening}");
+    call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": 1, "text": "because the chain is done"})).unwrap();
+    f.until(|| f.prompts_of("c").iter().any(|p| p.contains("explained why"))).await;
+    let explanation = f.prompts_of("c").into_iter().find(|p| p.contains("explained why")).unwrap();
+    assert!(explanation.contains("Blocked bot: a (botId a)"), "{explanation}");
+    f.shutdown().await;
+}
+
+/// Stop before the opening notice runs is not a denial. The lift closes, and a later refusal can notify again.
+#[tokio::test]
+async fn stopping_the_lead_before_the_lift_notice_runs_lets_a_later_refusal_notify() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.send_to("c", "BLOCK lead work").await;
+    f.until(|| f.prompts_of("c").len() == 1).await;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let first = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err();
+    assert!(first.to_string().contains("the lead was notified"), "{first}");
+    assert!(f.hub.team.lift_open("a"), "the notice is queued and the lift is open");
+    f.hub.send_cmd("c", Cmd::Stop).unwrap();
+    f.until(|| f.idle("c") && !f.hub.team.lift_open("a")).await;
+    let notice = f
+        .hub
+        .store
+        .history("c", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.data["heading"].as_str().is_some_and(|h| h.starts_with("Hop limit refusal")))
+        .expect("the cancelled notice");
+    assert_eq!(notice.data["status"], "cancelled");
+    assert!(notice.data["text"].as_str().unwrap().ends_with("Cancelled before execution."));
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let second = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck again"})).unwrap_err();
+    assert!(second.to_string().contains("the lead was notified"), "{second}");
+    assert!(f.hub.team.lift_open("a"));
+    f.shutdown().await;
+}
+
 /// A lift's in-memory refusal state is gone after a restart. Its saved notice expires, never becoming ordinary work
 /// for the lead or a reply turn that wakes the blocked bot without an approved reset.
 #[tokio::test]

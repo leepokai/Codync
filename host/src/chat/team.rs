@@ -204,13 +204,13 @@ impl BotRequest {
     pub fn sender(&self) -> Option<&str> {
         match &self.lifetime.back {
             Back::Local { sender } => Some(sender),
-            Back::Remote(_) | Back::Assistant { .. } | Back::Lift => None,
+            Back::Remote(_) | Back::Assistant { .. } | Back::Lift { .. } => None,
         }
     }
 
     /// A hop-limit notice for the lead. It stays a request turn in the lead's chat.
     pub fn hop_notice(&self) -> bool {
-        matches!(self.lifetime.back, Back::Lift)
+        matches!(self.lifetime.back, Back::Lift { .. })
     }
 
     /// The start of the request, as it was written.
@@ -337,7 +337,18 @@ enum Back {
         request: String,
     },
     /// A hop-limit notice for the lead: no message reservation and no reply turn.
-    Lift,
+    /// `opening` is set only for the first notice of a lift. Stop before that notice
+    /// runs closes the lift without a denial, so a later refusal can notify again.
+    /// An explanation or an answer leaves the lift as the lead left it.
+    Lift {
+        opening: Option<OpeningNotice>,
+    },
+}
+
+/// The lift whose opening notice has not been judged yet.
+struct OpeningNotice {
+    actor: String,
+    refusal: u64,
 }
 
 /// Owned by the recipient's command/queue/turn after admission, never by the sender.
@@ -426,7 +437,16 @@ impl MessageLifetime {
                 }
                 Back::Assistant { request } => self.hub.assistant.answered(request, outcome),
                 // The lead judges with the hop-limit tools. The blocked bot is not woken with this text.
-                Back::Local { .. } | Back::Lift => {}
+                Back::Local { .. } => {}
+                Back::Lift { opening } => {
+                    // Queued, never run: the lead did not judge. Same refund as a notice that
+                    // never queued. A started turn may already have approved, denied, or asked.
+                    if !self.started
+                        && let Some(opening) = opening
+                    {
+                        self.hub.team.abort_unsent_notice(&opening.actor, opening.refusal);
+                    }
+                }
             }
             return;
         };
@@ -720,6 +740,7 @@ pub(super) fn hop_limit_error(error: &anyhow::Error) -> bool {
 fn hop_notice_to_lead(
     hub: &Arc<Hub>,
     source: &BotConfig,
+    actor: &str,
     refusal: u64,
     heading: &str,
     introduction: &str,
@@ -731,10 +752,10 @@ fn hop_notice_to_lead(
     };
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
-        "{introduction} Refusal {refusal}. Blocked bot: {}. Use only the hop-limit tools. Do not use message_bot.\n{text}",
+        "{introduction} Refusal {refusal}. Blocked bot: {} (botId {actor}). Use only the hop-limit tools. Do not use message_bot.\n{text}",
         source.name
     );
-    let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift, &lead.name, 0);
+    let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift { opening: None }, &lead.name, 0);
     let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text, peer_name: None, hops: None };
     // A hop-limit lift keeps its origin, so a restart cannot restore it as an ordinary request.
     lifetime.entries.push(exchange.save_notice(hub, &lead.id, heading, true, true)?);
@@ -777,7 +798,7 @@ fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Valu
     let introduction = "The bot blocked by the hop limit explained why its send should go through.";
     // The explanation stays once-only only after the notice is queued. A send that cannot queue it leaves the
     // text in place, the same way an unsent reset gives its grant back.
-    if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
+    if let Err(error) = hop_notice_to_lead(hub, source, turn, refusal, &heading, introduction, &stored) {
         hub.team.abort_unsent_explanation(turn, refusal);
         hop_lift_finished(hub, "explain", "not_queued");
         return Err(error);
@@ -837,7 +858,7 @@ fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args
     let stored = hub.team.answer(turn, refusal, answer)?;
     let heading = format!("Answer from {} for hop-limit refusal {refusal}.", source.name);
     let introduction = "The bot blocked by the hop limit answered your clarification.";
-    if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
+    if let Err(error) = hop_notice_to_lead(hub, source, turn, refusal, &heading, introduction, &stored) {
         hub.team.abort_unsent_answer(turn, refusal);
         hop_lift_finished(hub, "answer", "not_queued");
         return Err(error);
@@ -925,11 +946,18 @@ pub(super) fn on_hop_limit(
     let shown = truncate(message, 400);
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
-        "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
+        "Hop limit reached. Refusal {refusal}. Blocked bot: {} (botId {turn}). It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
         source.name
     );
     let notice = (|| -> Result<()> {
-        let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name, 0);
+        let mut lifetime = MessageLifetime::new(
+            hub,
+            &id,
+            &shown,
+            Back::Lift { opening: Some(OpeningNotice { actor: turn.to_owned(), refusal }) },
+            &lead.name,
+            0,
+        );
         let exchange =
             Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None, hops: None };
         lifetime.entries.push(exchange.save_notice(

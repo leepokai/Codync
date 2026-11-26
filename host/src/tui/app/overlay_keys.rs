@@ -39,6 +39,7 @@ impl App {
                     .iter()
                     .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(_, _, a)| !matches!(a, Action::ThreadKeep(_)) || self.thread_keep_days.is_some())
+                    .filter(|(_, _, a)| !matches!(a, Action::HopReview) || self.hop_review.is_some())
                     .filter(|(label, _, a)| {
                         let translated = super::palette_label(label, *a);
                         fuzzy(q, &[label, translated.as_ref()])

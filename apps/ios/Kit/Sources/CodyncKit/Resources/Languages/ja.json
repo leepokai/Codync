@@ -2074,6 +2074,7 @@
   "Couldn't send. Try again.": "送信できませんでした。もう一度お試しください。",
   "Uploading {sent} of {total}": "アップロード中 {sent}/{total}",
   "Couldn't read this file": "このファイルを読み込めませんでした",
+  "This approval couldn't be read on this phone. Check the computer to answer it.": "この承認はこのスマートフォンでは読み取れませんでした。コンピューターで回答してください。",
   "Signs in another {name} account in a terminal on {other}.": "{other} の端末で別の {name} アカウントにサインインします。",
   "Signs in another {name} account in a browser on {other}.": "{other} のブラウザで別の {name} アカウントにサインインします。",
   "Login profiles": "ログインプロファイル",

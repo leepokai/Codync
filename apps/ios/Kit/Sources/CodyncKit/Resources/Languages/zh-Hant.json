@@ -2074,6 +2074,7 @@
   "Couldn't send. Try again.": "傳送失敗，請再試一次。",
   "Uploading {sent} of {total}": "正在上傳 {sent}/{total}",
   "Couldn't read this file": "無法讀取這個檔案",
+  "This approval couldn't be read on this phone. Check the computer to answer it.": "這項核准無法在這支手機上讀取。請到電腦上回覆。",
   "Signs in another {name} account in a terminal on {other}.": "在 {other} 的終端裡登入另一個 {name} 賬戶。",
   "Signs in another {name} account in a browser on {other}.": "在 {other} 的瀏覽器裡登入另一個 {name} 賬戶。",
   "Login profiles": "登入設定",

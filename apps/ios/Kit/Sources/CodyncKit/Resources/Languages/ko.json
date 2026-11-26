@@ -2074,6 +2074,7 @@
   "Couldn't send. Try again.": "보내지 못했습니다. 다시 시도하세요.",
   "Uploading {sent} of {total}": "업로드 중 {sent}/{total}",
   "Couldn't read this file": "이 파일을 읽을 수 없습니다",
+  "This approval couldn't be read on this phone. Check the computer to answer it.": "이 승인을 이 휴대폰에서 읽을 수 없습니다. 컴퓨터에서 응답하세요.",
   "Signs in another {name} account in a terminal on {other}.": "{other}의 터미널에서 다른 {name} 계정으로 로그인합니다.",
   "Signs in another {name} account in a browser on {other}.": "{other}의 브라우저에서 다른 {name} 계정으로 로그인합니다.",
   "Login profiles": "로그인 프로필",

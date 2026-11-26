@@ -2074,6 +2074,7 @@
   "Couldn't send. Try again.": "Не удалось отправить. Попробуйте ещё раз.",
   "Uploading {sent} of {total}": "Загрузка: {sent} из {total}",
   "Couldn't read this file": "Не удалось прочитать файл",
+  "This approval couldn't be read on this phone. Check the computer to answer it.": "Не удалось прочитать это подтверждение на этом телефоне. Ответьте на компьютере.",
   "Signs in another {name} account in a terminal on {other}.": "Выполняет вход в другой аккаунт {name} в терминале на {other}.",
   "Signs in another {name} account in a browser on {other}.": "Выполняет вход в другой аккаунт {name} в браузере на {other}.",
   "Login profiles": "Профили входа",

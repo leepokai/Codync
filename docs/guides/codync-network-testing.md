@@ -1,6 +1,7 @@
 # Testing codync-network locally with Lima
 
-Two levels, both on this Mac with the Lima Linux VM `codync-linux` (the VM the Linux checks use, see [development](development.md)):
+Two levels, both on this Mac with the Lima Linux VM `codync-linux` (the Full e2e Linux VM; if it isn't installed, create it with
+`limactl create --name codync-linux template://default`):
 
 1. **Crate tests in the VM.** `cargo test` in `host/crates/network` starts two computers in one process over direct
    connections (no relay, no internet). It runs the same on Linux, so it catches Linux-only breakage.
@@ -28,7 +29,7 @@ Uncommitted changes are not in that clone. Copy them over from the Mac (one `lim
 limactl copy host/crates/network/src/rules.rs codync-linux:~/codync/host/crates/network/src/rules.rs
 ```
 
-Toolchain: the crate follows `host/rust-toolchain.toml` (Rust 1.99.0). If `cargo` is missing in the VM, install it with
+Toolchain: the crate follows `host/rust-toolchain.toml`. If `cargo` is missing in the VM, install it with
 rustup first. Reuse one target folder across runs:
 
 ```sh
@@ -121,7 +122,7 @@ Building the whole host in the VM takes a long time the first run. Reuse `CARGO_
 
 ```sh
 rm -rf ~/codync-net-mac                              # on the Mac
-limactl shell codync-linux rm -rf ~/codync-net-vm    # in the VM
+limactl shell codync-linux -- sh -c 'rm -rf ~/codync-net-vm'   # in the VM
 limactl stop codync-linux                            # when finished
 ```
 

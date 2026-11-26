@@ -33,7 +33,7 @@ Link duplicate reports to one canonical issue. If waiting on upstream, link the 
 [agent defect record](../upstream-agents/README.md), state user impact and workaround, and specify the condition
 for retesting or removing that workaround.
 
-Suggested issue lifecycle: **triage → ready → in progress → in review → awaiting release → closed**.
+Suggested issue lifecycle: **triage → ready → in progress → in review → closed**.
 Blocked work states its dependency and next recheck trigger. Invalid, duplicate and unreproduced reports follow
 the existing review process's outcomes rather than being forced through this lifecycle.
 
@@ -43,8 +43,8 @@ Every PR explains the user-visible change, links its issue or milestone, and rec
 affected documentation. Apply existing requirements for cross-platform changes, versions, phone release notes,
 screenshots and review gates. Keep changes small enough to review as one logical change.
 
-A merged PR is implementation progress. A fixed issue is closed only after the release carrying the fix is out,
-as required by the review guide. A roadmap milestone also needs recorded acceptance evidence. Link that evidence
+A fixed issue is closed when its fix is merged into `dev`, as the [review guide](issue-pr-review.md) says. A roadmap
+milestone also needs the release and recorded acceptance evidence. Link that evidence
 from its detailed plan; never mark unavailable validation as passed.
 
 ## Cadence and ownership
@@ -55,7 +55,7 @@ from its detailed plan; never mark unavailable validation as passed.
   records. Remove workarounds only when supported versions no longer need them.
 - **Before each release:** check supported lifecycle scenarios and known regressions, recheck workaround records,
   and verify the release includes required docs and compatibility changes.
-- **After release:** link the shipped version, close resolved issues and record failures that remain.
+- **After release:** link the shipped version and record failures that remain.
 - **At milestone completion:** review acceptance results, move shipped behavior into feature docs, archive completed
   plans and select the next milestone against the personal-first roadmap.
 

@@ -16,6 +16,7 @@ When asked to **build and install on the Mac mini**, run this script from the ch
 - It touches only Codync Dev (`com.pokai.Codync.dev`, host `com.pokai.codync.dev.host`, port 19223). Production, other variants and the Dev data directory stay.
 - ssh is key-only with a known host key and no prompts (`BatchMode`, `StrictHostKeyChecking=yes`); the address and key live in `~/.ssh/config` (`Host mac-mini`), never in the repo.
 - Only the built `.app` is sent. No `.env.*`, `~/.codync/token` or credentials are copied; the Mac mini signs in and pairs on its own.
+- Both Macs must be Apple silicon: Codync Dev is built for this Mac's architecture only, and it is not notarized (the script removes the quarantine flag).
 - The Mac mini refuses the install unless the zip hash, the code signature and the bundled host's hash match what was built.
 
 ## By hand on the Mac mini

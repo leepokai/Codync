@@ -95,6 +95,67 @@ async fn a_lead_creates_a_bot_the_user_allowed_and_not_one_change_they_denied() 
     );
 }
 
+/// A manager can pass only a subset of its own skills and connectors; a wider id is refused before any card.
+#[tokio::test]
+async fn a_manager_cant_pass_skills_or_connectors_they_dont_have() {
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call(
+        "updateBot",
+        json!({"id": lead, "permission": "ask", "manageTeam": true,
+            "skills": ["skill-a", "skill-b"], "connectors": ["conn-a", "conn-b"]}),
+    )
+    .await;
+
+    let args = json!({"name": "Scout", "skills": ["skill-b"], "connectors": ["conn-a"]});
+    let reply = manage(&host, &lead, "create_bot", &args, "allow", |detail| {
+        assert!(detail.contains("Skills: skill-b"), "{detail}");
+        assert!(detail.contains("Connectors: conn-a"), "{detail}");
+    })
+    .await;
+    let made: Value = serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    assert_eq!(made["bot"]["skills"], json!(["skill-b"]));
+    assert_eq!(made["bot"]["connectors"], json!(["conn-a"]));
+    let inherited = json!({"name": "Inherit"});
+    host.call("send", json!({"botId": lead, "text": format!("MANAGE create_bot {inherited}")})).await;
+    let inherited_card = wait(&host, &lead, |e| {
+        e["kind"] == "permission"
+            && e["data"]["status"] == "pending"
+            && e["data"]["detail"].as_str().is_some_and(|d| d.contains("Name: Inherit"))
+    })
+    .await;
+    let detail = inherited_card["data"]["detail"].as_str().unwrap();
+    assert!(detail.contains("Skills: skill-a, skill-b"), "{detail}");
+    assert!(detail.contains("Connectors: conn-a, conn-b"), "{detail}");
+    host.call("respondPermission", json!({"entryId": inherited_card["id"], "optionId": "allow"})).await;
+    let reply = wait(&host, &lead, |e| {
+        e["kind"] == "agent" && e["data"]["final"] == true && e["turn"] == inherited_card["turn"]
+    })
+    .await;
+    let reply = reply["data"]["text"].as_str().unwrap().to_owned();
+    let made: Value = serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    assert_eq!(made["bot"]["skills"], json!(["skill-a", "skill-b"]));
+    assert_eq!(made["bot"]["connectors"], json!(["conn-a", "conn-b"]));
+
+    host.call(
+        "send",
+        json!({"botId": lead, "text": "MANAGE create_bot {\"name\": \"Escalate\", \"skills\": [\"skill-c\"]}"}),
+    )
+    .await;
+    let refused = wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Refused: "))
+    })
+    .await;
+    assert!(
+        refused["data"]["text"].as_str().unwrap().contains("skills can only include an id you already have"),
+        "{refused}"
+    );
+    let sync = host.snapshot().await;
+    assert!(!sync["bots"].as_array().unwrap().iter().any(|b| b["name"] == "Escalate"), "no bot was made");
+}
+
 /// A change whose wait ends without an answer ends its card too, and changes nothing.
 #[tokio::test]
 async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {

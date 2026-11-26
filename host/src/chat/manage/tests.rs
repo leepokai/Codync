@@ -16,6 +16,12 @@ fn hub(dir: &std::path::Path) -> Arc<Hub> {
     hub
 }
 
+fn manager(skills: &[&str], connectors: &[&str]) -> BotConfig {
+    serde_json::from_value(json!({"id": "lead", "name": "lead", "backend": "claude", "skills": skills,
+        "connectors": connectors}))
+    .unwrap()
+}
+
 fn notices(hub: &Hub, bot: &str) -> Vec<Value> {
     hub.store.history(bot, i64::MAX, 20).unwrap().into_iter().map(|e| e.data["text"].clone()).collect()
 }
@@ -126,9 +132,83 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[tokio::test]
+async fn a_manager_passes_only_a_subset_of_their_skills_and_connectors() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}-gear", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.update_bot(&json!({"id": "lead", "skills": ["skill-a", "skill-b"], "connectors": ["conn-a", "conn-b"]}))
+        .unwrap();
+
+    let team = call(&hub, "lead", "list_team", &json!({})).await.unwrap();
+    let lead = team["bots"].as_array().unwrap().iter().find(|b| b["you"] == true).unwrap();
+    assert_eq!(lead["skills"], json!(["skill-a", "skill-b"]));
+    assert_eq!(lead["connectors"], json!(["conn-a", "conn-b"]));
+
+    let made = call(
+        &hub,
+        "lead",
+        "create_bot",
+        &json!({"name": "Scout", "agent": "claude", "skills": ["skill-b"], "connectors": ["conn-a"]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(made["bot"]["skills"], json!(["skill-b"]));
+    assert_eq!(made["bot"]["connectors"], json!(["conn-a"]));
+    let inherited = call(&hub, "lead", "create_bot", &json!({"name": "Inherit", "agent": "claude"})).await.unwrap();
+    assert_eq!(
+        (inherited["bot"]["skills"].clone(), inherited["bot"]["connectors"].clone()),
+        (json!(["skill-a", "skill-b"]), json!(["conn-a", "conn-b"]))
+    );
+
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "skills": ["skill-a"], "connectors": []})).await.unwrap();
+    let dev = hub.store.bot("dev").unwrap().unwrap().config;
+    assert_eq!((dev.skills, dev.connectors), (vec!["skill-a".to_owned()], vec![]));
+    // Omitted keeps the target's current setup; it does not silently copy the manager's larger list.
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "name": "Dev"})).await.unwrap();
+    let dev = hub.store.bot("dev").unwrap().unwrap().config;
+    assert_eq!((dev.skills, dev.connectors), (vec!["skill-a".to_owned()], vec![]));
+
+    let refused = |name: &'static str, args: Value| {
+        let hub = hub.clone();
+        async move { call(&hub, "lead", name, &args).await.unwrap_err().to_string() }
+    };
+    assert!(
+        refused("create_bot", json!({"name": "x", "skills": ["skill-c"]}))
+            .await
+            .contains("skills can only include an id you already have")
+    );
+    assert!(
+        refused("create_bot", json!({"name": "x", "connectors": ["conn-c"]}))
+            .await
+            .contains("connectors can only include an id you already have")
+    );
+    assert!(
+        refused("update_bot", json!({"botId": "dev", "skills": ["skill-a", "skill-a"]}))
+            .await
+            .contains("same id twice")
+    );
+    assert!(
+        refused("update_bot", json!({"botId": "dev", "skills": "skill-a"})).await.contains("skills must be a list")
+    );
+
+    let fields = setup_patch(
+        &json!({"skills": ["skill-b"], "connectors": ["conn-a"]}),
+        &[],
+        &manager(&["skill-a", "skill-b"], &["conn-a", "conn-b"]),
+    )
+    .unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    assert_eq!(describe(&store, &fields, &[]), "Skills: skill-b\nConnectors: conn-a");
+    let empty = setup_patch(&json!({"skills": [], "connectors": []}), &[], &manager(&[], &[])).unwrap();
+    assert_eq!(describe(&store, &empty, &[]), "Skills: (none)\nConnectors: (none)");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
-    let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();
+    let fields =
+        setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[], &manager(&[], &[])).unwrap();
     assert_eq!(
         describe(
             &Store::open(std::path::Path::new(":memory:")).unwrap(),
@@ -153,14 +233,19 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
     let number = json!({"botId": "dev", "modelOptions": {"effort": 1}});
     let refused = call(&hub, "lead", "update_bot", &number).await.unwrap_err().to_string();
     assert!(refused.contains("modelOptions must map"), "{refused}");
-    let fields =
-        setup_patch(&json!({"model": "opus", "modelOptions": {"effort": "high", "fast": "true"}}), &[]).unwrap();
+    let fields = setup_patch(
+        &json!({"model": "opus", "modelOptions": {"effort": "high", "fast": "true"}}),
+        &[],
+        &manager(&[], &[]),
+    )
+    .unwrap();
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     assert_eq!(describe(&store, &fields, &[]), "Model: opus\nModel settings: effort high, fast true");
     assert_eq!(model_after(&fields, Some("sonnet")), Some("opus"), "checked against the new model");
-    let options_only = setup_patch(&json!({"modelOptions": {"effort": "high"}}), &[]).unwrap();
+    let options_only = setup_patch(&json!({"modelOptions": {"effort": "high"}}), &[], &manager(&[], &[])).unwrap();
     assert_eq!(model_after(&options_only, Some("sonnet")), Some("sonnet"), "against the bot's own");
-    let default = setup_patch(&json!({"model": "", "modelOptions": {"effort": "high"}}), &[]).unwrap();
+    let default =
+        setup_patch(&json!({"model": "", "modelOptions": {"effort": "high"}}), &[], &manager(&[], &[])).unwrap();
     assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
     std::fs::remove_dir_all(&dir).unwrap();
 }

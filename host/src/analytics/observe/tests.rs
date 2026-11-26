@@ -467,11 +467,15 @@ fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
 
 #[test]
 fn a_team_change_names_the_settings_it_passes_never_their_values() {
-    let arguments = json!({"botId": "b2", "name": "Secret", "modelOptions": {"effort": "low"}, "made_up": 1});
+    let arguments = json!({"botId": "b2", "name": "Secret", "modelOptions": {"effort": "low"},
+        "skills": ["skill-a"], "connectors": ["conn-a"], "made_up": 1});
     let b = json!({"botId": "b1", "name": "update_bot", "arguments": arguments});
     assert_eq!(
         props("manageCall", &b),
-        Some((Event::TeamManaged, json!({"tool": "update", "fields": ["modelOptions", "name"], "client": "local"})))
+        Some((
+            Event::TeamManaged,
+            json!({"tool": "update", "fields": ["connectors", "modelOptions", "name", "skills"], "client": "local"})
+        ))
     );
     assert_eq!(props("manageCall", &json!({"name": "list_team", "arguments": {}})), None, "a read");
 }

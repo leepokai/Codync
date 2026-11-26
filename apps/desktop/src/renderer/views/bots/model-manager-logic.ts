@@ -28,25 +28,26 @@ export const notCheckable = (computer: string) => trNow("Couldn't check {compute
 export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error' } | { kind: 'none' }
 
 /**
+ * The login a row keeps when `backend` is applied: its own when the agent stays the same, or the
+ * default login when the bot moves to another agent (a profile belongs to one agent only).
+ */
+export const loginProfileFor = (bot: { backend?: unknown; loginProfile?: string | null }, backend: string): string | null =>
+  bot.backend === backend && typeof bot.loginProfile === 'string' && bot.loginProfile !== '' ? bot.loginProfile : null
+
+/**
  * Which bots the plan can save to, decided before anything is written.
  *
- * With a model chosen, every computer's catalog must have verified it: a computer whose agent
- * doesn't offer the model is skipped with a reason, and so is a computer whose catalog could not be
- * read or was not loaded — an unverifiable model is not written. Only the agent's default (no
- * model) and a custom command, which have nothing to check against, are left to the host.
- *
- * Known gap, left visible on purpose: `catalogFor` is keyed by computer alone, so the catalog read
- * carries no login and is therefore the computer's DEFAULT login. The patch this plan builds
- * deliberately omits `loginProfile`, so each bot keeps its own — which means a bot running a named
- * login can pass this check against a catalog it cannot actually run, and the host then refuses the
- * save. The two halves disagree: the check promises a row the save cannot deliver. The fix is to key
- * the check by (computer, agent, the bot's own login) rather than one catalog per computer.
+ * With a model chosen, the catalog for each bot's own login must have verified it: a bot whose
+ * agent-on-that-login doesn't offer the model is skipped with a reason, and so is one whose catalog
+ * could not be read or was not loaded — an unverifiable model is not written. Only the agent's
+ * default (no model) and a custom command, which have nothing to check against, are left to the
+ * host. `catalogFor` receives the row, so one computer can be checked once per login profile.
  */
-export const planRows = (plan: ApplyPlan, catalogFor: (computerId: string) => CatalogCheck): PlanRow[] => {
+export const planRows = (plan: ApplyPlan, catalogFor: (item: RosterItem) => CatalogCheck): PlanRow[] => {
   const model = plan.model?.trim() ?? ''
   return plan.items.map((item) => {
     if (!model || plan.backend === 'custom') return { item, ok: true }
-    const check = catalogFor(item.ref.computerId)
+    const check = catalogFor(item)
     if (check.kind === 'ok') {
       const available = check.catalog.models.some((m) => m.id === model)
       return available ? { item, ok: true } : { item, ok: false, reason: notAvailable(item.computer.name) }

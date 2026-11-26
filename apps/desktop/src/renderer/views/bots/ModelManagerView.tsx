@@ -14,9 +14,10 @@ import { matchItems } from '../palette-items'
 import { botItems } from '../search-items'
 import { ModelPicker } from './ModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
+import { agentModelsRequest } from './agent-models-query.ts'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -168,8 +169,8 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const models = useAgentModels(pick.backend)
   // A custom command needs the editor's command field, which a batch apply can't supply, so it is not
   // offered. The rail is the one every picker shows (loginSeats), but one seat per agent — its default
-  // login — because a batch writes no login profile: each computer keeps its own profiles, so a
-  // profile named here would not exist on the others. Every bot keeps the login it already has.
+  // login — because the model shown here is the account's own choice. Each bot is then checked and
+  // saved on the login it already uses, which can differ between computers.
   const seats = loginSeats({
     backends,
     on: { backend: pick.backend, loginProfile: null },
@@ -224,28 +225,29 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     // never sweep it up again by surprise.
     const appliedKeys = new Set<string>()
     const catalogs: Record<string, CatalogCheck> = {}
+    // A computer is read once per login: two of its bots on different profiles can see different
+    // models, so the catalog check must use the same profile the save will keep.
+    const catalogKey = (item: RosterItem) => `${item.ref.computerId}\u0000${loginProfileFor(item.bot, backend) ?? ''}`
     try {
       if (model) {
         for (const item of chosen) {
           if (!alive.current || run.current !== myRun) return
-          const id = item.ref.computerId
-          if (id === store.computer.id || id in catalogs) continue
-          catalogs[id] = await item.store
+          const key = catalogKey(item)
+          if (key in catalogs) continue
+          const loginProfile = loginProfileFor(item.bot, backend)
+          catalogs[key] = await item.store
             .ready()
             .then(async (client): Promise<CatalogCheck> => {
               // The wait for a reconnect may outlast the run: re-check before anything is read.
               if (!alive.current || run.current !== myRun) return { kind: 'error' }
-              const catalog = await client.call<AgentModels>('agentModels', { backend }, 300_000)
+              const catalog = await client.call<AgentModels>('agentModels', agentModelsRequest(backend, loginProfile), 300_000)
               return { kind: 'ok', catalog }
             })
             .catch((): CatalogCheck => ({ kind: 'error' }))
         }
       }
       const plan: ApplyPlan = { items: chosen, backend, model, options }
-      const rows = planRows(plan, (id) => {
-        if (id === store.computer.id) return models.failure ? { kind: 'error' } : models.catalog ? { kind: 'ok', catalog: models.catalog } : { kind: 'none' }
-        return catalogs[id] ?? { kind: 'none' }
-      })
+      const rows = planRows(plan, (item) => catalogs[catalogKey(item)] ?? { kind: 'none' })
       for (const row of rows) {
         if (!alive.current || run.current !== myRun) return
         const key = refKey(row.item.ref)
@@ -257,13 +259,18 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         try {
           // A minimal patch: the host merges it over the bot's state as it is at that moment, under
           // one lock, so an unrelated change that landed mid-batch is never written back. On another
-          // agent the host moves the bot to that agent's Auto mode on its own and drops a login
-          // profile that doesn't fit it; the custom command is cleared here, as the bot editor's
-          // agent change does. The patch sends no fallback list — the host's own fallback tidy may
-          // still drop a step that duplicates the new primary agent, as on any agent change.
-          // No login profile goes with the patch: each computer stores its own profiles, so each bot
-          // keeps the login it already has and a check and a write can never name different ones.
-          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
+          // agent the host moves the bot to that agent's Auto mode on its own; the custom command is
+          // cleared here, as the bot editor's agent change does. The patch sends no fallback list —
+          // the host's own fallback tidy may still drop a step that duplicates the new primary
+          // agent, as on any agent change. The login profile is the exact one the catalog check used:
+          // a bot keeps its own when its agent stays, and moving agents falls back to the default.
+          const patch: Record<string, unknown> = {
+            id: row.item.ref.botId,
+            backend,
+            loginProfile: loginProfileFor(row.item.bot, backend),
+            model: model || null,
+            modelOptions: { ...options },
+          }
           if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()

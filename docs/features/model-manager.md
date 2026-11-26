@@ -29,11 +29,12 @@ The search field filters by name, description and last message, reusing the side
 ## Apply
 
 Each checked bot is saved one at a time, in roster order, as a **minimal patch**: only the bot's id,
-backend, model and model options (plus `command: null` when the target is a listed agent, as the bot
-editor's agent change does — a stale custom command would otherwise keep launching). **No login
-profile goes with the patch**: every computer stores its own profiles, so a profile named here would
-not exist on the others — each bot keeps the login it already has, and the picker's rail shows one
-seat per agent (its default login) because that is the only seat a batch could name everywhere.
+backend, login profile, model and model options (plus `command: null` when the target is a listed
+agent, as the bot editor's agent change does — a stale custom command would otherwise keep
+launching). The login profile is the bot's own when its agent stays the same (or the default login
+when it moves to another agent, because a profile belongs to one agent). The picker's rail still
+shows one seat per agent (its default login), because that seat chooses the model; each row is then
+checked and saved on the login it keeps.
 The host merges
 the patch over the bot's state as it is at that moment under one lock (`updateBot`'s patched merge),
 so an unrelated change that landed while the batch ran is never written back, and on another agent
@@ -45,19 +46,19 @@ editor's agent change does. As with any model change in the bot editor, applying
 agent session — the chat history stays and the agent starts fresh with the new model. Fast mode is
 not touched.
 
-Before anything is saved, each involved computer's catalog is read for the chosen model
-(`agentModels`, the same call the picker makes, at the same 300 s patience). A bot on a computer
-whose agent doesn't offer the model is skipped and marked *Not available on {computer}*; a computer
-whose catalog couldn't be read or hasn't loaded yet is not written either — its rows are marked
+Before anything is saved, the catalog for each bot's own login is read for the chosen model
+(`agentModels`, the same call the picker makes, at the same 300 s patience). A bot whose
+agent-on-that-login doesn't offer the model is skipped and marked *Not available on {computer}*; a
+bot whose catalog couldn't be read or hasn't loaded yet is not written either — its row is marked
 *Couldn't check {computer}'s models*, because saving an unverified model id would be worse than
 doing nothing. Only the agent's default model (and a custom command, which the manager doesn't
 offer) skips the catalog checks. A closed sheet or a changed pick stops the run: bots already saved
 keep their new model, the rest are left alone. Row results (✓ *Applied*, a skip reason, or the
 save's error) stay on the rows until the sheet closes.
 
-Cross-computer catalogs load once per computer per apply, so swapping a model onto twenty bots costs
-one catalog read per computer plus the saves. Choosing the agent's default model skips the catalog
-checks entirely and is allowed on every computer.
+Catalogs load once per computer and login profile per apply, so swapping a model onto twenty bots
+costs one read per distinct login plus the saves. Choosing the agent's default model skips the
+catalog checks entirely and is allowed on every computer.
 
 ## Analytics
 

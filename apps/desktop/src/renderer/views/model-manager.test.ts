@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
-const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
+const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
   ({
     ref: { computerId, botId },
-    bot: { id: botId, name, description, lastMessage: null },
+    bot: { id: botId, name, description, loginProfile, lastMessage: null },
     computer: { id: computerId, name: computerName },
     store: { computer: { id: computerId } },
   }) as unknown as RosterItem
@@ -108,7 +108,7 @@ test('planRows skips the computer without the model, and says which computer', (
   const mac = item('mac', 'Mac', 'b1', 'Alpha')
   const linux = item('linux', 'Linux Studio', 'b2', 'Beta')
   const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: 'opus', options: {} }
-  const rows = planRows(plan, (id) => (id === 'mac' ? ok(['opus']) : ok(['sonnet'])))
+  const rows = planRows(plan, (row) => (row.ref.computerId === 'mac' ? ok(['opus']) : ok(['sonnet'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
   assert.equal(rows[0]?.reason, undefined)
   assert.match(rows[1]?.reason ?? '', /Linux Studio/)
@@ -134,6 +134,23 @@ test('planRows never checks a custom command, which has no catalog', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha')]
   const plan: ApplyPlan = { items, backend: 'custom', model: 'my-agent --model opus', options: {} }
   assert.deepEqual(planRows(plan, () => ok(['sonnet'])).map((r) => r.ok), [true])
+})
+
+test('planRows checks each bot on its own login profile, even on one computer', () => {
+  const work = item('mac', 'Mac', 'b1', 'Alpha', '', 'work')
+  const home = item('mac', 'Mac', 'b2', 'Beta', '', 'home')
+  const plan: ApplyPlan = { items: [work, home], backend: 'claude', model: 'opus', options: {} }
+  const rows = planRows(plan, (row) => (row.bot.loginProfile === 'work' ? ok(['opus']) : ok(['sonnet'])))
+  assert.deepEqual(rows.map((r) => r.ok), [true, false])
+  assert.match(rows[1]?.reason ?? '', /Mac/)
+})
+
+test('loginProfileFor keeps a bot\'s login only while its agent stays the same', () => {
+  assert.equal(loginProfileFor({ backend: 'claude', loginProfile: 'work' }, 'claude'), 'work')
+  assert.equal(loginProfileFor({ backend: 'claude', loginProfile: null }, 'claude'), null)
+  assert.equal(loginProfileFor({ backend: 'claude' }, 'claude'), null)
+  assert.equal(loginProfileFor({ backend: 'claude', loginProfile: 'work' }, 'codex'), null, 'a profile belongs to one agent')
+  assert.equal(loginProfileFor({ backend: 'claude', loginProfile: '' }, 'claude'), null)
 })
 
 test('the palette search narrows the list, so only matching bots can be checked', () => {

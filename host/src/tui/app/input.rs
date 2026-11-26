@@ -116,7 +116,8 @@ impl App {
             KeyCode::Enter if newline => draft.insert("\n"),
             KeyCode::Char('j') if ctrl => draft.insert("\n"),
             KeyCode::Enter => {
-                let text = draft.text.trim().to_owned();
+                let original = draft.text.clone();
+                let text = original.trim().to_owned();
                 let files = self.files.get(&key).cloned().unwrap_or_default();
                 if text.is_empty() && files.is_empty() {
                     return;
@@ -130,19 +131,18 @@ impl App {
                     self.flash(&why);
                     return;
                 }
-                if self.sends.get(&key).is_some_and(|s| s.busy) {
+                if !self.bots.contains_key(&key) {
+                    return;
+                }
+                if self.sends.get(&key).is_some_and(|s| s.task.is_some()) {
                     self.flash("Sending…");
                     return;
                 }
                 let nonce = self
                     .sends
                     .get(&key)
-                    .filter(|s| s.text == text && s.files == files)
+                    .filter(|s| s.text.trim() == text && s.files == files)
                     .map_or_else(|| uuid::Uuid::new_v4().to_string(), |s| s.nonce.clone());
-                self.sends.insert(
-                    key.clone(),
-                    PendingSend { text: text.clone(), files: files.clone(), nonce: nonce.clone(), busy: true },
-                );
                 self.chat_scroll = 0;
                 let mut body = json!({"botId": key, "text": text, "clientNonce": nonce});
                 if let Some(reply) = reply {
@@ -151,7 +151,9 @@ impl App {
                 if let Some(pasted) = self.pasted.get(&key).filter(|p| !p.is_empty()) {
                     body["pasted"] = json!(pasted);
                 }
-                self.send_message(body, files, After::Sent(key));
+                let after = After::Sent { key: key.clone(), nonce: nonce.clone(), epoch: self.mirror_epoch };
+                let task = self.send_message(body, files.clone(), after);
+                self.sends.insert(key, PendingSend { text: original, files, nonce, task: Some(task) });
                 self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {

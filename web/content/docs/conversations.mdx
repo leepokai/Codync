@@ -4,6 +4,8 @@ Each bot has one chat that keeps going. You send it work, it replies, and everyt
 
 The chat shows your messages, the bot's messages, approval cards, choice cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
 
+If you restore your computer's Codync database from a backup, the desktop app and terminal UI reload its bot list and chats when they reconnect. Drafts in those chats stay on your device.
+
 ## Choice cards
 
 When your bot needs you to pick a way forward, it can show a question with two to twelve numbered options. On **iPhone**, **Android** and **Desktop**, tap the option you want, or type your own answer in the last row, **Something else**. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options while the bot waits on the question (on a card left open, 1–9 jump to a bot as usual), or type your own answer in the message box. Your choice appears as your message and the bot continues its current work.
@@ -58,6 +60,8 @@ Use the **+** button at the bottom left of the message box.
 - **iPhone:** **Photos**, **Files**, or **Paste** when the clipboard holds an image. Photos are sent as JPEG.
 - **Desktop:** pick files, drop them on the box, or paste a copied image or file with Cmd+V (Ctrl+V on Windows and Linux).
 - **Terminal UI:** drag a file onto the terminal to paste its path. Backspace in an empty box removes the last file.
+
+On desktop, files picked for a new thread stay in its draft when you choose another bot or computer.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's own folder. The agent gets your message with the path of each file and reads them with its own tools.
 

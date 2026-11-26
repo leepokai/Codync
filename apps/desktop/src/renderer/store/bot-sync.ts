@@ -5,6 +5,7 @@ import { fetchWorkflow, fetchWorkflowRun, listWorkflows, workflowRuns } from '..
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
+import { DraftFiles } from './outgoing-files'
 import type { CallCue } from '@shared/calls'
 import type { RelayAbsence } from '@shared/ipc'
 import { trNow } from '../lib/l10n.ts'
@@ -48,6 +49,9 @@ function syncStamp(hello: Hello) {
  */
 export class BotSync extends BotMirror {
   readonly artifacts = new Artifacts(() => this.changed())
+  draftFiles = new DraftFiles()
+  protected mirrorEpoch = 0
+  private restoring = false
   /** The calls in this app, by id: each hands what the computer tells its voice to its engine. */
   readonly callCues = new Map<string, (cue: CallCue) => void>()
   /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
@@ -65,6 +69,7 @@ export class BotSync extends BotMirror {
   private floors = new Map<string, number>()
   private replayRev = Infinity
   private catchUpLeft: number | null = null
+  private readonly replaySendReceipts = new Map<string, Entry>()
   private readonly replayedDeletions = new Map<string, number>()
   private readonly completionsBeforeLive = new Set<string>()
   private readonly liveLegacyBots = new Set<string>()
@@ -153,6 +158,7 @@ export class BotSync extends BotMirror {
   private stopTransport() {
     this.finishRefresh?.()
     this.eventsLoop++
+    this.replaySendReceipts.clear()
     this.closeEvents?.()
     this.closeEvents = null
     this.closePresence?.()
@@ -224,22 +230,32 @@ export class BotSync extends BotMirror {
         if (!alive()) return
         await new Promise<void>((resolve, reject) => {
           // A refetch the link cut short starts over: only one whole catch-up says what the computer still has.
-          if (this.refetched) this.refetchAll()
+          if (this.refetched) {
+            if (this.restoring && this.requestedSince === 0) this.clearSyncedChats()
+            this.refetchAll()
+          }
           this.requestedSince = this.rev
           this.floors = new Map()
+          let ended = false
           this.closeEvents = client.events(
             this.requestedSince,
             'desktop',
             (event) => {
-              if (!alive()) return
+              if (!alive() || ended) return
               this.setConnection({ kind: 'online' })
               backoff = 1000
               const finishedCatchUp = this.apply(event)
-              this.finishRefresh?.()
               // An event that restarted the stream leaves the refetch to the new one.
-              if (alive() && finishedCatchUp) this.finishRefetch()
+              if (!alive()) return
+              this.finishRefresh?.()
+              if (finishedCatchUp) this.finishRefetch()
             },
-            (error) => (error ? reject(error) : resolve()),
+            (error) => {
+              ended = true
+              if (alive()) this.replaySendReceipts.clear()
+              if (error) reject(error)
+              else resolve()
+            },
           )
         })
       } catch (error) {
@@ -299,6 +315,7 @@ export class BotSync extends BotMirror {
   private apply(event: HostEvent) {
     const catchUpLeft = this.catchUpLeft
     const replaying = catchUpLeft !== null && catchUpLeft > 0
+    const recoveringReplay = this.restoring && (replaying || catchUpLeft === null)
     if (event.type !== 'hello' && replaying) this.catchUpLeft = catchUpLeft - 1
 
     switch (event.type) {
@@ -308,11 +325,20 @@ export class BotSync extends BotMirror {
       case 'hello':
         this.replayRev = event.rev
         this.catchUpLeft = event.catchUp
+        this.replaySendReceipts.clear()
         this.replayedDeletions.clear()
         this.completionsBeforeLive.clear()
         this.liveLegacyBots.clear()
         this.pendingCompletionReplies.clear()
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
+        else if (this.hostId === event.hostId && event.rev < this.requestedSince) {
+          this.restoring = true
+          this.clearSyncedChats()
+          this.refetchAll()
+          this.scheduleSave()
+          this.restartEvents()
+          return false
+        }
         if (event.catchUp !== null) {
           for (const { completionReplyId } of this.bots.values()) {
             if (completionReplyId) this.completionsBeforeLive.add(completionReplyId)
@@ -332,9 +358,11 @@ export class BotSync extends BotMirror {
       case 'bot': {
         const bot = event.bot
         const previous = this.bots.get(bot.id)
-        const previousRev = previous?.rev ?? this.replayedDeletions.get(bot.id)
+        const deletionRev = this.replayedDeletions.get(bot.id)
+        const previousRev = previous?.rev ?? deletionRev
         this.bump(bot.rev)
-        if (catchUpLeft === 0 && previousRev !== undefined && bot.rev <= previousRev) break
+        if ((catchUpLeft === 0 || recoveringReplay || deletionRev !== undefined) &&
+          previousRev !== undefined && bot.rev <= previousRev) break
         const live = catchUpLeft === null ? bot.rev > this.replayRev : !replaying
         if (catchUpLeft === 0 && bot.completionReplyId === undefined) this.liveLegacyBots.add(bot.id)
         const reply = bot.completionReplyId
@@ -347,21 +375,31 @@ export class BotSync extends BotMirror {
         if (unseen(bot) > 0) this.acknowledgeVisible(bot.id)
         break
       }
-      case 'botDeleted':
-        if (replaying) this.replayedDeletions.set(event.id, event.rev)
-        this.composerDrafts.removeBot(event.id)
-        this.bots.delete(event.id)
-        this.liveLegacyBots.delete(event.id)
-        this.pendingCompletionReplies.delete(event.id)
-        this.entries.delete(event.id)
-        this.floors.delete(event.id)
-        this.bump(event.rev)
-        if (this.selection === event.id) this.selection = null
+      case 'botDeleted': {
+        const { id, rev } = event
+        const previousRev = this.bots.get(id)?.rev ?? this.replayedDeletions.get(id)
+        this.bump(rev)
+        if (recoveringReplay && previousRev !== undefined && rev <= previousRev) break
+        if (replaying || recoveringReplay) this.replayedDeletions.set(id, rev)
+        this.bots.delete(id)
+        this.liveLegacyBots.delete(id)
+        this.pendingCompletionReplies.delete(id)
+        this.floors.delete(id)
+        if (recoveringReplay) {
+          const local = this.entries.get(id)?.filter((e) => e.id.startsWith('local-'))
+          if (local?.length) this.entries.set(id, local)
+          else this.entries.delete(id)
+        } else {
+          this.clearDeletedBot(id)
+        }
         this.onRosterChanged?.()
         break
+      }
       case 'entry':
         // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
-        if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
+        if (!this.isBelowFloor(event.entry)) {
+          this.applyEntry(event.entry, recoveringReplay)
+        }
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
@@ -434,29 +472,63 @@ export class BotSync extends BotMirror {
     }
     this.changed()
     this.scheduleSave()
-    return (event.type === 'hello' || replaying) && !this.catchUpLeft
+    if (this.catchUpLeft === null) return this.restoring ? this.rev > this.replayRev : event.type === 'hello'
+    return (event.type === 'hello' || replaying) && this.catchUpLeft === 0
+  }
+
+  private applyEntry(entry: Entry, replaying: boolean) {
+    const receipt = this.replaySendReceipts.get(entry.id)
+    if (replaying && (receipt || this.hasPendingSend(entry))) {
+      if (!receipt || entry.rev >= receipt.rev) this.replaySendReceipts.set(entry.id, entry)
+    } else {
+      this.upsert(entry)
+    }
+  }
+
+  protected clearDeletedBot(id: string) {
+    this.composerDrafts.removeBot(id)
+    this.draftFiles.removeBot(id)
+    this.entries.delete(id)
+    if (this.selection === id) this.selection = null
   }
 
   private resetMirror() {
     this.iconsRevision = -1
     this.applyIcons({})
     this.composerDrafts.clear()
-    this.bots = new Map()
-    this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))
+    this.draftFiles = new DraftFiles()
+    this.clearSyncedChats()
     this.selection = null
-    this.onRosterChanged?.()
     this.rev = 0
     this.hostId = null
     this.historyComplete = new Set()
     this.floors = new Map()
     this.screen = null
     this.refetched = null
+    this.restoring = false
     this.saveCache()
+  }
+
+  private clearSyncedChats() {
+    this.mirrorEpoch++
+    this.bots = new Map()
+    this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))
+    for (const [id, entries] of this.entries) {
+      this.entries.set(id, entries.map((e) => {
+        if (e.data.status !== 'sending' && !e.data.replyTo) return e
+        const { replyTo: _quote, ...data } = e.data
+        return { ...e, data: { ...data, status: e.data.status === 'sending' ? 'failed' : e.data.status } }
+      }))
+    }
+    this.onRosterChanged?.()
+    this.changed()
   }
 
   /** Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the catch-up has all arrived (`finishRefetch`). */
   private refetchAll() {
     this.rev = 0
+    this.replaySendReceipts.clear()
+    this.replayedDeletions.clear()
     this.refetched = new Set()
     this.historyComplete = new Set()
     this.resetWorkflowMirror()
@@ -571,7 +643,17 @@ export class BotSync extends BotMirror {
   private finishRefetch() {
     const kept = this.refetched
     if (!kept) return
+    if (this.restoring) {
+      for (const id of this.replayedDeletions.keys()) {
+        if (!this.bots.has(id)) this.clearDeletedBot(id)
+      }
+    }
+    for (const entry of this.replaySendReceipts.values()) {
+      if (this.bots.has(entry.botId) || !this.replayedDeletions.has(entry.botId)) this.upsert(entry)
+    }
+    this.replaySendReceipts.clear()
     this.refetched = null
+    this.restoring = false
     this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-') || kept.has(e.id))
   }
 

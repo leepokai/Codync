@@ -11,6 +11,7 @@ import { CloudModel } from './cloud'
 import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
+import { DraftFiles } from './outgoing-files'
 
 /** A bot on a computer: bot ids are only unique per computer. */
 export interface BotRef {
@@ -51,6 +52,7 @@ export interface PairingAsk {
  * computer, the selection, and what the menu bar shows. Mirrors kit's `AccountStore`.
  */
 export class AppModel extends Observable {
+  readonly newThreadFiles = new DraftFiles()
   host: HostSnapshot = { state: { kind: 'starting' }, local: null, dev: false, logPath: '' }
   computers: Computer[] = []
   stores = new Map<string, BotStore>()

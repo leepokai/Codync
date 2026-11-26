@@ -1,6 +1,6 @@
 //! Host messages: the event stream and command replies.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
@@ -44,8 +44,41 @@ impl App {
             Msg::Rewind => {
                 self.bots.clear();
                 self.entries.clear();
+                self.reading.clear();
+                self.history_busy.clear();
                 self.history_done.clear();
+                self.mirror_epoch += 1;
                 self.floors.clear();
+                self.reply = None;
+                self.pick = None;
+                self.find = None;
+                self.replayed_deletions.clear();
+                self.replay_sends = Some(HashSet::new());
+                for send in self.sends.values_mut() {
+                    if let Some(task) = send.task.take() {
+                        task.abort();
+                    }
+                }
+                for overlay in &mut self.overlays {
+                    match overlay {
+                        Overlay::Form(f) => f.saving = false,
+                        Overlay::NewBot(f) => f.saving = false,
+                        Overlay::Group(f) => f.saving = false,
+                        _ => {}
+                    }
+                }
+            }
+            Msg::ReplayComplete => {
+                if let Some(receipts) = self.replay_sends.take() {
+                    let deleted: Vec<_> =
+                        self.replayed_deletions.keys().filter(|id| !self.bots.contains_key(*id)).cloned().collect();
+                    for id in deleted {
+                        self.clear_deleted_bot(&id);
+                    }
+                    for (bot, nonce) in receipts {
+                        self.acknowledge_send(&bot, &nonce);
+                    }
+                }
             }
             Msg::Connected { since } => {
                 self.stream_since = since;
@@ -124,6 +157,17 @@ impl App {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
+                    if e.kind == Kind::User
+                        && let Some(nonce) = e.data["clientNonce"].as_str()
+                    {
+                        if let Some(receipts) = self.replay_sends.as_mut() {
+                            if self.sends.get(&bot).is_some_and(|send| send.nonce == nonce) {
+                                receipts.insert((bot.clone(), nonce.to_owned()));
+                            }
+                        } else {
+                            self.acknowledge_send(&bot, nonce);
+                        }
+                    }
                     if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                         // A routine's run and a follow-up say in the chat that they began or were dropped.
@@ -141,20 +185,22 @@ impl App {
     fn on_bot_event(&mut self, event: &Value, catch_up_left: Option<u64>) {
         let bot = &event["bot"];
         let rev = event["rev"].as_i64();
-        if catch_up_left.is_some_and(|left| left > 0)
-            && let Some(reply) = bot["completionReplyId"].as_str()
-        {
+        let replaying = catch_up_left.is_some_and(|left| left > 0);
+        let recovering = self.replay_sends.is_some();
+        if replaying && let Some(reply) = bot["completionReplyId"].as_str() {
             self.completions_before_live.insert(reply.to_owned());
         }
-        if let (Some(left), Some(id), Some(rev)) = (catch_up_left, bot["id"].as_str(), rev) {
-            if left == 0 {
-                let previous_rev =
-                    self.bots.get(id).and_then(|bot| bot.rev).or_else(|| self.replayed_deletions.get(id).copied());
-                if previous_rev.is_some_and(|previous| rev <= previous) {
-                    return;
-                }
-            } else if bot["deleted"] == true {
-                self.replayed_deletions.insert(id.to_owned(), rev);
+        if let Some(id) = bot["id"].as_str() {
+            let bot_rev = rev.or_else(|| bot["rev"].as_i64());
+            let deletion_rev = self.replayed_deletions.get(id).copied();
+            let previous_rev = self.bots.get(id).and_then(|bot| bot.rev).or(deletion_rev);
+            if (catch_up_left == Some(0) || recovering || deletion_rev.is_some())
+                && bot_rev.zip(previous_rev).is_some_and(|(incoming, previous)| incoming <= previous)
+            {
+                return;
+            }
+            if (replaying || recovering) && bot["deleted"] == true {
+                self.replayed_deletions.insert(id.to_owned(), bot_rev.unwrap_or_default());
             }
         }
         let live = catch_up_left.map_or_else(|| rev.is_none_or(|rev| rev > self.replay_rev), |left| left == 0);
@@ -191,15 +237,8 @@ impl App {
             }
             self.entries.remove(id);
             self.floors.remove(id);
-            self.drafts.remove(id);
-            self.files.remove(id);
-            if self.selected.as_deref() == Some(id) {
-                self.close_find();
-                self.selected = None;
-                self.reply = None;
-                self.pick = None;
-                self.chat_page = false;
-                self.typing = false;
+            if self.replay_sends.is_none() {
+                self.clear_deleted_bot(id);
             }
             return;
         }
@@ -241,13 +280,32 @@ impl App {
         }
     }
 
+    fn clear_deleted_bot(&mut self, id: &str) {
+        self.drafts.remove(id);
+        self.files.remove(id);
+        self.pasted.remove(id);
+        if let Some(task) = self.sends.remove(id).and_then(|send| send.task) {
+            task.abort();
+        }
+        if self.selected.as_deref() == Some(id) {
+            self.close_find();
+            self.selected = None;
+            self.reply = None;
+            self.pick = None;
+            self.chat_page = false;
+            self.typing = false;
+        }
+    }
+
     fn on_reply(&mut self, after: After, r: Result<Value, String>) {
         if let After::Connection(id, step) = after {
             self.connection_reply(&id, step, r);
             return;
         }
-        if let After::Sent(key) = after {
-            self.sent(&key, r);
+        if let After::Sent { key, nonce, epoch } = after {
+            if epoch == self.mirror_epoch {
+                self.sent(&key, &nonce, r);
+            }
             return;
         }
         if let After::Answered(entry) = after {
@@ -273,16 +331,21 @@ impl App {
             self.pair_reply(&after, r);
             return;
         }
+        if let After::History(_, epoch) | After::Saved(epoch) = after
+            && epoch != self.mirror_epoch
+        {
+            return;
+        }
         let v = match r {
             Ok(v) => v,
             Err(e) => {
                 match after {
                     After::Hello => self.error = Some(e),
                     After::Tracked => {}
-                    After::History(id) => {
+                    After::History(id, _) => {
                         self.history_busy.remove(&id);
                     }
-                    After::Saved => match self.overlays.last_mut() {
+                    After::Saved(_) => match self.overlays.last_mut() {
                         Some(Overlay::Form(f)) => {
                             f.saving = false;
                             f.error = Some(e);
@@ -317,7 +380,7 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::UsageOrder(_)
-            | After::Sent(_)
+            | After::Sent { .. }
             | After::Connection(_, _)
             | After::Pairing
             | After::Cloud
@@ -363,7 +426,7 @@ impl App {
                 Some(version) => self.flash(&format!("Version {version} is available: run codync-host update")),
                 None => self.flash("The host is up to date."),
             },
-            After::History(id) => {
+            After::History(id, _) => {
                 self.history_busy.remove(&id);
                 let list = v["entries"].as_array().cloned().unwrap_or_default();
                 if list.is_empty() {
@@ -415,7 +478,7 @@ impl App {
                     p.error = None;
                 }
             }
-            After::Saved => {
+            After::Saved(_) => {
                 let saved = self
                     .overlays
                     .iter()
@@ -461,22 +524,37 @@ impl App {
         }
     }
 
-    fn sent(&mut self, key: &str, result: Result<Value, String>) {
-        let Some(sent) = self.sends.get_mut(key) else { return };
-        sent.busy = false;
+    fn acknowledge_send(&mut self, key: &str, nonce: &str) {
+        if self.confirm_send(key, nonce) {
+            super::kofi::sent();
+            self.flash("Sent");
+        }
+    }
+
+    fn confirm_send(&mut self, key: &str, nonce: &str) -> bool {
+        let Some(sent) = self.sends.get(key).filter(|s| s.nonce == nonce) else { return false };
+        if self.drafts.get(key).is_some_and(|d| d.text == sent.text)
+            && self.files.get(key).map_or(&[][..], Vec::as_slice) == sent.files
+        {
+            self.drafts.remove(key);
+            self.files.remove(key);
+            self.pasted.remove(key);
+            if self.selected.as_deref() == Some(key) {
+                self.reply = None;
+            }
+        }
+        if let Some(task) = self.sends.remove(key).and_then(|send| send.task) {
+            task.abort();
+        }
+        true
+    }
+
+    fn sent(&mut self, key: &str, nonce: &str, result: Result<Value, String>) {
+        let Some(sent) = self.sends.get_mut(key).filter(|s| s.nonce == nonce) else { return };
+        sent.task = None;
         match result {
             Ok(value) => {
-                if self.drafts.get(key).is_some_and(|d| d.text.trim() == sent.text)
-                    && self.files.get(key).map_or(&[][..], Vec::as_slice) == sent.files
-                {
-                    self.drafts.remove(key);
-                    self.files.remove(key);
-                    self.pasted.remove(key);
-                }
-                self.sends.remove(key);
-                if self.selected.as_deref() == Some(key) {
-                    self.reply = None;
-                }
+                self.confirm_send(key, nonce);
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
                     super::kofi::sent();
@@ -493,6 +571,8 @@ impl App {
 mod tests {
     use super::super::{Editor, FIELDS, Field, PendingSend, test_app};
     use super::*;
+    use std::time::Duration;
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
     fn entry_event(seq: i64) -> Value {
         json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
@@ -522,7 +602,7 @@ mod tests {
         app.on_event(&update);
         app.on_event(&entry_event(7));
         assert_eq!(seqs(&app), [5, 6, 7], "held updates and newer entries apply");
-        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(3)["entry"]]})));
+        app.on_reply(After::History("a".into(), app.mirror_epoch), Ok(json!({"entries": [entry_event(3)["entry"]]})));
         assert_eq!(seqs(&app), [3, 5, 6, 7], "history inserts older entries");
     }
 
@@ -572,8 +652,8 @@ mod tests {
         assert!(!outside_window(None, false, &e));
     }
 
-    #[test]
-    fn send_failure_keeps_text_files_and_nonce_for_retry() {
+    #[tokio::test]
+    async fn send_failure_keeps_text_files_and_nonce_for_retry() {
         let mut app = test_app();
         let key = "bot";
         let files = vec![std::path::PathBuf::from("/tmp/report.txt")];
@@ -581,14 +661,20 @@ mod tests {
         app.files.insert(key.into(), files.clone());
         app.sends.insert(
             key.into(),
-            PendingSend { text: "draft".into(), files: files.clone(), nonce: "same-nonce".into(), busy: true },
+            PendingSend {
+                text: "draft".into(),
+                files: files.clone(),
+                nonce: "same-nonce".into(),
+                task: Some(tokio::spawn(async {}).abort_handle()),
+            },
         );
-        app.on_reply(After::Sent(key.into()), Err("Disconnected".into()));
+        let reply = After::Sent { key: key.into(), nonce: "same-nonce".into(), epoch: app.mirror_epoch };
+        app.on_reply(reply.clone(), Err("Disconnected".into()));
         assert_eq!(app.drafts[key].text, "draft");
         assert_eq!(app.files[key], files);
         assert_eq!(app.sends[key].nonce, "same-nonce");
-        assert!(!app.sends[key].busy);
-        app.on_reply(After::Sent(key.into()), Ok(json!({})));
+        assert!(app.sends[key].task.is_none());
+        app.on_reply(reply, Ok(json!({})));
         assert!(!app.drafts.contains_key(key));
         assert!(!app.files.contains_key(key));
     }
@@ -599,10 +685,133 @@ mod tests {
         app.drafts.insert("bot".into(), Editor::with("new draft"));
         app.sends.insert(
             "bot".into(),
-            PendingSend { text: "old draft".into(), files: vec![], nonce: "n".into(), busy: true },
+            PendingSend { text: "old draft".into(), files: vec![], nonce: "n".into(), task: None },
         );
-        app.on_reply(After::Sent("bot".into()), Ok(json!({})));
+        app.on_reply(After::Sent { key: "bot".into(), nonce: "n".into(), epoch: app.mirror_epoch }, Ok(json!({})));
         assert_eq!(app.drafts["bot"].text, "new draft");
+    }
+
+    #[tokio::test]
+    async fn restored_chat_keeps_a_pending_send_when_its_old_reply_arrives() {
+        let mut app = test_app();
+        let files = vec![std::path::PathBuf::from("report.txt")];
+        app.selected = Some("a".into());
+        app.reply = Some("abandoned-quote".into());
+        app.pick = app.reply.clone();
+        app.drafts.insert("a".into(), Editor::with("draft"));
+        app.files.insert("a".into(), files.clone());
+        let old_task = tokio::spawn(std::future::pending::<()>());
+        app.sends.insert(
+            "a".into(),
+            PendingSend {
+                text: "draft".into(),
+                files: files.clone(),
+                nonce: "pending".into(),
+                task: Some(old_task.abort_handle()),
+            },
+        );
+        let old_reply = After::Sent { key: "a".into(), nonce: "pending".into(), epoch: app.mirror_epoch };
+        let old_save = After::Saved(app.mirror_epoch);
+        app.on_msg(Msg::Rewind);
+        assert!(old_task.await.unwrap_err().is_cancelled());
+        let mut old = entry_event(10);
+        old["entry"]["data"] = json!({"clientNonce": "pending", "text": "draft"});
+        app.on_reply(old_reply.clone(), Ok(json!({"entry": old["entry"]})));
+        app.on_reply(old_save, Ok(json!({"bot": {"id": "abandoned"}})));
+        assert!(app.bots.is_empty());
+        assert!(app.entries.is_empty(), "the old reply can't put its entry back");
+        assert!(app.reply.is_none() && app.pick.is_none());
+        assert_eq!(app.drafts["a"].text, "draft");
+        assert_eq!(app.files["a"], files);
+        assert_eq!(app.sends["a"].nonce, "pending");
+        assert!(app.sends["a"].task.is_none());
+        let retry = tokio::spawn(std::future::pending::<()>());
+        app.sends.get_mut("a").unwrap().task = Some(retry.abort_handle());
+        app.on_reply(old_reply, Err("Abandoned request".into()));
+        assert!(app.sends["a"].task.is_some(), "the old reply cannot unlock the retry");
+        let mut restored = entry_event(2);
+        restored["entry"]["data"] = json!({"clientNonce": "pending", "text": "draft"});
+        app.on_msg(Msg::ReplayComplete);
+        app.on_event(&restored);
+        assert!(retry.await.unwrap_err().is_cancelled());
+        assert_eq!(seqs(&app), [2]);
+        assert!(!app.sends.contains_key("a"));
+        assert!(!app.drafts.contains_key("a"));
+        assert!(!app.files.contains_key("a"));
+    }
+
+    #[test]
+    fn restored_nonce_confirms_the_old_send_and_keeps_the_edited_draft() {
+        let mut app = test_app();
+        let files = vec![std::path::PathBuf::from("draft.txt")];
+        app.drafts.insert("a".into(), Editor::with("original "));
+        app.files.insert("a".into(), files.clone());
+        app.sends.insert(
+            "a".into(),
+            PendingSend { text: "original".into(), files: files.clone(), nonce: "pending".into(), task: None },
+        );
+        app.on_msg(Msg::Rewind);
+        app.on_msg(Msg::ReplayComplete);
+        let mut restored = entry_event(2);
+        restored["entry"]["data"] = json!({"clientNonce": "unrelated", "text": "other message"});
+        app.on_event(&restored);
+        assert!(app.sends.contains_key("a"), "another nonce leaves this send pending");
+        let mut confirmed = entry_event(3);
+        confirmed["entry"]["data"] = json!({"clientNonce": "pending", "text": "original"});
+        app.on_event(&confirmed);
+        assert!(!app.sends.contains_key("a"));
+        assert_eq!(app.drafts["a"].text, "original ");
+        assert_eq!(app.files["a"], files);
+    }
+
+    #[tokio::test]
+    async fn rewind_cancels_plain_sends_waiting_for_connection_or_reply() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use tokio::io::AsyncReadExt as _;
+        use tokio::net::TcpListener;
+
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = reserved.local_addr().unwrap();
+        drop(reserved);
+        let client = crate::tui::net::Client::new(&format!("http://{addr}"), Some("fixture"));
+        let (tx, _rx) = unbounded_channel();
+        let mut app = App::new(client, tx, String::new());
+        let bot = json!({"id": "a", "name": "Alpha", "status": "idle"});
+        app.upsert_bot(&bot, false);
+        app.selected = Some("a".into());
+        app.typing = true;
+        app.drafts.insert("a".into(), Editor::with("My draft"));
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.on_key(enter);
+        let nonce = app.sends["a"].nonce.clone();
+        let old_task = app.sends["a"].task.clone().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!old_task.is_finished());
+        app.on_msg(Msg::Rewind);
+
+        let listener = TcpListener::bind(addr).await.unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(700), listener.accept()).await.is_err());
+        assert!(old_task.is_finished());
+        app.upsert_bot(&bot, false);
+        app.on_key(enter);
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await.unwrap().unwrap();
+        let mut request = Vec::new();
+        let mut chunk = [0; 4096];
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !request.ends_with(b"}") {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert!(n > 0);
+                request.extend_from_slice(&chunk[..n]);
+            }
+        })
+        .await
+        .unwrap();
+        let request = String::from_utf8(request).unwrap();
+        assert!(request.starts_with("POST /api/send ") && request.contains(&nonce));
+        app.on_msg(Msg::Rewind);
+        assert_eq!(tokio::time::timeout(Duration::from_secs(5), socket.read(&mut chunk)).await.unwrap().unwrap(), 0);
+        assert_eq!(app.drafts["a"].text, "My draft");
+        assert_eq!(app.sends["a"].nonce, nonce);
     }
 
     #[test]
@@ -704,6 +913,338 @@ mod tests {
         Msg::Event(json!({"type": "bot", "rev": rev, "bot": {
             "id": id, "rev": rev, "name": id, "status": status, "completionReplyId": reply
         }}))
+    }
+
+    type StreamRequest = (i64, UnboundedSender<Value>);
+
+    async fn stream_host() -> (crate::tui::net::Client, UnboundedReceiver<StreamRequest>) {
+        use axum::extract::Query;
+        use axum::response::sse::{Event, Sse};
+        use axum::routing::{get, post};
+        use axum::{Json, Router};
+        use futures::StreamExt;
+        use tokio_stream::wrappers::UnboundedReceiverStream;
+
+        let (opened, requests) = unbounded_channel();
+        let router = Router::new().route("/api/hello", post(|| async { Json(json!({"version": "2.54.0"})) })).route(
+            "/events",
+            get(move |Query(query): Query<HashMap<String, String>>| {
+                let (send, receive) = unbounded_channel::<Value>();
+                opened.send((query["since"].parse().unwrap(), send)).unwrap();
+                async move { Sse::new(UnboundedReceiverStream::new(receive).map(|v| Event::default().json_data(v))) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        (crate::tui::net::Client::new(&url, Some("fixture")), requests)
+    }
+
+    async fn expect_stream(requests: &mut UnboundedReceiver<StreamRequest>, since: i64) -> UnboundedSender<Value> {
+        let (requested, send) = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .expect("the client starts another events stream")
+            .unwrap();
+        assert_eq!(requested, since);
+        send
+    }
+
+    async fn read_events(app: &mut App, messages: &mut UnboundedReceiver<Msg>, mut count: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while count > 0 {
+                let m = messages.recv().await.unwrap();
+                if matches!(m, Msg::Event(_)) {
+                    count -= 1;
+                }
+                app.on_msg(m);
+            }
+        })
+        .await
+        .expect("the client receives the expected events");
+    }
+
+    async fn finish_recovery(app: &mut App, messages: &mut UnboundedReceiver<Msg>) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let next = messages.recv().await.unwrap();
+                let completed = matches!(next, Msg::ReplayComplete);
+                app.on_msg(next);
+                if completed {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    async fn recovery_deletion_after_interrupted_replay(counted: bool) {
+        let (client, mut requests) = stream_host().await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let hello = |rev, count| json!({"type": "hello", "hostId": "host", "rev": rev, "catchUp": count});
+        let bot =
+            |id, rev, deleted| json!({"type": "bot", "rev": rev, "bot": {"id": id, "rev": rev, "deleted": deleted}});
+        let original = expect_stream(&mut requests, 0).await;
+        original.send(hello(130, Some(1))).unwrap();
+        original.send(bot("a", 128, false)).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        app.selected = Some("a".into());
+        let files = vec![std::path::PathBuf::from("report.txt")];
+        for id in ["a", "b"] {
+            app.drafts.insert(id.into(), Editor::with("Unsent draft"));
+            app.files.insert(id.into(), files.clone());
+            app.pasted.insert(id.into(), vec!["Unsent".into()]);
+            app.sends.insert(
+                id.into(),
+                PendingSend { text: "Unsent draft".into(), files: files.clone(), nonce: "pending".into(), task: None },
+            );
+        }
+        drop(original);
+        let rewind = expect_stream(&mut requests, 130).await;
+        rewind.send(hello(26, counted.then_some(0))).unwrap();
+        drop(rewind);
+        let partial = expect_stream(&mut requests, 0).await;
+        partial.send(hello(26, counted.then_some(2))).unwrap();
+        partial.send(bot("a", 25, true)).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert!(!app.bots.contains_key("a"));
+        drop(partial);
+
+        let replacement = expect_stream(&mut requests, 0).await;
+        replacement.send(hello(24, counted.then_some(3))).unwrap();
+        replacement.send(bot("b", 21, true)).unwrap();
+        replacement.send(bot("b", 20, false)).unwrap();
+        read_events(&mut app, &mut messages, 3).await;
+        assert_eq!(
+            (app.drafts.get("b").map(|d| d.text.as_str()), app.files.get("b")),
+            (Some("Unsent draft"), Some(&files)),
+            "the replacement replay is still incomplete"
+        );
+        replacement.send(bot("a", 22, false)).unwrap();
+        if !counted {
+            replacement.send(bot("a", 27, false)).unwrap();
+        }
+        finish_recovery(&mut app, &mut messages).await;
+        assert!(app.bots.contains_key("a"));
+        assert_eq!(app.drafts.get("a").map(|d| d.text.as_str()), Some("Unsent draft"));
+        assert_eq!(app.files["a"], files);
+        assert_eq!(app.sends["a"].nonce, "pending");
+        assert_eq!(app.selected.as_deref(), Some("a"));
+        assert!(!app.bots.contains_key("b"), "a stale row cannot supersede the deletion");
+        assert!(!app.drafts.contains_key("b") && !app.files.contains_key("b"));
+        assert!(!app.sends.contains_key("b") && !app.pasted.contains_key("b"));
+
+        replacement.send(bot("a", 28, true)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert!(!app.drafts.contains_key("a") && !app.files.contains_key("a"));
+        assert!(!app.sends.contains_key("a") && !app.pasted.contains_key("a"));
+        assert!(app.selected.is_none());
+    }
+
+    #[tokio::test]
+    async fn recovery_deletion_preserves_drafts_after_an_interrupted_counted_replay() {
+        recovery_deletion_after_interrupted_replay(true).await;
+    }
+
+    #[tokio::test]
+    async fn recovery_deletion_preserves_drafts_after_an_interrupted_legacy_replay() {
+        recovery_deletion_after_interrupted_replay(false).await;
+    }
+
+    async fn restored_stream_after_drop(catch_up: Option<u64>) {
+        let (client, mut requests) = stream_host().await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let hello = |rev, count| json!({"type": "hello", "hostId": "host", "rev": rev, "catchUp": count});
+
+        let original = expect_stream(&mut requests, 0).await;
+        original.send(hello(130, Some(0))).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        drop(original);
+        let abandoned = expect_stream(&mut requests, 130).await;
+        abandoned.send(hello(26, catch_up)).unwrap();
+        drop(abandoned);
+
+        let first = expect_stream(&mut requests, 0).await;
+        first.send(hello(26, catch_up)).unwrap();
+        if catch_up.is_some() {
+            first.send(json!({"type": "bot", "rev": 25, "bot": {"id": "a", "rev": 25, "name": "Alpha"}})).unwrap();
+        }
+        read_events(&mut app, &mut messages, if catch_up.is_some() { 2 } else { 1 }).await;
+        drop(first);
+
+        let second = expect_stream(&mut requests, 0).await;
+        second.send(hello(26, catch_up)).unwrap();
+        let mut replayed = entry_event(2);
+        replayed["rev"] = json!(23);
+        second.send(replayed).unwrap();
+        let live = if catch_up.is_some() { 24 } else { 27 };
+        second.send(json!({"type": "bot", "rev": live, "bot": {"id": "a", "rev": live, "name": "Restored"}})).unwrap();
+        read_events(&mut app, &mut messages, 3).await;
+        assert_eq!(app.bots["a"].name, "Restored");
+        assert_eq!(seqs(&app), [2]);
+        drop(second);
+        let _normal = expect_stream(&mut requests, live).await;
+    }
+
+    #[tokio::test]
+    async fn restored_stream_without_a_live_revision_retries_after_counted_replay() {
+        restored_stream_after_drop(Some(1)).await;
+    }
+
+    #[tokio::test]
+    async fn restored_stream_without_a_live_revision_retries_after_legacy_hello() {
+        restored_stream_after_drop(None).await;
+    }
+
+    async fn restored_send_after_partial_replay(catch_up: Option<u64>) {
+        let (client, mut requests) = stream_host().await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        client.spawn_stream(tx);
+        let hello = |rev, count| json!({"type": "hello", "hostId": "host", "rev": rev, "catchUp": count});
+
+        let original = expect_stream(&mut requests, 0).await;
+        original.send(hello(130, Some(0))).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        let files = vec![std::path::PathBuf::from("report.txt")];
+        app.drafts.insert("a".into(), Editor::with("Retry me"));
+        app.files.insert("a".into(), files.clone());
+        app.sends.insert(
+            "a".into(),
+            PendingSend { text: "Retry me".into(), files: files.clone(), nonce: "pending".into(), task: None },
+        );
+        drop(original);
+
+        let abandoned = expect_stream(&mut requests, 130).await;
+        abandoned.send(hello(26, catch_up)).unwrap();
+        drop(abandoned);
+        let first = expect_stream(&mut requests, 0).await;
+        first.send(hello(26, catch_up)).unwrap();
+        let mut receipt = entry_event(2);
+        receipt["rev"] = json!(24);
+        receipt["entry"]["data"] = json!({"clientNonce": "pending", "text": "Retry me"});
+        first.send(receipt.clone()).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        drop(first);
+
+        let second = expect_stream(&mut requests, 0).await;
+        second.send(hello(25, catch_up.map(|_| 1))).unwrap();
+        second.send(json!({"type": "bot", "rev": 25, "bot": {"id": "a", "rev": 25, "name": "Alpha"}})).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!(app.drafts.get("a").map(|d| d.text.as_str()), Some("Retry me"));
+        assert_eq!(app.files["a"], files);
+        assert_eq!(app.sends["a"].nonce, "pending");
+        assert_eq!(seqs(&app), [] as [i64; 0]);
+
+        drop(second);
+        let third = expect_stream(&mut requests, 0).await;
+        third.send(hello(26, catch_up)).unwrap();
+        third.send(receipt.clone()).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert!(app.sends.contains_key("a"));
+        let rev = if catch_up.is_some() { 25 } else { 27 };
+        third.send(json!({"type": "bot", "rev": rev, "bot": {"id": "a", "rev": rev}})).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        finish_recovery(&mut app, &mut messages).await;
+        if catch_up.is_some() {
+            assert_eq!(client.rev.load(std::sync::atomic::Ordering::Relaxed), 0);
+        }
+        assert!(!app.sends.contains_key("a"));
+        assert!(!app.drafts.contains_key("a"));
+        assert!(!app.files.contains_key("a"));
+        app.drafts.insert("a".into(), Editor::with("Next draft"));
+        third.send(receipt).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.drafts["a"].text, "Next draft");
+    }
+
+    #[tokio::test]
+    async fn restored_send_survives_an_interrupted_counted_replay() {
+        restored_send_after_partial_replay(Some(2)).await;
+    }
+
+    #[tokio::test]
+    async fn restored_send_survives_an_interrupted_legacy_replay() {
+        restored_send_after_partial_replay(None).await;
+    }
+
+    #[tokio::test]
+    async fn a_restored_host_rewinds_the_stream_and_replaces_the_bot_and_chat_mirror() {
+        let (client, mut requests) = stream_host().await;
+        let (tx, mut messages) = unbounded_channel();
+        let mut app = App::new(client.clone(), tx.clone(), String::new());
+        app.term_focused = true;
+        client.spawn_stream(tx);
+
+        let hello = |rev, catch_up| json!({"type": "hello", "hostId": "host", "rev": rev, "catchUp": catch_up});
+        let bot = |id, name, rev, status, reply: Option<&str>| {
+            json!({"type": "bot", "rev": rev, "bot": {
+                "id": id, "name": name, "rev": rev, "status": status, "completionReplyId": reply
+            }})
+        };
+        let original = expect_stream(&mut requests, 0).await;
+        original.send(hello(130, 4)).unwrap();
+        original.send(bot("a", "Renamed Alpha", 121, "idle", Some("abandoned-reply"))).unwrap();
+        let mut entry = entry_event(2);
+        entry["entry"]["data"] = json!({"text": "Edited later"});
+        original.send(entry.clone()).unwrap();
+        original.send(entry_event(9)).unwrap();
+        original.send(bot("later", "Created later", 128, "idle", None)).unwrap();
+        read_events(&mut app, &mut messages, 5).await;
+        app.drafts.insert("a".into(), Editor::with("Draft to keep"));
+        let old_history = After::History("a".into(), app.mirror_epoch);
+        drop(original);
+
+        let abandoned = expect_stream(&mut requests, 130).await;
+        abandoned.send(hello(24, 1)).unwrap();
+        abandoned.send(entry_event(10)).unwrap();
+        drop(abandoned);
+
+        let interrupted = expect_stream(&mut requests, 0).await;
+        interrupted.send(hello(24, 2)).unwrap();
+        interrupted.send(bot("partial", "Partial snapshot", 20, "idle", None)).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        drop(interrupted);
+
+        let restored = expect_stream(&mut requests, 0).await;
+        restored.send(hello(24, 4)).unwrap();
+        restored.send(json!({"type": "icons"})).unwrap();
+        restored.send(bot("b", "Beta", 19, "idle", Some("historical-reply"))).unwrap();
+        restored.send(bot("a", "Alpha", 21, "working", None)).unwrap();
+        entry["rev"] = json!(22);
+        entry["entry"]["data"] = json!({"text": "Before the edit"});
+        restored.send(entry).unwrap();
+        read_events(&mut app, &mut messages, 5).await;
+        app.on_msg(Msg::Reply(old_history, Ok(json!({"entries": [entry_event(9)["entry"]]}))));
+        assert_eq!(app.bots.len(), 2);
+        assert_eq!(app.bots["a"].name, "Alpha");
+        assert_eq!(app.bots["a"].status, Status::Working);
+        assert_eq!(seqs(&app), [2]);
+        assert_eq!(app.entries["a"][&2].text(), "Before the edit");
+        assert_eq!(app.drafts["a"].text, "Draft to keep");
+        assert!(app.toasts.is_empty());
+
+        restored.send(bot("b", "Beta", 22, "idle", Some("historical-reply"))).unwrap();
+        restored.send(bot("a", "Alpha", 23, "idle", Some("fresh-reply"))).unwrap();
+        read_events(&mut app, &mut messages, 2).await;
+        assert_eq!(app.toasts.len(), 1);
+        assert_eq!(app.toasts[0].text, "Alpha is done");
+        app.toasts.clear();
+        for rev in [23, 25] {
+            restored.send(bot("a", "Alpha", rev, "idle", Some("fresh-reply"))).unwrap();
+        }
+        read_events(&mut app, &mut messages, 2).await;
+        assert!(app.toasts.is_empty());
+        drop(restored);
+
+        let normal = expect_stream(&mut requests, 25).await;
+        normal.send(hello(25, 0)).unwrap();
+        read_events(&mut app, &mut messages, 1).await;
+        assert_eq!(app.bots["a"].name, "Alpha");
     }
 
     #[test]

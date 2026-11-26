@@ -67,12 +67,11 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::manage::Shell;
 use super::net::Client;
 
-#[derive(Clone)]
 struct PendingSend {
     text: String,
     files: Vec<std::path::PathBuf>,
     nonce: String,
-    busy: bool,
+    task: Option<tokio::task::AbortHandle>,
 }
 
 /// Whose model list it is: the agent and its login profile (`None`: the default login).
@@ -122,6 +121,7 @@ pub struct App {
     /// Each artifact's newest title, for its cards.
     pub artifact_titles: super::manage::ArtifactTitles,
     sends: HashMap<String, PendingSend>,
+    replay_sends: Option<HashSet<(String, String)>>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
     pub trace_scroll: usize,
@@ -171,6 +171,7 @@ pub struct App {
     /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
     history_busy: HashSet<String>,
+    mirror_epoch: u64,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
     history_done: HashSet<String>,
@@ -239,6 +240,7 @@ impl App {
             files: HashMap::new(),
             pasted: HashMap::new(),
             sends: HashMap::new(),
+            replay_sends: None,
             chat_scroll: 0,
             trace_scroll: 0,
             trace: TraceMode::Off,
@@ -270,6 +272,7 @@ impl App {
             shell: None,
             reading: HashSet::new(),
             history_busy: HashSet::new(),
+            mirror_epoch: 0,
             answering: HashMap::new(),
             history_done: HashSet::new(),
             stream_since: 0,
@@ -298,12 +301,14 @@ impl App {
     }
 
     /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.
-    pub(in crate::tui) fn send_message(&self, body: Value, files: Vec<std::path::PathBuf>, after: After) {
-        if files.is_empty() {
-            return self.call("send", body, after);
-        }
+    pub(in crate::tui) fn send_message(
+        &self,
+        body: Value,
+        files: Vec<std::path::PathBuf>,
+        after: After,
+    ) -> tokio::task::AbortHandle {
         let (_, body) = super::net::old_host::outgoing(&self.host_version, "send", body);
-        self.client.spawn_send_files(body, files, after, self.tx.clone());
+        self.client.spawn_send(body, files, after, self.tx.clone())
     }
 
     // ---------- derived ----------
@@ -514,7 +519,11 @@ impl App {
             return;
         }
         self.history_busy.insert(id.clone());
-        self.call("history", json!({"botId": id, "beforeSeq": oldest, "limit": 200}), After::History(id));
+        self.call(
+            "history",
+            json!({"botId": id, "beforeSeq": oldest, "limit": 200}),
+            After::History(id, self.mirror_epoch),
+        );
     }
 }
 

@@ -23,11 +23,14 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 // The window's storage, empty: no cached mirror to load.
 const storage = new Map<string, string>()
 Object.assign(globalThis, {
+  window: { addEventListener: () => {} },
   localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => void storage.set(k, v), removeItem: (k: string) => void storage.delete(k) },
 })
 
 const { BotSync } = await import('./bot-sync.ts')
+const { BotStore } = await import('./bot-store.ts')
 const { parseEvent } = await import('../client/host-client.ts')
+const { draftOf } = await import('@shared/models')
 
 /** A store whose host is never reached, and the alerts it passes on. */
 function storeWithAlerts() {
@@ -42,28 +45,48 @@ function storeWithAlerts() {
 
 const alert = (botId: string): HostAlert => ({ botId, kind: 'done', title: botId, body: 'Finished.' })
 
-function storeWithStream(t: TestContext) {
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve))
+const hostHello = { version: '2.54.0', name: 'Mac', backends: [] }
+
+function storeWithStream(t: TestContext, call: HostTransport['call'] = async () => hostHello) {
   let onData!: (line: string) => void
-  let opened!: () => void
+  let onEnd!: (error: null) => void
+  let opened: (() => void) | undefined
+  const requests: number[] = []
   const transport: HostTransport = {
-    call: async () => ({ version: '2.54.0', name: 'Mac', backends: [] }),
-    stream: (_path, receive) => { onData = receive; opened(); return () => {} },
+    call,
+    stream: (path, receive, end) => {
+      requests.push(Number(new URL(path, 'http://localhost').searchParams.get('since')))
+      onData = receive
+      onEnd = end
+      opened?.()
+      opened = undefined
+      return () => {}
+    },
   }
-  const store = new BotSync({ id: 'stream', name: 'Mac', signKey: '', urls: [] }, false, () => transport, '2.54.0')
+  const store = new BotStore({ id: 'stream', name: 'Mac', signKey: '', urls: [] }, false, () => transport, '2.54.0')
   t.after(() => store.retire())
   const send = (event: object) => onData(JSON.stringify(event))
-  const connect = async (rev: number, catchUp?: number) => {
-    const ready = new Promise<void>((resolve) => { opened = resolve })
+  const nextStream = () => new Promise<void>((resolve) => { opened = resolve })
+  const connect = async (rev: number, catchUp?: number, hostId = 'host') => {
+    const ready = nextStream()
     store.restartStream()
     await ready
-    send({ type: 'hello', hostId: 'host', rev, catchUp })
+    const receive = onData
+    send({ type: 'hello', hostId, rev, catchUp })
+    return (event: object) => receive(JSON.stringify(event))
   }
   const update = (id: string, rev: number, status: Bot['status'], completionReplyId?: string | null) => {
     send({ type: 'bot', rev, bot: { id, rev, status, completionReplyId } })
     return store.completionFor(store.bots.get(id)!)
   }
-  return { store, send, connect, update }
+  return { store, send, connect, update, requests, nextStream, drop: () => onEnd(null) }
 }
+
+const restoredEntry = (id: string, rev: number, text: string, clientNonce?: string): Entry => ({
+  id, botId: 'a', seq: 1, rev, turn: 1, kind: clientNonce ? 'user' : 'agent',
+  data: { text, clientNonce }, createdAt: 1, updatedAt: rev,
+})
 
 test("an alert passes on unless that bot's chat is on screen in a focused window", () => {
   const { store, passed, receive } = storeWithAlerts()
@@ -120,6 +143,312 @@ test('a live completion can precede the hello revision after the counted catch-u
   assert.equal(update('a', 119, 'idle', 'during-connect'), null)
   assert.equal(update('a', 122, 'working', null), null)
   assert.equal(update('a', 124, 'idle', 'next-reply'), 'next-reply')
+})
+
+test('a restored host discards the abandoned stream and rebuilds the bot and chat mirror', async (t) => {
+  const { store, send, connect, update, requests } = storeWithStream(t)
+  const entry = (id: string, rev: number, text: string): Entry => ({
+    id, botId: 'a', seq: id === 'saved' ? 1 : rev, rev, turn: 1, kind: 'agent', data: { final: true, text }, createdAt: rev, updatedAt: rev,
+  })
+  const bot = (id: string, name: string, rev: number, status: Bot['status'], completionReplyId: string | null = null) =>
+    ({ type: 'bot', rev, bot: { id, name, rev, status, completionReplyId } })
+
+  await connect(130, 4)
+  send(bot('a', 'Renamed Alpha', 121, 'idle', 'abandoned-reply'))
+  send({ type: 'entry', entry: entry('saved', 122, 'Edited later') })
+  send({ type: 'entry', entry: entry('abandoned-reply', 126, 'Written later') })
+  send(bot('later', 'Created later', 128, 'idle'))
+  const local: Entry = {
+    ...entry('local-unsent', 0, 'Pending send'), kind: 'user', seq: Number.MAX_SAFE_INTEGER, data: { text: 'Pending send', status: 'failed' },
+  }
+  store.entries.get('a')!.push(local)
+  store.composerDrafts.set('a', 'Draft to keep')
+  t.after(() => storage.clear())
+
+  const abandoned = await connect(24, 1)
+  abandoned(bot('extra', 'From the abandoned stream', 129, 'idle'))
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.deepEqual(requests, [0, 128, 0])
+
+  send({ type: 'hello', hostId: 'host', rev: 24, catchUp: 4 })
+  send({ type: 'icons' })
+  send(bot('b', 'Beta', 19, 'idle', 'historical-reply'))
+  send(bot('a', 'Alpha', 21, 'working'))
+  send({ type: 'entry', entry: entry('saved', 22, 'Before the edit') })
+  assert.deepEqual([...store.bots.keys()], ['b', 'a'])
+  assert.equal(store.bots.get('a')?.name, 'Alpha')
+  assert.equal(store.bots.get('a')?.status, 'working')
+  assert.deepEqual(store.allEntries('a'), [entry('saved', 22, 'Before the edit'), local])
+  assert.equal(store.composerDrafts.get('a'), 'Draft to keep')
+  assert.equal(store.completionFor(store.bots.get('b')!), null)
+  assert.equal(update('b', 22, 'idle', 'historical-reply'), null)
+  assert.equal(update('a', 23, 'idle', 'fresh-reply'), 'fresh-reply')
+  store.consumeCompletion('a', 'fresh-reply')
+  assert.equal(update('a', 23, 'idle', 'fresh-reply'), null)
+  assert.equal(update('a', 25, 'idle', 'fresh-reply'), null)
+
+  await connect(25, 0)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.deepEqual(requests, [0, 128, 0, 25], 'a normal reconnect keeps its cursor')
+})
+
+test('a second zero-cursor fetch discards the first partial replay', { timeout: 5000 }, async (t) => {
+  const { store, send, connect, update, requests, nextStream, drop } = storeWithStream(t)
+  await connect(130, 1)
+  update('a', 128, 'idle')
+  await connect(26, 0)
+  await nextTurn()
+  send({ type: 'hello', hostId: 'host', rev: 26, catchUp: 2 })
+  send({ type: 'entry', entry: restoredEntry('shared', 25, 'Partial copy') })
+  const retried = nextStream()
+  drop()
+  await retried
+  send({ type: 'hello', hostId: 'host', rev: 24, catchUp: 2 })
+  send({ type: 'entry', entry: restoredEntry('shared', 21, 'Restored copy') })
+  update('a', 22, 'idle')
+  assert.deepEqual(requests, [0, 128, 0, 0])
+  assert.equal(store.allEntries('a')[0]?.data.text, 'Restored copy')
+})
+
+for (const counted of [true, false]) {
+  test(`an interrupted ${counted ? 'counted' : 'legacy'} recovery deletion keeps the draft and retry`, { timeout: 5000 }, async (t) => {
+    const uploads: string[] = []
+    const sends: string[] = []
+    const { store, send, connect, update, requests, nextStream, drop } = storeWithStream(t, async (method, body) => {
+      if (method === 'upload') uploads.push((body as { data: string }).data)
+      if (method === 'send') {
+        sends.push((body as { clientNonce: string }).clientNonce)
+        return new Promise(() => {})
+      }
+      return hostHello
+    })
+    await connect(130, 1)
+    update('a', 128, 'idle')
+    store.selection = 'a'
+    const file = { id: 'file', name: 'report.txt', data: Uint8Array.of(65) }
+    store.composerDrafts.set('a', 'Unsent draft')
+    store.draftFiles.update('a', () => [file])
+    store.send('Retry me', 'a', { nonce: 'pending', files: [file] })
+    await nextTurn()
+
+    await connect(26, 0)
+    await nextTurn()
+    send({ type: 'hello', hostId: 'host', rev: 26, catchUp: counted ? 2 : undefined })
+    send({ type: 'bot', bot: { id: 'a', rev: 25, deleted: true } })
+    assert.equal(store.bots.has('a'), false)
+    const retried = nextStream()
+    drop()
+    await retried
+    send({ type: 'hello', hostId: 'host', rev: 24, catchUp: counted ? 1 : undefined })
+    update('a', 22, 'idle')
+    if (!counted) update('a', 27, 'idle')
+    assert.deepEqual(requests, [0, 128, 0, 0])
+    assert.deepEqual([store.composerDrafts.get('a'), store.draftFiles.get('a'), store.selection], ['Unsent draft', [file], 'a'])
+    const pending = store.allEntries('a')[0]!
+    assert.equal(pending.data.status, 'failed')
+    store.retry(pending)
+    await nextTurn()
+    assert.deepEqual(uploads, ['QQ==', 'QQ=='])
+    assert.deepEqual(sends, ['pending', 'pending'])
+
+    await connect(30, 0)
+    send({ type: 'bot', bot: { id: 'a', rev: 31, deleted: true } })
+    assert.equal(store.composerDrafts.get('a'), '')
+    assert.deepEqual(store.draftFiles.get('a'), [])
+    assert.equal(store.selection, null)
+    store.retry(pending)
+    await nextTurn()
+    assert.deepEqual(uploads, ['QQ==', 'QQ=='], 'a removed retry no longer has its upload bytes')
+    assert.deepEqual(store.allEntries('a'), [])
+  })
+
+  test(`a complete ${counted ? 'counted' : 'legacy'} recovery clears only bots still deleted`, async (t) => {
+    const { store, send, connect, update } = storeWithStream(t, async (method) => method === 'send' ? new Promise(() => {}) : hostHello)
+    await connect(130, 2)
+    update('a', 127, 'idle')
+    update('b', 128, 'idle')
+    const file = { id: 'file', name: 'report.txt', data: Uint8Array.of(65) }
+    for (const id of ['a', 'b']) {
+      store.composerDrafts.set(id, `Draft ${id}`)
+      store.draftFiles.update(id, () => [file])
+      store.send(`Pending ${id}`, id, { nonce: id })
+    }
+    await connect(26, 0)
+    await nextTurn()
+    send({ type: 'hello', hostId: 'host', rev: 26, catchUp: counted ? 5 : undefined })
+    send({ type: 'bot', bot: { id: 'a', rev: 21, deleted: true } })
+    send({ type: 'bot', bot: { id: 'b', rev: 22, deleted: true } })
+    send({ type: 'bot', bot: { id: 'a', rev: 20, status: 'idle' } })
+    update('b', 23, 'idle')
+    assert.equal(store.composerDrafts.get('a'), 'Draft a', 'the snapshot is still incomplete')
+    assert.equal(store.bots.has('a'), false, 'a stale bot row cannot supersede the deletion')
+    update('b', counted ? 24 : 27, 'idle')
+    assert.equal(store.composerDrafts.get('a'), '')
+    assert.deepEqual(store.draftFiles.get('a'), [])
+    assert.deepEqual(store.allEntries('a'), [])
+    assert.equal(store.composerDrafts.get('b'), 'Draft b')
+    assert.deepEqual(store.draftFiles.get('b'), [file])
+    assert.equal(store.allEntries('b')[0]?.data.clientNonce, 'b')
+  })
+}
+
+for (const counted of [true, false]) {
+  test(`a receipt in an interrupted ${counted ? 'counted' : 'legacy'} recovery leaves the text and files retryable`, { timeout: 5000 }, async (t) => {
+    const uploads: Record<string, unknown>[] = []
+    const sends: { body: Record<string, unknown>; reply: (answer: unknown) => void }[] = []
+    const { store, send, connect, update, requests, nextStream, drop } = storeWithStream(t, async (method, body) => {
+      const params = body as Record<string, unknown>
+      if (method === 'upload') uploads.push(params)
+      if (method === 'send') return new Promise((reply) => sends.push({ body: params, reply }))
+      return hostHello
+    })
+    await connect(130, 1)
+    update('a', 128, 'idle')
+    store.send('Retry me', 'a', { nonce: 'pending', files: [{ id: 'file', name: 'report.txt', data: Uint8Array.of(65) }] })
+    await nextTurn()
+
+    await connect(26, 0)
+    await nextTurn()
+    send({ type: 'hello', hostId: 'host', rev: 26, catchUp: counted ? 3 : undefined })
+    update('a', 21, 'idle')
+    send({ type: 'entry', entry: restoredEntry('partial', 23, 'Retry me', 'pending') })
+    const retried = nextStream()
+    drop()
+    await retried
+    send({ type: 'hello', hostId: 'host', rev: 24, catchUp: counted ? 1 : undefined })
+    update('a', 22, 'idle')
+    assert.deepEqual(requests, [0, 128, 0, 0])
+    assert.deepEqual(store.allEntries('a').map((e) => [e.id, e.data.text, e.data.status]), [['local-pending', 'Retry me', 'failed']])
+
+    store.retry(store.allEntries('a')[0]!)
+    await nextTurn()
+    assert.deepEqual(uploads.map((u) => [u.botId, u.name, u.data]), Array(2).fill(['a', 'report.txt', 'QQ==']))
+    assert.deepEqual(sends.map((s) => [s.body.botId, s.body.text, s.body.clientNonce]), Array(2).fill(['a', 'Retry me', 'pending']))
+    assert.deepEqual(sends[1]?.body.attachments, [uploads[1]?.uploadId])
+    sends[1]!.reply({ entry: restoredEntry('saved', 25, 'Retry me', 'pending') })
+    await nextTurn()
+    assert.deepEqual(store.allEntries('a').map((e) => e.id), ['saved'], 'an RPC confirms even during recovery')
+  })
+
+  test(`a complete ${counted ? 'counted' : 'legacy'} recovery confirms a restored send once`, async (t) => {
+    const { store, send, connect, update } = storeWithStream(t, async (method) => method === 'send' ? new Promise(() => {}) : hostHello)
+    await connect(130, 1)
+    update('a', 128, 'idle')
+    store.send('Already saved', 'a', { nonce: 'pending' })
+    await connect(26, 0)
+    await nextTurn()
+
+    send({ type: 'hello', hostId: 'host', rev: 26, catchUp: counted ? 3 : undefined })
+    update('a', 21, 'idle')
+    const entry = restoredEntry('saved', 23, 'Already saved', 'pending')
+    send({ type: 'entry', entry })
+    assert.ok(store.allEntries('a').some((e) => e.id === 'local-pending'))
+    update('a', counted ? 24 : 27, 'idle')
+    assert.deepEqual(store.allEntries('a').map((e) => e.id), ['saved'])
+    send({ type: 'entry', entry })
+    assert.deepEqual(store.allEntries('a').map((e) => e.id), ['saved'])
+  })
+}
+
+test('a restored chat ignores abandoned send and bot replies and can resend with the same files and nonce', async (t) => {
+  const calls: { method: string; body: Record<string, unknown>; reply: (answer: unknown) => void }[] = []
+  const { store, send, connect, update } = storeWithStream(t, async (method, body) => {
+    if (method === 'hello') return hostHello
+    if (method === 'upload') {
+      calls.push({ method, body: body as Record<string, unknown>, reply: () => {} })
+      return {}
+    }
+    return new Promise((reply) => calls.push({ method, body: body as Record<string, unknown>, reply }))
+  })
+  await connect(130, 1)
+  update('a', 128, 'idle')
+  store.send('Pending text', 'a', { nonce: 'same-nonce', files: [{ id: 'file', name: 'report.txt', data: Uint8Array.of(65) }] })
+  const save = store.save(draftOf(store.bots.get('a')!)).then(() => true, () => false)
+  await nextTurn()
+  const oldSend = calls.find((c) => c.method === 'send')!
+  const oldSave = calls.find((c) => c.method === 'updateBot')!
+  assert.ok(oldSend && oldSave)
+
+  await connect(26, 0)
+  await nextTurn()
+  send({ type: 'hello', hostId: 'host', rev: 26, catchUp: 1 })
+  update('a', 21, 'idle')
+  oldSave.reply({ bot: { id: 'a', name: 'Obsolete name', rev: 130, status: 'idle' } })
+  await nextTurn()
+  assert.deepEqual(store.allEntries('a').map((e) => [e.id, e.data.status]), [['local-same-nonce', 'failed']])
+  assert.equal(store.bots.get('a')?.rev, 21)
+  assert.equal(await save, false)
+
+  const local = store.allEntries('a')[0]!
+  store.retry(local)
+  await nextTurn()
+  const retried = calls.filter((c) => c.method === 'send').at(-1)!
+  assert.notEqual(retried, oldSend)
+  assert.equal(retried.body.clientNonce, 'same-nonce')
+  assert.equal(retried.body.text, 'Pending text')
+  assert.deepEqual(calls.filter((c) => c.method === 'upload').map((c) => c.body.data), ['QQ==', 'QQ=='])
+  oldSend.reply({ entry: restoredEntry('lost', 129, 'Old reply', 'same-nonce') })
+  await nextTurn()
+  assert.deepEqual(store.allEntries('a').map((e) => [e.id, e.data.status]), [['local-same-nonce', 'sending']])
+  const confirmed = restoredEntry('confirmed', 23, 'Pending text', 'same-nonce')
+  send({ type: 'entry', entry: confirmed })
+  retried.reply({ entry: confirmed })
+  await nextTurn()
+  assert.deepEqual(store.allEntries('a').map((e) => e.id), ['confirmed'])
+})
+
+test('restored send receipts leave a different draft and its files alone', async (t) => {
+  let oldReply!: (answer: unknown) => void
+  const { store, send, connect, update } = storeWithStream(t, async (method) => {
+    if (method === 'send') return new Promise((resolve) => { oldReply = resolve })
+    return hostHello
+  })
+  await connect(130, 1)
+  update('a', 128, 'idle')
+  store.send('Already stored', 'a', { nonce: 'present' })
+  await nextTurn()
+  store.composerDrafts.set('a', 'New draft')
+  t.after(() => storage.clear())
+  const file = { id: 'file', name: 'draft.txt', data: Uint8Array.of(65) }
+  const drafts = store.draftFiles
+  drafts.update('a', () => [file])
+  assert.deepEqual(drafts.get('another-chat'), [])
+
+  await connect(24, 0)
+  await nextTurn()
+  send({ type: 'hello', hostId: 'host', rev: 24, catchUp: 2 })
+  update('a', 20, 'idle')
+  send({ type: 'entry', entry: restoredEntry('confirmed', 21, 'Already stored', 'present') })
+  oldReply({ entry: restoredEntry('obsolete', 129, 'Obsolete reply', 'present') })
+  await nextTurn()
+  assert.deepEqual(store.allEntries('a').map((e) => e.id), ['confirmed'])
+  assert.equal(store.composerDrafts.get('a'), 'New draft')
+  assert.deepEqual(store.draftFiles.get('a'), [file])
+
+  await connect(24, 0, 'another-host')
+  drafts.update('a', () => [file])
+  assert.deepEqual(store.draftFiles.get('a'), [])
+})
+
+test('a refused pre-restore roster update cannot undo the restored lead', async (t) => {
+  let rejectLead!: (reason: Error) => void
+  const { store, send, connect, update } = storeWithStream(t, async (method) => {
+    if (method === 'setLead') return new Promise((_resolve, reject) => { rejectLead = reject })
+    return hostHello
+  })
+  await connect(130, 1)
+  update('a', 128, 'idle')
+  store.setLead(store.bots.get('a')!)
+  await nextTurn()
+
+  await connect(24, 0)
+  await nextTurn()
+  send({ type: 'hello', hostId: 'host', rev: 24, catchUp: 1 })
+  send({ type: 'bot', bot: { id: 'a', rev: 21, lead: true } })
+  rejectLead(new Error('Abandoned request'))
+  await nextTurn()
+  assert.equal(store.bots.get('a')?.lead, true)
+  assert.equal(store.lastError, null)
 })
 
 test('older buffered bot states and duplicate replies stay quiet after catch-up', async (t) => {

@@ -22,6 +22,8 @@ pub enum Msg {
     Reply(After, Result<Value, String>),
     /// The stream is starting over from rev 0: drop what we have.
     Rewind,
+    /// The recovery replay can confirm receipts, even before a live revision arrives.
+    ReplayComplete,
     /// A setup terminal's output or exit.
     Term(String, Value),
 }
@@ -32,7 +34,11 @@ pub enum After {
     Nothing,
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
-    Sent(String),
+    Sent {
+        key: String,
+        nonce: String,
+        epoch: u64,
+    },
     Connection(String, super::super::connections::Step),
     Hello,
     /// `track`: fire and forget; analytics never surfaces an error.
@@ -41,7 +47,7 @@ pub enum After {
     AutoOrder,
     ThreadKeep,
     CredentialsReset,
-    History(String),
+    History(String, u64),
     Dirs(String),
     WorkspaceSelected(String),
     Pairing,
@@ -52,7 +58,7 @@ pub enum After {
     PairingDecided,
     Backends,
     Update,
-    Saved,
+    Saved(u64),
     Connectors,
     Skills,
     Installed,

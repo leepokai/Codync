@@ -118,7 +118,13 @@ impl Client {
 
     /// Uploads `files` in 384 KiB chunks (under the channel's message limit, like the apps), then sends
     /// `body` with them attached; a `taskId` in it puts them in that task's thread. The reply comes back as `Msg::Reply(after, …)`.
-    pub fn spawn_send_files(&self, mut body: Value, files: Vec<PathBuf>, after: After, tx: UnboundedSender<Msg>) {
+    pub fn spawn_send(
+        &self,
+        mut body: Value,
+        files: Vec<PathBuf>,
+        after: After,
+        tx: UnboundedSender<Msg>,
+    ) -> tokio::task::AbortHandle {
         use base64::Engine as _;
         const CHUNK: usize = 384 * 1024;
         const MAX: u64 = 100 * 1024 * 1024;
@@ -151,11 +157,14 @@ impl Client {
                     }
                     ids.push(id);
                 }
-                body["attachments"] = ids.into();
+                if !ids.is_empty() {
+                    body["attachments"] = ids.into();
+                }
                 c.call("send", &body).await
             };
             let _ = tx.send(Msg::Reply(after, upload.await));
-        });
+        })
+        .abort_handle()
     }
 
     /// Streams a setup terminal's output (scrollback first) until it exits; returns where its
@@ -229,7 +238,13 @@ impl Client {
     pub fn spawn_stream(&self, tx: UnboundedSender<Msg>) {
         let c = self.clone();
         tokio::spawn(async move {
-            loop {
+            let mut host_id: Option<String> = None;
+            let mut recovering = false;
+            let rewind = || {
+                c.rev.store(0, Ordering::Relaxed);
+                tx.send(Msg::Rewind).is_ok()
+            };
+            'connect: loop {
                 let since = c.rev.load(Ordering::Relaxed);
                 let url = format!("{}/events?since={since}&client=tui", c.base);
                 if let Some(token) = c.token()
@@ -239,6 +254,10 @@ impl Client {
                     if tx.send(Msg::Online(true)).is_err() || tx.send(Msg::Connected { since }).is_err() {
                         return;
                     }
+                    let mut catch_up_left: Option<u64> = None;
+                    let mut hello_rev = i64::MAX;
+                    let mut confirming_replay = recovering;
+                    let mut unreadable = false;
                     let mut events = std::pin::pin!(sse_values(res));
                     while let Some(v) = events.next().await {
                         let v = match v {
@@ -247,20 +266,58 @@ impl Client {
                             Err(SseError::Read(_)) => break,
                             Err(SseError::Json(_)) => {
                                 // Never skip what we can't read: start over from scratch.
-                                c.rev.store(0, Ordering::Relaxed);
-                                let _ = tx.send(Msg::Rewind);
+                                unreadable = true;
                                 break;
                             }
                         };
-                        if v["type"] == "resync" {
-                            break;
+                        let rev = v["rev"].as_i64();
+                        let live_revision = match v["type"].as_str() {
+                            Some("resync") => break,
+                            Some("hello") => {
+                                let id = v["hostId"].as_str();
+                                if id.is_some() && id == host_id.as_deref() && rev.is_some_and(|rev| rev < since) {
+                                    if !rewind() {
+                                        return;
+                                    }
+                                    recovering = true;
+                                    continue 'connect;
+                                }
+                                host_id = id.map(str::to_owned);
+                                hello_rev = rev.unwrap_or(i64::MAX);
+                                catch_up_left = v["catchUp"].as_u64();
+                                false
+                            }
+                            _ => {
+                                let live =
+                                    rev.is_some_and(|r| r > 0 && catch_up_left.map_or(r > hello_rev, |left| left == 0));
+                                if let Some(left) = &mut catch_up_left {
+                                    *left = left.saturating_sub(1);
+                                }
+                                live
+                            }
+                        };
+                        // Snapshot revisions can run ahead of buffered live events.
+                        if live_revision {
+                            recovering = false;
                         }
-                        if let Some(rev) = v["rev"].as_i64() {
+                        if !recovering && let Some(rev) = rev {
                             c.rev.fetch_max(rev, Ordering::Relaxed);
                         }
                         if tx.send(Msg::Event(v)).is_err() {
                             return;
                         }
+                        if confirming_replay && (catch_up_left == Some(0) || live_revision) {
+                            confirming_replay = false;
+                            if tx.send(Msg::ReplayComplete).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    if unreadable || (since == 0 && (recovering || catch_up_left.is_some_and(|left| left > 0))) {
+                        if !rewind() {
+                            return;
+                        }
+                        recovering = true;
                     }
                 }
                 if tx.send(Msg::Online(false)).is_err() {

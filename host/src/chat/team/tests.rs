@@ -563,20 +563,58 @@ async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
     f.hub.set_hop_review(true).unwrap();
     f.hub.make_lead("c").unwrap();
     f.hub.team.start_turn("b", Turn::Chat(8));
-    let session = crate::network::sessions::Session {
-        key: "codex:local".into(),
+    let caller = crate::network::sessions::Caller {
         kind: codync_network::AgentKind::Codex,
-        address: "local-agent".into(),
+        session: Some("local".into()),
+        process: "test".into(),
         cwd: ".".into(),
-        title: None,
-        busy: None,
-        temporary: false,
-        named: None,
-        seen: 0,
+        hint: None,
     };
+    // Use the production constructor: later Session fields keep their production defaults too.
+    let (session, _) =
+        f.hub.network.sessions.register(&f.hub.store, &caller, None, || Ok("local-agent".into())).unwrap();
     let source = f.hub.store.bot("b").unwrap().unwrap().config;
     let err = remote::to_local_session(&f.hub, &source, "b", &session, "blocked").unwrap_err();
     assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.shutdown().await;
+}
+
+/// A lift's in-memory refusal state is gone after a restart. Its saved notice expires, never becoming ordinary work
+/// for the lead or a reply turn that wakes the blocked bot without an approved reset.
+#[tokio::test]
+async fn a_hop_lift_notice_expires_on_restart_instead_of_becoming_work() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.send_to("c", "BLOCK lead work").await;
+    f.until(|| f.prompts_of("c").len() == 1).await;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "REFUSED work"})).unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    let notice = f
+        .hub
+        .store
+        .history("c", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.data["heading"].as_str().is_some_and(|heading| heading.starts_with("Hop limit refusal")))
+        .expect("the lift waits behind the lead's work");
+    assert_eq!(notice.data["status"], "queued");
+    let id = notice.id.clone();
+
+    let f = f.restart().await;
+    std::fs::write(f.dir.join("c/release"), "").unwrap();
+    f.until(|| {
+        let status = f.hub.store.entry(&id).unwrap().data["status"].as_str().unwrap_or_default().to_owned();
+        matches!(status.as_str(), "completed" | "failed" | "cancelled")
+    })
+    .await;
+    f.until(|| f.idle("c")).await;
+    let notice = f.hub.store.entry(&id).unwrap();
+    assert!(f.prompts_of("c").iter().all(|prompt| !prompt.contains("REFUSED work")), "never executed as work");
+    assert!(f.prompts_of("a").is_empty(), "the blocked bot was not woken without a reset");
+    assert_eq!(notice.data["status"], "failed", "the lift cannot be judged after its state was lost");
+    assert_eq!(notice.data["botMessage"]["detail"], crate::store::INTERRUPTED);
     f.shutdown().await;
 }
 

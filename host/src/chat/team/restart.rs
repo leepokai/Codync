@@ -69,6 +69,14 @@ fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
         return;
     }
     let data = &notices[0].data;
+    if data["hopLift"] == true {
+        // The refusal and its grant lived only in the old process. Never turn its saved text into work for the
+        // lead or a reply turn for the blocked bot: close the notice and let the user start a fresh chain.
+        for notice in notices.iter().filter(open) {
+            finish_entry(hub, &notice.id, RequestStatus::Failed, INTERRUPTED, None, None);
+        }
+        return;
+    }
     let message = &data["botMessage"];
     let (Some(id), Some(source), Some(target), Some(text)) = (
         data["delegationId"].as_str(),

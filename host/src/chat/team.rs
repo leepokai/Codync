@@ -523,6 +523,10 @@ struct Exchange<'a> {
 impl Exchange<'_> {
     /// Saves its notice in `bot`'s chat, waiting for the reply; the recipient's opens its next turn.
     fn notice(&self, hub: &Hub, bot: &str, heading: &str, recipient: bool) -> Result<String> {
+        self.save_notice(hub, bot, heading, recipient, false)
+    }
+
+    fn save_notice(&self, hub: &Hub, bot: &str, heading: &str, recipient: bool, lift: bool) -> Result<String> {
         let mut message = json!({"sourceBotId": self.source, "targetBotId": self.target, "text": self.text});
         if let Some(peer) = self.peer_name {
             message["peerName"] = peer.into();
@@ -532,6 +536,9 @@ impl Exchange<'_> {
             "heading": heading, "style": "info", "status": RequestStatus::Queued, "delegationId": self.request,
             "sourceBotId": self.source, "targetBotId": self.target, "botMessage": message,
         });
+        if lift {
+            data["hopLift"] = true.into();
+        }
         if let Some(hops) = self.hops {
             data["hops"] = hops.into();
         }
@@ -729,7 +736,8 @@ fn hop_notice_to_lead(
     );
     let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift, &lead.name, 0);
     let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text, peer_name: None, hops: None };
-    lifetime.entries.push(exchange.notice(hub, &lead.id, heading, true)?);
+    // A hop-limit lift keeps its origin, so a restart cannot restore it as an ordinary request.
+    lifetime.entries.push(exchange.save_notice(hub, &lead.id, heading, true, true)?);
     lifetime.deliver(&lead.id, Access::Allow, prompt)
 }
 
@@ -924,10 +932,11 @@ pub(super) fn on_hop_limit(
         let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name, 0);
         let exchange =
             Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None, hops: None };
-        lifetime.entries.push(exchange.notice(
+        lifetime.entries.push(exchange.save_notice(
             hub,
             &lead.id,
             &format!("Hop limit refusal {refusal} from {}.", source.name),
+            true,
             true,
         )?);
         lifetime.deliver(&lead.id, Access::Allow, prompt)

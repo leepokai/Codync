@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -53,13 +52,13 @@ internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.fil
     return (seats.firstOrNull { it.login == Login("claude") } ?: seats.firstOrNull())?.login ?: Login("")
 }
 
-/** The sheet a new thread starts from; [open] shows it. Send opens the thread once it starts ([openLoose] for one without a bot). */
+/** The sheet a new thread starts from; [open] shows it. Send opens its thread chat once it starts ([openThread]). */
 @Composable internal fun NewThreadSheet(open: Boolean, bots: List<WorkingBot>, plain: AppState?, accounts: AccountStore, dismiss: () -> Unit,
-    openLoose: (LooseThread) -> Unit) {
-    CodyncSheet(open, dismiss, fitted = true) { NewThreadForm(bots, plain, accounts, dismiss, openLoose) }
+    openThread: (ThreadRef) -> Unit) {
+    CodyncSheet(open, dismiss, fitted = true) { NewThreadForm(bots, plain, accounts, dismiss, openThread) }
 }
 
-@Composable private fun NewThreadForm(bots: List<WorkingBot>, plain: AppState?, accounts: AccountStore, dismiss: () -> Unit, openLoose: (LooseThread) -> Unit) {
+@Composable private fun NewThreadForm(bots: List<WorkingBot>, plain: AppState?, accounts: AccountStore, dismiss: () -> Unit, openThread: (ThreadRef) -> Unit) {
     var text by remember { mutableStateOf("") }
     // The bot it's with, by computer and id; null for no bot.
     var with by remember { mutableStateOf(if (plain == null) (bots.firstOrNull { it.bot.lead } ?: bots.firstOrNull())?.let { it.state.computer.id to it.bot.id } else null) }
@@ -81,7 +80,7 @@ internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.fil
                 // A failure shows as every action's does and keeps the message here.
                 else IconButton("Send", "arrow.up", enabled = text.isNotBlank() && store != null) {
                     val setup = if (with == null && plain != null) plainSetup(login, if (plain.threadFolders) "" else plain.home, model, options) else null
-                    store?.startThread(bot?.bot?.id, text, setup, dismiss, openLoose)
+                    store?.startThread(bot?.bot?.id, text, setup, dismiss, openThread)
                 }
             }
         }
@@ -118,11 +117,8 @@ internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.fil
     }
     val plainStore = plain?.let { accounts.store(it.computer.id) }
     if (plain != null && plainStore != null) CodyncSheet(choosingModel, { choosingModel = false }) {
-        Column(Modifier.fillMaxSize()) {
-            ModalHeader("Model")
-            ModelPanel(plain, plainStore, backend = login.backend, loginProfile = login.loginProfile, model = model, options = options,
-                choose = { m, o -> model = m; options = o }, fast = null, setFast = null, bot = null, seats = readySeats(plain, login),
-                pickSeat = { login = it; model = null; options = emptyMap() })
-        }
+        ModelPanel(plain, plainStore, backend = login.backend, loginProfile = login.loginProfile, model = model, options = options,
+            choose = { m, o -> model = m; options = o }, fast = null, setFast = null, bot = null, seats = readySeats(plain, login),
+            pickSeat = { login = it; model = null; options = emptyMap() })
     }
 }

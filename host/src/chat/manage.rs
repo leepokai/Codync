@@ -188,7 +188,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             // the clients give a tool call, so a wedged agent launch can't outlive them silently.
             let deadline = Instant::now() + APPROVAL_TIMEOUT;
             let catalog =
-                tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent, profile.as_deref()))
+                tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent, profile.as_deref(), crate::agent::auth::ModelListWanted::Fresh))
                     .await
                 .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
                 .map_err(|e| {

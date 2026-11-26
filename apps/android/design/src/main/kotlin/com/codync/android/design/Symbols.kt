@@ -169,6 +169,7 @@ import androidx.annotation.DrawableRes
     "safari" -> R.drawable.sf_safari
     "shift" -> R.drawable.sf_shift
     "shippingbox" -> R.drawable.sf_shippingbox
+    "sidebar.right" -> R.drawable.sf_sidebar_right
     "slider.horizontal.3" -> R.drawable.sf_slider_horizontal_3
     "square.and.arrow.down" -> R.drawable.sf_square_and_arrow_down
     "square.and.arrow.up" -> R.drawable.sf_square_and_arrow_up

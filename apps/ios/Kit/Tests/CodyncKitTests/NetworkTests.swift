@@ -68,3 +68,13 @@ private let work = #"{"id":"network-1a2b","name":"work","computer":"desk","role"
     let sent = try JSONSerialization.jsonObject(with: JSONEncoder().encode(BotDraft(old))) as? [String: Any]
     #expect(sent?["offeredToNetwork"] == nil, "nothing to send to a host without it")
 }
+
+@Test func sessionsReadWhatTheHostSays() throws {
+    let view = #"{"joined":false,"sessions":[{"address":"billing-claude","title":"Fix refunds","kind":"claude-code","registry":"claude-acp","tier":"pull","state":"working","runs":true,"older":false,"seen":1},{"address":"infra-codex","kind":"someday","tier":"later","seen":0,"older":true,"later":1}]}"#
+    let decoded = try JSONDecoder().decode(NetworkView.self, from: Data(view.utf8))
+    #expect(decoded.hasContent, "sessions alone are worth showing")
+    let sessions = try #require(decoded.sessions)
+    #expect(sessions.map(\.older) == [false, true] && sessions.first?.runs == true)
+    #expect(sessions.first?.stateTitle == "Working" && sessions.last?.stateTitle == nil)
+    #expect(sessions.last?.tierTitle == nil, "a tier this app doesn't know shows nothing")
+}

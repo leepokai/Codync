@@ -494,32 +494,28 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
 
 - **Opening.** Desktop: the row opens the thread as a tab of the inspector's pane (`DetailsPanel` → `ThreadChat`,
   the chat's own form, as on the Threads page); a thread whose task left the box closes. What follows (one line per
-  shared entry, the header, a composer without dictation) is the phones'; the desktop shows each shared entry as
-  the chat's own row, answered and opened in the thread, with the chat's `Composer`. iPhone: the row
-  pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
-  the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
-  over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
-  `NavStack`, with the same header. A row of the Threads tab opens the bot's chat with its
-  details on that thread.
-- **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
-  line (below), which opens the chat at it; on the phones the thread has no card to answer.
-- **Header**: title, the status word with its mark and the time, the where line, Stop while the task is live (it
-  asks first).
+  shared entry) is the terminal's; the desktop and the phones show each shared entry as the chat's own row, answered
+  and opened in the thread, with the chat's composer. iPhone: the row pushes `ThreadChatView` inside the details
+  sheet (or, from the Threads tab, in that tab's stack); the system bar is hidden (`hidesSystemNavigationBar`, which
+  keeps the edge swipe back) and the page draws its own header, as Android's: `Back`, the bot, the title over the
+  status line, and `Details` outside the details. Android pushes `ThreadChat.kt` by the design module's `NavStack`.
+- **A row that needs you.** In the bot's details it still opens the chat at its card. On the phones' Threads tab a
+  row whose task has a thread opens that thread instead (a task without one opens the chat at its card). Wherever a
+  needs-you thread is open, the card it waits on is the chat's own row there, paged back for when the chat's loaded
+  rows don't hold it (desktop `cardOf`, iPhone `card(for:in:)`, Android `holdChat`).
+- **Header**: Back, the bot (a thread without a bot: its agent), the title over the status word with its mark and the
+  time (and where it works when there is no composer to say it), and `Details` outside the details. Stop is the
+  composer's while the thread works (it asks first), or the read-only line's.
 - **Transcript**: `What it was told` folded on top (the host's first words to the thread); what the host told it
   later (a task picked up again) is a quiet quote where it happened; the user's messages are the chat's bubbles;
   the thread's final replies (kind `agent` and `final`) are the chat's agent message, read only
-  (Copy; no reactions, reply or trace); the rest are the chat's working steps, the running turn's unfolded. A thread's
+  (Copy; no reactions, reply or trace); its steps are no rows, only the working line's while it works. A thread's
   own transcript holds no file or artifact (what it shares goes to the chat), so its replies are text on every
   client. What the thread put in the bot's chat (the entries whose `data.thread.id` is the thread's id: approval and
   choice cards, answered ones too, its agent's sign-in card, files, voice notes, artifact cards) joins the transcript in time order
-  (`createdAt`, each side kept in its order, the thread's own first at the same moment) as one quiet line with a
-  symbol (the phones' `sharedLine`: `hand.raised` while it waits on the user, `checkmark`, `xmark` or `clock` once answered or
-  not, `doc`, `waveform`, `doc.richtext`; a sign-in card reads as the card stands: `Needs <agent> sign-in`, `Signed
-  in`, `Cancelled`, not `Asked in the chat to sign in to <agent>.`, which the thread's own transcript already has
-  beside it). The full card, file or artifact stays in the chat, where the coordinator
-  shows it. A tap on the line opens the chat at that entry: the phones close the details sheet and bring it into view, as a
-  needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
-  looked at, as for a needs-you row.
+  (`createdAt`, each side kept in its order, the thread's own first at the same moment) as the chat's own row,
+  answered, downloaded and opened in the thread as in the chat (desktop `buildChat`, iPhone `ChatItem.thread`,
+  Android `threadChatItems`). Only the terminal shows it as one dim line (above).
 - **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
   (`talkFiles`), but on the phones no dictation, commands, reply or call (the desktop's has dictation). Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it
@@ -529,7 +525,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   two buttons. On the desktop a message that never arrived has Resend and Delete, and one dropped by Stop reads
   `Not sent — stopped`; the phones show the chat's own lines for both.
 - **Read-only threads**: no composer and one quiet line, `Read only: a routine's run` or `Read only: another bot's
-  request`, with Stop beside it on the desktop while it runs. An own task whose thread is gone (`talk` false) has neither.
+  request`, with Stop beside it while it runs. An own task whose thread is gone (`talk` false) has neither.
 - **Where line.** Every client writes the computer's home (`hello.home`) as `~`, with one rule (`homeRelative`,
   the terminal's `tilde`): at a separator boundary only, `/` or `\`; any other path shows whole and is cut in the
   middle.

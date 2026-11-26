@@ -13,4 +13,10 @@ class AutoOrderEventTest {
         assertEquals(MirrorEvent.HopReview(true), decode("""{"type":"hopReview","enabled":true}"""))
         assertEquals(MirrorEvent.Ignored, decode("""{"type":"hopReview"}"""))
     }
+
+    @Test fun aModelListTheComputerReadIsHeard() {
+        assertEquals(MirrorEvent.Models("codex", null, AgentModels(listOf(AgentModel("gpt", "GPT")))),
+            decode("""{"type":"models","backend":"codex","loginProfile":null,"models":{"models":[{"id":"gpt","name":"GPT"}]}}"""))
+        assertEquals(MirrorEvent.Ignored, decode("""{"type":"models","backend":"codex"}"""))
+    }
 }

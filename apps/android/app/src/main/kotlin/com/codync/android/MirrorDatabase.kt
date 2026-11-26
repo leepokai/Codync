@@ -178,6 +178,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.Name, is MirrorEvent.AutoOrder, is MirrorEvent.HopReview, is MirrorEvent.ThreadKeepDays, is MirrorEvent.ThreadEntryChanged -> Unit
             // Workflow events carry no rev. Applying one here would not move the cursor, and must not.
             is MirrorEvent.Workflow -> Unit
+            // Model lists live in memory (`AppStore.receiveModels`) and carry no rev.
+            is MirrorEvent.Models -> Unit
         }
     }
 

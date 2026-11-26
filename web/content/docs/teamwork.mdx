@@ -29,7 +29,7 @@ Bots never wait on each other. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
 2. **The recipient does the work** away from its chat, as a [task](/docs/conversations#work): its chat stays free, and the request waits for a free thread like its other tasks. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
-3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the thread's steps in the recipient's **Details**, but not as a message in the recipient's chat.
+3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the recipient's thread (in its **Details**), but not as a message in the recipient's chat.
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
 Because nobody waits, there's no time limit: the recipient takes as long as the work needs.
@@ -99,6 +99,31 @@ claude mcp add codync -- codync-host mcp network
 ```
 
 Each session is named once, when it first uses the server: its project folder and agent, like `api-claude` (`api-claude-2` for a second one). The same session keeps that address when you resume it, and the letters waiting for it. A new session gets a new address. The address doesn't change when the session's title does; ask the agent to change it (`set_name`) if you want another one. A session asks `whoami` for its address. `check_inbox` reads its letters, and every tool result says how many are waiting. A bot's chat shows "Message from api-claude (this computer)". Bots can take minutes, so the session collects answers with `read_replies` when it's ready, rather than waiting.
+
+Codex, Copilot CLI and Grok can also hear of new letters without asking: add a hook that runs `codync-host network hook` after each tool call (`PostToolUse`) and when a turn ends (`Stop`). The session is then told, at its next step, how many letters are waiting, and reads them with `check_inbox`. Write the event names exactly as below: a hook under another name gets nothing.
+
+Codex, in `~/.codex/hooks.json` (then approve the hooks once in `/hooks`), and Grok, in `~/.grok/hooks/codync.json` with `hook grok` instead of `hook codex`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "codync-host network hook codex" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "codync-host network hook codex" }] }]
+  }
+}
+```
+
+Copilot CLI, in `~/.copilot/hooks/codync.json`:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "PostToolUse": [{ "type": "command", "bash": "codync-host network hook copilot" }],
+    "Stop": [{ "type": "command", "bash": "codync-host network hook copilot" }]
+  }
+}
+```
 
 Your bots can message these sessions too: a bot's list of bots includes the sessions on its computer. The message waits in the session's inbox until the session reads it itself, so the answer may take a while, or never come. When the session answers it (`replyTo` = the letter's id), the answer comes back to the bot's chat like any reply. If the host restarts before then, the answer reaches the bot as a new message instead.
 

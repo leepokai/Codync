@@ -354,7 +354,7 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
 /// default) of `backend` offers, as a client's model settings do: a value the agent refuses would keep the bot from
 /// starting. Loading the agent's model list counts against the call's `deadline`, which its approval card shares.
 async fn check_model_options(
-    hub: &Hub,
+    hub: &Arc<Hub>,
     backend: &str,
     login_profile: Option<&str>,
     model: Option<&str>,
@@ -364,17 +364,19 @@ async fn check_model_options(
     let Some(options) = fields.get("modelOptions").and_then(Value::as_object).filter(|o| !o.is_empty()) else {
         return Ok(());
     };
-    let catalog =
-        match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend, login_profile)).await {
-            Ok(Ok(catalog)) => catalog,
-            Ok(Err(e)) => {
-                return Err(Refused::error(
-                    "catalog",
-                    format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
-                ));
-            }
-            Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
-        };
+    // A fresh list: a value the agent added or dropped since an old one was read is judged by what it offers now.
+    let fresh =
+        crate::agent::auth::shared_models(hub, backend, login_profile, crate::agent::auth::ModelListWanted::Fresh);
+    let catalog = match tokio::time::timeout_at(deadline, fresh).await {
+        Ok(Ok(catalog)) => catalog,
+        Ok(Err(e)) => {
+            return Err(Refused::error(
+                "catalog",
+                format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
+            ));
+        }
+        Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
+    };
     let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
     codync_agent::acp::models::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
         .map_err(|e| Refused::error("options", e.to_string()))

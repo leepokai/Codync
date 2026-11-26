@@ -11,7 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
-// A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
+// A thread's own transcript, read and written to from its chat ([ThreadChat]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
 
 /**
@@ -28,8 +28,14 @@ internal suspend fun AppStore.loadThread(botId: String, threadId: String) {
     }
 }
 
-/** The thread's transcript closed: it is let go. */
-internal fun AppStore.closeThread(threadId: String) = mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+/** One more thread chat shows [threadId] (the same thread can show under its bot's details over it). */
+internal fun AppStore.watchThread(threadId: String) { threadViews.merge(threadId, 1, Int::plus) }
+
+/** A thread chat of [threadId] closed: its transcript is let go once none shows it. */
+internal fun AppStore.closeThread(threadId: String) {
+    if (threadViews.compute(threadId) { _, shown -> ((shown ?: 1) - 1).takeIf { it > 0 } } != null) return
+    mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+}
 
 internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.update { state ->
     val received = state.threadEntries.receivingThreads(events)

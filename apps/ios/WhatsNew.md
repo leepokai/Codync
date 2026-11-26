@@ -19,8 +19,9 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 新增 Workflows 分頁（圖示和電腦版相同）：查看這台電腦的 workflow、它的步驟、觸發條件和執行紀錄，並直接核准或拒絕等待你核准的步驟。在 Bot 列表的電腦標題上點 workflow 圖示也能打開。右上角可以用標題搜尋 workflow，有多台電腦時可以切換電腦。Workflow 在電腦版建立和編輯；長按 workflow 可以釘選到 Bot 列表上方。
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
-- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開和電腦版一樣的模型面板：左邊是 agent，右邊直接列出模型可以搜尋，下面是推理強度和快速模式，不必進 Bot 設定。
+- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開模型面板，不必進 Bot 設定：上方選 agent，模型列滿整個畫面並附上說明（較舊的收在「更多模型」），下方一張卡片放推理強度、核准方式和快速模式。模型清單一打開就在，不用再等載入；往下拉可以重新讀取。
 - 在中國大陸也能收到推播通知了。
+- 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：你的訊息和回覆是對話泡泡，需要你核准或選擇的卡片、檔案和 artifact 直接在 thread 裡處理，進行中的步驟顯示在工作中的那一行；右上角「詳情」可打開 Bot 的詳細資訊。
 
 ### en-US
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
@@ -34,8 +35,9 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - A Workflows tab, with the desktop's icon: see a computer's workflows, their steps, triggers and run history, and approve or reject a step that waits for you. The workflow icon on a computer's heading in the bot list opens them too. Search at the top right finds a workflow by title, and with more computers than one the filter button switches computer. Workflows are built and edited in the desktop app. Long-press a workflow to pin it above the bots.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
-- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the same model panel as on the desktop: the agents on the left, their models listed right away with a search, then effort and Fast mode, without opening the bot's settings.
+- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the model panel, without opening the bot's settings: the agent at the top, its models full width with what each is for (older ones under More models), and one card with effort, Approvals and Fast mode. The list is there the moment it opens; pull down to read it again.
 - Push notifications now reach phones and computers in mainland China.
+- A thread now opens full screen as a chat, like on the desktop: your messages and its replies as bubbles, its approval and choice cards, files and artifacts right there to answer and open, and its steps in the working line while it works; Details at the top right opens the bot's details.
 
 ## 2.53.0
 ### zh-Hant

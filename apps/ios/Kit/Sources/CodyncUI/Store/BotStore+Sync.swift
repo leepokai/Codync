@@ -172,6 +172,8 @@ extension BotStore {
             call.hear(cue)
         case let .usage(u):
             setUsage(u)
+        case let .models(backend, loginProfile, list):
+            keepModels(list, for: AgentLogin(backend: backend, loginProfile: loginProfile))
         case let .screen(s):
             screen = s
         case let .network(view):

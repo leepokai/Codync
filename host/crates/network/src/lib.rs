@@ -22,6 +22,7 @@
 //!   which of its own; with none, every member may.
 
 pub mod guard;
+pub mod hooks;
 mod node;
 mod reach;
 mod roster;

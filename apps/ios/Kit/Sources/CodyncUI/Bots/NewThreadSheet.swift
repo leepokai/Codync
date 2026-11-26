@@ -126,17 +126,14 @@ public struct NewThreadSheet: View {
         .buttonStyle(PressScale())
         .accessibilityLabel(L10n.tr("Model"))
         .codyncSheet(isPresented: $choosingModel) {
-            VStack(spacing: 0) {
-                ModalHeader("Model")
-                ModelPanel(backend: login.backend, loginProfile: login.loginProfile, model: $model, options: $options,
-                           seats: plain.readySeats(on: login), pickSeat: { seat in
-                               login = seat
-                               model = nil
-                               options = [:]
-                           })
-            }
-            .background(Palette.background)
-            .environment(plain)
+            ModelPanel(backend: login.backend, loginProfile: login.loginProfile, model: $model, options: $options,
+                       seats: plain.readySeats(on: login), pickSeat: { seat in
+                           login = seat
+                           model = nil
+                           options = [:]
+                       })
+                .background(Palette.background)
+                .environment(plain)
         }
     }
 

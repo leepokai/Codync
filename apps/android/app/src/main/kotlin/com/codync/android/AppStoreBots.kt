@@ -178,11 +178,24 @@ internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, tim
     }
     try { return request.await() } finally { request.cancel() }
 }
-/** [loginProfile]: the login profile to list them for; null for the default login. */
-suspend fun AppStore.agentModels(backend: String, loginProfile: String?): AgentModels {
-    val response = hostQuery("agentModels", body("backend" to backend, "loginProfile" to loginProfile), timeoutMillis = 300_000)
-    return WireJson.decodeFromJsonElement(response)
+/**
+ * [loginProfile]: the login profile to list them for; null for the default login. The computer answers with the list it
+ * kept when it has one; [refresh] waits for a new one. The answer is kept in [AppState.modelLists] too.
+ */
+suspend fun AppStore.agentModels(backend: String, loginProfile: String?, refresh: Boolean = false): AgentModels {
+    val request = body("backend" to backend, "loginProfile" to loginProfile).let { if (refresh) JsonObject(it + ("refresh" to JsonPrimitive(true))) else it }
+    val models = WireJson.decodeFromJsonElement<AgentModels>(hostQuery("agentModels", request, timeoutMillis = 300_000))
+    keepModels(backend, loginProfile, models)
+    return models
 }
+/** The `models` events: a list the computer read that differs from the one it kept. */
+internal fun AppStore.receiveModels(events: List<MirrorEvent>) {
+    for (event in events.filterIsInstance<MirrorEvent.Models>()) keepModels(event.backend, event.loginProfile, event.models)
+}
+private fun AppStore.keepModels(backend: String, loginProfile: String?, models: AgentModels) =
+    mutableState.update { it.copy(modelLists = it.modelLists + (modelListKey(backend, loginProfile) to models)) }
+/** Where [AppState.modelLists] keeps an agent login's list. */
+internal fun modelListKey(backend: String, loginProfile: String?) = "$backend/${loginProfile.orEmpty()}"
 /** A forced usage read that returns when it's done, for pull to refresh. */
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {

@@ -8,47 +8,28 @@ import './markdown.css'
 // The Mac's Markdown for messages: the blocks from `markdown-blocks.ts`, with inline styling like
 // `AttributedString(markdown:)`.
 
+import { inlineParts, type InlinePart } from './markdown-inline.ts'
+
 /** Inline Markdown: `code` (tinted), **bold**, *italic*, ~~strike~~, [links](url). */
 export function inline(text: string, key = 'i'): ReactNode[] {
-  const out: ReactNode[] = []
-  // Code spans first: nothing inside them is styled.
-  text.split(/(`[^`\n]+`)/).forEach((part, i) => {
-    if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) {
-      out.push(
-        <code key={`${key}${i}`} className="md-code-span">
-          {part.slice(1, -1)}
-        </code>,
-      )
-    } else if (part) out.push(...emphasis(part, `${key}${i}-`))
-  })
-  return out
+  return renderInlineParts(inlineParts(text), key)
 }
 
-const pattern = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*\n]+)\*|(?<![\w])_([^_\n]+)_(?![\w])/
-function emphasis(text: string, key: string): ReactNode[] {
+function renderInlineParts(parts: InlinePart[], key: string): ReactNode[] {
   const out: ReactNode[] = []
-  let rest = text
-  let n = 0
-  while (rest) {
-    const m = pattern.exec(rest)
-    if (!m) {
-      out.push(rest)
-      break
-    }
-    if (m.index > 0) out.push(rest.slice(0, m.index))
-    const k = `${key}${n++}`
-    if (m[1] !== undefined) {
-      const url = m[2]!
-      out.push(
-        <a key={k} href={url} title={url} className="md-link" onClick={(e) => { e.preventDefault(); window.codync.app.openExternal(url) }}>
-          {emphasis(m[1], `${k}-`)}
-        </a>,
-      )
-    } else if (m[3] !== undefined || m[4] !== undefined) out.push(<strong key={k} className="md-strong">{emphasis(m[3] ?? m[4]!, `${k}-`)}</strong>)
-    else if (m[5] !== undefined) out.push(<s key={k}>{emphasis(m[5], `${k}-`)}</s>)
-    else out.push(<em key={k}>{emphasis(m[6] ?? m[7]!, `${k}-`)}</em>)
-    rest = rest.slice(m.index + m[0].length)
-  }
+  parts.forEach((part, i) => {
+    const k = `${key}${i}`
+    if (part.kind === 'text') out.push(part.text)
+    else if (part.kind === 'code') out.push(<code key={k} className="md-code-span">{part.text}</code>)
+    else if (part.kind === 'link') out.push(
+      <a key={k} href={part.url} title={part.url} className="md-link" onClick={(e) => { e.preventDefault(); window.codync.app.openExternal(part.url) }}>
+        {renderInlineParts(part.children, `${k}-`)}
+      </a>,
+    )
+    else if (part.kind === 'strong') out.push(<strong key={k} className="md-strong">{renderInlineParts(part.children, `${k}-`)}</strong>)
+    else if (part.kind === 'strike') out.push(<s key={k}>{renderInlineParts(part.children, `${k}-`)}</s>)
+    else out.push(<em key={k}>{renderInlineParts(part.children, `${k}-`)}</em>)
+  })
   return out
 }
 

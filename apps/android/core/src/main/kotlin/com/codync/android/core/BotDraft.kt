@@ -58,6 +58,9 @@ data class BotDraft(
     val threadAgent: Fallback? = null,
     /** The threads' fallbacks; null where the host has no Advisor mode, so neither this nor [threadAgent] is sent. */
     val threadFallbacks: List<Fallback>? = null,
+    /** Pauses it: it answers nothing and spends nothing until it is resumed. Null from a host without the switch, so it
+     *  is not sent — an older host would ignore it, which is the switch that must not be shown. */
+    val paused: Boolean? = null,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
@@ -126,7 +129,7 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxThreads", "threadWorktrees", "threadFallbacks", "projects", "worktreeMode", "sharedFolders")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxThreads", "threadWorktrees", "threadFallbacks", "projects", "worktreeMode", "sharedFolders", "paused")
         /** Who reaches a bot and the login profile it runs on belong to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
             setOf("id", "pinned", "hidden", "loginProfile", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants",
@@ -141,7 +144,7 @@ data class BotDraft(
             // A host with projects says where threads work: what tells its bots from an older host's.
             projects = bot.projects.takeIf { bot.worktreeMode != null }, worktreeMode = WorktreeMode.of(bot.worktreeMode),
             sharedFolders = bot.sharedFolders,
-            threadAgent = bot.threadAgent, threadFallbacks = bot.threadFallbacks)
+            threadAgent = bot.threadAgent, threadFallbacks = bot.threadFallbacks, paused = bot.paused)
     }
 }
 

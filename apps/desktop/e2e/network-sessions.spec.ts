@@ -22,7 +22,7 @@ test("the Network page lists this computer's coding agents, and a rule can only 
 
     await openPage(page, 'Network')
     const dialog = appPage(page)
-    await expect(dialog.getByText('Coding agents', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Agents', { exact: true })).toBeVisible()
     const row = dialog.locator('.settings-row', { hasText: codex.address })
     await expect(row).toContainText('Checks its mail')
     if (process.env.SHOT) await dialog.screenshot({ path: process.env.SHOT })

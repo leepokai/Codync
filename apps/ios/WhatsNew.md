@@ -22,7 +22,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開模型面板，不必進 Bot 設定：上方選 agent，模型列滿整個畫面並附上說明（較舊的收在「更多模型」），下方一張卡片放推理強度、核准方式和快速模式。模型清單一打開就在，不用再等載入；往下拉可以重新讀取。
 - 在中國大陸也能收到推播通知了。
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：你的訊息和回覆是對話泡泡，需要你核准或選擇的卡片、檔案和 artifact 直接在 thread 裡處理，進行中的步驟顯示在工作中的那一行；右上角「詳情」可打開 Bot 的詳細資訊。返回和詳情是浮在頂端的玻璃按鈕，內容捲動時在頂端柔和地模糊。
-- 電腦的「網路」頁會列出這台電腦上加了 Codync 的程式開發代理（Claude Code、Codex 等）：標題、位址、是否正在執行，以及它們怎麼收信；較早的會話收在最後。
+- 電腦的「網路」頁會列出這台電腦上加了 Codync 的 agent（Claude Code、Codex 等）：標題、位址、是否正在執行，以及它們怎麼收信；較早的會話收在最後。
 - Threads 分頁的每個 thread 開頭會顯示它正在使用的 coding agent 圖示；切換到備援 agent 時，顯示最後換到的那個。
 
 ### en-US
@@ -40,7 +40,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the model panel, without opening the bot's settings: the agent at the top, its models full width with what each is for (older ones under More models), and one card with effort, Approvals and Fast mode. The list is there the moment it opens; pull down to read it again.
 - Push notifications now reach phones and computers in mainland China.
 - A thread now opens full screen as a chat, like on the desktop: your messages and its replies as bubbles, its approval and choice cards, files and artifacts right there to answer and open, and its steps in the working line while it works; Details at the top right opens the bot's details. Back and Details float at the top as glass buttons, and the thread fades softly under them as it scrolls.
-- The computer's Network page lists the coding agents (Claude Code, Codex and others) that use Codync there: each session's title, address, whether it's running and how it gets its mail, with older sessions folded at the end.
+- The computer's Network page lists the agents (Claude Code, Codex and others) that use Codync there: each session's title, address, whether it's running and how it gets its mail, with older sessions folded at the end.
 - Each thread on the Threads tab starts with the icon of the coding agent it runs on; after it falls back, the one it switched to.
 
 ## 2.53.0

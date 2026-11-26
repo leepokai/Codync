@@ -127,7 +127,9 @@ Copilot CLI, in `~/.copilot/hooks/codync.json`:
 
 Your bots can message these sessions too: a bot's list of bots includes the sessions on its computer. The message waits in the session's inbox until the session reads it itself, so the answer may take a while, or never come. When the session answers it (`replyTo` = the letter's id), the answer comes back to the bot's chat like any reply. If the host restarts before then, the answer reaches the bot as a new message instead.
 
-Sessions aren't offered to your other computers unless a rule under the network allows a sender to reach that session's address by name (**Allow**, naming the address; a rule for any agent doesn't count). The apps can't pick a session in a rule yet; that comes when they show sessions. An agent that doesn't tell the server which session it is gets an address that lasts only while it runs; listings mark it temporary.
+The **Network** page on every app lists the sessions on the computer. Each shows its title, address and logo, and a dot when it's running; Claude Code sessions also say **Working** or **Idle**. Running sessions come first. Sessions not used in the last day fold under **Older sessions**. On the desktop, the page lists only the sessions on the computer the app runs on.
+
+Sessions aren't offered to your other computers unless a rule under the network allows a sender to reach that session's address by name (**Allow**, naming the address; a rule for any agent doesn't count). On the desktop or in the terminal UI, pick the session as the rule's **To bot**. A session reads its own mail, so a rule for it can only allow or deny. An agent that doesn't tell the server which session it is gets an address that lasts only while it runs. Listings mark it temporary, and the Network page leaves it out.
 
 ## Manage the team
 

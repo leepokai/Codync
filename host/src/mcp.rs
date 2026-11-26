@@ -41,8 +41,7 @@ pub enum Server {
     Manage,
     Memory,
     Composio,
-    /// For coding agents' sessions on this computer that aren't Codync bots; `bot` is an address
-    /// to start from (`--name`), or empty.
+    /// For coding agents' sessions on this computer that aren't Codync bots (`bot` is empty).
     Network,
 }
 
@@ -137,7 +136,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
                 }),
                 "tools/call" => Ok(match server {
                     Server::Network => {
-                        network_call(port, &token, &bot, client.get().map_or("", String::as_str), params).await
+                        network_call(port, &token, client.get().map_or("", String::as_str), params).await
                     }
                     _ => call(port, &token, &bot, params, server).await,
                 }),
@@ -190,7 +189,7 @@ async fn computer_tools(port: u16, token: &str) -> Value {
 
 /// A `network` tool call: the host learns which session calls (`network::sessions`). A Codync bot's
 /// agent that loads the user's own `codync` server gets nothing from it: the bot has its team tools.
-async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: &Value) -> Value {
+async fn network_call(port: u16, token: &str, client: &str, params: &Value) -> Value {
     // This server's process, with a nonce so a reused pid never takes over another's session.
     static PROCESS: LazyLock<String> =
         LazyLock::new(|| format!("{}-{}", std::process::id(), &uuid::Uuid::new_v4().simple().to_string()[..8]));
@@ -208,7 +207,6 @@ async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: 
         session: looked.await.unwrap_or_default(),
         process: PROCESS.clone(),
         cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
-        hint: Some(hint.trim()).filter(|h| !h.is_empty()).map(str::to_owned),
     };
     send(port, token, Server::Network, params, json!({"agent": caller})).await
 }

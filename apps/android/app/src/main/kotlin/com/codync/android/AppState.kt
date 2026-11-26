@@ -104,8 +104,8 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
-    /** A bot whose details open over its chat once it shows, at the thread of the task named (null: its Details page): a heading or a row of the view of all bots' work. */
-    val detailsRequest: Pair<String, String?>? = null,
+    /** A bot whose details open over its chat once it shows: a heading or a row of the view of all bots' work. */
+    val detailsRequest: String? = null,
     /** A bot and the task of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
     val cardRequest: Pair<String, WorkTask>? = null,
     /** Workflows open between the roster and a chat: the list, or one workflow and an optional run. */
@@ -124,6 +124,8 @@ data class AppState(
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
+    /** The agents' model lists this computer gave, by [modelListKey]: a model panel opens on one at once. */
+    val modelLists: Map<String, AgentModels> = emptyMap(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
     /** The transcripts of the threads that are open, by thread id; never part of [entries]. */

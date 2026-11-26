@@ -233,15 +233,15 @@ chat's own queue: nothing here is a second copy of it.
   write to`), and one whose thread is gone can't be picked up (`"<title>" ended too long ago to write to: add new
   work instead`). `work[].talk` says which tasks take a message, so no client guesses.
 - **What the thread shares stays in the chat.** Its cards, files, voice notes and artifacts are the chat's entries
-  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. On the iPhone, Android and the
-  terminal the thread's transcript shows each, in time order among the thread's own entries, as one quiet line with a
-  symbol (`sharedLine`, the terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
+  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The desktop and the phones show a thread in the chat's form (desktop
+  `ThreadChat`, iPhone `ThreadChatView`, Android `ThreadChat.kt`): each of these is the chat's own row, in time order
+  among the thread's own entries, the same entry of the bot's chat, answered, downloaded and opened in the thread as in
+  the chat ([UI conventions](../design/ui-conventions.md)). Only the terminal shows each as one quiet line with a
+  symbol (`shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
   `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
   expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
   [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry; the thread has no card to answer. The desktop shows a thread in the chat's form
-  instead (`ThreadChat`, on the Threads page and as a tab of the inspector): there each of these is the chat's own row, the same entry of the bot's chat, answered,
-  downloaded and opened in the thread as in the chat ([UI conventions](../design/ui-conventions.md)).
+  line opens the chat at that entry.
 
 With the rest:
 

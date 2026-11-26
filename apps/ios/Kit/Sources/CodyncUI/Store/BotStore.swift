@@ -105,6 +105,8 @@ public final class BotStore {
     @ObservationIgnored var composerPasted: [String: [String]] = [:]
     public let fileDownloads = FileDownloads()
     var artifacts = ArtifactCache()
+    /// The agents' model lists this computer gave (`models(for:)`): a model panel opens on one at once.
+    private var modelLists: [AgentLogin: AgentModels] = [:]
     public var lastError: String?
     /// The open conversation (navigation path).
     public var selection: String?
@@ -116,9 +118,6 @@ public final class BotStore {
 
     /// A task whose card its bot's conversation should bring into view, consumed by it.
     public internal(set) var cardRequest: (botId: String, task: WorkTask)?
-
-    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
-    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
@@ -374,6 +373,16 @@ public final class BotStore {
     /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
     public func authorName(_ id: String?, fallback: String? = nil) -> String {
         id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
+
+    /// The model list `login` offers as this computer gave it last.
+    func models(for login: AgentLogin) -> AgentModels? { modelLists[Self.listed(login)] }
+
+    func keepModels(_ list: AgentModels, for login: AgentLogin) { modelLists[Self.listed(login)] = list }
+
+    /// An empty login profile is the default login.
+    private static func listed(_ login: AgentLogin) -> AgentLogin {
+        AgentLogin(backend: login.backend, loginProfile: login.loginProfile.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     func updateComputer(_ change: (inout Computer) -> Void) {

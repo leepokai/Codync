@@ -73,42 +73,49 @@ internal fun workingCount(roster: List<WorkingBot>): Int = roster.sumOf { of -> 
 /** The rows of Recent shown before "Show more" (desktop `SHOWN_RECENT`). */
 private const val SHOWN_RECENT = 8
 
-/** A thread of a computer's box without a bot, open over the Threads tab: that box has no chat or details to open it in. */
-internal data class LooseThread(val computerId: String, val botId: String, val taskId: String)
+/** A thread open over the Threads tab: [computerId]'s bot [botId]'s (or its box without a bot's) task [taskId]. */
+internal data class ThreadRef(val computerId: String, val botId: String, val taskId: String)
 
 /**
  * The Threads tab, the desktop's Threads list: every task of [roster]'s bots, what needs the user first, then the groups the
  * list's options make (folders and routines' runs, a group per bot, or one per computer), then the rest under Recent,
  * newest first, the last of it on demand. A row is a thread's title and one mark for how it stands; a group's heading folds
- * it (on this device). Tapping a row that needs the user opens the chat at its card, one a thread has or had opens the
- * bot's details at its thread, any other the bot's details; touching and holding it offers what its bot's details do.
- * The box of threads without a bot has no chat or details: its rows open their thread over the list ([loose], which
- * [openLoose] sets and clears), and one without a thread opens nothing (the desktop's).
+ * it (on this device). Tapping a row a thread has or had pushes its thread chat over the list ([open], which [openThread]
+ * sets and clears); one with no thread that needs the user opens the chat at its card, any other the bot's details (the
+ * box of threads without a bot: nothing, the desktop's). Touching and holding a row offers what its bot's details do.
  */
 @Composable internal fun ThreadsView(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore,
-    bottomInset: Dp, loose: LooseThread?, active: Boolean, openLoose: (LooseThread?) -> Unit) {
-    NavStack(listOfNotNull<Any>(ThreadsPage, loose), key = { (it as? LooseThread)?.let { l -> "${l.computerId}/${l.botId}/${l.taskId}" } ?: "threads" }, pop = { openLoose(null) }) { page ->
-        if (page is LooseThread) LooseThreadPage(page, roster, accounts) { openLoose(null) }
-        else ThreadsList(app, account, roster, filter, accounts, bottomInset, active, openLoose)
+    bottomInset: Dp, open: ThreadRef?, active: Boolean, openThread: (ThreadRef?) -> Unit) {
+    NavStack(listOfNotNull<Any>(ThreadsPage, open), key = { (it as? ThreadRef)?.let { t -> "${t.computerId}/${t.botId}/${t.taskId}" } ?: "threads" }, pop = { openThread(null) }) { page ->
+        if (page is ThreadRef) ThreadPage(page, roster, accounts) { openThread(null) }
+        else ThreadsList(app, account, roster, filter, accounts, bottomInset, active, openThread)
     }
 }
 
 private data object ThreadsPage
 
-@Composable private fun LooseThreadPage(ref: LooseThread, roster: List<WorkingBot>, accounts: AccountStore, back: () -> Unit) {
+/** A thread chat pushed over the list, with its bot's details over it on demand (the desktop's panel). */
+@Composable private fun ThreadPage(ref: ThreadRef, roster: List<WorkingBot>, accounts: AccountStore, back: () -> Unit) {
     val of = roster.firstOrNull { it.state.computer.id == ref.computerId && it.bot.id == ref.botId }
     val store = accounts.store(ref.computerId)
-    // Its computer or box gone meanwhile: nothing to show.
+    // Its computer or bot gone meanwhile: nothing to show.
     LaunchedEffect(of == null || store == null) { if (of == null || store == null) back() }
     if (of == null || store == null) return
+    var details by remember(ref) { mutableStateOf<DetailsRequest?>(null) }
+    var viewing by remember(ref) { mutableStateOf<OpenArtifact?>(null) }
     Box(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // That box has no chat for what a thread put there.
-        WorkThreadView(of.bot, ref.taskId, of.state, store, openInChat = {}, back = back)
+        // The box of threads without a bot has no details.
+        ThreadChat(of.bot, ref.taskId, of.state, store, inDetails = false, openDetails = if (of.bot.plain) null else { request -> details = request },
+            openArtifact = { viewing = it }, back = back)
     }
+    CodyncSheet(details, { details = null }) { request ->
+        BotDetailsView(of.bot, request, of.state, store, openCard = null) { viewing = it }
+    }
+    ArtifactLayer(viewing) { open -> ArtifactViewer(open, of.bot, of.state, store) { viewing = null } }
 }
 
 @Composable private fun ThreadsList(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, active: Boolean,
-    openLoose: (LooseThread) -> Unit) {
+    openThread: (ThreadRef) -> Unit) {
     val context = LocalContext.current
     var grouping by remember { mutableStateOf(ThreadsLayout.grouping(context)) }
     var byStatus by remember { mutableStateOf(ThreadsLayout.byStatus(context)) }
@@ -136,7 +143,7 @@ private data object ThreadsPage
     val bots = threadBots(roster)
     val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
     val plain = plainComputer(shown)
-    val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openLoose) }
+    val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openThread) }
     val scroll = rememberScrollState()
     OlderThreadsPaging(roster, accounts, active, scroll, more)
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
@@ -177,7 +184,7 @@ private data object ThreadsPage
         }
     }
     WorkQuestionDialogs(question) { question = null }
-    NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openLoose)
+    NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openThread)
 }
 
 /**
@@ -257,25 +264,21 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
 }
 
 /**
- * One thread: its title ([label]) and, unless it's done, its mark. Stop and Cut in [ask] first; a thread of the box without
- * a bot opens over the list ([openLoose]).
+ * One thread: its title ([label]) and, unless it's done, its mark. Stop and Cut in [ask] first; its thread chat opens over
+ * the list ([openThread]).
  */
-@Composable private fun ThreadLine(row: ThreadRow<WorkingBot>, label: String, accounts: AccountStore, ask: (WorkQuestion) -> Unit, openLoose: (LooseThread) -> Unit) {
+@Composable private fun ThreadLine(row: ThreadRow<WorkingBot>, label: String, accounts: AccountStore, ask: (WorkQuestion) -> Unit, openThread: (ThreadRef) -> Unit) {
     val (of, task) = row
     val store = accounts.store(of.state.computer.id) ?: return
     val bot = of.bot
     val context = LocalContext.current
     val enabled = of.state.actualConnection is LinkState.Ready && workKey(bot.id) !in of.state.busy
-    val showThread: () -> Unit = {
-        if (task.thread != null) {
-            if (bot.plain) openLoose(LooseThread(of.state.computer.id, bot.id, task.id)) else store.openDetails(bot.id, task.id)
-        }
-    }
+    val showThread: () -> Unit = { if (task.thread != null) openThread(ThreadRef(of.state.computer.id, bot.id, task.id)) }
     val open = {
         when {
-            bot.plain -> showThread()
-            task.status == WorkStatus.NeedsYou -> store.openCard(bot.id, task)
             task.thread != null -> showThread()
+            bot.plain -> {}
+            task.status == WorkStatus.NeedsYou -> store.openCard(bot.id, task)
             else -> store.openDetails(bot.id)
         }
     }

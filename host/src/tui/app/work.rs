@@ -242,7 +242,7 @@ impl Background {
 
 /// What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
 /// artifact) says in that thread: one dim line, its mark and its words, where the entry itself stays in the
-/// chat, which `↵` on the line opens. None for anything else. The apps' `sharedLine`.
+/// chat, which `↵` on the line opens. None for anything else. The apps show the entry itself instead.
 pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
     let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
     let text = |key: &str| e.data[key].as_str().unwrap_or_default();

@@ -82,6 +82,8 @@ data class WorkTask(
     val talkFiles: Boolean = false,
     /** Where its thread works (a worktree's folder for one in a worktree); null for one no thread has taken, and from an older host. */
     val folder: String? = null,
+    /** The agent its thread runs on (a backend id); null for the bot's own, and from an older host. */
+    val agent: String? = null,
     /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */
     val seat: Boolean? = null,
 ) {
@@ -409,58 +411,9 @@ fun ThreadTranscript.queue(working: Boolean): List<Entry> = if (working) rest.fi
 /** [ThreadTranscript.rest] without that queue. */
 fun ThreadTranscript.hidingQueue(working: Boolean): List<Entry> = if (working) rest.filterNot { it.waitsInThread } else rest
 
-/** One quiet line of a thread for what it put in the bot's chat ([sharedLine]): an SF Symbol name and its words. */
-data class SharedLine(val symbol: String, val text: String)
-
-/**
- * What the chat [entry] a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
- * artifact) says in that thread (iOS `Entry.sharedLine`): one line with a symbol, where the entry itself stays in
- * the chat, which the line opens. Null for anything else. [tr] looks a phrase up.
- */
-fun sharedLine(entry: Entry, tr: (String) -> String): SharedLine? {
-    val data = entry.data
-    fun line(symbol: String, key: String, vararg values: Pair<String, String>) = SharedLine(symbol, fill(tr(key), *values))
-    // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
-    val request = data["connectionRequest"] as? JsonObject
-    if (request?.text("kind") == "agent") return when (request.text("status")) {
-        "pending" -> line("hand.raised", "Needs {agent} sign-in", "agent" to request.text("title").orEmpty())
-        "ready" -> line("checkmark", "Signed in")
-        else -> line("xmark", "Cancelled")
-    }
-    if (entry.kind == "permission") {
-        val title = data.text("title").orEmpty()
-        when (entry.status) {
-            "pending" -> return line("hand.raised", "Waiting for your approval: {title}", "title" to title)
-            "answered" -> {}
-            else -> return line("clock", "Not answered: {text}", "text" to title)
-        }
-        val selected = data.text("selected")
-        val chosen = (data["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == selected }
-        val kind = chosen?.text("kind").orEmpty()
-        return when {
-            kind.startsWith("allow") -> line("checkmark", "Approved: {title}", "title" to title)
-            kind.startsWith("reject") -> line("xmark", "Denied: {title}", "title" to title)
-            else -> line("checkmark", "Answered: {choice}", "choice" to (chosen?.text("name") ?: selected.orEmpty()))
-        }
-    }
-    if (entry.isDecision) {
-        val question = data.text("question").orEmpty()
-        return when (entry.status) {
-            "pending" -> line("hand.raised", "Asked: {question}", "question" to question)
-            "answered" -> line("checkmark", "Answered: {choice}", "choice" to data.text("selected").orEmpty())
-            else -> line("clock", "Not answered: {text}", "text" to question)
-        }
-    }
-    if (entry.kind != "agent") return null
-    entry.artifact?.let { return line("doc.richtext", "Made an artifact: {title}", "title" to it.title) }
-    if (data["voiceNote"]?.jsonPrimitive?.booleanOrNull == true) return line("waveform", "Sent a voice note")
-    val files = entry.files
-    return if (files.isEmpty()) null else line("doc", "Sent a file: {name}", "name" to files.joinToString(", ") { it.name })
-}
-
 /**
  * A thread's [entries] with what it ([thread]: its id) put in the bot's [chat] (a file, a voice note, an artifact, a card,
- * answered or not; each a [sharedLine]) where it came (`createdAt`), each kept in its order; at the same moment the
+ * answered or not) where it came (`createdAt`), each kept in its order; at the same moment the
  * thread's own first.
  */
 fun sharing(entries: List<Entry>, chat: List<Entry>, thread: String): List<Entry> {

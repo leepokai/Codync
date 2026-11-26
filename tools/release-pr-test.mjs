@@ -10,8 +10,9 @@ const body = new AsyncFunction('args', 'agent', 'parallel', 'phase', 'log', 'wor
 const afterChange = { e2e: { checks: [{ result: 'pass' }] }, review: { confirmed: [] }, fix: {} }
 
 // Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn. The
-// 'after-change' answer is that workflow's report (afterChange when not given).
-const run = async (answers, args = {}) => {
+// 'after-change' answer is that workflow's report (afterChange when not given). It runs as a merge run unless told otherwise; `null` runs it with no args at all, as a plain "pr to main".
+const run = async (answers, extra = {}) => {
+  const args = extra === null ? {} : { merge: true, ...extra }
   const calls = []
   const seen = {}
   const agent = async (prompt, opts) => {
@@ -163,6 +164,31 @@ for (const status of ['timed_out', 'failed']) {
     const none = await run({ ...base, prepare: { ...prepared, ...bad }, 'gate:': [ready] })
     check(none.r.outcome === 'stopped' && !none.calls.some((c) => c.startsWith('gate:')), 'a prepare result whose branch is not release/<its version> stops: ' + bad.branch)
   }
+}
+
+{
+  const plainCall = await run({ ...base, 'gate:': [ready] }, null)
+  check(plainCall.r.outcome === 'ready' && !['cloud', 'merge', 'follow-up'].some((c) => plainCall.calls.includes(c)), 'a plain "pr to main" with no args stops at the green gate: ' + plainCall.calls)
+  const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [fixed] }, { merge: false })
+  check(r.outcome === 'ready' && r.pr === 600 && !calls.includes('merge') && !calls.includes('follow-up'), 'without merge: true it stops once the gate passes: ' + calls)
+  const cloudRun = await run({ ...base, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] }, { merge: false })
+  check(cloudRun.r.outcome === 'ready' && !cloudRun.calls.includes('cloud'), 'without merge: true the cloud check waits for the merge run')
+  const own = { number: 650, head: 'release/2.52.1', cross_repository: false }
+  const prepare = capture({ ...prepared, pr: 650 })
+  const again = await run({ ...base, prepare, 'gate:': [ready], inspect: { ...facts, open_prs: [own] } })
+  check(again.r.outcome === 'released' && /Skip this step when #650/.test(prepare.prompt), 'the merge run reuses the gated PR without rerunning the real agents')
+  const plain = capture({ ...prepared, pr: 650 })
+  const first = await run({ ...base, prepare: plain, 'gate:': [ready], inspect: { ...facts, open_prs: [own] } }, { merge: false })
+  check(first.r.outcome === 'ready' && !/Skip this step/.test(plain.prompt), 'a run without merge on an open release PR still runs the real agents')
+  const raised = { ...base, inspect: { ...facts, min_app_raised: true, min_app: '2.51.0 -> 2.52.0' }, 'gate:': [ready] }
+  const approved = await run(raised, { merge: false, allowMinAppRaise: true })
+  check(approved.r.outcome === 'ready' && /merge: true/.test(approved.r.next) && /allowMinAppRaise: true/.test(approved.r.next), 'a ready MIN_APP release names both args for the merge run: ' + approved.r.next)
+  const asked = await run(raised)
+  check(asked.r.outcome === 'ask' && /allowMinAppRaise: true/.test(asked.r.next) && /merge: true/.test(asked.r.next), 'a merge run asking about MIN_APP keeps merge in its rerun: ' + asked.r.next)
+  const both = await run(raised, { allowMinAppRaise: true })
+  check(both.r.outcome === 'released', 'both args release a MIN_APP raise')
+  const held = await run({ ...base, cloud: { status: 'needs_maintainer', main_needs: [], detail: 'secret BAR' }, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] })
+  check(/rerun with \{merge: true\}/.test(held.r.next), 'a merge run held at the cloud check reruns as a merge run')
 }
 
 if (failures) process.exit(1)

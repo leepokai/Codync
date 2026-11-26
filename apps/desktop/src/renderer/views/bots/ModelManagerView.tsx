@@ -18,7 +18,7 @@ import { useAgentModels } from './agent-models'
 import { agentModelsRequest } from './agent-models-query.ts'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -257,22 +257,19 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason ?? tr('Failed') } }))
           continue
         }
+        // An older host cannot make the login expectation atomic with its save, so fail this row
+        // rather than silently restoring the login the catalog check used.
+        if (row.item.store.hello?.modelManagerApplyGuard !== true) {
+          failed++
+          const text = tr('Update Codync on {computer} to apply models safely').replace('{computer}', () => row.item.computer.name)
+          setOutcomes((o) => ({ ...o, [key]: { ok: false, text } }))
+          continue
+        }
         try {
-          // A minimal patch: the host merges it over the bot's state as it is at that moment, under
-          // one lock, so an unrelated change that landed mid-batch is never written back. On another
-          // agent the host moves the bot to that agent's Auto mode on its own; the custom command is
-          // cleared here, as the bot editor's agent change does. The patch sends no fallback list —
-          // the host's own fallback tidy may still drop a step that duplicates the new primary
-          // agent, as on any agent change. The login profile is the exact one the catalog check used:
-          // a bot keeps its own when its agent stays, and moving agents falls back to the default.
-          const patch: Record<string, unknown> = {
-            id: row.item.ref.botId,
-            backend,
-            loginProfile: loginProfileFor(row.item.bot, backend),
-            model: model || null,
-            modelOptions: { ...options },
-          }
-          if (backend !== 'custom') patch.command = null
+          // The patch pins the login whose catalog was checked. The host requires that login to
+          // still be current under the save lock, so a change from another window or device is
+          // never overwritten. Other fields merge over the bot's current state as before.
+          const patch = applyPatch(row.item, plan)
           await row.item.store
             .ready()
             .then((client) => {

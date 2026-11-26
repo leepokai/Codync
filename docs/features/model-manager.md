@@ -31,10 +31,14 @@ The search field filters by name, description and last message, reusing the side
 Each checked bot is saved one at a time, in roster order, as a **minimal patch**: only the bot's id,
 backend, login profile, model and model options (plus `command: null` when the target is a listed
 agent, as the bot editor's agent change does — a stale custom command would otherwise keep
-launching). The login profile is the bot's own when its agent stays the same (or the default login
-when it moves to another agent, because a profile belongs to one agent). The picker's rail still
-shows one seat per agent (its default login), because that seat chooses the model; each row is then
-checked and saved on the login it keeps.
+launching), plus the snapshot's login as `expectedLoginProfile`. The login profile is the bot's own
+when its agent stays the same (or the default login when it moves to another agent, because a
+profile belongs to one agent). The host compares that expectation with the bot's current login
+under the same lock as the save: if another window or device changed it while catalogs loaded or
+earlier rows saved, the row fails instead of restoring the old login. Retry uses the fresh roster
+row. A host without `hello.modelManagerApplyGuard` is asked to update rather than applying without
+that check. The picker's rail still shows one seat per agent (its default login), because that seat
+chooses the model; each row is then checked and saved on the login it keeps.
 The host merges
 the patch over the bot's state as it is at that moment under one lock (`updateBot`'s patched merge),
 so an unrelated change that landed while the batch ran is never written back, and on another agent

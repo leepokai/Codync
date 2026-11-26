@@ -34,6 +34,17 @@ export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error
 export const loginProfileFor = (bot: { backend?: unknown; loginProfile?: string | null }, backend: string): string | null =>
   bot.backend === backend && typeof bot.loginProfile === 'string' && bot.loginProfile !== '' ? bot.loginProfile : null
 
+/** The minimal patch, plus the login snapshot the host must still have when it saves under its write lock. */
+export const applyPatch = (item: RosterItem, plan: ApplyPlan): Record<string, unknown> => ({
+  id: item.ref.botId,
+  backend: plan.backend,
+  loginProfile: loginProfileFor(item.bot, plan.backend),
+  expectedLoginProfile: item.bot.loginProfile ?? null,
+  model: plan.model,
+  modelOptions: { ...plan.options },
+  ...(plan.backend !== 'custom' ? { command: null } : {}),
+})
+
 /**
  * Which bots the plan can save to, decided before anything is written.
  *

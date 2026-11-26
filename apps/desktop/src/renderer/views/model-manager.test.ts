@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -151,6 +151,18 @@ test('loginProfileFor keeps a bot\'s login only while its agent stays the same',
   assert.equal(loginProfileFor({ backend: 'claude' }, 'claude'), null)
   assert.equal(loginProfileFor({ backend: 'claude', loginProfile: 'work' }, 'codex'), null, 'a profile belongs to one agent')
   assert.equal(loginProfileFor({ backend: 'claude', loginProfile: '' }, 'claude'), null)
+})
+
+test('applyPatch separately pins the login snapshot the host must not replace', () => {
+  const original = item('mac', 'Mac', 'b1', 'Alpha', '', 'work')
+  original.bot.backend = 'claude'
+  const plan: ApplyPlan = { items: [original], backend: 'codex', model: 'gpt', options: { effort: 'high' } }
+  assert.equal(applyPatch(original, plan).expectedLoginProfile, 'work', 'the catalog-checked snapshot is the expectation')
+  assert.equal(applyPatch(original, plan).loginProfile, null, 'moving agents uses the default login')
+  assert.equal(applyPatch(original, { ...plan, backend: 'claude' }).loginProfile, 'work', 'staying uses the same login')
+  assert.equal(applyPatch(original, plan).model, 'gpt')
+  assert.deepEqual(applyPatch(original, plan).modelOptions, { effort: 'high' })
+  assert.equal(applyPatch(original, plan).command, null)
 })
 
 test('the palette search narrows the list, so only matching bots can be checked', () => {

@@ -105,6 +105,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // A thread may start with files (`startThread` with `attachments`, uploaded without `botId` for one
                 // without a bot).
                 "threadFiles": true,
+                // `updateBot` checks `expectedLoginProfile` against the saved bot under its write lock.
+                "modelManagerApplyGuard": true,
                 "routineFolder": true,
                 // Bots have `projects` and `worktreeMode`, and `add_task` takes a folder.
                 "projects": true,

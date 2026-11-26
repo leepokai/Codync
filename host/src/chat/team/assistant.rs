@@ -286,8 +286,15 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let back = Back::Assistant { request: request.clone() };
     let mut lifetime = MessageLifetime::new(hub, &request, message, back, &target.name, 1);
     let (source, name) = (asker.id.as_str(), asker.name.as_str());
-    let exchange =
-        Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name), hops: None };
+    let exchange = Exchange {
+        request: &request,
+        source,
+        target: &target.id,
+        text: message,
+        peer_name: Some(name),
+        hops: None,
+        lift: false,
+    };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {name}: {message}"), true)?);
     remote::keep_reply(hub, Reply::queued(&asker.id, &request, &target.name, message))?;
     lifetime.deliver(&target.id, Access::Allow, request_prompt(&asker.who, name, Access::Allow, message))?;

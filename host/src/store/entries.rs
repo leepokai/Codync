@@ -311,6 +311,18 @@ impl Store {
         Ok(st.query_map(rusqlite::params_from_iter(args), row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Every hop-limit notice in `bot_id`'s chat whose Continue button is still on, oldest first. A reset must
+    /// clear them all, not just those in the newest page of history.
+    pub fn continue_notices(&self, bot_id: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'notice'
+               AND json_extract(data, '$.continueChain') = 1
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The newest `limit` bot-to-bot notices in `bot_id`'s main chat that involve `peer_id`, oldest first.
     pub fn bot_conversation(&self, bot_id: &str, peer_id: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();

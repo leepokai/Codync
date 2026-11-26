@@ -30,6 +30,9 @@ pub use requests::{Requests, Turn, hop_generation};
 
 const MAX_MESSAGE_BYTES: usize = 32_000;
 const MAX_PENDING_MESSAGES: usize = 64;
+/// Marks a judge's hop-limit notice on its entry. A restart cannot resume the in-memory lift, so this keeps the
+/// notice from being mistaken for ordinary bot work.
+pub(super) const HOP_LIFT: &str = "hopLift";
 /// What an exchange notice keeps of a reply.
 const NOTICE_REPLY_BYTES: usize = 4000;
 /// What the sender's reply turn quotes of its request: the session taking the reply may not have sent it.
@@ -518,6 +521,8 @@ struct Exchange<'a> {
     peer_name: Option<&'a str>,
     /// A request between this computer's bots: its chain's handoffs, kept so a restart can send it again.
     hops: Option<u8>,
+    /// A hop-limit notice to the judge. Kept on the entry so a host restart cannot turn it into ordinary work.
+    lift: bool,
 }
 
 impl Exchange<'_> {
@@ -534,6 +539,9 @@ impl Exchange<'_> {
         });
         if let Some(hops) = self.hops {
             data["hops"] = hops.into();
+        }
+        if self.lift {
+            data[HOP_LIFT] = true.into();
         }
         let turn = hub.store.max_turn(bot) + i64::from(recipient);
         let entry = hub.add_entry(&Lane::main(bot), EntryKind::Notice, turn, &data);
@@ -691,6 +699,7 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         text: message,
         peer_name: None,
         hops: Some(hops),
+        lift: false,
     };
     let (asked, from) =
         (format!("Messaged {}: {message}", target.name), format!("Message from {}: {message}", source.name));
@@ -721,11 +730,12 @@ fn hop_notice_to(
 ) -> Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
-        "{introduction} Refusal {refusal}. Blocked bot: {}. Use only the hop-limit tools. Do not use message_bot.\n{text}",
-        source.name
+        "{introduction} Refusal {refusal}. Blocked bot: {} (botId: {}). Use only the hop-limit tools. Do not use message_bot.\n{text}",
+        source.name, source.id
     );
     let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift, &judge.name, 0);
-    let exchange = Exchange { request: &id, source: &source.id, target: &judge.id, text, peer_name: None, hops: None };
+    let exchange =
+        Exchange { request: &id, source: &source.id, target: &judge.id, text, peer_name: None, hops: None, lift: true };
     lifetime.entries.push(exchange.notice(hub, &judge.id, heading, true)?);
     lifetime.deliver(&judge.id, Access::Allow, prompt)
 }
@@ -957,13 +967,20 @@ pub(super) fn on_hop_limit(
     let shown = truncate(message, 400);
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
-        "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
-        source.name
+        "Hop limit reached. Refusal {refusal}. Blocked bot: {} (botId: {}). It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
+        source.name, source.id
     );
     let notice = (|| -> Result<()> {
         let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &judge.name, 0);
-        let exchange =
-            Exchange { request: &id, source: &source.id, target: &judge.id, text: &shown, peer_name: None, hops: None };
+        let exchange = Exchange {
+            request: &id,
+            source: &source.id,
+            target: &judge.id,
+            text: &shown,
+            peer_name: None,
+            hops: None,
+            lift: true,
+        };
         lifetime.entries.push(exchange.notice(
             hub,
             &judge.id,

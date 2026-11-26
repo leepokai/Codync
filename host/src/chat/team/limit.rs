@@ -75,14 +75,11 @@ pub fn continue_chain(hub: &Arc<Hub>, entry_id: &str) -> Result<Value> {
 
 /// The stop is resolved by a reset: the Continue button goes, and no user message is sent. A denial does not call this.
 pub fn resolved(hub: &Hub, bot: &str) {
-    let Ok(history) = hub.store.history(bot, i64::MAX, 100) else {
-        tracing::warn!(bot, "couldn't read the hop-limit notice");
+    let Ok(notices) = hub.store.continue_notices(bot) else {
+        tracing::warn!(bot, "couldn't read the hop-limit notices");
         return;
     };
-    for entry in history {
-        if entry.kind != "notice" || entry.data["continueChain"] != true {
-            continue;
-        }
+    for entry in notices {
         let mut data = entry.data.clone();
         data["continueChain"] = false.into();
         if hub.set_entry(&entry.id, &data).is_none() {

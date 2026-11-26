@@ -368,8 +368,15 @@ fn open_request(
     session: Option<(&Session, u8, String)>,
 ) -> Result<(String, String)> {
     let heading = format!("Messaged {peer}: {body}");
-    let exchange =
-        Exchange { request: id, source: &source.id, target: address, text: body, peer_name: Some(peer), hops: None };
+    let exchange = Exchange {
+        request: id,
+        source: &source.id,
+        target: address,
+        text: body,
+        peer_name: Some(peer),
+        hops: None,
+        lift: false,
+    };
     let entry = exchange.notice(hub, &source.id, &heading, false)?;
     let to = ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() };
     let (session, hops) =
@@ -563,6 +570,7 @@ fn requested(hub: &Arc<Hub>, network: &str, target: &BotConfig, m: &Message, bac
         text: &m.body,
         peer_name: Some(&peer),
         hops: None,
+        lift: false,
     };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {peer}: {}", m.body), true)?);
     let who = format!("{peer}, an agent on another of the user's computers,");

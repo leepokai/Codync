@@ -5,7 +5,7 @@
 //! `Store::expire_pending` leaves them.
 
 use super::{
-    Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, relaying_key,
+    Back, BotReply, HOP_LIFT, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, relaying_key,
     request_prompt, visible_bot,
 };
 use crate::agent::bot::Cmd;
@@ -69,6 +69,14 @@ fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
         return;
     }
     let data = &notices[0].data;
+    // A lift's in-memory judge state did not survive the restart. Ending the notice is honest; sending its
+    // refused text to the judge as ordinary bot work is not.
+    if data[HOP_LIFT] == true {
+        for notice in notices.iter().filter(open) {
+            finish_entry(hub, &notice.id, RequestStatus::Failed, INTERRUPTED, None, None);
+        }
+        return;
+    }
     let message = &data["botMessage"];
     let (Some(id), Some(source), Some(target), Some(text)) = (
         data["delegationId"].as_str(),

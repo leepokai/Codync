@@ -671,6 +671,52 @@ async fn the_leads_clarification_does_not_consume_a_hop() {
 mod quotas;
 
 #[tokio::test]
+async fn restart_ends_a_hop_lift_instead_of_replaying_it_as_work() {
+    let f = Fixture::new();
+    let data = json!({
+        "delegationId": "lift-1", "status": "queued", "heading": "Hop limit reached",
+        "hopLift": true,
+        "botMessage": {"sourceBotId": "a", "targetBotId": "c", "text": "refused text"},
+    });
+    let notice = f.hub.store.insert_entry(&Lane::main("c"), EntryKind::Notice, 1, &data).unwrap();
+    restart::restore(&f.hub);
+    let after = f.hub.store.entry(&notice.id).unwrap();
+    assert_eq!(after.data["status"], "failed");
+    assert!(after.data["text"].as_str().unwrap().contains(crate::store::INTERRUPTED));
+    assert_eq!(after.data["botMessage"]["text"], "refused text");
+    assert!(f.prompts_of("c").is_empty(), "the refused text never becomes ordinary work");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_judge_prompt_names_the_blocked_bots_id() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("b", Turn::Chat(8));
+    let err = call(&f.hub, "b", "b", "message_bot", &json!({"botId": "a", "message": "blocked"})).unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.until(|| f.prompts_of("c").len() == 1).await;
+    assert!(f.prompts_of("c")[0].contains("(botId: b)"), "{:?}", f.prompts_of("c"));
+    let history = f.hub.store.history("c", i64::MAX, 100).unwrap();
+    assert!(history.iter().any(|e| e.data["hopLift"] == true), "the lift type is saved on its notice");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_reset_clears_a_continue_notice_beyond_the_newest_page() {
+    let f = Fixture::new();
+    let data = json!({"text": "old limit", "style": "info", "continueChain": true});
+    let old = f.hub.store.insert_entry(&Lane::main("a"), EntryKind::Notice, 1, &data).unwrap();
+    for turn in 2..=120 {
+        f.hub.store.insert_entry(&Lane::main("a"), EntryKind::Tool, turn, &json!({"text": "filler"})).unwrap();
+    }
+    limit::resolved(&f.hub, "a");
+    assert_eq!(f.hub.store.entry(&old.id).unwrap().data["continueChain"], false);
+    f.shutdown().await;
+}
+
+#[tokio::test]
 async fn shutdown_discards_accepted_mailbox_messages_and_finishes_notices() {
     let f = Fixture::new();
     // Admission is synchronous: these commands enter the mailbox in order

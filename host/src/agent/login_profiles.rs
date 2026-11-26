@@ -383,13 +383,6 @@ pub fn login_keys(backend: &str) -> &'static [&'static str] {
     accounts_of(backend).map_or(&[], |agent| agent.login_keys)
 }
 
-/// Signed-in login profiles of `backend`, for backends whose models come from an API call
-/// to the vendor (iMate) rather than from a local agent process.
-pub fn signed_in_for(store: &Store, backend: &str) -> Vec<Profile> {
-    let agent = agent_id(backend);
-    all(store).into_iter().filter(|p| p.account.agent == agent && p.account.signed_in).collect()
-}
-
 /// The profile a bot's agent runs on, when `backend` (the agent it's on now) is the profile's own.
 pub fn of_bot<'a>(store: &Store, backend: &str, cfg: &'a BotConfig) -> Option<&'a str> {
     cfg.login_profile.as_deref().filter(|id| resolve(store, backend, Some(id)).is_ok_and(|found| found.is_some()))

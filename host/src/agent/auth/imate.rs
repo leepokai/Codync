@@ -139,12 +139,12 @@ pub(crate) fn apply_launch(
         return Ok(());
     }
     // The default login uses only the computer's token. Drop anything already on the process so a
-    // cleared token cannot keep running, and do not fill it from a named profile.
+    // cleared token cannot keep running, and do not fill it from a named profile. With no saved
+    // token the bridge must not start: a missing entry would let it inherit this process's token.
     env.retain(|(name, _)| name != "IMATE_API_TOKEN");
-    if let Some(token) = token_for(store, None)? {
-        env.push(("IMATE_API_TOKEN".into(), token));
-    } else if !login_profiles::signed_in_for(store, "imate").is_empty() {
-        bail!("this iMate login has no token; sign in again");
+    match token_for(store, None)? {
+        Some(token) => env.push(("IMATE_API_TOKEN".into(), token)),
+        None => bail!("this iMate login has no token; sign in again"),
     }
     Ok(())
 }
@@ -339,5 +339,14 @@ mod tests {
         let mut env = vec![("IMATE_API_TOKEN".into(), "host-token".into())];
         apply_launch(&store, None, Some(&id), &mut env).expect("starts on its own token");
         assert!(env.iter().any(|(name, value)| name == "IMATE_API_TOKEN" && value == "profile-token"));
+    }
+
+    #[test]
+    fn a_cleared_token_does_not_start_on_one_the_process_inherited() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("store");
+        let mut env = vec![(TOKEN.to_owned(), "inherited".into())];
+        let err = apply_launch(&store, None, None, &mut env).expect_err("no saved token");
+        assert!(err.to_string().contains("sign in again"), "{err}");
+        assert!(env.iter().all(|(name, _)| name != TOKEN), "the inherited token is not passed on");
     }
 }

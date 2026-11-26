@@ -130,6 +130,13 @@ impl Importer {
             self.warnings
                 .push(format!("{} ran on {agent}, which isn't on this computer, so it gets the default", bot.name));
         }
+        // iMate stays the agent the export asked for. Say so here when this computer has no token,
+        // instead of waiting for the first chat to fail.
+        if backend.is_some_and(|agent| agent == "imate")
+            && matches!(crate::agent::auth::imate::token_for(&self.hub.store, None), Ok(None))
+        {
+            self.warnings.push(format!("{} runs on iMate, which needs a token on this computer", bot.name));
+        }
         let id = self.create(&json!({
             "name": bot.name,
             "description": bot.description,

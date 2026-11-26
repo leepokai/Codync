@@ -409,6 +409,7 @@ pub const HARNESSES: &[Harness] = &[
         name: "Doubao",
         bins: &["doubao"],
         // `acp serve` is ACP v1 on stdio, added in 2.38. `--acp` is the same server.
+        // Listed only where that CLI ships (`platform_offers`).
         local: Some("{bin} acp serve"),
         registry: None,
         setup: "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.",

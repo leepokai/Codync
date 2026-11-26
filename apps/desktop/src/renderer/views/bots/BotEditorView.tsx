@@ -22,7 +22,7 @@ import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, useP
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
-import { NetworkSwitches } from './NetworkSwitches'
+import { networkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
 import { GitStateLine } from './GitStateLine'
 import { HomeFolderRow, ProjectsRow, WorktreeModeRow } from './ProjectsRows'
@@ -305,7 +305,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               onChange={(on) => set('manageTeam', on)}
             />
           ) : null}
-          <NetworkSwitches draft={draft} set={set} />
+          {networkSwitches(draft, store.network, set)}
         </CardSection>
 
         <PluginToggles

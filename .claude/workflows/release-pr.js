@@ -10,6 +10,12 @@ export const meta = {
 }
 
 const input = typeof args === 'object' && args ? args : {}
+// A rerun hint names every arg the rerun needs: a plain rerun no longer merges.
+const rerunWith = (a) => {
+  const set = Object.keys(a).filter((k) => a[k]).map((k) => k + ': true')
+  return set.length ? `rerun with {${set.join(', ')}}` : 'rerun'
+}
+const rerun = rerunWith({ merge: input.merge, allowMinAppRaise: input.allowMinAppRaise })
 const MAX_ROUNDS = 4
 const REPO = 'leepokai/Codync'
 const MAIN_PULL = '`git -C <main checkout> pull --ff-only origin dev`'
@@ -113,7 +119,7 @@ let superseded = []
 const end = (result) => ({ ...result, superseded, other_prs: otherPrs.filter((n) => !superseded.includes(n)) })
 if (facts.nothing_to_release && !openRelease) return end({ outcome: 'nothing', facts })
 if (facts.min_app_raised && !input.allowMinAppRaise) {
-  return end({ outcome: 'ask', facts, why: `MIN_APP goes ${facts.min_app}: the release gate holds this release until the App Store and Google Play have that phone app`, next: 'Ask the user whether to release now; on a yes rerun with {allowMinAppRaise: true}.' })
+  return end({ outcome: 'ask', facts, why: `MIN_APP goes ${facts.min_app}: the release gate holds this release until the App Store and Google Play have that phone app`, next: `Ask the user whether to release now; on a yes ${rerunWith({ allowMinAppRaise: true, merge: input.merge })}.` })
 }
 
 // A version bump is what tags a release, so only shipped code bumps (CLAUDE.md "Versioning"); a version already ahead of the tag tags on its own.
@@ -183,7 +189,7 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
   if (!fixed) break
   fixes.push(fixed)
   if (fixed.needs_maintainer.length) {
-    return end({ outcome: 'ask', pr, gate, fixes, why: 'findings that need a decision: ' + fixed.needs_maintainer.join('; '), next: 'Ask the user about these; once decided (fixed on the release branch, or left as it is), reply to and resolve each such Greptile thread, then rerun.' })
+    return end({ outcome: 'ask', pr, gate, fixes, why: 'findings that need a decision: ' + fixed.needs_maintainer.join('; '), next: `Ask the user about these; once decided (fixed on the release branch, or left as it is), reply to and resolve each such Greptile thread, then ${rerun}.` })
   }
   // The fixes are our own code change: reviewed and walked end to end before the next round commits and merges them.
   if (fixed.applied.length) {
@@ -196,15 +202,15 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
       : checks.some((c) => c.result === 'fail') ? 'failed an e2e check'
       : report.review?.confirmed?.length && !report.fix?.applied ? 'left its confirmed findings unfixed'
       : null
-    if (gap) return end({ outcome: 'stopped', pr, gate, fixes, why: `after-change on the gate fixes ${gap}`, next: 'The fixes are uncommitted in the release worktree. Report the after-change result to the user; once fixed, rerun.' })
+    if (gap) return end({ outcome: 'stopped', pr, gate, fixes, why: `after-change on the gate fixes ${gap}`, next: `The fixes are uncommitted in the release worktree. Report the after-change result to the user; once fixed, ${rerun}.` })
   }
   // Nothing fixed or rerun leaves the head and the gate as they are: a ready head whose findings were all refuted merges, a failing one stops.
   if (!fixed.applied.length && !fixed.rerun.length) { ready = gate.status === 'ready'; break }
 }
-if (!ready) return end({ outcome: 'stopped', pr, gate, fixes, why: gate?.detail ?? 'the gate did not finish', next: 'The release branch and its worktree are kept. Report the gate to the user; once fixed, rerun.' })
+if (!ready) return end({ outcome: 'stopped', pr, gate, fixes, why: gate?.detail ?? 'the gate did not finish', next: `The release branch and its worktree are kept. Report the gate to the user; once fixed, ${rerun}.` })
 log(`#${pr}: gate passed on ${gate.head}`)
 // The maintainer decides when to merge (said explicitly); until then the gated PR waits.
-if (!input.merge) return end({ outcome: 'ready', pr, version, gate, fixes, next: `Report to the user that release PR #${pr} passed CI and Greptile on ${gate.head} and is waiting for them. Merge only when they explicitly say to: then rerun with {merge: true}.` })
+if (!input.merge) return end({ outcome: 'ready', pr, version, gate, fixes, next: `Report to the user that release PR #${pr} passed CI and Greptile on ${gate.head} and is waiting for them. Merge only when they explicitly say to: then ${rerunWith({ merge: true, allowMinAppRaise: input.allowMinAppRaise })}.` })
 
 phase('Release')
 // docs/guides/environments-and-deployment.md#releasing-cloud-changes: dev-api runs and passes the change before the merge, and main's cloud is deployed right after it, before the clients it serves ship.
@@ -216,7 +222,7 @@ if (facts.cloud_changed) {
 3. List in main_needs every migration (\`npx wrangler d1 migrations list codync --remote\`), binding (R2 bucket, rate limit) and secret (\`npx wrangler secret list\`) the main Worker lacks, each saying whether the release can create it.
 status ready only when 1 and 2 hold and everything in main_needs can be created by the release; otherwise needs_maintainer, saying what is missing.`,
     { label: 'cloud', phase: 'Release', schema: CLOUD_READY })
-  if (cloud?.status !== 'ready') return end({ outcome: 'ask', pr, gate, fixes, cloud, why: cloud?.detail ?? 'checking cloud/ did not finish', next: 'Nothing merged. Ask the user to settle the cloud prerequisites; once they are, rerun.' })
+  if (cloud?.status !== 'ready') return end({ outcome: 'ask', pr, gate, fixes, cloud, why: cloud?.detail ?? 'checking cloud/ did not finish', next: `Nothing merged. Ask the user to settle the cloud prerequisites; once they are, ${rerun}.` })
   mainNeeds = cloud.main_needs
 }
 const merged = await agent(`Merge release PR #${pr}, which passed its gate on ${gate.head}: \`gh pr merge ${pr} --repo ${REPO} --merge --match-head-commit ${gate.head}\`, a merge commit, never squash or rebase (the crate mirrors only fast-forward). Do nothing else. If it fails: status merge_failed with why. Otherwise status merged with merge_commit (\`gh pr view ${pr} --repo ${REPO} --json mergeCommit\`).`,

@@ -1,11 +1,11 @@
 export const meta = {
   name: 'release-pr',
-  description: 'Ship dev to main: cut a release branch, open the release PR, work CI and Greptile until the gate passes, merge it and see the release out (docs/guides/development.md#github-releases)',
-  whenToUse: 'When the user says "pr to main" (or asks for a release): it runs the whole release, merge included, and stops only for a MIN_APP raise, a failed real-agent check, a finding that needs a decision, a cloud prerequisite only the maintainer can create, or a gate it can\'t pass. args: {allowMinAppRaise?: true, once the user approved releasing a MIN_APP raise}',
+  description: 'Ship dev to main: cut a release branch, open the release PR and work CI and Greptile until the gate passes; only with {merge: true}, merge it and see the release out (docs/guides/development.md#github-releases)',
+  whenToUse: 'When the user says "pr to main" (or asks for a release): it prepares the release PR and works its gate until it passes, then stops without merging (outcome ready). Merge only when the user explicitly says to merge: rerun with {merge: true}, which picks up the open release PR, rechecks the gate and merges. It also stops for a MIN_APP raise, a failed real-agent check, a finding that needs a decision, a cloud prerequisite only the maintainer can create, or a gate it can\'t pass. args: {allowMinAppRaise?: true, once the user approved releasing a MIN_APP raise; merge?: true, only once the user explicitly said to merge}',
   phases: [
     { title: 'Prepare', detail: 'what the release holds; release branch, version, notes, real agents, the PR' },
     { title: 'Gate', detail: 'CI and Greptile on the head; verified findings fixed on the release branch, at most 4 rounds' },
-    { title: 'Release', detail: 'cloud prerequisites checked, merge commit into main, cloud deploy, the release branch into dev, release runs watched, cleanup' },
+    { title: 'Release', detail: 'only with {merge: true}: cloud prerequisites checked, merge commit into main, cloud deploy, the release branch into dev, release runs watched, cleanup' },
   ],
 }
 
@@ -133,6 +133,8 @@ const bumpStep = bumps
 const realAgentsStep = facts.ships_code
   ? `Agents on the worktree's head (docs/guides/test-stack.md#real-agents): build the host there (\`cargo build --bin codync-host\`). 1. The scripted check, every agent it covers, against aimock (no logins): \`cd tools/agent-upstream && npm ci && node check.mjs <worktree>/host/target/debug/codync-host --all\`, run from the main checkout's tools/agent-upstream when the worktree has none; a row whose CLI isn't installed is skipped and named. 2. Only Cursor, which aimock can't stand in for, as a real agent: start the host isolated (\`CODYNC_HOME=<short scratch dir> codync-host serve --port 19431\`), POST /api/hello twice (the registry loads late), one Cursor bot on its cheapest model, one turn (\`codync-host send --port 19431 --bot <id> --wait --json "Reply with exactly the word: ok"\`; a chat-tool card is approved with POST /api/respondPermission, cards read with POST /api/history), then SIGTERM the host and check none of its agent processes outlive it; skipped and named when Cursor isn't installed or logged in. A failed row of either, or a process left alive, is status real_agents_failed: stop and push nothing.`
   : 'Real agents: skipped, no shipped code changed (say so in the PR body).'
+// A merge run picks up the PR the earlier run gated: its real-agent results are already in the body.
+const realAgents = openRelease && input.merge ? `${realAgentsStep} Skip this step when #${openRelease.number}'s body already has the real-agent results and nothing but gate fixes landed since.` : realAgentsStep
 const supersede = fromDev.length
   ? ` Then close each release PR opened straight from dev (${fromDev.map((p) => '#' + p.number).join(', ')}) with \`gh pr close <n> --repo ${REPO} --comment "Superseded by #<this PR>"\`.`
   : ''
@@ -140,7 +142,7 @@ const prepared = await agent(`Prepare the release of dev into main. ${PATHS}
 What it holds: ${JSON.stringify({ ...facts, open_prs: undefined })}
 1. Release branch: ${branchStep} From here on work only in that worktree.
 2. There, ${bumpStep} Raise each crate in ${JSON.stringify(facts.crates_to_bump)} one 0.x step (patch for fixes, minor for API changes; \`cargo check -p <crate>\` in host/ updates Cargo.lock), each committed as \`build: bump <crate> to 0.x.y\`. Write the missing store notes ${JSON.stringify(facts.notes_missing)}: the version's section (zh-Hant + en-US, what that app's users notice, from the commits since ${facts.latest_tag}), moving sections of unshipped dev-only versions into it (CLAUDE.md "Versioning"), committed as \`docs: release notes for X.Y.Z\`.
-3. ${realAgentsStep}
+3. ${realAgents}
 4. Push the branch (\`git push -u origin HEAD\`) and ${openRelease && !bumps ? `update #${openRelease.number}'s body` : `open the PR (\`gh pr create --repo ${REPO} --base main --title "release: X.Y.Z"\`)`}, in .github/pull_request_template.md's shape as the last merged release PR has it (\`gh pr list --repo ${REPO} --base main --state merged --limit 1 --json number,body\`): a Summary written for people reading the release page (it becomes the GitHub release description and the Discord post): what users get, grouped, with issue numbers; whether MIN_APP changed and whether cloud/ changed; every Validation item ticked with "N/A: release PR, each change was checked in its own run" plus the real-agent results; the What's New sections pointing at the WhatsNew files; the body's last line "🤖 Generated with [Claude Code](https://claude.com/claude-code)".${supersede}`,
   { label: 'prepare', phase: 'Prepare', schema: PREPARED })
 if (prepared?.status !== 'ready') return end({ outcome: 'stopped', facts, prepare: prepared, why: prepared?.detail ?? 'preparing did not finish' })
@@ -201,6 +203,8 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
 }
 if (!ready) return end({ outcome: 'stopped', pr, gate, fixes, why: gate?.detail ?? 'the gate did not finish', next: 'The release branch and its worktree are kept. Report the gate to the user; once fixed, rerun.' })
 log(`#${pr}: gate passed on ${gate.head}`)
+// The maintainer decides when to merge (said explicitly); until then the gated PR waits.
+if (!input.merge) return end({ outcome: 'ready', pr, version, gate, fixes, next: `Report to the user that release PR #${pr} passed CI and Greptile on ${gate.head} and is waiting for them. Merge only when they explicitly say to: then rerun with {merge: true}.` })
 
 phase('Release')
 // docs/guides/environments-and-deployment.md#releasing-cloud-changes: dev-api runs and passes the change before the merge, and main's cloud is deployed right after it, before the clients it serves ship.

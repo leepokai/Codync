@@ -11,7 +11,8 @@ const afterChange = { e2e: { checks: [{ result: 'pass' }] }, review: { confirmed
 
 // Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn. The
 // 'after-change' answer is that workflow's report (afterChange when not given).
-const run = async (answers, args = {}) => {
+const run = async (answers, extra = {}) => {
+  const args = { merge: true, ...extra }
   const calls = []
   const seen = {}
   const agent = async (prompt, opts) => {
@@ -163,6 +164,17 @@ for (const status of ['timed_out', 'failed']) {
     const none = await run({ ...base, prepare: { ...prepared, ...bad }, 'gate:': [ready] })
     check(none.r.outcome === 'stopped' && !none.calls.some((c) => c.startsWith('gate:')), 'a prepare result whose branch is not release/<its version> stops: ' + bad.branch)
   }
+}
+
+{
+  const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [fixed] }, { merge: undefined })
+  check(r.outcome === 'ready' && r.pr === 600 && !calls.includes('merge') && !calls.includes('follow-up'), 'without merge: true it stops once the gate passes: ' + calls)
+  const cloudRun = await run({ ...base, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] }, { merge: undefined })
+  check(cloudRun.r.outcome === 'ready' && !cloudRun.calls.includes('cloud'), 'without merge: true the cloud check waits for the merge run')
+  const own = { number: 650, head: 'release/2.52.1', cross_repository: false }
+  const prepare = capture({ ...prepared, pr: 650 })
+  const again = await run({ ...base, prepare, 'gate:': [ready], inspect: { ...facts, open_prs: [own] } })
+  check(again.r.outcome === 'released' && /Skip this step when #650/.test(prepare.prompt), 'the merge run reuses the gated PR without rerunning the real agents')
 }
 
 if (failures) process.exit(1)

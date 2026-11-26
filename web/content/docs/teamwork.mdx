@@ -101,6 +101,8 @@ Each session is named once, when it first uses the server: its project folder an
 
 Codex, Copilot CLI and Grok can also hear of new letters without asking: add a hook that runs `codync-host network hook` after each tool call (`PostToolUse`) and when a turn ends (`Stop`). The session is then told, at its next step, how many letters are waiting, and reads them with `check_inbox`. Write the event names exactly as below: a hook under another name gets nothing.
 
+Claude Code sessions (macOS and Linux) are told as soon as a letter comes, with nothing to set up: when the session is idle, its codync server starts a turn with a short automated notice (how many letters wait, never their text), and the session reads them with `check_inbox`. A session is woken at most 12 times an hour; past that it isn't woken again until the hour's count frees up, or it checks itself.
+
 Codex, in `~/.codex/hooks.json` (then approve the hooks once in `/hooks`), and Grok, in `~/.grok/hooks/codync.json` with `hook grok` instead of `hook codex`:
 
 ```json

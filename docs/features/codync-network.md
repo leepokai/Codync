@@ -182,7 +182,7 @@ that was off learns of a removal.
 - **Mailbox** (kv `network_mail`, by session key, 100 letters per session): `message_bot` to a session's address leaves a letter;
   `check_inbox` (`waitSecs` up to 50) returns them, each inside a random boundary with a note that they aren't the
   user's words, and counts them read. Every tool result carries `you` (the address) and, with mail waiting,
-  `unread` (a count, never text). The tier is `pull`, or `turn` once its agent runs our hook (below).
+  `unread` (a count, never text). The tier is `pull`, `turn` once its agent runs our hook, or `push` once its MCP server waits (below); it only rises.
 - **Turn tier** (`codync-host network hook <codex|copilot|grok>`, local API `networkHook`, loopback only): the
   agent's `PostToolUse` and `Stop` hooks run it with the hook's JSON on stdin (`hook_event_name`, `session_id`,
   the same id its MCP server gives). It tells the session how many letters wait (a count, never their text) and, once it printed that,
@@ -191,8 +191,8 @@ that was off learns of a removal.
   step doesn't repeat it and a `Stop` that keeps the turn going (`decision: block`) can't loop, while a notice the
   hook never got (a timeout) is told again; a hook also counts as the session being seen (saved once a day); the agent reads them with
   `check_inbox` as before. It never registers a session (only its MCP server does) and prints nothing when the host
-  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook marks the
-  session `hooked` (tier `turn`). What each agent reads back is `codync_network::hooks` (Codex and Grok:
+  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook raises the
+  session's tier to `turn`. What each agent reads back is `codync_network::hooks` (Codex and Grok:
   `hookSpecificOutput.additionalContext`, Codex refusing any other field; Copilot CLI: top-level
   `additionalContext`). Checked end to end with each agent's CLI on aimock. Adding the hooks (the setup command) is
   phase 5; until then, by hand:
@@ -221,9 +221,18 @@ that was off learns of a removal.
   session on another computer goes as a letter like any other, and the session's answer comes back the same way.
   Kept in memory: after a host restart the session's answer reaches the bot as a new request, and an answer the bot
   hadn't taken yet (it was busy) is lost, its notice already completed.
+- **Push tier** (Claude Code on macOS and Linux): the session's own `codync-host mcp network` (`mcp::push`) waits on
+  `networkHook` (`push`, `waitSecs` up to 50, woken by `arrived`) and, once the session is idle (its registry's
+  `status`), asks again (the session may have read its mail meanwhile) and writes the same count-only notice, marked as an automated notice and not the user's words, to the
+  inbox socket and token Claude Code gives its own children (`codync_network::post_to_own_claude_session`): an idle
+  session starts a turn on it. A message written mid-turn didn't reach the turn in testing, so it waits for idle.
+  Claude Code itself frames it as from "another Claude session" with its own rules against escalation. Confirmed
+  (`told`, `push`) only once written. A session is woken at most `WAKES_PER_HOUR` (12) times an hour, so two
+  sessions answering each other can't keep each other working unattended; a wake counts once confirmed, and past that the session isn't woken
+  again until the hour's count frees up, or it reads them with `check_inbox` itself (`wake_limited` once per held letter). Never for a bot's agent (`CODYNC_BOT`). Its tier is `push` from its first wait; a tier only rises.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
-- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`, `hooked`, `told`) and `kind` ([catalog](../reference/analytics-events.md)).
+- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`, `hooked`, `told`, `pushes`, `pushed`, `wake_limited`, `push_failed`) and `kind` ([catalog](../reference/analytics-events.md)).
 - **In the apps** (`networkView`'s `sessions`, `Sessions::listed`): the sessions not temporary and seen in the last
   week or named by a rule, each with its address, title, kind and logo (`registry`), tier, last call (`seen`) and
   `state`: `working`/`idle` where its agent says (Claude Code's registry, unless the process it names is gone),
@@ -238,9 +247,8 @@ that was off learns of a removal.
   pickers (desktop, TUI) offer this computer's sessions as targets, with the levels the host sends with each
   (`levels`: Allow and Deny, `sessions::LEVELS`); `setNetworkRules` saves any other level on a session as Deny
   (an older rule, or one from the API), so the rest of the list still saves and nothing gets more access. Each session's
-  `tier` is `Session::tier()`; every client labels `pull`, `turn` and `push`.
-- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier
-  (plugins), and a setup command: [plan](../plans/agent-sessions.md).
+  `tier` is its saved `tier`; every client labels `pull`, `turn` and `push`.
+- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier for pi and opencode (their MCP calls carry no session id: opencode 1.19.5 sends no `_meta` id), Codex (`codex queue` unverified on an idle thread) and Claude Code on Windows, and a setup command: [plan](../plans/agent-sessions.md).
 
 ## Who reaches this computer's bots
 

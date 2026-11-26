@@ -370,14 +370,18 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
 
 #[tokio::test]
 async fn a_hook_tells_its_session_of_new_mail_once() {
-    use crate::chat::team::mailbox::hook;
+    use crate::chat::team::mailbox::{HookAsk, hook};
     use codync_network::AgentKind::{ClaudeCode, Codex};
     let f = Fixture::new();
     let hub = &f.hub;
     let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
-    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "a session its MCP server never registered");
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(),
+        json!({}),
+        "a session its MCP server never registered"
+    );
     local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
-    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "no mail");
+    assert_eq!(hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(), json!({}), "no mail");
     assert_eq!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
     let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
     assert_eq!(listed["bots"][0]["tier"], "turn", "{listed}");
@@ -386,12 +390,63 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
             .await
             .unwrap();
     assert_eq!(sent["tier"], "turn");
-    let told = hook(hub, Codex, "t1", None).unwrap();
+    let told = hook(hub, Codex, "t1", HookAsk::default()).await.unwrap();
     assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "{told}");
     assert!(!told.to_string().contains("did the API"), "a count, never the text");
-    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), told, "told again until its hook confirms it");
-    assert_eq!(hook(hub, Codex, "t1", told["letter"].as_str()).unwrap()["saved"], true);
-    assert_eq!(hook(hub, Codex, "t1", told["letter"].as_str()).unwrap()["saved"], false, "nothing new");
-    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "told once");
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(),
+        told,
+        "told again until its hook confirms it"
+    );
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk { told: told["letter"].as_str(), ..HookAsk::default() }).await.unwrap()["saved"],
+        true
+    );
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk { told: told["letter"].as_str(), ..HookAsk::default() }).await.unwrap()["saved"],
+        false,
+        "nothing new"
+    );
+    assert_eq!(hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(), json!({}), "told once");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_push_waits_for_a_letter_and_wakes_a_session_only_so_often() {
+    use crate::chat::team::mailbox::{HookAsk, hook};
+    use crate::network::sessions::{Tier, WAKES_PER_HOUR};
+    use codync_network::AgentKind::{ClaudeCode, Codex};
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
+    local_call(hub, &claude, "whoami", &json!({})).await.unwrap();
+    let push = |told: Option<String>, secs: u64| async move {
+        let ask = HookAsk {
+            told: told.as_deref(),
+            tier: Tier::Push,
+            wait: std::time::Duration::from_secs(secs),
+            ..HookAsk::default()
+        };
+        hook(hub, ClaudeCode, "s1", ask).await.unwrap()
+    };
+    let send = || async {
+        local_call(hub, &codex, "message_bot", &json!({"botId": "api-claude", "message": "hi"})).await.unwrap();
+    };
+    let waiting = push(None, 20);
+    let later = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        send().await;
+    };
+    let (told, ()) = tokio::join!(waiting, later);
+    assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "a wait ends when a letter comes: {told}");
+    assert_eq!(local_call(hub, &claude, "whoami", &json!({})).await.unwrap()["tier"], "push");
+    assert_eq!(push(told["letter"].as_str().map(str::to_owned), 0).await["saved"], true);
+    for _ in 1..WAKES_PER_HOUR {
+        send().await;
+        let told = push(None, 0).await;
+        push(told["letter"].as_str().map(str::to_owned), 0).await;
+    }
+    send().await;
+    assert_eq!(push(None, 0).await, json!({}), "an hour's wakes are used up: it reads its mail itself");
     f.shutdown().await;
 }

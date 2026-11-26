@@ -9,10 +9,14 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+mod push;
 mod remote;
 pub use remote::serve_remote;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// A call that may wait for a session's mail, with time for the host to answer.
+const WAIT_REPLY: Duration = Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15);
 
 /// ACP `McpServer` for `codync-host mcp <args…> --port <port>`. Its env names the data directory, where the token
 /// is: some agents start MCP servers with a filtered environment (Hermes keeps only PATH, HOME and a few more), so a
@@ -114,7 +118,11 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
                 "initialize" => {
-                    let _ = client.set(params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned());
+                    let agent = params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned();
+                    let first = client.set(agent.clone()).is_ok();
+                    if first && matches!(server, Server::Network) && push::wanted(&agent, |k| std::env::var_os(k)) {
+                        tokio::spawn(push::run(port));
+                    }
                     Ok(json!({
                         "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
                         "capabilities": {"tools": {}},
@@ -248,9 +256,7 @@ async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: 
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
         // A session may wait for its mail.
-        Server::Network if params["name"] == "check_inbox" => {
-            ("agentCall", Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15))
-        }
+        Server::Network if params["name"] == "check_inbox" => ("agentCall", WAIT_REPLY),
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
     };

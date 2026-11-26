@@ -107,31 +107,60 @@ fn a_session_unseen_for_long_is_forgotten_unless_mail_waits() {
 fn a_hook_tells_of_new_mail_once_and_never_registers() {
     let store = store();
     let sessions = Sessions::default();
-    assert_eq!(sessions.hook(&store, "codex:unknown").unwrap(), None, "a hook doesn't register");
+    assert_eq!(sessions.hook(&store, "codex:unknown", Tier::Turn).unwrap(), None, "a hook doesn't register");
     let (s, _) = sessions
         .register(&store, &caller(AgentKind::Codex, Some("t1"), "/tmp"), None, None, || Ok("api-codex".into()))
         .unwrap();
     assert_eq!(s.key, session_key(AgentKind::Codex, "t1"));
-    assert_eq!(s.tier(), Tier::Pull);
+    assert_eq!(s.tier, Tier::Pull);
     let letter = |id: &str| Mail { id: id.into(), from: "x".into(), body: "hi".into(), reply_to: None, at: 0 };
-    assert_eq!(sessions.hook(&store, &s.key).unwrap(), Some(Hooked { unread: 0, newest: None, first: true }));
+    assert_eq!(
+        sessions.hook(&store, &s.key, Tier::Turn).unwrap(),
+        Some(Hooked { unread: 0, newest: None, raised: true })
+    );
     sessions.post(&store, &s.key, letter("1")).unwrap();
-    let told = Some(Hooked { unread: 1, newest: Some("1".into()), first: false });
-    assert_eq!(sessions.hook(&store, &s.key).unwrap(), told);
-    assert_eq!(sessions.hook(&store, &s.key).unwrap(), told, "a notice its hook didn't confirm is told again");
+    let told = Some(Hooked { unread: 1, newest: Some("1".into()), raised: false });
+    assert_eq!(sessions.hook(&store, &s.key, Tier::Turn).unwrap(), told);
+    assert_eq!(
+        sessions.hook(&store, &s.key, Tier::Turn).unwrap(),
+        told,
+        "a notice its hook didn't confirm is told again"
+    );
     assert!(sessions.told(&store, &s.key, "1").unwrap());
     assert!(!sessions.told(&store, &s.key, "1").unwrap(), "already told");
-    assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(0), "told once");
+    assert_eq!(sessions.hook(&store, &s.key, Tier::Turn).unwrap().map(|h| h.unread), Some(0), "told once");
     sessions.post(&store, &s.key, letter("2")).unwrap();
-    assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(2), "a new letter: told again");
+    assert_eq!(
+        sessions.hook(&store, &s.key, Tier::Turn).unwrap().map(|h| h.unread),
+        Some(2),
+        "a new letter: told again"
+    );
     assert!(sessions.told(&store, &s.key, "2").unwrap());
     assert!(!sessions.told(&store, &s.key, "1").unwrap());
     assert_eq!(
-        sessions.hook(&store, &s.key).unwrap().map(|h| h.unread),
+        sessions.hook(&store, &s.key, Tier::Turn).unwrap().map(|h| h.unread),
         Some(0),
         "a late older confirmation undoes nothing"
     );
-    assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier(), Tier::Turn);
+    assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier, Tier::Turn);
+}
+
+#[test]
+fn a_tier_only_rises_and_wakes_are_capped() {
+    let store = store();
+    let sessions = Sessions::default();
+    let (s, _) = sessions
+        .register(&store, &caller(AgentKind::ClaudeCode, Some("c1"), "/tmp"), None, None, || Ok("api-claude".into()))
+        .unwrap();
+    assert!(sessions.hook(&store, &s.key, Tier::Push).unwrap().unwrap().raised);
+    assert!(!sessions.hook(&store, &s.key, Tier::Turn).unwrap().unwrap().raised);
+    assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier, Tier::Push, "never lowered");
+    assert!((0..WAKES_PER_HOUR).all(|_| sessions.may_wake(&s.key, "1") == Wake::Allowed), "asking spends nothing");
+    (0..WAKES_PER_HOUR).for_each(|_| sessions.woke(&s.key));
+    assert_eq!(sessions.may_wake(&s.key, "1"), Wake::Limited, "an hour's wakes are used up");
+    assert_eq!(sessions.may_wake(&s.key, "1"), Wake::StillLimited, "said once per letter");
+    assert_eq!(sessions.may_wake(&s.key, "2"), Wake::Limited);
+    assert_eq!(sessions.may_wake("claude-code:other", "1"), Wake::Allowed, "per session");
 }
 
 #[test]
@@ -240,7 +269,7 @@ fn a_session_whose_process_moved_on_to_another_is_offline() {
         temporary: false,
         named: None,
         seen,
-        hooked: false,
+        tier: Tier::Pull,
         announced: None,
         running: process.clone(),
     };

@@ -140,7 +140,7 @@ class BotEditorTest {
         val claude = AgentModels(emptyList(), modes = listOf(AgentMode("auto", "Auto", "Claude handles permission decisions"),
             AgentMode("default", "Manual", "Always ask before making changes"), AgentMode("plan", "Plan")))
         var draft by mutableStateOf(scout)
-        compose.setContent { Hosted { ApprovalRow(fixture(), { _, _ -> claude }, draft, { draft = it }) } }
+        compose.setContent { Hosted { ApprovalRow(fixture(), { _, _, _ -> claude }, draft, { draft = it }) } }
         compose.onNodeWithText("Claude handles permission decisions", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Permissions: Auto").performClick()
         compose.onNodeWithText("Approve automatically").assertIsDisplayed()

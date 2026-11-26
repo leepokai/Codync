@@ -47,10 +47,36 @@ export interface Network {
   defaultAccess?: NetworkRule['access']
 }
 
+/** A coding agent's session on this computer with a Network address (`codync-host mcp network`). */
+export interface NetworkSession {
+  /** What bots and other agents message it at. */
+  address: string
+  /** The agent's own title for it; display only. */
+  title?: string | null
+  /** The agent (`claude-code`, `codex`…); a newer host may send one this app doesn't know. */
+  kind: string
+  /** The ACP registry id of its logo, when it has one. */
+  registry?: string | null
+  /** How it gets its mail: `pull` (it checks), later `turn` and `push`; unknown ones show nothing. */
+  tier: string
+  /** Whether its agent runs now; absent where nothing can tell. A newer host may send a state this app doesn't know. */
+  state?: 'working' | 'idle' | 'online' | 'offline' | (string & {}) | null
+  /** Running now, as far as the host can tell. */
+  runs?: boolean
+  /** The levels a rule to it can take, as the host decides (Allow and Deny). */
+  levels?: NetworkRule['access'][]
+  /** Folded under the older ones: neither running nor called in the last day. The host lists running ones first, then the most recent. */
+  older?: boolean
+  /** Its last call (Unix ms). */
+  seen?: number
+}
+
 /** `networkView`, the `network` event and the stream's hello: this computer's networks, the default first, and cloud assistants. */
 export interface NetworkView {
   joined: boolean
   networks: Network[]
+  /** This computer's coding agents' sessions; absent on hosts before them. */
+  sessions?: NetworkSession[]
   assistants: boolean
   /** Cloud assistants can reach this computer at all: it's in a Codync account. */
   assistantsAvailable: boolean

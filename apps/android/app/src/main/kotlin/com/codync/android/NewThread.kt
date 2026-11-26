@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -118,11 +117,8 @@ internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.fil
     }
     val plainStore = plain?.let { accounts.store(it.computer.id) }
     if (plain != null && plainStore != null) CodyncSheet(choosingModel, { choosingModel = false }) {
-        Column(Modifier.fillMaxSize()) {
-            ModalHeader("Model")
-            ModelPanel(plain, plainStore, backend = login.backend, loginProfile = login.loginProfile, model = model, options = options,
-                choose = { m, o -> model = m; options = o }, fast = null, setFast = null, bot = null, seats = readySeats(plain, login),
-                pickSeat = { login = it; model = null; options = emptyMap() })
-        }
+        ModelPanel(plain, plainStore, backend = login.backend, loginProfile = login.loginProfile, model = model, options = options,
+            choose = { m, o -> model = m; options = o }, fast = null, setFast = null, bot = null, seats = readySeats(plain, login),
+            pickSeat = { login = it; model = null; options = emptyMap() })
     }
 }

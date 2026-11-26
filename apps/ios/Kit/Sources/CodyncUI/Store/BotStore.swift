@@ -338,7 +338,7 @@ public final class BotStore {
 
     /// An agent as the Agent pickers list it.
     func agentLabel(_ backend: Backend) -> String {
-        backend.available ? backend.name : "\(backend.name) (not installed)"
+        backend.available || backend.id == "imate" ? backend.name : "\(backend.name) (not installed)"
     }
 
     /// `backends` as the Agent pickers list them, once per login (`Backend.loginSeats`).
@@ -348,7 +348,7 @@ public final class BotStore {
 
     /// The agents a chat's box can switch its bot to, once per login: the installed ones and the one in use (`readyLogins`).
     public func readySeats(on: AgentLogin) -> [LoginSeat] {
-        loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
+        loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == "imate" || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
     }
 
     public var hiddenBots: [Bot] { bots.values.filter { $0.hidden && !$0.plain }.sorted { $0.name < $1.name } }

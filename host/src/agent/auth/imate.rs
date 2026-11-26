@@ -70,22 +70,48 @@ pub async fn set_token(hub: Arc<Hub>, token: &str) -> Result<Value> {
     status(hub).await
 }
 
+/// `setAgentEnv` for iMate. A token is checked with iMate before it replaces the saved one, and a
+/// blank one is removed rather than kept as a sign-in. Other variables save as usual.
+pub async fn save_agent_env(hub: Arc<Hub>, vars: &Map<String, Value>) -> Result<Value> {
+    let mut rest = vars.clone();
+    let Some(value) = rest.remove(TOKEN) else {
+        return if rest.is_empty() {
+            super::check(&hub.store, "imate").await
+        } else {
+            super::set_env(&hub.store, "imate", &rest).await
+        };
+    };
+    if !rest.is_empty() {
+        super::set_env(&hub.store, "imate", &rest).await?;
+    }
+    let text = value.as_str().map_or("", str::trim);
+    if text.is_empty() {
+        super::save_env(&hub.store, "agent-env:imate", &[(TOKEN.to_owned(), None)])?;
+        hub.model_lists.clear("imate");
+        hub.restart_agents("imate");
+    } else {
+        set_token(hub.clone(), text).await?;
+    }
+    super::check(&hub.store, "imate").await
+}
+
 /// Whether an iMate API key has been entered, for the agent's setup card.
 pub fn check(store: &Store) -> Result<Status> {
     let signed_in = saved_token(store)?.is_some();
     Ok(Status { signed_in: Some(signed_in), detail: None, methods: Vec::new() })
 }
 
-/// The token a bridge starts with for `login_profile` (none: the agent's own, then a signed-in profile).
-/// The model picker uses the same choice, so the colleagues it lists are the ones that bot can reach.
+/// The token a bridge starts with for `login_profile`. A named profile uses only its own token: a
+/// cleared one does not fall through to the host token or another profile. With no profile, the
+/// agent's own token, then a signed-in profile. The model picker uses the same choice, so the
+/// colleagues it lists are the ones that bot can reach.
 pub(crate) fn token_for(store: &Store, login_profile: Option<&str>) -> Result<Option<String>> {
     // The same lookup the launch uses: a profile of another agent does not count, even when its
     // saved variables happen to include this name.
     if let Some(id) = login_profile.filter(|id| !id.is_empty()) {
         let (env, _) = login_profiles::env(store, "imate", Some(id))?;
-        if let Some((_, token)) = env.into_iter().find(|(name, value)| name == TOKEN && !value.is_empty()) {
-            return Ok(Some(token));
-        }
+        let token = env.into_iter().find(|(name, value)| name == TOKEN && !value.is_empty()).map(|(_, token)| token);
+        return Ok(token);
     }
     saved_token(store)
 }
@@ -102,8 +128,18 @@ pub(crate) fn apply_launch(
         env.retain(|(name, _)| name != "IMATE_CLIENT_UUID");
         env.push(("IMATE_CLIENT_UUID".into(), model.to_owned()));
     }
+    if let Some(id) = login_profile.filter(|id| !id.is_empty()) {
+        // Launch already copied the host token when this profile saved nothing. Drop it: this
+        // login runs only on its own token.
+        env.retain(|(name, _)| name != "IMATE_API_TOKEN");
+        match token_for(store, Some(id))? {
+            Some(token) => env.push(("IMATE_API_TOKEN".into(), token)),
+            None => bail!("this iMate login has no token; sign in again"),
+        }
+        return Ok(());
+    }
     let has_token = env.iter().any(|(name, value)| name == "IMATE_API_TOKEN" && !value.is_empty());
-    if !has_token && let Some(token) = token_for(store, login_profile)? {
+    if !has_token && let Some(token) = token_for(store, None)? {
         env.retain(|(name, _)| name != "IMATE_API_TOKEN");
         env.push(("IMATE_API_TOKEN".into(), token));
     }
@@ -152,7 +188,16 @@ pub async fn shared_models(hub: &Arc<Hub>, login_profile: Option<&str>) -> Resul
 }
 
 async fn list_colleagues(store: &Store, login_profile: Option<&str>) -> Result<Value> {
-    let token = token_for(store, login_profile)?.context("add an iMate API token in Extensions first")?;
+    let Some(token) = token_for(store, login_profile)? else {
+        bail!(
+            "{}",
+            if login_profile.is_some() {
+                "this iMate login has no token; sign in again"
+            } else {
+                "add an iMate API token in Extensions first"
+            }
+        );
+    };
     let listed = fetch_colleagues(&token, LOOKUP_TIMEOUT).await?;
     // The same order as the bridge's default colleague: first by name, so "Default" is that person.
     let mut models: Vec<Value> = listed
@@ -268,5 +313,36 @@ mod tests {
         assert_eq!(failure_category(&anyhow::anyhow!("the iMate token check timed out")), "timeout");
         assert_eq!(failure_category(&anyhow::anyhow!("request timed out")), "timeout");
         assert_eq!(failure_category(&anyhow::anyhow!("connection refused")), "network");
+    }
+
+    #[tokio::test]
+    async fn a_named_profile_without_a_token_does_not_use_another_account() {
+        use crate::LockExt;
+        let store = Store::open(std::path::Path::new(":memory:")).expect("store");
+        *store.secret_key.locked() = Some(zeroize::Zeroizing::new(vec![7; 32]));
+        crate::agent::auth::save_env(&store, "agent-env:imate", &[(TOKEN.to_owned(), Some("host-token".into()))])
+            .expect("host token");
+        let added = login_profiles::add(&store, "imate", login_profiles::Kind::ApiKey).await.expect("profile");
+        let id = added["id"].as_str().expect("id").to_owned();
+        assert_eq!(token_for(&store, Some(&id)).expect("lookup"), None, "no host token");
+        let mut env = vec![("IMATE_API_TOKEN".into(), "host-token".into())];
+        let err = apply_launch(&store, None, Some(&id), &mut env).expect_err("must not start");
+        assert!(err.to_string().contains("sign in again"), "{err}");
+        assert!(env.iter().all(|(name, _)| name != "IMATE_API_TOKEN"));
+
+        crate::agent::auth::save_env(&store, "agent-env:imate", &[(TOKEN.to_owned(), None)]).expect("cleared");
+        let other = login_profiles::add(&store, "imate", login_profiles::Kind::ApiKey).await.expect("other profile");
+        let other_id = other["id"].as_str().expect("id");
+        let vars = json!({"IMATE_API_TOKEN": "other-token"});
+        login_profiles::keys::set(&store, other_id, vars.as_object().expect("vars"), &[]).await.expect("other token");
+        assert_eq!(token_for(&store, Some(&id)).expect("still empty"), None, "no other profile");
+        assert_eq!(token_for(&store, None).expect("default").as_deref(), Some("other-token"));
+
+        let own = json!({"IMATE_API_TOKEN": "profile-token"});
+        login_profiles::keys::set(&store, &id, own.as_object().expect("vars"), &[]).await.expect("own token");
+        assert_eq!(token_for(&store, Some(&id)).expect("own").as_deref(), Some("profile-token"));
+        let mut env = vec![("IMATE_API_TOKEN".into(), "host-token".into())];
+        apply_launch(&store, None, Some(&id), &mut env).expect("starts on its own token");
+        assert!(env.iter().any(|(name, value)| name == "IMATE_API_TOKEN" && value == "profile-token"));
     }
 }

@@ -22,7 +22,7 @@ export function loginSeats({ backends, on, pick, tr, logins }: {
   return backends.flatMap((b) => {
     const current = b.id === on.backend ? on.loginProfile ?? null : undefined
     const ids = logins?.(b) ?? [null, ...loginProfileChoices(b, current ?? null).map((p) => p.id)]
-    const agent = b.available ? b.name : tr(`${b.name} (not installed)`)
+    const agent = b.available || b.id === 'imate' ? b.name : tr(`${b.name} (not installed)`)
     return ids.map((id) => {
       const login = id
         ? b.loginProfiles?.find((p) => p.id === id)?.name ?? tr('New login profile')
@@ -46,7 +46,7 @@ export function loginSeats({ backends, on, pick, tr, logins }: {
  */
 export function readySeats({ backends, on, pick, tr, profiles = true }: Omit<Parameters<typeof loginSeats>[0], 'logins'> & { profiles?: boolean }): Seat[] {
   return loginSeats({
-    backends: backends.filter((b) => b.available || b.id === on.backend), on, pick, tr,
+    backends: backends.filter((b) => b.available || b.id === 'imate' || b.id === on.backend), on, pick, tr,
     logins: (b) => {
       const current = b.id === on.backend ? on.loginProfile ?? null : undefined
       if (!profiles) return [current ?? null]

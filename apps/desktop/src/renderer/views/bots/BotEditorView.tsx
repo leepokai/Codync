@@ -154,7 +154,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       model={{ id: draft.model ?? null, options: draft.modelOptions ?? {} }} set={(m) => setModel(m.id, m.options)}
       fast={fastShown ? { on: draft.fastMode ?? false, set: (on) => set('fastMode', on) } : null}>
       {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
-      {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
+      {backend && !backend.available && backend.id !== 'imate' && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
       {fastShown && refusal ? <Text size="caption" tone="attention">{refusal}</Text> : null}
       <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>

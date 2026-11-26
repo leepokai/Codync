@@ -87,7 +87,7 @@ impl App {
     }
 
     /// Advisor mode on: its threads start on the bot's own agent, model and fallbacks (on a custom command, which a
-    /// step can't be, on the first agent one can); off: no threads' agent or chain.
+    /// step can't be, on the first agent one can, never iMate); off: no threads' agent or chain.
     pub(super) fn toggle_advisor(&mut self, f: &mut Form) {
         if f.thread_agent.take().is_some() {
             f.thread_fallbacks.clear();
@@ -101,7 +101,7 @@ impl App {
                 ..Fallback::default()
             });
             f.thread_fallbacks.clone_from(&f.fallbacks);
-        } else if let Some(backend) = self.step_agents().into_iter().next() {
+        } else if let Some(backend) = self.step_agents().into_iter().find(|id| id != "imate") {
             self.want_models(&backend, None);
             f.thread_agent = Some(Fallback { backend, ..Fallback::default() });
         }

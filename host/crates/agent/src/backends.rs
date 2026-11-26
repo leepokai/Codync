@@ -114,14 +114,18 @@ pub fn list() -> Vec<Value> {
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
             let native = path.is_some() && h.local.is_some();
             let runnable = native || reg.is_some_and(|a| registry::launch_kind(a).is_some());
+            // iMate is a remote catalog, not a CLI. It stays installed so Extensions can take a
+            // token and a person can pick it. It is not available, so Advisor and a new bot do
+            // not start on it when nothing else is installed.
             let remote = h.id == "imate";
+            let available = !remote && path.is_some() && runnable;
             let needs_node = if native { workbuddy::runs_on_node(h.id) } else { reg.is_some_and(registry::needs_node) };
             let node = if needs_node { node::state() } else { None };
             json!({
                 "id": h.id,
                 "name": h.name,
                 "installed": remote || path.is_some(),
-                "available": remote || path.is_some() && runnable,
+                "available": available,
                 "path": path.map(|p| p.to_string_lossy().into_owned()),
                 "description": reg.and_then(|a| a["description"].as_str()).unwrap_or_default(),
                 "installHint": h.setup,

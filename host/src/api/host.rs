@@ -254,7 +254,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 }
                 _ => {
                     let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
-                    crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                    if backend == "imate" {
+                        crate::agent::auth::imate::save_agent_env(hub.clone(), vars).await?
+                    } else {
+                        crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                    }
                 }
             };
             // Chats that asked the user to sign in get their messages answered now.

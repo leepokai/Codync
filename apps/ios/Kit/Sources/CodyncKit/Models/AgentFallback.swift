@@ -150,7 +150,7 @@ public extension BotDraft {
     }
 
     /// Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a
-    /// custom command, which the threads' picker doesn't offer, on the first installed agent); off: none.
+    /// custom command, which the threads' picker doesn't offer, on the first installed agent other than iMate); off: none.
     mutating func setAdvisor(_ on: Bool, backends: [Backend]) {
         guard on else {
             threadAgent = nil
@@ -162,7 +162,10 @@ public extension BotDraft {
             threadFallbacks = fallbacks ?? []
             return
         }
-        guard let first = backends.first(where: \.available) ?? backends.first else { return }
+        // iMate stays in the picker. It is not an automatic choice: a custom command with nothing
+        // else installed must not start its threads there.
+        guard let first = backends.first(where: { $0.available && $0.id != "imate" })
+            ?? backends.first(where: { $0.id != "imate" }) else { return }
         threadAgent = BotFallback.on(first, taken: [])
         threadFallbacks = []
     }

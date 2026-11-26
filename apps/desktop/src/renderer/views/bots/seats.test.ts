@@ -42,3 +42,9 @@ test('a chat or a new thread runs on installed agents and signed-in logins, and 
 test('an agent that is not installed says so', () => {
   assert.deepEqual(loginSeats({ backends: [agent('kiro', { available: false })], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['KIRO (not installed)'])
 })
+
+test('iMate stays in the picker without looking uninstalled', () => {
+  const imate = agent('imate', { available: false, name: 'iMate' })
+  assert.deepEqual(loginSeats({ backends: [imate], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['iMate'])
+  assert.deepEqual(readySeats({ backends: [imate], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.backend), ['imate'])
+})

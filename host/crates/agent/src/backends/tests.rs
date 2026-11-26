@@ -133,3 +133,12 @@ fn an_outdated_cli_is_told_to_update() {
     assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
     assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));
 }
+
+#[test]
+fn imate_is_listed_and_not_ready_for_automatic_selection() {
+    let imate = list().into_iter().find(|a| a["id"] == "imate").expect("imate");
+    assert_eq!(
+        (&imate["installed"], &imate["available"], &imate["curated"]),
+        (&json!(true), &json!(false), &json!(true))
+    );
+}

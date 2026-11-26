@@ -287,7 +287,11 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 }
 
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
+/// An iMate token does not go through here: `imate::save_agent_env` checks it with iMate first.
 pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) -> Result<Value> {
+    if backend == "imate" && vars.contains_key("IMATE_API_TOKEN") {
+        bail!("an iMate token is saved with imateSetToken, after iMate accepts it");
+    }
     save_env(store, &env_slot(backend), &env_changes(vars)?)?;
     // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
     backends::clear_prompt_refused(backend);

@@ -71,12 +71,13 @@ data class BotDraft(
             mode = mode?.let { AgentMode.AUTO })
     }
     /** Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a custom
-     *  command, which the threads' picker doesn't offer, on the first installed agent of [backends]); off: none. */
+     *  command, which the threads' picker doesn't offer, on the first installed agent of [backends] other than iMate); off: none. */
     fun withAdvisor(on: Boolean, backends: List<AgentBackend>): BotDraft = when {
         !on -> copy(threadAgent = null, threadFallbacks = emptyList())
         backend != "custom" -> copy(threadAgent = Fallback(backend, model = model, modelOptions = modelOptions, loginProfile = loginProfile),
             threadFallbacks = fallbacks.orEmpty())
-        else -> (backends.firstOrNull { it.available } ?: backends.firstOrNull())?.let { copy(threadAgent = it.stepOn(emptyList()), threadFallbacks = emptyList()) }
+        else -> (backends.firstOrNull { it.available && it.id != "imate" } ?: backends.firstOrNull { it.id != "imate" })
+            ?.let { copy(threadAgent = it.stepOn(emptyList()), threadFallbacks = emptyList()) }
             ?: this
     }
     /** Its threads on [login], as [withAgent] puts the bot on one: a threads' fallback on that login goes. */

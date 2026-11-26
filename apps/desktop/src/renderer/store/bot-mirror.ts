@@ -21,6 +21,7 @@ import type { RunDetail, WorkflowDetail, WorkflowSummary } from '../views/workfl
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
+import { hostHasPause } from '../lib/host-pause'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -35,8 +36,6 @@ import type { AgentModels } from '@shared/agent-models'
 const LEAD_CHOICE_HOST = '2.33.0'
 /** The first host the user names (`setComputerName`). */
 const COMPUTER_NAME_HOST = '2.50.0'
-/** The first host that pauses a bot: it answers nothing and spends nothing until it is resumed. */
-const PAUSE_HOST = '2.54.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -255,7 +254,7 @@ export class BotMirror extends Observable {
 
   /** The host pauses a bot (an older one ignores `paused`): the row's menu and this editor offer it only then. */
   get hasBotPause() {
-    return this.hostVersion !== null && !isBelow(this.hostVersion.version, PAUSE_HOST)
+    return this.hostVersion !== null && hostHasPause(this.hostVersion.version)
   }
 
   /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */

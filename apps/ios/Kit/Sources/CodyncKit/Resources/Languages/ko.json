@@ -2478,6 +2478,7 @@
   "Apply": "적용",
   "Applied": "적용됨",
   "Not available on {computer}": "{computer}에서 사용할 수 없습니다",
+  "Those settings aren't available on {computer}": "해당 설정은 {computer}에서 사용할 수 없습니다",
   "Couldn't check {computer}'s models": "{computer}의 모델을 확인할 수 없습니다",
   "Selected: {n}": "선택됨: {n}개",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "필터에 가려진 봇: {n}개 (적용해도 변경되지 않음)",

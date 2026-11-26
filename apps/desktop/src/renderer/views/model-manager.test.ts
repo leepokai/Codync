@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -99,7 +99,7 @@ test('planRows saves every bot when the agent default is chosen', () => {
 test('planRows saves a model the computer advertises', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b2', 'Beta')]
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: { effort: 'high' } }
-  const rows = planRows(plan, () => ok(['opus', 'sonnet']))
+  const rows = planRows(plan, () => effortCatalog('opus', ['low', 'high']))
   assert.deepEqual(rows.map((r) => r.ok), [true, true])
   assert.equal(rows[0]?.reason, undefined)
 })
@@ -143,6 +143,50 @@ test('planRows checks each bot on its own login profile, even on one computer', 
   const rows = planRows(plan, (row) => (row.bot.loginProfile === 'work' ? ok(['opus']) : ok(['sonnet'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
   assert.match(rows[1]?.reason ?? '', /Mac/)
+})
+
+/** A catalog whose one model lists `effort` as exactly `values`. */
+const effortCatalog = (modelId: string, values: string[], current = modelId): CatalogCheck => ({
+  kind: 'ok',
+  catalog: {
+    currentModelId: current,
+    models: [{
+      id: modelId,
+      name: modelId,
+      options: [{ id: 'effort', name: 'Effort', values: values.map((id) => ({ id, name: id })) }],
+    }],
+  },
+})
+
+test('needsCatalog reads a catalog for a named model and for settings on the default', () => {
+  assert.equal(needsCatalog('claude', 'opus', {}), true)
+  assert.equal(needsCatalog('claude', null, { effort: 'high' }), true)
+  assert.equal(needsCatalog('claude', null, {}), false)
+  assert.equal(needsCatalog('custom', 'opus', { effort: 'high' }), false)
+})
+
+test('planRows refuses settings a computer does not list for that model', () => {
+  const mac = item('mac', 'Mac', 'b1', 'Alpha')
+  const linux = item('linux', 'Linux Studio', 'b2', 'Beta')
+  const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: 'opus', options: { effort: 'high' } }
+  const rows = planRows(plan, (row) => (row.ref.computerId === 'mac' ? effortCatalog('opus', ['low', 'high']) : effortCatalog('opus', ['low'])))
+  assert.deepEqual(rows.map((r) => r.ok), [true, false])
+  assert.equal(rows[0]?.reason, undefined)
+  assert.match(rows[1]?.reason ?? '', /Those settings aren't available on Linux Studio/)
+})
+
+test('planRows checks settings sent with the agent default, and refuses them when the catalog was not loaded', () => {
+  const mac = item('mac', 'Mac', 'b1', 'Alpha')
+  const linux = item('linux', 'Linux Studio', 'b2', 'Beta')
+  const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: null, options: { effort: 'high' } }
+  const rows = planRows(plan, (row) => (
+    row.ref.computerId === 'mac' ? effortCatalog('opus', ['high'], 'opus') : effortCatalog('opus', ['low'], 'opus')
+  ))
+  assert.deepEqual(rows.map((r) => r.ok), [true, false])
+  assert.match(rows[1]?.reason ?? '', /Those settings aren't available on Linux Studio/)
+  const unread = planRows({ ...plan, items: [mac] }, () => no)
+  assert.deepEqual(unread.map((r) => r.ok), [false])
+  assert.match(unread[0]?.reason ?? '', /Couldn't check Mac's models/)
 })
 
 test('loginProfileFor keeps a bot\'s login only while its agent stays the same', () => {
@@ -204,6 +248,9 @@ test('resizeFrom anchors to the drag start, so cumulative deltas never compound'
   size = resizeFrom('left', anchor, -30, 0, vw, vh)
   assert.deepEqual(size, { width: 670, height: 560 })
   size = resizeFrom('bottom', anchor, 0, -80, vw, vh)
+  assert.deepEqual(size, { width: 640, height: 480 })
+  // A diagonal drag on the bottom edge still carries dx. Width stays put.
+  size = resizeFrom('bottom', anchor, 40, -80, vw, vh)
   assert.deepEqual(size, { width: 640, height: 480 })
   size = resizeFrom('corner-br', anchor, 40, 20, vw, vh)
   assert.deepEqual(size, { width: 680, height: 580 })

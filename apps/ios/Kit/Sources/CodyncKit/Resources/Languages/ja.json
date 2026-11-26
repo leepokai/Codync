@@ -2478,6 +2478,7 @@
   "Apply": "適用",
   "Applied": "適用しました",
   "Not available on {computer}": "{computer} では利用できません",
+  "Those settings aren't available on {computer}": "その設定は {computer} では利用できません",
   "Couldn't check {computer}'s models": "{computer} のモデルを確認できませんでした",
   "Selected: {n}": "選択中: {n} 件",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "フィルターで非表示のボット: {n} 件（適用しても変更されません）",

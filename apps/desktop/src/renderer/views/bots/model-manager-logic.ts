@@ -24,6 +24,17 @@ export const notAvailable = (computer: string) => trNow('Not available on {compu
 /** `Couldn't check {computer}'s models`: the catalog read failed, so the row is not written. */
 export const notCheckable = (computer: string) => trNow("Couldn't check {computer}'s models").replace('{computer}', () => computer)
 
+/** `Those settings aren't available on {computer}`: the model is offered, its values are not. */
+export const settingsUnavailable = (computer: string) =>
+  trNow("Those settings aren't available on {computer}").replace('{computer}', () => computer)
+
+/**
+ * Apply must read a catalog when a named model is chosen, or when settings travel with the agent's
+ * default. A custom command has no catalog. An empty default does not need one.
+ */
+export const needsCatalog = (backend: string, model: string | null, options: Record<string, string>): boolean =>
+  backend !== 'custom' && ((model?.trim() ?? '') !== '' || Object.keys(options).length > 0)
+
 /** What a computer's catalog check found: its catalog, a read failure, or nothing to check against. */
 export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error' } | { kind: 'none' }
 
@@ -45,25 +56,40 @@ export const applyPatch = (item: RosterItem, plan: ApplyPlan): Record<string, un
   ...(plan.backend !== 'custom' ? { command: null } : {}),
 })
 
+/** Whether `options` are values `entry` lists. Empty settings need no list. */
+const optionsFit = (entry: AgentModels['models'][number], options: [string, string][]): boolean => {
+  if (options.length === 0) return true
+  const listed = entry.options ?? []
+  return options.every(([id, value]) => {
+    const option = listed.find((candidate) => candidate.id === id)
+    return option?.values.some((candidate) => candidate.id === value) ?? false
+  })
+}
+
 /**
  * Which bots the plan can save to, decided before anything is written.
  *
  * With a model chosen, the catalog for each bot's own login must have verified it: a bot whose
  * agent-on-that-login doesn't offer the model is skipped with a reason, and so is one whose catalog
- * could not be read or was not loaded — an unverifiable model is not written. Only the agent's
- * default (no model) and a custom command, which have nothing to check against, are left to the
- * host. `catalogFor` receives the row, so one computer can be checked once per login profile.
+ * could not be read or was not loaded — an unverifiable model is not written. Settings are judged
+ * on that same catalog entry, so one computer's allowed value is not written onto a computer that
+ * lists different values for the model. Settings sent with the agent's default are judged against
+ * that computer's current model; a default with no settings, and a custom command, still have
+ * nothing to check. `catalogFor` receives the row, so one computer can be checked once per login.
  */
 export const planRows = (plan: ApplyPlan, catalogFor: (item: RosterItem) => CatalogCheck): PlanRow[] => {
   const model = plan.model?.trim() ?? ''
+  const options = Object.entries(plan.options)
   return plan.items.map((item) => {
-    if (!model || plan.backend === 'custom') return { item, ok: true }
+    if (!needsCatalog(plan.backend, model || null, plan.options)) return { item, ok: true }
     const check = catalogFor(item)
-    if (check.kind === 'ok') {
-      const available = check.catalog.models.some((m) => m.id === model)
-      return available ? { item, ok: true } : { item, ok: false, reason: notAvailable(item.computer.name) }
+    if (check.kind !== 'ok') return { item, ok: false, reason: notCheckable(item.computer.name) }
+    const entryId = model || check.catalog.currentModelId || ''
+    const entry = entryId ? check.catalog.models.find((candidate) => candidate.id === entryId) : undefined
+    if (!entry) {
+      return { item, ok: false, reason: model ? notAvailable(item.computer.name) : notCheckable(item.computer.name) }
     }
-    return { item, ok: false, reason: notCheckable(item.computer.name) }
+    return optionsFit(entry, options) ? { item, ok: true } : { item, ok: false, reason: settingsUnavailable(item.computer.name) }
   })
 }
 
@@ -143,8 +169,10 @@ export const resizeFrom = (
 ) => {
   const growsWest = kind === 'left' || kind === 'corner-bl'
   const growsDown = kind !== 'left' && kind !== 'right'
+  // The bottom handle is height only, the same rule stepSize already uses for its arrow keys.
+  const growsAcross = kind !== 'bottom'
   return clampSheetSize(
-    anchor.width + (growsWest ? -dx : dx),
+    anchor.width + (growsAcross ? (growsWest ? -dx : dx) : 0),
     anchor.height + (growsDown ? dy : 0),
     viewportWidth,
     viewportHeight,

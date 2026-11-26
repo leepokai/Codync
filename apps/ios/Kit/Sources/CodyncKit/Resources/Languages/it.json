@@ -2478,6 +2478,7 @@
   "Apply": "Applica",
   "Applied": "Applicato",
   "Not available on {computer}": "Non disponibile su {computer}",
+  "Those settings aren't available on {computer}": "Queste impostazioni non sono disponibili su {computer}",
   "Couldn't check {computer}'s models": "Impossibile verificare i modelli di {computer}",
   "Selected: {n}": "Selezione: {n}",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "Bot nascosti dal filtro: {n} (Apply non li modifica)",

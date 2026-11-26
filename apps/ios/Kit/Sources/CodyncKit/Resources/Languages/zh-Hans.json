@@ -2478,6 +2478,7 @@
   "Apply": "应用",
   "Applied": "已应用",
   "Not available on {computer}": "无法在 {computer} 上使用",
+  "Those settings aren't available on {computer}": "这些设置在 {computer} 上不可用",
   "Couldn't check {computer}'s models": "无法检查 {computer} 的模型",
   "Selected: {n}": "已选中：{n} 个",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "被筛选隐藏的机器人：{n} 个（Apply 不会更改它们）",

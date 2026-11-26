@@ -52,17 +52,22 @@ not touched.
 
 Before anything is saved, the catalog for each bot's own login is read for the chosen model
 (`agentModels`, the same call the picker makes, at the same 300 s patience). A bot whose
-agent-on-that-login doesn't offer the model is skipped and marked *Not available on {computer}*; a
-bot whose catalog couldn't be read or hasn't loaded yet is not written either — its row is marked
-*Couldn't check {computer}'s models*, because saving an unverified model id would be worse than
-doing nothing. Only the agent's default model (and a custom command, which the manager doesn't
-offer) skips the catalog checks. A closed sheet or a changed pick stops the run: bots already saved
+agent-on-that-login doesn't offer the model is skipped and marked *Not available on {computer}*. A
+bot whose model is offered, but does not list the chosen setting values, is skipped and marked
+*Those settings aren't available on {computer}* — the same settings are not written onto a computer
+that lists different values. A bot whose catalog couldn't be read or hasn't loaded yet is not
+written either — its row is marked *Couldn't check {computer}'s models*, because saving an
+unverified model id or unverified settings would be worse than doing nothing. The agent's default
+skips the catalog only when Apply sends no settings with it. Settings sent with that default are
+checked against each computer's current model. A custom command, which the manager doesn't offer,
+still has no catalog to check. A closed sheet or a changed pick stops the run: bots already saved
 keep their new model, the rest are left alone. Row results (✓ *Applied*, a skip reason, or the
 save's error) stay on the rows until the sheet closes.
 
 Catalogs load once per computer and login profile per apply, so swapping a model onto twenty bots
-costs one read per distinct login plus the saves. Choosing the agent's default model skips the
-catalog checks entirely and is allowed on every computer.
+costs one read per distinct login plus the saves. Choosing the agent's default model with no
+settings skips the catalog checks and is allowed on every computer. Settings chosen for that
+default are checked on each computer, the same way a named model's settings are.
 
 ## Analytics
 

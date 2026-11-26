@@ -18,7 +18,7 @@ import { useAgentModels } from './agent-models'
 import { agentModelsRequest } from './agent-models-query.ts'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, needsCatalog, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -230,7 +230,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     // models, so the catalog check must use the same profile the save will keep.
     const catalogKey = (item: RosterItem) => `${item.ref.computerId}\u0000${loginProfileFor(item.bot, backend) ?? ''}`
     try {
-      if (model) {
+      if (needsCatalog(backend, model, options)) {
         for (const item of chosen) {
           if (!alive.current || run.current !== myRun) return
           const key = catalogKey(item)

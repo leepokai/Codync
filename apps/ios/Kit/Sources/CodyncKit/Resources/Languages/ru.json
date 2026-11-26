@@ -2478,6 +2478,7 @@
   "Apply": "Применить",
   "Applied": "Применено",
   "Not available on {computer}": "Недоступно на {computer}",
+  "Those settings aren't available on {computer}": "Эти параметры недоступны на {computer}",
   "Couldn't check {computer}'s models": "Не удалось проверить модели {computer}",
   "Selected: {n}": "Выбрано: {n}",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "Скрытые фильтром боты: {n} (Apply их не меняет)",

@@ -21,11 +21,13 @@ mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod pair;
+mod projects;
 mod queue;
 mod roster;
 mod section_order;
 mod slash;
 mod steps;
+mod thread_keep;
 mod ui;
 mod usage_chooser;
 mod whats_new;
@@ -43,6 +45,7 @@ pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{nested, running_turn, subagent_line, working_steps};
+pub use thread_keep::palette_label;
 pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
@@ -183,12 +186,19 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// How many days after it last ended a thread is deleted, 0 never (`None`: before `hello`, or an older host, which
+    /// lists no older threads either).
+    pub thread_keep_days: Option<u32>,
     /// `hello.workflows`: this host serves the workflow list.
     pub workflows: bool,
     /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
     pub credentials_reset: bool,
     /// `hello.routineFolder`: a routine can name the folder its runs work in.
     pub routine_folder: bool,
+    /// `hello.projects`: bots have a list of projects and a worktree mode, and `cwd` is always the bot's home.
+    pub projects: bool,
+    /// `hello.worktreeFill`: a git project's shared folders are linked into each new worktree (`sharedFolders`).
+    pub worktree_fill: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
 }
@@ -265,9 +275,12 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            thread_keep_days: None,
             workflows: false,
             credentials_reset: false,
             routine_folder: false,
+            projects: false,
+            worktree_fill: false,
             seen: analytics::Seen::default(),
         }
     }

@@ -51,14 +51,12 @@ impl Host {
     }
 
     async fn bot(&self, name: &str) -> String {
-        let cwd = self.home.join(name);
-        std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         let result = self
             .call(
                 "createBot",
                 json!({
-                    "name": name, "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
+                    "name": name, "backend": "custom", "permission": "ask", "notify": false,
                     "command": common::python_agent(&agent),
                 }),
             )
@@ -99,7 +97,7 @@ impl Host {
     }
 
     fn fixture_log(&self, bot: &str, file: &str) -> Vec<Value> {
-        std::fs::read_to_string(self.home.join(bot).join(file))
+        std::fs::read_to_string(common::folder(&self.home, bot).join(file))
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
@@ -235,7 +233,8 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
     let first = host.bot("first").await;
     let second = host.bot("second").await;
     for (name, target) in [("first", &second), ("second", &first)] {
-        std::fs::write(host.home.join(name).join("handoff.json"), json!({"target": target}).to_string()).unwrap();
+        std::fs::write(common::folder(&host.home, name).join("handoff.json"), json!({"target": target}).to_string())
+            .unwrap();
     }
     let mut previous_rev = 0;
     // `first` passes the chain on from each reply turn and `second` hands it back, so only the hops each reply

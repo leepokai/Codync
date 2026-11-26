@@ -3,9 +3,11 @@ import CodyncUI
 import SwiftUI
 
 /// The Threads tab, the desktop's Threads list: every task of the bots on the computers the Bots tab shows, in its
-/// order, laid out as its filter menu says. A tap opens the bot's chat (on the Bots tab) at its card, its details on
-/// the task's thread, or its details. Its header, the desktop's: the filter menu, Search (threads by title or bot, flat
-/// and newest first) and New thread with a bot of a computer that starts them.
+/// order, laid out as its filter menu says. A tap pushes the task's thread chat over the list, or opens the bot's chat
+/// (on the Bots tab) at its card, or its details. Its header, the Bots tab's: the account, the title over how the
+/// computers are connected, then the desktop's buttons: the filter menu, Search (threads by title or bot, flat
+/// and newest first) and New thread, a page pushed over the list (`NewThreadView`), with no bot where a computer can
+/// start one so, else with a bot.
 struct ThreadsTab: View {
     let roster: [RosterItem]
     @Environment(AppStore.self) private var app
@@ -17,10 +19,10 @@ struct ThreadsTab: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searching = false
     @State private var query = ""
-    /// The bot the New thread sheet starts a thread with.
-    @State private var newThreadWith: RosterItem?
-    /// A thread just started here, opened once it has its thread.
-    @State private var starting: (item: RosterItem, taskId: String)?
+    /// The new-thread page pushed over the list, which becomes the thread's chat once sent.
+    @State private var newThread = false
+    /// The thread pushed over the list.
+    @State private var thread: ThreadTarget?
 
     var body: some View {
         let key = { (item: RosterItem) in "\(item.ref.computerId)/\(item.ref.botId)" }
@@ -42,13 +44,22 @@ struct ThreadsTab: View {
                                    if task.status == .needsYou { accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, task: task) }
                                    accounts.selection = item.ref
                                },
-                               openThread: openThread)
+                               thread: $thread,
+                               loadMore: { shownStores.forEach { $0.loadOlderThreads() } })
                 }
             }
             .background(Palette.background)
+            .threadChat($thread, store: { accounts.store(for: $0.ref.computerId) })
+            .navigationDestination(isPresented: $newThread) {
+                NewThreadView(bots: threadBots, plain: plainStore, store: { accounts.store(for: $0) },
+                              item: { accounts.item($0, botId: $1) }, openDetails: openDetails)
+                    .toolbar(.hidden, for: .tabBar)
+            }
             .navigationTitle(L10n.tr("Threads"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationSubtitle(accounts.connectionSummary(hidden: hiddenComputers))
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers, manage: { app.showComputers = true }) {
                         group(.folder, "Group by folder", .folder)
@@ -59,24 +70,16 @@ struct ThreadsTab: View {
                         ListLayout.option("Sort by last active", ListLayout.tracked($byActivity, .threads, .activity, reduceMotion: reduceMotion))
                     }
                     Button(L10n.tr("Search"), systemImage: "magnifyingglass") { searching = true }
-                    newThreadMenu
+                    if !threadBots.isEmpty || plainStore != nil {
+                        Button(L10n.tr("New thread"), systemImage: "plus") { newThread = true }
+                    }
                 }
             }
             .modifier(ListSearch(searching: $searching, query: $query, prompt: "Search"))
         }
-        .codyncSheet(item: $newThreadWith) { item in
-            if let store = accounts.store(for: item.ref.computerId) {
-                NewThreadSheet(bot: item.bot) { taskId in starting = (item, taskId) }
-                    .environment(store)
-            }
-        }
-        // Its thread once it has one, else its bot's details, as on Android; leaving the tab first opens nothing.
-        .task(id: starting?.taskId) {
-            guard let (item, taskId) = starting, let store = accounts.store(for: item.ref.computerId) else { return }
-            let task = await store.threadStarted(botId: item.bot.id, taskId: taskId)
-            starting = nil
-            guard !Task.isCancelled else { return }
-            if let task { openThread(item, task) } else { openDetails(item) }
+        // Older threads, first page of each computer that lists them, again whenever a computer starts them over.
+        .task(id: shownStores.map { "\($0.computer.id)/\($0.olderThreadsGeneration)/\($0.listsOlderThreads)" }) {
+            shownStores.forEach { $0.loadFirstOlderThreads() }
         }
     }
 
@@ -89,36 +92,20 @@ struct ThreadsTab: View {
         }
     }
 
-    /// A native menu (the bar hosts it outside SwiftUI's layout) of the bots a thread can start with; with several
-    /// computers each names its own.
-    @ViewBuilder private var newThreadMenu: some View {
-        let bots = threadBots
-        if !bots.isEmpty {
-            let many = Set(bots.map(\.ref.computerId)).count > 1
-            Menu(L10n.tr("New thread"), systemImage: "plus") {
-                ForEach(bots) { item in
-                    Button {
-                        Task {
-                            // Let the menu fold away before the sheet slides up.
-                            try? await Task.sleep(for: .milliseconds(200))
-                            newThreadWith = item
-                        }
-                    } label: {
-                        Text(item.bot.name)
-                        if many { Text(accounts.store(for: item.ref.computerId)?.hostName ?? item.computer.name) }
-                    }
-                }
-            }
-        }
+    /// The first computer the tab shows where a thread may start without a bot, online and with an agent ready (the
+    /// desktop's `plainStores`).
+    private var plainStore: BotStore? {
+        ComputerSelection(all: accounts.computers.map(\.id), hidden: hiddenComputers).shown.lazy
+            .compactMap { accounts.store(for: $0) }
+            .first { $0.startsThreadsWithoutBot && $0.connection == .online && !$0.readySeats(on: AgentLogin(backend: "")).isEmpty }
+    }
+
+    private var shownStores: [BotStore] {
+        ComputerSelection(all: accounts.computers.map(\.id), hidden: hiddenComputers).shown.compactMap { accounts.store(for: $0) }
     }
 
     private func openDetails(_ item: RosterItem) {
         accounts.store(for: item.ref.computerId)?.requestDetails(of: item.bot.id)
-        accounts.selection = item.ref
-    }
-
-    private func openThread(_ item: RosterItem, _ task: WorkTask) {
-        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, task: task)
         accounts.selection = item.ref
     }
 

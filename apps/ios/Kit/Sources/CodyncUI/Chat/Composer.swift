@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// The message box under a chat: send, or stop while the bot (or the group) is working
 /// there. A leading `/` lists commands (a group's act on its bots); in a group, typing `@`
 /// lists its bots. Under a task's thread (`workThread`) it takes text, and files where the computer takes them: no
-/// dictation, commands or call.
+/// dictation, commands or call. A new thread's (`start`) takes text only, with what the thread runs on in its row.
 struct Composer: View {
     let botId: String
     /// The message the next send quotes, shown above the field until sent or cancelled.
@@ -19,6 +19,10 @@ struct Composer: View {
     var onInterrupt: (() -> Void)?
     /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
     var artifact: Artifact?
+    /// Under a task's thread: Stop while it runs, which asks before it stops the thread.
+    var stopThread: (() -> Void)?
+    /// A new thread's box: its own draft, what it runs on in the row, and its send.
+    var start: ComposerStart?
     @Environment(BotStore.self) private var model
     @Environment(\.workThread) private var thread
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -38,15 +42,20 @@ struct Composer: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
     @State private var dictation = Dictation()
+    /// A new thread's send while it is on its way, cancelled when the box goes.
+    @State private var starting: Task<Void, Never>?
 
     private var bot: Bot? { model.bots[botId] }
-    private var draftKey: String { thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
-    /// The chat's own turn, which its Stop is for; a thread's Stop is in its header.
-    private var working: Bool { thread == nil && bot?.isWorking(in: botId) == true }
+    private var draftKey: String { start?.draftKey ?? thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
+    /// The task a thread's box writes to.
+    private var threadTask: WorkTask? { thread.flatMap { thread in bot?.work.first { $0.id == thread.taskId } } }
+    /// The turn its Stop is for: the chat's own, or the thread's task while it runs.
+    private var working: Bool { start != nil ? false : thread == nil ? bot?.isWorking(in: botId) == true : threadTask?.status.isLive == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
     private var canSend: Bool {
+        if let start { return start.ready && !isEmpty && starting == nil && model.connection == .online }
         // A thread's message has no mailbox to wait in.
         if thread != nil { return !isEmpty && !model.isOffline }
         // Offline computers still take text: the relay holds it for them, or with no relay this phone does.
@@ -55,13 +64,14 @@ struct Composer: View {
 
     /// A thread takes files only where its host says so (`talkFiles`).
     private var canAttach: Bool {
-        guard let bot else { return false }
-        guard let thread else { return true }
-        return bot.work.first { $0.id == thread.taskId }?.talkFiles == true
+        guard start == nil, let bot else { return false }
+        guard thread != nil else { return true }
+        return threadTask?.talkFiles == true
     }
 
     private var placeholder: String {
         let name = bot?.name ?? ""
+        if start != nil { return L10n.tr("What should it work on?") }
         if thread != nil { return L10n.tr("Message this thread") }
         if let artifact { return L10n.tr("Message about “{title}”").replacingOccurrences(of: "{title}", with: artifact.title) }
         if replyingTo != nil { return L10n.tr("Reply…") }
@@ -72,7 +82,7 @@ struct Composer: View {
 
     /// The group's bots whose name holds the `@partial` at the end of the draft.
     private var suggestions: [Bot] {
-        guard bot?.isGroup == true, let query = mentionQuery(draft, members: members) else { return [] }
+        guard start == nil, bot?.isGroup == true, let query = mentionQuery(draft, members: members) else { return [] }
         return members.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
 
@@ -81,7 +91,7 @@ struct Composer: View {
 
     /// The bot's `/` commands while the draft is `/partial`.
     private var commands: [SlashCommand] {
-        guard thread == nil, let query = SlashCommands.query(draft) else { return [] }
+        guard thread == nil, start == nil, let query = SlashCommands.query(draft) else { return [] }
         return SlashCommands.list(for: bot, members: members, query: query, skills: model.installedSkills)
     }
 
@@ -182,7 +192,7 @@ struct Composer: View {
         return Button {
             switch state {
             case .interrupt: onInterrupt?()
-            case .stop: model.stop(botId)
+            case .stop: if thread == nil { model.stop(botId) } else { stopThread?() }
             case .call:
                 // The call takes the microphone.
                 dictation.stop()
@@ -259,12 +269,18 @@ struct Composer: View {
             HStack(spacing: 8) {
                 if canAttach { addButton }
                 Spacer(minLength: 0)
-                // A bot's own chat: a group's bots each run on their own, a thread on its task's agent.
-                if thread == nil, let bot, !bot.isGroup { ModelChip(bot: bot) }
-                if thread == nil { micButton.layoutPriority(1) }
-                trailingButton
-                    .layoutPriority(1)
-                    .animation(Motion.layout, value: isEmpty)
+                // A bot's own chat: a group's bots each run on their own; a thread, on its task's agent, fixed.
+                if let start { start.controls }
+                if thread == nil, start == nil, let bot, !bot.isGroup { ModelChip(bot: bot) }
+                if let bot, let threadTask { ThreadComposerChips(bot: bot, task: threadTask) }
+                if thread == nil, start == nil { micButton.layoutPriority(1) }
+                if starting != nil {
+                    Spinner().frame(width: buttonSize, height: buttonSize)
+                } else {
+                    trailingButton
+                        .layoutPriority(1)
+                        .animation(Motion.layout, value: isEmpty)
+                }
             }
         }
         .padding(8)
@@ -275,7 +291,10 @@ struct Composer: View {
         // Another chat in the same view never inherits the reply.
         .onChange(of: botId) { replyingTo = nil }
         .onChange(of: replyingTo?.id) { if replyingTo != nil { focused = true } }
-        .onDisappear { dictation.stop() }
+        .onDisappear {
+            dictation.stop()
+            starting?.cancel()
+        }
         .onChange(of: draft) { _, value in
             model.setComposerDraft(value, for: draftKey)
             // Starting a command: list the computer's skills again.
@@ -401,8 +420,9 @@ struct Composer: View {
         if dictation.busy { return dictation.finish(then: submit) }
         // A start still waiting (key check, permission) never opens the microphone after the send.
         dictation.stop()
-        if thread == nil, files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
+        if thread == nil, start == nil, files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
+        if let start { return send(start) }
         // The store's copy follows the box a view update late: a transcript just put in is not in it yet.
         model.setComposerDraft(draft, for: draftKey)
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
@@ -413,4 +433,22 @@ struct Composer: View {
             replyingTo = nil
         }
     }
+
+    /// A new thread's send: the box keeps its text until the computer took it.
+    private func send(_ start: ComposerStart) {
+        let text = draft
+        starting = Task {
+            if await start.send(text), !Task.isCancelled { draft = "" }
+            starting = nil
+        }
+    }
+}
+
+/// A new thread's box (the desktop's composer with `thread.send`): its draft, whether it can go, what the thread runs
+/// on in the box's row, and the send, true once the computer took it.
+struct ComposerStart {
+    var draftKey: String
+    var ready: Bool
+    var controls: AnyView
+    var send: (String) async -> Bool
 }

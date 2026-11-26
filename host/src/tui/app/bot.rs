@@ -115,6 +115,14 @@ pub struct Bot {
     pub git_repo: bool,
     /// The host can run git; true from a host that doesn't say.
     pub git_installed: bool,
+    /// The folders its threads work in, the first its default (`hello.projects`); `cwd` is then always its home.
+    pub projects: Vec<String>,
+    /// Which of `projects` is in a git repository, in the same order.
+    pub project_git_repos: Vec<bool>,
+    /// When a thread gets a worktree of its own; `None` from a host before projects.
+    pub worktree_mode: Option<crate::store::WorktreeMode>,
+    /// Per git project, the folders linked into each of its new worktrees (`hello.worktreeFill`).
+    pub shared_folders: BTreeMap<String, Vec<String>>,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -206,9 +214,23 @@ impl Bot {
         }
     }
 
+    /// Where it works: its default project, else (None) its own folder, else (an older host) its project folder.
+    pub fn work_folder(&self) -> Option<&str> {
+        match self.projects.first() {
+            Some(project) => Some(project),
+            None if self.managed_workspace => None,
+            None => Some(&self.cwd),
+        }
+    }
+
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "own folder".to_owned() } else { tilde(&self.cwd, home) }
+        self.work_folder().map_or_else(|| "own folder".to_owned(), |folder| tilde(folder, home))
+    }
+
+    /// Whether `project` is one of its projects in a git repository.
+    pub fn git_project(&self, project: &str) -> bool {
+        self.projects.iter().zip(&self.project_git_repos).any(|(p, git)| *git && p == project)
     }
 
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -290,6 +312,10 @@ impl Bot {
             thread_worktrees: v["threadWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
             git_installed: v["gitInstalled"] != false,
+            projects: strs(&v["projects"]),
+            project_git_repos: v["projectGitRepos"].as_array().into_iter().flatten().map(|g| *g == true).collect(),
+            worktree_mode: serde_json::from_value(v["worktreeMode"].clone()).ok(),
+            shared_folders: serde_json::from_value(v["sharedFolders"].clone()).unwrap_or_default(),
         })
     }
 

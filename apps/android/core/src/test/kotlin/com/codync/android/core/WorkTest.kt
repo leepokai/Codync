@@ -15,6 +15,12 @@ class WorkTest {
     private fun work(json: String) = bot(""","work":$json""").work
     private fun task(id: String, status: WorkStatus) = WorkTask(id, status = status)
 
+    @Test fun `a bot's folder name is its default project's, else its own folder's (null) or its project folder's`() {
+        assertEquals("app", bot(""","cwd":"/home/b","managedWorkspace":true,"projects":["/p/app","/p/web"]""").folderName)
+        assertNull(bot(""","cwd":"/home/b","managedWorkspace":true,"projects":[]""").folderName)
+        assertEquals("site", bot(""","cwd":"/p/site/"""").folderName)
+    }
+
     @Test fun `a bot's work decodes, and survives the mirror's copy`() {
         val bot = bot(""","maxThreads":4,"work":[
             {"id":"w1","title":"Fix login","status":"working","activity":"Reading","thread":"thread-1","wait":null,"cutIn":false,"createdAt":3,"startedAt":5,"endedAt":null,"result":"","brief":"x"},
@@ -200,6 +206,63 @@ class WorkTest {
         assertTrue(canCutIn(listOf(task("a", WorkStatus.Working), waiting.copy(source = routine)), 1))
     }
 
+    @Test fun `a host with projects gets the whole list, default first, and the worktree mode, never a cwd`() {
+        val bot = bot(""","cwd":"/home/me/.codync/bots/b/workspace","managedWorkspace":true,"threadWorktrees":true,
+            "projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide"""")
+        assertTrue(bot.isGitProject("/p/app"))
+        assertFalse(bot.isGitProject("/p/docs"))
+        assertFalse(bot.isGitProject("/p/new"))
+        val draft = BotDraft.from(bot)
+        assertEquals(WorktreeMode.SideBySide, draft.worktreeMode)
+        fun sent(edit: BotDraft) = edit.body().let { body -> assertFalse("cwd" in body); body.getValue("projects").toString() }
+        assertEquals("""["/p/app","/p/docs","/p/new"]""", sent(draft.withProject("/p/new")))
+        assertEquals("""["/p/app","/p/docs"]""", sent(draft.withProject("/p/docs")))
+        assertEquals("""["/p/docs"]""", sent(draft.withoutProject("/p/app")))
+        assertEquals("""["/p/docs","/p/app"]""", sent(draft.withDefaultProject("/p/docs")))
+        assertEquals("[]", sent(draft.withoutProject("/p/app").withoutProject("/p/docs")))
+        assertEquals("\"always\"", draft.copy(worktreeMode = WorktreeMode.Always).body().getValue("worktreeMode").toString())
+        assertEquals("\"off\"", draft.copy(worktreeMode = WorktreeMode.Off).body().getValue("worktreeMode").toString())
+        // A new bot on such a host sends the projects it was given, and no mode (the host's default).
+        val created = BotDraft(name = "New").withProject("/p/app").body()
+        assertEquals("""["/p/app"]""", created.getValue("projects").toString())
+        assertFalse("worktreeMode" in created || "cwd" in created)
+        // An older host has neither: its cwd goes as before, and a mode this app doesn't know is none.
+        val old = BotDraft.from(bot(""","cwd":"/p/app","threadWorktrees":true""")).body()
+        assertFalse("projects" in old || "worktreeMode" in old)
+        assertEquals("\"/p/app\"", old.getValue("cwd").toString())
+        assertNull(BotDraft.from(bot(""","projects":[],"worktreeMode":"later"""")).worktreeMode)
+    }
+
+    @Test fun `shared folders go as the whole map, only names the host takes`() {
+        val bot = bot(""","projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide",
+            "sharedFolders":{"/p/app":["node_modules"]}""")
+        val draft = BotDraft.from(bot)
+        assertEquals(listOf("node_modules"), draft.sharedFolders("/p/app"))
+        fun sent(edit: BotDraft) = edit.body().getValue("sharedFolders").toString()
+        assertEquals("""{"/p/app":["node_modules",".cache/pip"]}""", sent(draft.withSharedFolder("/p/app", " .cache/pip/ ")))
+        assertEquals("""{"/p/app":["node_modules"],"/p/docs":["vendor"]}""", sent(draft.withSharedFolder("/p/docs", "vendor")))
+        for (refused in listOf("", "node_modules", "./node_modules", "/abs", "C:\\x", "../up", "a/../b")) assertEquals(draft, draft.withSharedFolder("/p/app", refused))
+        assertEquals("node_modules", sharedFolderName("./node_modules"))
+        assertEquals("{}", sent(draft.withoutSharedFolder("/p/app", "node_modules")))
+        assertEquals("{}", sent(draft.withoutProject("/p/app")))
+        // A host before shared folders has none: nothing goes.
+        assertFalse("sharedFolders" in BotDraft.from(bot(""","projects":[],"worktreeMode":"off"""")).body())
+    }
+
+    @Test fun `only the bot's own work in one of its seats gives way to a task that cuts in`() {
+        val waiting = task("w", WorkStatus.Waiting)
+        val own = task("a", WorkStatus.Working).copy(seat = true)
+        val user = task("u", WorkStatus.Working).copy(seat = false)
+        assertTrue(givesWay(own))
+        assertFalse("a thread the user started holds no seat", givesWay(user))
+        // A host that doesn't say goes by the task alone.
+        assertTrue(givesWay(task("o", WorkStatus.Working)))
+        // Every seat taken by the bot's work and the user's threads: nothing of the bot's own is there to give way.
+        assertEquals(listOf(own), listOf(own, user).filter(::givesWay))
+        assertTrue(canCutIn(listOf(own, user, waiting), 1))
+        assertFalse(canCutIn(listOf(user, user.copy(id = "u2"), waiting), 1))
+    }
+
     @Test fun `a worktree per agent is the bot's setting, shown where its folder is a git repository`() {
         val bot = bot(""","threadWorktrees":true,"gitRepo":true,"work":[
             {"id":"a","status":"working","worktree":{"branch":"codync/fix-login","path":"/w/a"}}, {"id":"b","status":"working"},
@@ -278,32 +341,6 @@ class WorkTest {
         // The thread's own first at the same moment; the chat's own and another thread's stay in the chat.
         assertEquals(listOf("c1", "t1", "c2", "t2", "c4"), sharing(own, chat, "thread-1").map { it.id })
         assertEquals(listOf("t1", "t2"), sharing(own, chat, "thread-9").map { it.id })
-    }
-
-    @Test fun `what a thread put in the chat is one line of its thread, saying how it stands`() {
-        fun line(kind: String, data: String) = sharedLine(Entry("c", 1, "b", 1, kind, data = Json.parseToJsonElement(data).jsonObject)) { it }
-        val options = """"options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"""
-        fun approval(status: String, selected: String = "") = line("permission", """{"status":"$status","title":"npm test",$options,"selected":"$selected"}""")
-        assertEquals(SharedLine("hand.raised", "Waiting for your approval: npm test"), approval("pending"))
-        assertEquals(SharedLine("checkmark", "Approved: npm test"), approval("answered", "ok"))
-        assertEquals(SharedLine("xmark", "Denied: npm test"), approval("answered", "no"))
-        assertEquals("Answered: Skip", approval("answered", "x")?.text)
-        assertEquals(SharedLine("clock", "Not answered: npm test"), approval("expired"))
-        fun choice(status: String, selected: String = "") = line("notice", """{"decision":true,"status":"$status","question":"Squash?","choices":["Yes","No"],"selected":"$selected"}""")
-        assertEquals("Asked: Squash?", choice("pending")?.text)
-        assertEquals("Answered: No", choice("answered", "No")?.text)
-        assertEquals("Not answered: Squash?", choice("expired")?.text)
-        fun signIn(status: String, kind: String = "agent") = line("notice", """{"text":"Needs you to sign in.","connectionRequest":{"kind":"$kind","status":"$status","title":"Kimi Code"}}""")
-        assertEquals(SharedLine("hand.raised", "Needs Kimi Code sign-in"), signIn("pending"))
-        assertEquals(SharedLine("checkmark", "Signed in"), signIn("ready"))
-        assertEquals(SharedLine("xmark", "Cancelled"), signIn("cancelled"))
-        assertNull("a connector's card is not a thread's", line("notice", """{"connectionRequest":{"kind":"oauth","status":"pending","title":"Linear"}}"""))
-        val file = """{"id":"f","name":"log.txt","size":3,"sha256":""}"""
-        assertEquals(SharedLine("doc", "Sent a file: log.txt"), line("agent", """{"final":true,"files":[$file]}"""))
-        assertEquals(SharedLine("waveform", "Sent a voice note"), line("agent", """{"final":true,"files":[$file],"voiceNote":true,"text":"Hi"}"""))
-        assertEquals(SharedLine("doc.richtext", "Made an artifact: Plan"), line("agent", """{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"""))
-        assertNull(line("agent", """{"text":"Just words","final":true}"""))
-        assertNull(line("notice", """{"text":"A notice"}"""))
     }
 
     @Test fun `a bot's folder is a repository, isn't one, or the computer has no git`() {

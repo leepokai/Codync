@@ -28,6 +28,8 @@ import { fromOldBot, fromOldEntry } from '@shared/old-host'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
 import { ThreadTranscripts } from './thread-transcripts'
+import { OlderThreads } from './older-threads'
+import type { AgentModels } from '@shared/agent-models'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -75,6 +77,7 @@ export class BotMirror extends Observable {
 
   /** Stores a bot the host sent, with its custom icon. */
   protected putHostBot(bot: Bot): Bot {
+    this.olderThreads.keep(bot.id, this.bots.get(bot.id)?.work, bot.work)
     const stored = this.withIcon(bot)
     this.bots.set(stored.id, stored)
     return stored
@@ -92,7 +95,11 @@ export class BotMirror extends Observable {
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   private threadTranscripts = new ThreadTranscripts()
+  /** Ended threads from before the last day, listed on the Threads page (`hello.threadKeepDays` hosts). */
+  readonly olderThreads = new OlderThreads(() => this.changed())
   usage: Usage = { providers: [] }
+  /** The agents' model lists this computer gave, by agent and login profile: a model picker opens on one at once. */
+  private readonly modelLists = new Map<string, AgentModels>()
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
   pairingRequests: PairingRequest[] = []
@@ -174,6 +181,25 @@ export class BotMirror extends Observable {
   showAutoOrder(on: boolean) {
     if (!this.hello || this.hello.autoOrder === on) return
     this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
+  }
+
+  /** When old threads are deleted as the computer has it: chosen here, or its `threadKeepDays` event (another device). */
+  showThreadKeepDays(days: number) {
+    if (!this.hello || this.hello.threadKeepDays === days) return
+    this.hello = { ...this.hello, threadKeepDays: days }
+    // The computer deletes what the new choice no longer keeps: list them again.
+    this.olderThreads.reset()
+    this.changed()
+  }
+
+  /** `backend`'s model list for `loginProfile` (null: the default login) as this computer gave it last. */
+  modelsFor(backend: string, loginProfile: string | null): AgentModels | null {
+    return this.modelLists.get(`${backend}/${loginProfile ?? ''}`) ?? null
+  }
+
+  keepModels(backend: string, loginProfile: string | null, list: AgentModels) {
+    this.modelLists.set(`${backend}/${loginProfile ?? ''}`, list)
     this.changed()
   }
 

@@ -77,6 +77,66 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
     capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
 }
 
+/// What a coding agent's session did with its Network mailbox.
+#[derive(Clone, Copy)]
+pub enum SessionAction {
+    /// It called for the first time and got an address.
+    Registered,
+    /// `set_name`.
+    Renamed,
+    /// A letter was left for it.
+    Posted,
+    /// `check_inbox` handed it letters.
+    Read,
+    /// It answered a request one of this computer's bots sent it.
+    Answered,
+    /// One of this computer's bots left it a request (also counted as `posted`).
+    Asked,
+    /// A bot's request couldn't be left: saving its notice or the letter failed.
+    AskFailed,
+    /// A bot's request to it waited a week unanswered and ended.
+    Expired,
+    /// Its full inbox dropped a bot's request unread.
+    Dropped,
+    /// Its agent ran our hook for the first time (it has the turn tier now).
+    Hooked,
+    /// A hook told it that letters wait.
+    Told,
+    /// Its MCP server waits to tell it of letters as they come (it has the push tier now).
+    Pushes,
+    /// Its MCP server told it that letters wait (waking it when idle).
+    Pushed,
+    /// A letter came but the session was woken too often this hour: it reads it itself.
+    WakeLimited,
+    /// Its MCP server couldn't write a notice to it (its inbox socket didn't take it).
+    PushFailed,
+}
+
+pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
+    let action = match action {
+        SessionAction::Registered => "registered",
+        SessionAction::Renamed => "renamed",
+        SessionAction::Posted => "posted",
+        SessionAction::Read => "read",
+        SessionAction::Answered => "answered",
+        SessionAction::Asked => "asked",
+        SessionAction::AskFailed => "ask_failed",
+        SessionAction::Expired => "expired",
+        SessionAction::Dropped => "dropped",
+        SessionAction::Hooked => "hooked",
+        SessionAction::Told => "told",
+        SessionAction::Pushes => "pushes",
+        SessionAction::Pushed => "pushed",
+        SessionAction::WakeLimited => "wake_limited",
+        SessionAction::PushFailed => "push_failed",
+    };
+    capture(
+        hub,
+        Event::NetworkSession,
+        Map::from_iter([("action".into(), action.into()), ("kind".into(), kind.as_str().into())]),
+    );
+}
+
 pub struct Analytics {
     enabled: Mutex<bool>,
     /// Every event's `env`: the build's, or `dev` on a test machine.

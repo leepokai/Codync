@@ -295,13 +295,14 @@ enum McpServer {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
-    /// For a Claude Code, Codex or other agent session on this computer that isn't a Codync bot:
-    /// list the user's bots (here and on their other computers), message one, read its reply.
-    /// Add it to the agent, for example `claude mcp add codync -- codync-host mcp network --name "Claude Code"`.
+    /// For a Claude Code, Codex or other coding agent's session on this computer that isn't a Codync
+    /// bot: each session gets its own Network address and mailbox, lists the user's bots and the
+    /// other sessions (here and on their other computers), messages them and reads its mail.
+    /// Add it to the agent, for example `claude mcp add codync -- codync-host mcp network`.
     Network {
-        /// How the bots' chats show this agent.
-        #[arg(long, default_value = "Agent")]
-        name: String,
+        /// The address to start from when this session first calls (`set_name` changes it later).
+        #[arg(long)]
+        name: Option<String>,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
@@ -519,7 +520,9 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
         Sub::Mcp { server: McpServer::Memory { bot, port } } => mcp::serve(bot, port, mcp::Server::Memory).await,
         Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
-        Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
+        Sub::Mcp { server: McpServer::Network { name, port } } => {
+            mcp::serve(name.unwrap_or_default(), port, mcp::Server::Network).await
+        }
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
         Sub::Tui { url, token, port } => tui::run(url, port, token).await,

@@ -125,7 +125,8 @@ that was off learns of a removal.
   filtered by `query`, `computer`, `online` and `kind`, and paged by `limit` (default 20, at most 50) and `cursor`.
   Every row says its `kind`: `codync` (a Codync bot), `claude-code`, `codex` (sessions a standalone daemon offers),
   `terminal`, or `other` (a computer from before kinds). Each computer states the kind in what it offers
-  (`codync_network::AgentKind` on the wire `Agent`); for the sessions the network knocks on, the crate takes it from
+  (`codync_network::AgentKind` on the wire `Agent`: also `gemini`, `cursor`, `copilot`, `opencode`, `pi`, `amp`, `grok`,
+  `antigravity` for coding agents' sessions; a computer that doesn't know a kind reads `other`); for the sessions the network knocks on, the crate takes it from
   their `Reach`, and the network view's `agents` carry it too. A listing
   past the limit adds `summary` (bots per computer). What other computers offer is cached for a minute and refreshed
   in the background; the first listing waits up to 5 s for it.
@@ -147,14 +148,107 @@ that was off learns of a removal.
   10 minutes refused. A letter's id is at most 64 bytes, its addresses 256 (40 characters of any script), its body 64 KiB; what another computer
   offers is kept to its first 200 agents, names cut to 80 bytes and descriptions to 1 KiB. A letter that isn't a
   request (a notice, or a reply nobody waits for after a restart) shows as a "Note from …" notice in the bot's chat.
-- Agents on this computer that aren't Codync bots (a Claude Code or Codex session) get `list_bots`, `message_bot`
-  and `read_replies` from `codync-host mcp network --name "Claude Code"` (stdio MCP, local API `agentCall`, loopback
-  only): the cloud assistant's tools (`chat/team/assistant.rs`), under the agent's own name ("Message from Claude Code
-  (this computer)"), its own replies, no cloud switch and no per-bot cloud scope, and letters elsewhere sent as
-  `agent-<name>@<computer>`. Add it with `claude mcp add codync -- codync-host mcp network --name "Claude Code"`.
+- Coding agents' sessions on this computer that aren't Codync bots get a Network address and a mailbox from
+  `codync-host mcp network` (stdio MCP, local API `agentCall`, loopback only; [sessions](#coding-agents-sessions)).
+  They get the cloud assistant's tools (`chat/team/assistant.rs`) under their address ("Message from api-claude (this
+  computer)"), with their own replies and no cloud switch or per-bot cloud scope; letters elsewhere are sent as
+  `<address>@<computer>`. They also get `whoami`, `set_name` and `check_inbox` (`chat/team/mailbox.rs`). Add it with
+  `claude mcp add codync -- codync-host mcp network`.
 - Agents that aren't Codync bots use the same letters: the standalone `codync-network` daemon offers Claude Code
   sessions (their inbox socket) and Codex threads (`codex queue`), see the crate README. It keeps its own key in
   `~/.codync-network` (the host's are `~/.codync/network` and `network-…`, one per network), so beside a host it is a computer of its own.
+
+## Coding agents' sessions
+
+`codync-host mcp network` keys each caller by its session id (`host/src/network/sessions.rs`), from
+`codync_network::sessions` (the per-agent facts in [agent sessions](../plans/agent-sessions.md)):
+
+- **Kind** from the MCP client's `clientInfo.name` (`AgentKind::of_mcp_client`), never from the environment alone:
+  an agent started from a Claude Code shell inherits that session's `CLAUDE_CODE_SESSION_ID`.
+- **Session id**: Claude Code from the session its inbox socket is in now (`~/.claude/sessions/<pid>.json`, so a
+  `/clear` moves it), else `CLAUDE_CODE_SESSION_ID`; Copilot CLI from `COPILOT_AGENT_SESSION_ID`; Grok (`grok-shell-<server>`) from `GROK_SESSION_ID`; Codex
+  (`sessionId`) and Antigravity (root conversation id) from each tool call's `_meta`; opencode from
+  `ai.opencode/sessionID` when it sends one. No id (pi, Cursor, any other MCP client): the MCP server's process keys
+  it, the session is `temporary` (no title in listings, forgotten a day after its last call).
+- **Address**, chosen at the first call that knows the session: `--name` if the server's config gives one (an
+  initial hint, to be removed), else `<git root or folder>-<agent>` (`api-claude`), numbered on a clash (`-2`). It is
+  reserved in the bots' address book (kv `network_handles`, owner `session:<key>`), so no bot or session ever takes
+  it, also after `set_name` retires it. The same session id gets the same address and its waiting mail; the agent's
+  title never changes it. A session unseen for 30 days with no mail waiting is forgotten (its address stays
+  reserved), so coming back after that gives it a new address.
+- **Title and busy/idle**: read from the agent's own files, off the async workers (Claude Code's session registry,
+  Codex's `session_index.jsonl`): the title on each of the session's calls, cached with it; busy/idle each time
+  another session lists it, never stored. Display only.
+- **Mailbox** (kv `network_mail`, by session key, 100 letters per session): `message_bot` to a session's address leaves a letter;
+  `check_inbox` (`waitSecs` up to 50) returns them, each inside a random boundary with a note that they aren't the
+  user's words, and counts them read. Every tool result carries `you` (the address) and, with mail waiting,
+  `unread` (a count, never text). The tier is `pull`, `turn` once its agent runs our hook, or `push` once its MCP server waits (below); it only rises.
+- **Turn tier** (`codync-host network hook <codex|copilot|grok>`, local API `networkHook`, loopback only): the
+  agent's `PostToolUse` and `Stop` hooks run it with the hook's JSON on stdin (`hook_event_name`, `session_id`,
+  the same id its MCP server gives). It tells the session how many letters wait (a count, never their text) and, once it printed that,
+  confirms with a second call (`told`: the newest letter's id, kept as `announced` unless a newer one is; a `Stop`
+  prints its block only once confirmed, so a host that can't save it lets the turn end), so a hook that runs at every
+  step doesn't repeat it and a `Stop` that keeps the turn going (`decision: block`) can't loop, while a notice the
+  hook never got (a timeout) is told again; a hook also counts as the session being seen (saved once a day); the agent reads them with
+  `check_inbox` as before. It never registers a session (only its MCP server does) and prints nothing when the host
+  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook raises the
+  session's tier to `turn`. What each agent reads back is `codync_network::hooks` (Codex and Grok:
+  `hookSpecificOutput.additionalContext`, Codex refusing any other field; Copilot CLI: top-level
+  `additionalContext`). Checked end to end with each agent's CLI on aimock. Adding the hooks (the setup command) is
+  phase 5; until then, by hand:
+  - Codex `~/.codex/hooks.json`, then approve them once in `/hooks`:
+    `{"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "codync-host network hook codex"}]}], "Stop": [same]}}`
+  - Grok `~/.grok/hooks/codync.json`: the same, with `hook grok`.
+  - Copilot CLI `~/.copilot/hooks/codync.json`:
+    `{"version": 1, "hooks": {"PostToolUse": [{"type": "command", "bash": "codync-host network hook copilot"}], "Stop": [same]}}`
+- **Other computers**: a session is offered to a network only when one of its rules is an `allow` naming the
+  session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. Its letters, too, pass only a rule
+  that names it (`rules::mailbox_access`: a `*` allow doesn't open it, while a `*` deny or ceiling still applies;
+  no rule, denied), and a ceiling (`auto`, `ask`) refuses them: a session can't be held to one. A letter lands in the
+  mailbox under its own id, from its sender's address (with the network while this computer is in several). The
+  session answers with `message_bot` and `replyTo` = that id: an answer letter (`meta` completed) that ends the
+  sender's request, which that computer takes since it asked; `message_bot` says `delivered`, or `queued` when the
+  other computer is away or slow. A session may never answer, so a request to one (an agent that computer doesn't
+  offer as a Codync bot) doesn't hold one of the asker's 16 running slots. Such a request (from a bot or a session) stops waiting after a week, as failed. An answer to a session's own request
+  always gets in.
+- **Bots**: a bot's `list_bots` lists the sessions here too, and its `message_bot` to a session's address leaves a
+  letter under the request's id, from the bot's id, which no rename or restart changes (`remote::to_local_session`); the bot's exchange notice
+  waits. When the session answers with `replyTo` = that id, the answer ends the notice and comes back as the bot's
+  reply turn, as from another computer, carrying the chain's hops; only the session it went to can end it, and only with the asking bot as `botId`. A letter a full inbox
+  (100) drops unread ends its request as failed. A bot's id or address name wins over a session's saved address that
+  happens to equal it (such a session isn't listed to bots). The
+  request is checked like any other (the bot's turn, the hop limit) but holds no running slot. A bot's request to a
+  session on another computer goes as a letter like any other, and the session's answer comes back the same way.
+  Kept in memory: after a host restart the session's answer reaches the bot as a new request, and an answer the bot
+  hadn't taken yet (it was busy) is lost, its notice already completed.
+- **Push tier** (Claude Code on macOS and Linux): the session's own `codync-host mcp network` (`mcp::push`) waits on
+  `networkHook` (`push`, `waitSecs` up to 50, woken by `arrived`) and, once the session is idle (its registry's
+  `status`), asks again (the session may have read its mail meanwhile) and writes the same count-only notice, marked as an automated notice and not the user's words, to the
+  inbox socket and token Claude Code gives its own children (`codync_network::post_to_own_claude_session`): an idle
+  session starts a turn on it. A message written mid-turn didn't reach the turn in testing, so it waits for idle.
+  Claude Code itself frames it as from "another Claude session" with its own rules against escalation. Confirmed
+  (`told`, `push`) only once written. A session is woken at most `WAKES_PER_HOUR` (12) times an hour, so two
+  sessions answering each other can't keep each other working unattended; a wake counts once confirmed, and past that the session isn't woken
+  again until the hour's count frees up, or it reads them with `check_inbox` itself (`wake_limited` once per held letter). Never for a bot's agent (`CODYNC_BOT`). Its tier is `push` from its first wait; a tier only rises.
+- A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
+  (the bot has its team tools).
+- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`, `hooked`, `told`, `pushes`, `pushed`, `wake_limited`, `push_failed`) and `kind` ([catalog](../reference/analytics-events.md)).
+- **In the apps** (`networkView`'s `sessions`, `Sessions::listed`): the sessions not temporary and seen in the last
+  week or named by a rule, each with its address, title, kind and logo (`registry`), tier, last call (`seen`) and
+  `state`: `working`/`idle` where its agent says (Claude Code's registry, unless the process it names is gone),
+  else `online`/`offline` by whether its MCP server's process (pid and start time, `Caller::running`) still runs;
+  none on Windows. The host sends them in order, running first (`runs`), then the most recent, and marks `older`
+  the ones neither running nor called in the last day. The state is kept in memory for the listed sessions only,
+  read again off the async workers when `networkView` is asked (not while a page stays open), and a change is a
+  `network` event; so is a new session, a new title or a rename. Every client shows them on its Network page
+  (desktop `SessionsCard`, for its own computer only; iPhone and Android `NetworkSheet`, for the computer open;
+  TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as
+  far as room allows, then "More sessions: N"). A dot shows running; words only for working and idle. The rule
+  pickers (desktop, TUI) offer this computer's sessions as targets, with the levels the host sends with each
+  (`levels`: Allow and Deny, `sessions::LEVELS`); `setNetworkRules` saves any other level on a session as Deny
+  (an older rule, or one from the API), so the rest of the list still saves and nothing gets more access. Each session's
+  `tier` is its saved `tier`; every client labels `pull`, `turn` and `push`.
+- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier for pi and opencode (their MCP calls carry no session id: opencode 1.19.5 sends no `_meta` id), Codex (`codex queue` unverified on an idle thread) and Claude Code on Windows, and a setup command: [plan](../plans/agent-sessions.md).
 
 ## Who reaches this computer's bots
 

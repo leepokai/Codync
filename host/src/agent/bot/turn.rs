@@ -214,6 +214,8 @@ impl Actor {
         self.ensure_turn_session(slot.as_deref()).await?;
         let written = self.written_to_thread(entry_ids);
         let picked_up = self.hear_thread(&written);
+        // A question of its bot's among them: the thread's next message answers it.
+        work::ask::heard(&self.hub, &self.cfg, entry_ids);
         let session = self.turn_session.clone();
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
@@ -593,8 +595,7 @@ impl Actor {
     /// answered after the turn) and tool calls the agent never closed out (they'd spin forever in the trace).
     pub(super) fn close_attempt(&mut self, failed: bool) {
         self.files.cancel();
-        self.flush(true);
-        self.seg = Seg::None;
+        self.end_seg(false);
         self.expire_decisions(crate::chat::decision::Expiry::TurnEnded);
         self.expire_perms();
         for entry_id in self.tools.values() {

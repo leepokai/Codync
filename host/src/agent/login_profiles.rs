@@ -317,6 +317,7 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
         Kind::Account => account::remove(&profile.account).await?,
         Kind::ApiKey => keys::forget(&hub.store, id)?,
     }
+    crate::agent::auth::forget_model_list(&hub.store, &profile.account.agent, id);
     change(&hub.store, |profiles| {
         profiles.retain(|p| p.account.id != id);
         Ok(())

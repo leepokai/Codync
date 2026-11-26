@@ -23,6 +23,7 @@ import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
+import { withOlderThreads } from '../store/older-threads'
 import { BotRoster } from './BotRoster'
 import { NavRail, OpenExtensions, pageIcon, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
@@ -288,8 +289,8 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
-  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
+  const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
   const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {

@@ -128,20 +128,23 @@ git config core.hooksPath .githooks
 ```
 
 It runs CI's checks for each part a commit touches, so a failure shows up before the push:
-host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile ci` as CI
-runs them: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
+host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile precommit`, CI's profile without the five tests that wait out the
+270-second choice deadline, which CI still runs: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
 relay, discord and private-relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
 the app and its instrumentation tests, with JDK 21), Linux screen helper formatting, a parse of the macOS
 screen helper's Swift sources (on macOS), the PR validation script against the PR template
 (`tools/pr-validation-test.py`, which no CI job runs), and the website's user manual (`npm run check:docs` in `web/`: pages
-compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot`,
+compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot` of the main checkout, shared with its worktrees (only changed files are rewritten, so cargo rebuilds only what changed),
 so other agents' uncommitted edits in the same checkout neither break nor rescue a commit; the
-host builds into `host/target/precommit`. Its unit tests always run; its end-to-end tests run for the
-areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, or a changed test and
-the tests sharing a changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates,
-usage, remote, analytics, service), and all of them for anything else (the hub, store, API, bots, agents and chats,
-or the tests' shared helpers). nextest runs them side by side, retries a flaky one, and stops one that hangs
-(`host/.config/nextest.toml`); the whole run is stopped after 15 minutes. Host CI runs only on pull requests, so a
+host builds into the main checkout's `host/target/precommit`, one warm cache for every worktree. Its unit tests always run; its end-to-end tests run for the
+areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, threads, teams,
+management, choice cards, workflows, fallbacks, dev servers, the vault, or a changed test and the tests sharing a
+changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates, usage, remote,
+analytics, service, Markdown, a version-only Cargo bump), the basic ones (`host/tests/e2e.rs`) for code every
+end-to-end test goes through (the hub, store, API, bot actor, agents, the rest of chat), and all of them only for
+the tests' shared helpers or a dependency change. nextest runs them side by side, retries a flaky one, and stops one that hangs
+(`host/.config/nextest.toml`); the whole run is stopped only after 45 minutes, a backstop for nextest itself
+hanging, since a loaded machine can take well over 15 minutes without anything being stuck. Host CI runs only on pull requests, so a
 host change that skipped end-to-end tests here is fully tested when its PR into `main` opens. The npm checks reuse each package's `node_modules`
 (run `npm ci` there first). Each worker package is checked only when its own folder (or the
 shared relay vectors) changes. The interface catalogs and What's new announcements in

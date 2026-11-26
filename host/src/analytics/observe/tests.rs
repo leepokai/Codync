@@ -90,6 +90,10 @@ fn settings_routines_screen_and_devices() {
         setting("setAutoOrder", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("auto_order"), json!(true)))
     );
+    let keep = props("setThreadKeepDays", &json!({"days": 30}))
+        .map(|(_, p)| (p["setting"].clone(), p["on"].clone(), p["days"].clone()));
+    assert_eq!(keep, Some((json!("thread_keep_days"), json!(true), json!(30))));
+    assert_eq!(setting("setThreadKeepDays", json!({"days": 0})).map(|s| s.2), Some(json!(false)));
     assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
@@ -389,6 +393,13 @@ async fn store_lookups_add_fields_choice_and_platform() {
             .unwrap();
     assert_eq!(p["fields"], json!(["name"]));
     assert!(p.get("compaction").is_none());
+    // The worktree mode picked, by its name or an older app's switch.
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "worktreeMode": "always"})).unwrap();
+    assert_eq!((&p["fields"], &p["worktreeMode"]), (&json!(["worktreeMode"]), &json!("always")));
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "threadWorktrees": false})).unwrap();
+    assert_eq!((&p["fields"], &p["worktreeMode"]), (&json!(["worktreeMode"]), &json!("off")));
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});
     let e =

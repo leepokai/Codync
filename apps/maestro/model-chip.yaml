@@ -30,9 +30,22 @@ onFlowComplete:
           appId: com.pokai.Codync.android.dev
 - tapOn: ${output.bot.name}
 - tapOn: "Model"
-# The agent's default model, the one every agent lists (not a "Default login profile" picker above the list), in the
-# list the model's own button opens (a menu on the iPhone).
-- tapOn: "e2e-model"
+# The panel opens straight on the agent's models, its search behind a button; the agent's default model is one every
+# agent lists.
+- assertVisible: "Search models"
+# A bot's chat sets its approvals here too.
+- assertVisible: "Approvals"
+# A model ID the agent doesn't list: typed in the search field the button opens, picked from the row offered for it,
+# and saved.
+- tapOn: "Search models"
+- inputText: "e2e-typed"
+# Case-sensitive (Maestro matches text ignoring case): the field's own label, "Search or enter a model ID", would match.
+- tapOn: "(?-i).*Model ID"
+- runScript:
+    file: model-chip.js
+    env:
+      STEP: saved
+      MODEL: e2e-typed
 - scrollUntilVisible:
     element: "Default(?! login profile).*"
 - tapOn: "Default(?! login profile).*"
@@ -42,7 +55,9 @@ onFlowComplete:
     when:
       platform: iOS
     commands:
+      # From the panel's top row (search is still open), not its list, whose pull reads the models again.
       - swipe:
+          from: "Close search"
           direction: DOWN
 - runFlow:
     when:

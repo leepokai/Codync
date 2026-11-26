@@ -75,8 +75,11 @@ impl DetailsPage {
             out.push(section("Later", String::new(), self.follow_ups.iter().map(DetailRow::FollowUp).collect()));
         }
         out.push(section("Routines", String::new(), self.routines.iter().flatten().map(DetailRow::Routine).collect()));
-        if !recent.is_empty() {
-            out.push(section("Recent", String::new(), recent.into_iter().map(DetailRow::Recent).collect()));
+        // The threads that ended before the bot's `work` carries them follow its last day's, once each.
+        let older = self.older.rows.iter().filter(|o| !work.iter().any(|w| w.id == o.id));
+        let ended: Vec<DetailRow<'a>> = recent.into_iter().chain(older).map(DetailRow::Recent).collect();
+        if !ended.is_empty() {
+            out.push(section("Recent", String::new(), ended));
         }
         out
     }
@@ -422,6 +425,14 @@ pub(in crate::tui) mod tests {
         assert_eq!(threads(&work), ("1 / 2".into(), 1, false), "a free seat: nothing has to give way");
         let older: Vec<WorkTask> = work.into_iter().map(|i| WorkTask { seat: None, ..i }).collect();
         assert_eq!(threads(&older), ("2 / 2".into(), 0, true), "an older host's: every live task takes one");
+    }
+
+    #[test]
+    fn only_a_task_holding_a_seat_gives_way() {
+        let task = |id: &str, seat: Option<bool>| json!({"id": id, "title": "Fix login", "status": "working", "thread": format!("thread-{id}"), "seat": seat});
+        let work = WorkTask::list(&json!([task("own", Some(true)), task("user", Some(false)), task("old", None)]));
+        let ids: Vec<&str> = giving_way(&work).into_iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["own", "old"], "a thread the user started never gives way; an older host doesn't say");
     }
 
     #[test]

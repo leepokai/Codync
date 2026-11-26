@@ -23,19 +23,10 @@ struct ModelChip: View {
 
     var body: some View {
         Button { open = true } label: {
-            HStack(spacing: 5) {
+            ChipLabel {
                 AgentIcon(registry: model.agentRegistry(bot.backend), size: 14)
                 Text(bot.model ?? L10n.tr("Default"))
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Palette.tertiary)
             }
-            .padding(.horizontal, 8)
-            .frame(height: 34)
-            .contentShape(Rectangle())
         }
         .buttonStyle(PressScale())
         // Saving needs the computer, as the settings' Save does.
@@ -68,7 +59,7 @@ struct ModelChip: View {
     }
 }
 
-/// The bot's agent, login and model.
+/// The bot's agent, login and model: the desktop's model panel.
 private struct ModelSheet: View {
     let bot: Bot
     @Binding var draft: BotDraft
@@ -76,21 +67,18 @@ private struct ModelSheet: View {
     @Environment(BotStore.self) private var model
 
     var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("Model")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    AgentModelPicker(backend: draft.backend, loginProfile: draft.loginProfile, selection: $draft.model, options: $draft.modelOptions,
-                                     fastMode: Binding(get: { draft.fastMode ?? false }, set: { draft.fastMode = $0 }), bot: bot,
-                                     agents: model.readySeats(on: draft.login),
-                                     onAgentChange: { draft.setAgent($0) },
-                                     restLine: bot.rest(of: draft.login).map { L10n.tr($0.line) }, expanded: true)
-                    if let error { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
-                }
-                .padding(20)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-        .background(Palette.background)
+        ModelPanel(backend: draft.backend, loginProfile: draft.loginProfile, model: $draft.model, options: $draft.modelOptions,
+                   fast: Binding(get: { draft.fastMode ?? false }, set: { draft.fastMode = $0 }), bot: bot, approvals: $draft,
+                   seats: model.readySeats(on: draft.login), pickSeat: { draft.setAgent($0) },
+                   notes: notes)
+            .background(Palette.background)
+    }
+
+    private var notes: [(text: String, tone: Color)] {
+        var notes: [(text: String, tone: Color)] = []
+        if let rest = bot.rest(of: draft.login) { notes.append((L10n.tr(rest.line), Palette.secondary)) }
+        notes.append((L10n.tr("Changing the model starts a new agent session. Chat history is kept."), Palette.secondary))
+        if let error { notes.append((L10n.tr(error), Palette.danger)) }
+        return notes
     }
 }

@@ -10,6 +10,7 @@ import type { BotStore } from '../../store/bot-store'
 import { useApp } from '../../store/context'
 import { copyOf, network, refreshNetwork } from '../../store/network'
 import { NetworkCard, type RulesOf } from './NetworkCard'
+import { SessionsCard } from './SessionsCard'
 import { InviteSheet, NetworkSetupSheet, RecoverSheet, RecoveryCodeSheet } from './NetworkSheets'
 import { errorText } from './parts'
 import { RuleSheet } from './RuleSheet'
@@ -103,6 +104,7 @@ export function NetworkSection({ store, heading }: { store: BotStore; /** The co
           }}
         />
       ))}
+      {!master && view.sessions?.length ? <SessionsCard sessions={view.sessions} /> : null}
       {master ? null : (
         <VStack gap={10} className="settings-appear">
           {view.joined ? null : <Text size="callout" tone="secondary">{tr('Connect your computers so bots on one can message bots on another.')}</Text>}

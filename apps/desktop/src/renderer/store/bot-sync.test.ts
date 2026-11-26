@@ -26,6 +26,7 @@ Object.assign(globalThis, {
 })
 
 const { BotSync } = await import('./bot-sync.ts')
+const { parseEvent } = await import('../client/host-client.ts')
 
 /** A store whose host is never reached, and the alerts it passes on. */
 function storeWithAlerts() {
@@ -74,4 +75,22 @@ test('only a changed completion received live can reach the island', () => {
   assert.equal(update(21, 'while-offline'), null)
   assert.equal(update(22), undefined, 'an older host still uses the transcript fallback for live updates')
   store.retire()
+})
+
+test("a model list the computer read again replaces that login's, and only that login's", () => {
+  const { store, receive } = storeWithAlerts()
+  const list = (id: string) => ({ models: [{ id, name: id }] })
+  store.keepModels('gemini', null, list('flash'))
+  store.keepModels('gemini', 'pro-7', list('neon'))
+  const event = parseEvent(JSON.stringify({ type: 'models', backend: 'gemini', loginProfile: null, models: list('argon') }))
+  assert.ok(event)
+  receive(event)
+  assert.deepEqual(store.modelsFor('gemini', null), list('argon'))
+  assert.deepEqual(store.modelsFor('gemini', 'pro-7'), list('neon'))
+  assert.equal(store.modelsFor('codex', null), null)
+})
+
+test('a models event without its agent or list is passed over', () => {
+  assert.equal(parseEvent(JSON.stringify({ type: 'models', loginProfile: null, models: { models: [] } })), null)
+  assert.equal(parseEvent(JSON.stringify({ type: 'models', backend: 'codex', models: {} })), null)
 })

@@ -51,7 +51,11 @@ impl Host {
     }
 
     fn prompts(&self) -> Vec<String> {
-        std::fs::read_to_string(self.home.join("ada/prompts.jsonl")).unwrap().lines().map(str::to_owned).collect()
+        std::fs::read_to_string(common::folder(&self.home, "Ada").join("prompts.jsonl"))
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-decision-e2e-{}", uuid::Uuid::new_v4()));
@@ -78,13 +82,11 @@ impl Host {
     }
 
     async fn bot(&self) -> String {
-        let cwd = self.home.join("ada");
-        std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         self.call(
             "createBot",
             json!({
-                "name": "Ada", "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
+                "name": "Ada", "backend": "custom", "permission": "ask", "notify": false,
                 "command": common::python_agent(&agent),
             }),
         )
@@ -250,7 +252,7 @@ async fn answering_clears_needs_input_while_the_same_turn_keeps_working() {
     let card = host.card(&bot).await;
     host.call("respondDecision", json!({"entryId":card["id"],"option":"Right"})).await;
     host.status(&bot, "working").await;
-    std::fs::write(host.home.join("ada/release"), "continue").unwrap();
+    std::fs::write(common::folder(&host.home, "Ada").join("release"), "continue").unwrap();
     host.status(&bot, "idle").await;
     assert_eq!(host.prompts().len(), 1);
 }
@@ -356,7 +358,7 @@ async fn parallel_mcp_questions_publish_only_one_live_card() {
     .await;
     let card = host.card(&bot).await;
     common::eventually("the second parallel call was refused", Duration::from_secs(20), async || {
-        host.home.join("ada/second-decision-refused").exists()
+        common::folder(&host.home, "Ada").join("second-decision-refused").exists()
     })
     .await;
     host.call("respondDecision", json!({"entryId":card["id"],"option":"Right"})).await;
@@ -402,7 +404,7 @@ async fn a_card_outlives_its_270_second_call_and_a_later_press_becomes_the_next_
         host.wait_for(&bot, "agent", |e| e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Asked:"))).await;
     let told = told["data"]["text"].as_str().unwrap();
     assert!(told.contains(r#""answered":false"#) && told.contains("The card stays open"), "{told}");
-    std::fs::write(host.home.join("ada/release"), "continue").unwrap();
+    std::fs::write(common::folder(&host.home, "Ada").join("release"), "continue").unwrap();
     host.status(&bot, "idle").await;
     host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "pending").await;
 

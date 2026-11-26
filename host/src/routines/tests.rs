@@ -144,12 +144,15 @@ async fn a_routine_run_cannot_add_task_to_the_bots_box() {
     let dir = std::env::temp_dir().join(format!("codync-routine-work-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let store = Store::open(&dir.join("t.db")).unwrap();
-    store.save_bot(&serde_json::from_value(json!({"id": "bot", "name": "B", "backend": "claude"})).unwrap()).unwrap();
+    store
+        .save_bot(&serde_json::from_value(json!({"id": "bot", "name": "B", "backend": "claude", "cwd": dir})).unwrap())
+        .unwrap();
     let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
     let hub = Hub::new(store, "test".into(), identity, "test".into(), 0);
-    let add = || crate::chat::work::call(&hub, "bot", "add_task", &json!({"title": "Dig", "brief": "Look into it"}));
+    let args = json!({"title": "Dig", "brief": "Look into it"});
+    let add = || crate::chat::work::call(&hub, "bot", "add_task", &args);
     let refusal = "add_task works only in your own chat with the user: its report comes back there";
-    assert_eq!(add().unwrap_err().to_string(), refusal, "no turn runs in its chat");
+    assert_eq!(add().await.unwrap_err().to_string(), refusal, "no turn runs in its chat");
 
     // A turn runs in its own chat (so nothing starts before it ends).
     hub.set_runtime("bot", |r| {
@@ -157,7 +160,7 @@ async fn a_routine_run_cannot_add_task_to_the_bots_box() {
         r.lane = Some(Lane::main("bot"));
     });
     assert!(!hub.routines.running("bot"));
-    assert_eq!(add().unwrap()["status"], "waiting");
+    assert_eq!(add().await.unwrap()["status"], "waiting");
 
     // The same lane, but the turn is a run's: its reply is the run's result, not a message to the user.
     let r = routine();
@@ -169,6 +172,6 @@ async fn a_routine_run_cannot_add_task_to_the_bots_box() {
     });
     started.unwrap();
     assert!(hub.routines.running("bot"));
-    assert_eq!(add().unwrap_err().to_string(), refusal);
+    assert_eq!(add().await.unwrap_err().to_string(), refusal);
     let _ = std::fs::remove_dir_all(dir);
 }

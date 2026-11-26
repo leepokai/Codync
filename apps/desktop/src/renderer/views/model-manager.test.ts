@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -305,6 +305,10 @@ test('applyTargets gates a bulk pause to what the filter shows, exactly like App
 test('rowModelPath shows agent->model, display name when known, nothing when unreadable', () => {
   // The picker knows the agent: its display name; the model shows its id.
   assert.equal(rowModelPath({ backend: 'opencode', model: 'open-design/deepseek 4.1 flash' }, 'OpenCode'), 'OpenCode->open-design/deepseek 4.1 flash')
+  // A bot on a login profile names it between the agent and the model. The separator stays `->`.
+  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work'), 'OpenCode->Work->opendesign/deepseek-v4.1-flash-eco')
+  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', '  '), 'OpenCode->opendesign/hy4-preview')
+  assert.equal(rowModelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', null), 'OpenCode->opendesign/hy4-preview')
   // An agent the picker doesn't know falls back to the raw id.
   assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, null), 'mystery->some/model')
   // A blank display name is as good as none.
@@ -319,4 +323,62 @@ test('rowModelPath shows agent->model, display name when known, nothing when unr
   assert.equal(rowModelPath({ backend: 'opencode' }, 'OpenCode'), null)
   // A padded model id is trimmed into the path.
   assert.equal(rowModelPath({ backend: 'opencode', model: ' some/model ' }, 'OpenCode'), 'OpenCode->some/model')
+})
+
+test('agentNameOf names an agent hello knows and answers null for one it does not', () => {
+  const backends = [{ id: 'opencode', name: 'OpenCode' }, { id: 'grok', name: 'Grok' }]
+  assert.equal(agentNameOf(backends, 'opencode'), 'OpenCode')
+  assert.equal(agentNameOf(backends, 'mystery'), null)
+  assert.equal(agentNameOf(backends, null), null)
+  assert.equal(agentNameOf(backends, { command: 'x' }), null)
+})
+
+test('loginNameOf names the login profile a bot picked, and nothing for the computer\'s own login', () => {
+  const backends: ReadonlyArray<{ id: string; name: string; loginProfiles?: { id: string; name: string | null }[] }> = [{
+    id: 'opencode',
+    name: 'OpenCode',
+    loginProfiles: [{ id: 'w', name: 'Work' }, { id: '7b3f', name: null }],
+  }]
+  assert.equal(loginNameOf(backends, 'opencode', 'w'), 'Work')
+  assert.equal(loginNameOf(backends, 'opencode', null), null)
+  assert.equal(loginNameOf(backends, 'opencode', undefined), null)
+  assert.equal(loginNameOf(backends, 'opencode', ''), null)
+  assert.equal(loginNameOf(backends, 'opencode', '7b3f'), null)
+  assert.equal(loginNameOf(backends, 'mystery', 'w'), null)
+  assert.equal(loginNameOf([{ id: 'grok' }], 'grok', 'w'), null)
+})
+
+test('modelPathWords finds a bot by its agent, provider and model, however the model is typed', () => {
+  const words = modelPathWords({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work')
+  assert.deepEqual(words, [
+    'OpenCode->Work->opendesign/deepseek-v4.1-flash-eco',
+    'OpenCode',
+    'Work',
+    'opendesign/deepseek-v4.1-flash-eco',
+    'opendesign',
+    'deepseek-v4.1-flash-eco',
+    'opendesign deepseek v4.1 flash eco',
+    'deepseek v4.1 flash eco',
+  ])
+  assert.deepEqual(modelPathWords({ backend: 'custom', model: 'x' }, 'OpenCode'), [])
+  assert.deepEqual(modelPathWords({ backend: 'opencode', model: '  ' }, 'OpenCode'), [])
+  const spaced = modelPathWords({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', 'Work->Home')
+  assert.deepEqual(spaced, [
+    'OpenCode->Work->Home->opendesign/hy4-preview',
+    'OpenCode',
+    'Work',
+    'Home',
+    'opendesign/hy4-preview',
+    'opendesign',
+    'hy4-preview',
+    'opendesign hy4 preview',
+    'hy4 preview',
+  ])
+  assert.deepEqual(modelPathWords({ backend: 'claude', model: 'opus-5.2' }, 'Claude'), [
+    'Claude->opus-5.2',
+    'Claude',
+    'opus-5.2',
+    'opus-5.2',
+    'opus 5.2',
+  ])
 })

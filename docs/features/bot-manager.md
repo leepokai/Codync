@@ -25,8 +25,10 @@ The list is every bot on every computer the account reaches — the sidebar's co
 computers and bots hidden from the roster don't limit it; a bot's computer is named under it when
 the account has more than one. Groups are not listed: they carry members, not a model of their own.
 The search field filters by name, description and last message, reusing the sidebar search's matcher
-(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing. When the bots run on
-more than one agent, a provider menu under the search narrows the list to one of them; it lists only
+(`matchBots`). `Search models too` is on, so the same field also matches the row's model path: the
+agent, a named login profile, and the model id, joined with `->`. `Select all` / `Unselect all` act
+on what the filter is showing. When the bots run on
+more than one agent, a provider menu beside the model-search switch narrows the list to one of them; it lists only
 agents the roster actually runs, and a choice whose bots have all left is forgotten. A bot whose
 record carries `paused` says `Paused` under its name.
 

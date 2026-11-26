@@ -76,7 +76,23 @@
   padding-left: 12px;
 }
 
-/* The provider filter under the search field: the roster filter's own idiom (ComputerFilterHeader),
+/* The row under the search field: the search's own switch on the left, the provider filter on the
+   right, so the two narrow the same list in one band. */
+.model-manager-filters {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The search's switch says only its own name, so it takes the width of its label rather than
+   pushing the provider filter across. */
+.model-manager-model-search {
+  width: auto;
+  flex: 0 0 auto;
+  gap: 8px;
+  color: var(--secondary);
+}
+
+/* The provider filter beside it: the roster filter's own idiom (ComputerFilterHeader),
    marked while a provider is chosen. */
 .model-manager-provider {
   align-self: flex-start;

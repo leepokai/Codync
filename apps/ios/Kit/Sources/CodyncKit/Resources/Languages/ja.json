@@ -1061,6 +1061,8 @@
   "Saved securely; never added to chat. Esc closes.": "安全に保存されています。チャットに追加されることはありません。 Escが閉じます。",
   "Saving…": "保存中…",
   "Search bots": "ボットを検索",
+  "Search bots or models": "ボットまたはモデルを検索",
+  "Search models too": "モデルも検索する",
   "Search widgets": "ウィジェットを検索",
   "Senders using the current key stop working until they get the new one.": "現在のキーを使用している送信者は、新しいキーを取得するまで動作を停止します。",
   "Senders using the current key stop working.": "現在のキーを使用している送信者は動作を停止します。",

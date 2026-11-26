@@ -1061,6 +1061,8 @@
   "Saved securely; never added to chat. Esc closes.": "安全保存，不会写进对话。Esc 关闭。",
   "Saving…": "正在保存…",
   "Search bots": "搜索 Bot",
+  "Search bots or models": "搜索 Bot 或模型",
+  "Search models too": "同时搜索模型",
   "Search widgets": "搜索小组件",
   "Senders using the current key stop working until they get the new one.": "还在用当前密钥的发送方会失效，直到它们拿到新密钥。",
   "Senders using the current key stop working.": "还在用当前密钥的发送方会失效。",

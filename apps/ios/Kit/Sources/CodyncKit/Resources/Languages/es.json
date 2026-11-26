@@ -1061,6 +1061,8 @@
   "Saved securely; never added to chat. Esc closes.": "Guardado de forma segura; nunca se añade al chat. Esc cierra.",
   "Saving…": "Guardando…",
   "Search bots": "Buscar bots",
+  "Search bots or models": "Buscar bots o modelos",
+  "Search models too": "Buscar también en los modelos",
   "Search widgets": "Buscar widgets",
   "Senders using the current key stop working until they get the new one.": "Los emisores que usan la clave actual dejarán de funcionar hasta recibir la nueva.",
   "Senders using the current key stop working.": "Los emisores que usan la clave actual dejarán de funcionar.",

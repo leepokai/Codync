@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import type { Entry } from '@shared/models'
-import { groupExchanges, type BotExchange, type ChatSlot } from './bot-exchange'
-import { settledAs } from './requests'
+import { entryIdsOf } from '../../lib/shown-window.ts'
+import { groupExchanges, type BotExchange, type ChatSlot } from './bot-exchange.ts'
+import { settledAs } from './requests.ts'
 
 export type ChatItem =
   | { id: string; kind: 'separator'; date: number }
@@ -62,6 +63,18 @@ export function useArrivals(ids: string[], following: boolean): Set<string> {
     if (following) fresh.current.add(id)
   }
   return fresh.current
+}
+
+/**
+ * A row's identity attributes. `data-entry-id` is what a quote's click looks for; `data-entry-ids` carries every host
+ * entry the row shows, so a place or reveal filed under an entry that later merges into a group still finds that row.
+ */
+export function rowIdentity(item: ChatItem): Record<string, string | undefined> {
+  const ids = entryIdsOf(item)
+  return {
+    'data-entry-id': item.kind === 'separator' ? undefined : item.entry.id,
+    'data-entry-ids': ids.length > 0 ? ids.join(' ') : undefined,
+  }
 }
 
 /** A new row pops in from its bubble's side. */

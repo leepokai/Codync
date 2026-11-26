@@ -126,6 +126,43 @@ test('a page of earlier rows asked for at the newest does not move the reader af
   }
 })
 
+test('a message arriving while the reader is inside the first page does not move them', async () => {
+  test.setTimeout(180_000) // Twenty-six turns go by first.
+  const { page } = await attach()
+  await settle(page)
+  const name = `Scroll anchor arrival ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    for (let i = 1; i <= 26; i++) await say(page, bot.id, `Say ${i}`)
+    await page.locator('.roster-row', { hasText: name }).click()
+    await expect.poll(async () => (await place(page)).rows, { timeout: 20_000 }).toBe(40)
+
+    // The reader scrolls up inside the newest 40 rows, but nowhere near the 200 px threshold that asks for earlier
+    // rows. No page has been taken, so the window is still "the newest 40".
+    const room = await place(page)
+    expect(room.max, 'the first page has room to read above the newest').toBeGreaterThan(700)
+    await scrollTo(page, 500)
+    await expect.poll(async () => (await place(page)).top, { timeout: 10_000 }).toBeGreaterThanOrEqual(450)
+    const held = await topRow(page)
+    expect(held, 'a row was at the top edge before the arrival').not.toBeNull()
+    const before = await place(page)
+
+    // A bot message arriving on its own, as a background result does. It has no user row in front of it and brings
+    // no page with it; the newest-40 start must not move and take a row from above the reader.
+    await api(page, 'chatCall', { botId, name: 'send_message', arguments: { text: 'A message while reading' } })
+    await expect(page.locator('.message.agent', { hasText: 'A message while reading' })).toBeVisible({ timeout: 20_000 })
+    await expect.poll(async () => {
+      const now = await offsetOf(page, held!.id)
+      return now === null ? 10_000 : Math.abs(now - held!.offset)
+    }, { timeout: 10_000 }).toBeLessThanOrEqual(8)
+    expect(Math.abs((await place(page)).top - before.top), 'the arrival moved the view').toBeLessThanOrEqual(8)
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+  }
+})
+
 /**
  * The reported sequence, in the reporter's own order: a large paste into the message box first, then paging up
  * through the chat, a PageDown and a PageUp, another chat and back, and paging up again.
@@ -398,6 +435,93 @@ test('the page fetched from the computer keeps the row the reader was on', async
     await page.keyboard.press('PageUp')
     await expect.poll(async () => (await place(page)).top, { timeout: 10_000 }).toBeGreaterThan(0)
   } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+  }
+})
+
+/**
+ * Jump to latest wins over a history request already in flight. When the late answer arrives it belongs to the window
+ * the reader abandoned; installing it again would render an old explicit page beside the follower, and each arrival
+ * would then grow the transcript beyond the newest page.
+ */
+test('a late history answer does not undo Jump to latest', async () => {
+  test.setTimeout(300_000) // Twenty-six turns go by first, then the held request.
+  const { page } = await attach()
+  await settle(page)
+  const name = `Scroll anchor stale ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    for (let i = 1; i <= 26; i++) await say(page, bot.id, `Say ${i}`)
+    await page.locator('.roster-row', { hasText: name }).click()
+    await expect.poll(async () => (await place(page)).rows, { timeout: 20_000 }).toBe(40)
+    // Leave the bottom, so this is a reader in the history: Jump to latest is present and a late page has a window to
+    // restore if the code lets it.
+    await scrollTo(page, 300)
+    await expect.poll(async () => (await place(page)).top, { timeout: 10_000 }).toBeGreaterThanOrEqual(250)
+    await expect(page.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
+
+    // Hold the next loadOlder before it reaches the store. A loaded page still reports history as available until a
+    // fetch comes back short, so the first Load earlier at the oldest row is the request held here. The store instance
+    // is reached through the chat's fiber: `window.codync` is frozen by the preload bridge and cannot be wrapped.
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('.transcript')!
+      const key = Object.keys(el).find((k) => k.startsWith('__reactFiber$'))!
+      let fiber = (el as unknown as Record<string, { memoizedProps?: { value?: { loadOlder?: (...args: unknown[]) => Promise<unknown> } }; return: unknown }>)[key]
+      let store: { loadOlder?: (...args: unknown[]) => Promise<unknown> } | undefined
+      for (let up = 0; fiber && up < 40; up++) {
+        const value = fiber.memoizedProps?.value
+        if (value && typeof value.loadOlder === 'function' && value.constructor?.name === 'BotStore') { store = value; break }
+        fiber = fiber.return as typeof fiber
+      }
+      if (!store?.loadOlder) throw new Error('the chat store was not found')
+      const original = store.loadOlder.bind(store)
+      const w = window as unknown as {
+        __scrollGate?: { held: boolean; used: boolean; release?: () => void; original?: () => void }
+      }
+      const gate = { held: false, used: false } as NonNullable<typeof w.__scrollGate>
+      w.__scrollGate = gate
+      store.loadOlder = async (...args: unknown[]) => {
+        if (!gate.used) {
+          gate.used = true
+          gate.held = true
+          await new Promise<void>((release) => { gate.release = release })
+        }
+        return original(...args)
+      }
+      gate.original = () => { store!.loadOlder = original }
+    })
+    // The newest window starts below the top of the loaded rows; the first press opens those locally, the next asks the
+    // computer. Dispatched rather than clicked for the same reason test 1 does: the button sits above the rows.
+    for (let press = 0; press < 4; press++) {
+      if (await page.evaluate(() => (window as unknown as { __scrollGate?: { held: boolean } }).__scrollGate?.held)) break
+      await page.locator('.load-earlier').dispatchEvent('click')
+      await page.waitForTimeout(150)
+    }
+    await expect.poll(
+      async () => page.evaluate(() => (window as unknown as { __scrollGate?: { held: boolean } }).__scrollGate?.held),
+      { message: 'the history request was held before it answered', timeout: 10_000 },
+    ).toBe(true)
+    await expect(page.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Jump to latest' }).click()
+    await page.evaluate(() => (window as unknown as { __scrollGate?: { release?: () => void } }).__scrollGate?.release?.())
+    await expect.poll(async () => (await place(page)).rows, { timeout: 20_000 }).toBe(40)
+    await api(page, 'chatCall', { botId: botId!, name: 'send_message', arguments: { text: 'After the stale history response' } })
+    await expect(page.locator('.message.agent', { hasText: 'After the stale history response' })).toBeVisible({ timeout: 20_000 })
+    await expect.poll(async () => (await place(page)).rows, { message: 'the follower still renders only the newest page', timeout: 10_000 }).toBe(40)
+    await expect.poll(async () => {
+      const now = await place(page)
+      return now.max - now.top
+    }, { timeout: 10_000 }).toBeLessThan(8)
+  } finally {
+    // Let a held request finish even when the assertion above failed, then put the store's method back.
+    await page.evaluate(() => {
+      const w = window as unknown as { __scrollGate?: { release?: () => void; original?: () => void } }
+      w.__scrollGate?.release?.()
+      w.__scrollGate?.original?.()
+    }).catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
   }
 })

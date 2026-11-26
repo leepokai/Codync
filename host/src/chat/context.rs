@@ -15,6 +15,7 @@ use crate::chat::work::Source;
 use crate::store::{BotConfig, Store};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Identity {
@@ -44,15 +45,17 @@ impl Identity {
     }
 }
 
-/// The skills on for `cfg`: its owner's saved list when present (so a thread sees skills saved or
-/// toggled on its bot since it started), else `cfg.skills`.
-pub fn enabled_skills<'a>(store: &Store, cfg: &'a BotConfig) -> std::borrow::Cow<'a, [String]> {
+/// Standalone sessions use an empty skill list. Bot-backed sessions use their owner's saved list or `cfg.skills`.
+pub fn enabled_skills<'a>(store: &Store, cfg: &'a BotConfig) -> Cow<'a, [String]> {
+    if cfg.plain {
+        return Cow::Borrowed(&[]);
+    }
     store
         .bot(cfg.owner())
         .ok()
         .flatten()
         .filter(|row| !row.deleted)
-        .map_or(std::borrow::Cow::Borrowed(&cfg.skills), |row| std::borrow::Cow::Owned(row.config.skills))
+        .map_or(Cow::Borrowed(&cfg.skills), |row| Cow::Owned(row.config.skills))
 }
 
 /// The start of `lead::BRIEF` in every version of it: instructions that hold it gave the bot the lead's role.

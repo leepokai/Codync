@@ -35,6 +35,19 @@ async fn an_agents_commands_are_listed_and_a_message_with_one_goes_as_typed() {
 
     host.reply(&bot, "/compact").await;
     assert_eq!(host.prompts(&bot)[2], "/compact");
+
+    let installed = host
+        .call("installSkill", json!({"name": "Review", "description": "Read the notes.", "instructions": "Read."}))
+        .await;
+    assert_eq!(installed["skill"]["id"], "review");
+    assert_eq!(
+        common::bot(&host.snapshot().await, &bot)["agentCommands"],
+        json!([{"name": "compact", "description": "Summarize the conversation"}])
+    );
+    host.reply(&bot, "/review the notes").await;
+    let prompts = host.prompts(&bot);
+    assert!(prompts[3].contains("the user picked the \"Review\" skill"), "{prompts:?}");
+    assert!(prompts[3].contains("first and follow it.]\n\nthe notes"), "{prompts:?}");
 }
 
 #[tokio::test]

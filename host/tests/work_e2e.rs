@@ -1979,6 +1979,75 @@ async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
     assert_eq!(opened[0]["data"]["attachments"][0]["name"], "notes.md");
 }
 
+async fn standalone_fixture(host: &Host, fixture: &str, args: &str) -> (String, PathBuf) {
+    let setup = json!({"backend": "custom"});
+    let empty = host.refused("startThread", json!({"text": "", "setup": setup})).await;
+    assert!(empty.starts_with("a thread starts with a message"), "{empty}");
+    let snapshot = host.snapshot().await;
+    let owner = snapshot["bots"].as_array().unwrap().iter().find(|b| b["plain"] == true).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let command = common::fixture_command(fixture, args);
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": command})).await;
+    let folder = host.home.join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    (owner, folder)
+}
+
+async fn install_review_skill(host: &Host, owner: &str) {
+    let installed = host
+        .call("installSkill", json!({"name": "Review", "description": "Read the notes.", "instructions": "Read."}))
+        .await;
+    assert_eq!(installed["skill"]["id"], "review");
+    assert_eq!(common::bot(&host.snapshot().await, owner)["skills"], json!(["review"]));
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_starts_with_its_agents_command_and_file() {
+    let host = Host::start().await;
+    let (owner, folder) = standalone_fixture(&host, "commands_agent.py", "").await;
+    install_review_skill(&host, &owner).await;
+
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"uploadId": upload, "name": "notes.txt", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    let command = "/review the notes";
+    let setup = json!({"backend": "custom", "cwd": folder});
+    host.call("startThread", json!({"text": command, "setup": setup, "attachments": [upload]})).await;
+    let done = task(&host, &owner, command, "done").await;
+    let file =
+        host.home.join("bots").join(done["thread"].as_str().unwrap()).join("uploads").join(upload).join("notes.txt");
+    let expected = format!("{command}\n\n[Attached files — read them from these paths]\n- {}", file.display());
+    let requests = logged(&folder, "requests.jsonl");
+    let prompt = requests.iter().find(|r| r["method"] == "session/prompt").unwrap();
+    assert_eq!(prompt["params"]["prompt"][0]["text"], expected);
+    assert_eq!(std::fs::read_to_string(file).unwrap(), "hi");
+}
+
+#[tokio::test]
+async fn steering_a_thread_without_a_bot_keeps_its_slash_command_after_a_skill_is_installed() {
+    let host = Host::start().await;
+    let (owner, folder) = standalone_fixture(&host, "steer_agent.py", "steer 30").await;
+    let setup = json!({"backend": "custom", "cwd": folder});
+    host.call("startThread", json!({"text": "Read the notes", "setup": setup})).await;
+    let running = task(&host, &owner, "Read the notes", "working").await;
+    wait("the agent to start working", async || {
+        transcript(&host, &owner, &running).await.into_iter().find(|e| e["data"]["text"] == "Working")
+    })
+    .await;
+
+    install_review_skill(&host, &owner).await;
+    let command = "/review the next note";
+    let sent = tell(&host, &owner, &running, command).await;
+    assert_eq!(sent["queued"], true);
+    host.call("steer", json!({"botId": owner, "taskId": running["id"], "entryId": sent["entry"]["id"]})).await;
+    thread_status(&host, &owner, &running, &sent["entry"]["id"], "sent").await;
+    let requests = logged(&folder, "requests.jsonl");
+    let steer = requests.iter().find(|r| r["method"] == "_session/steering").unwrap();
+    assert_eq!(steer["params"]["prompt"][0]["text"], command);
+}
+
 #[tokio::test]
 async fn the_bot_asks_a_working_task_and_gets_its_answer_apart_from_its_report() {
     let host = Host::start().await;

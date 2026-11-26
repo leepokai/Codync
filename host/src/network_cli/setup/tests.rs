@@ -130,3 +130,12 @@ fn a_write_follows_a_link_to_a_file_not_made_yet_and_stays_private() {
     assert_eq!(std::fs::metadata(&made).unwrap().permissions().mode() & 0o777, 0o600);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_server_of_ours_turned_off_is_set_up_again() {
+    let w = want();
+    let off = json!({"command": "/opt/codync/codync-host", "args": ["mcp", "network"], "enabled": false});
+    assert_eq!(entry(Some(&off), &w), Entry::Stale);
+    let disabled = json!({"command": "/opt/codync/codync-host", "args": ["mcp", "network"], "disabled": true});
+    assert_eq!(entry(Some(&disabled), &w), Entry::Stale);
+}

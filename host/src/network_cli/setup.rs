@@ -206,14 +206,17 @@ enum Entry {
 }
 
 fn entry(server: Option<&Value>, want: &Want) -> Entry {
-    let Some(server) = server.map(normalized) else { return Entry::Absent };
+    let Some(server) = server else { return Entry::Absent };
+    // Turned off in the agent's config (Codex, opencode `enabled`, Antigravity `disabled`): added again, on.
+    let off = server["enabled"] == false || server["disabled"] == true;
+    let server = normalized(server);
     let command = server["command"].as_str().unwrap_or_default();
     let args: Vec<&str> = server["args"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
     let ours =
         Path::new(command).file_stem().is_some_and(|s| s == "codync-host") && args.starts_with(&["mcp", "network"]);
     if !ours {
         Entry::Foreign
-    } else if command == want.exe && args == want.mcp_args() {
+    } else if command == want.exe && args == want.mcp_args() && !off {
         Entry::Current
     } else {
         Entry::Stale
@@ -272,7 +275,10 @@ fn read_server(file: &Path, section: &str) -> Result<Option<Value>> {
         let Some(server) = doc.get(section).and_then(|s| s.get(NAME)) else { return Ok(None) };
         let args: Vec<&str> =
             server.get("args").and_then(|a| a.as_array()).into_iter().flatten().filter_map(|a| a.as_str()).collect();
-        return Ok(Some(json!({"command": server.get("command").and_then(|c| c.as_str()), "args": args})));
+        let enabled = server.get("enabled").and_then(toml_edit::Item::as_bool);
+        return Ok(Some(
+            json!({"command": server.get("command").and_then(|c| c.as_str()), "args": args, "enabled": enabled}),
+        ));
     }
     Ok(parse(file, &text)?[section].get(NAME).cloned())
 }
@@ -307,10 +313,11 @@ fn write(file: &Path, value: &Value) -> Result<()> {
         if let Some(dir) = target.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let tmp = target.with_extension("codync-tmp");
+        // One of its own, made new: two setups at once never write into the same one.
+        let tmp = target.with_extension(format!("codync-{}.tmp", uuid::Uuid::new_v4().simple()));
         // Private from its first byte: the config may hold other servers' tokens.
         let mut open = std::fs::OpenOptions::new();
-        open.write(true).create(true).truncate(true);
+        open.write(true).create_new(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut open, 0o600);
         let text = serde_json::to_string_pretty(value).map_err(std::io::Error::other)? + "\n";

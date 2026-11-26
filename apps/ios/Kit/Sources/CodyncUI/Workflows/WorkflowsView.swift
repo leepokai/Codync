@@ -56,6 +56,8 @@ public struct WorkflowsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Palette.background)
+        // The Bots tab's top edge: the list fades softly under the bar.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .navigationTitle(L10n.tr("Workflows"))
         .navigationDestination(item: $opened) { item in
             WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId)

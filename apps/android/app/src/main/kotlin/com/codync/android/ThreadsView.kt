@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -157,24 +160,29 @@ private data object ThreadsPage
     val line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit = { row, label, indent -> ThreadLine(row, label, indent, accounts, { question = it }, openThread) }
     val scroll = rememberScrollState()
     OlderThreadsPaging(roster, accounts, active, scroll, more)
-    Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
+    // The Bots tab's stage: the list scrolls under the glass header, softly blurred at the top.
+    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
+        ScrollEdge(Edge.Top, top + 64.dp)
         // The Bots tab's header: the title over how the shown computers are connected, then the computers to show, Search and New thread.
         val summary = connectionSummary(shown)
-        ListHeader(app, account, "Threads", summary.filled(tr(summary.template)), searching, query, { query = it }, { searching = false; query = "" }) {
+        ListHeader(app, account, "Threads", summary.filled(tr(summary.template)), searching, query, { query = it }, { searching = false; query = "" },
+            Modifier.statusBarsPadding()) {
             ComputerFilterHeader(filter.states, filter.hidden, filter.setHidden, filter.reconnect, filter.manage, options)
             HeaderButton("magnifyingglass", "Search") { searching = true }
             if (startsThreads) HeaderButton("plus", "New thread") { openThread(NewThreadRoute) }
         }
+    }) {
         // An empty search keeps the list, as on the iPhone.
         if (searching && query.isNotBlank()) {
-            ThreadSearchResults(threadMatches(roster, { it.bot }, query), bottomInset, line)
-            return@Column
+            ThreadSearchResults(threadMatches(roster, { it.bot }, query), top + 56.dp, bottomInset, line)
+            return@GlassStage
         }
         if (roster.none { it.bot.work.isNotEmpty() }) {
             EmptyState("checklist", "No threads right now", Modifier.fillMaxSize(), message = "Tasks your bots work on show up here.")
-            return@Column
+            return@GlassStage
         }
-        Column(Modifier.verticalScroll(scroll).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 20.dp, end = 20.dp, top = top + 64.dp, bottom = bottomInset),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (sections.needsYou.isNotEmpty()) ThreadSection("Needs you") { for (row in sections.needsYou) line(row, row.task.title, 0.dp) }
             for (kind in ThreadGroupKind.entries) {
@@ -216,12 +224,12 @@ private data object ThreadsPage
 }
 
 /** Search's threads, flat and newest first, as the list draws its rows. */
-@Composable private fun ThreadSearchResults(rows: List<ThreadRow<WorkingBot>>, bottomInset: Dp, line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit) {
+@Composable private fun ThreadSearchResults(rows: List<ThreadRow<WorkingBot>>, topInset: Dp, bottomInset: Dp, line: @Composable (ThreadRow<WorkingBot>, String, Dp) -> Unit) {
     if (rows.isEmpty()) {
         EmptyState("magnifyingglass", "No results", Modifier.fillMaxSize())
         return
     }
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = topInset + 8.dp, bottom = bottomInset)) {
         for (row in rows) line(row, row.task.title, 0.dp)
     }
 }

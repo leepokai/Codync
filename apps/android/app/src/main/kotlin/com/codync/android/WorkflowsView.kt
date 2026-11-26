@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -104,9 +107,13 @@ private sealed class WorkflowPage {
             catch (error: Exception) { loadError = error.message }
         }
     }
-    Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
+    // The Bots tab's stage: the list scrolls under the glass header, softly blurred at the top.
+    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
+        ScrollEdge(Edge.Top, top + 64.dp)
         // The Bots tab's header: the title over the computer shown, then the computer to show and Search; no New yet.
-        ListHeader(app, account, "Workflows", state.hostName, searching, query, { query = it }, { searching = false; query = "" }) {
+        ListHeader(app, account, "Workflows", state.hostName, searching, query, { query = it }, { searching = false; query = "" },
+            Modifier.statusBarsPadding()) {
             if (computers.size > 1) DropdownMenu({
                 computers.map { other ->
                     MenuItem(other.hostName, selected = other.computer.id == state.computer.id, verbatim = true) { selectComputer(other.computer.id) }
@@ -116,7 +123,8 @@ private sealed class WorkflowPage {
             }
             HeaderButton("magnifyingglass", "Search") { searching = true }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = bottomInset),
+    }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = top + 64.dp, bottom = bottomInset + 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.workflowMessage?.let { Text(tr(it), style = Type.callout, color = Palette.danger) }
             loadError?.let { Text(tr(it), style = Type.caption, color = Palette.danger) }

@@ -54,6 +54,8 @@ public struct ThreadList: View {
             .padding(.bottom, 20)
         }
         .background(Palette.background)
+        // The Bots tab's top edge: the list fades softly under the bar.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .workQuestion($question)
     }
 

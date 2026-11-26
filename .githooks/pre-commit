@@ -54,7 +54,7 @@ host_tests() {
     for file in $(printf '%s\n' "$staged_files" | grep -E '^(host/|packaging/updates/|docs/reference/fixtures/)'); do
         case "$file" in
             host/src/routines/*) add="routines_e2e routine_retry_e2e routine_unread_e2e" ;;
-            host/src/network/*|host/src/network_cli.rs|host/crates/network/*) add="network_e2e two_computers" ;;
+            host/src/network/*|host/src/network_cli*|host/crates/network/*) add="network_e2e two_computers" ;;
             host/src/send_cli*) add="send_cli_e2e" ;;
             host/src/chat/memory/*|host/crates/memory/*) add="memory_e2e memory_files_e2e compaction_e2e" ;;
             host/src/voice.rs|host/src/chat/calls*) add="calls_e2e" ;;
@@ -92,12 +92,14 @@ if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vect
         exit 1
     fi
     echo "Checking the host (cargo fmt, clippy, test: $tests)..."
-    set -- --profile ci
+    set -- --profile precommit
     [ "$tests" = all ] || set -- "$@" -E "$tests"
-    # nextest runs every test at once, retries a flaky one and stops one that hangs (`host/.config/nextest.toml`).
+    # nextest runs every test at once, retries a flaky one and stops one that hangs after five minutes, and leaves
+    # the slowest to CI (`host/.config/nextest.toml`). The outer limit only catches nextest itself hanging: a
+    # loaded machine runs the whole suite for well over 15 minutes without anything being stuck.
     (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" &&
         cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings &&
-        within 900 cargo nextest run --workspace "$@")
+        within 2700 cargo nextest run --workspace "$@")
 fi
 
 # The desktop tests also check the iPhone, Android and terminal tr() phrases against the catalogs (#488).

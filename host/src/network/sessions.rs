@@ -173,17 +173,16 @@ impl Live {
     }
 
     /// What `s`'s agent and process say now; `None` where nothing can tell (Windows, no process
-    /// known). Blocking: reads files and runs `ps`.
-    pub fn read(s: &Session) -> Option<Self> {
+    /// known). A process that called since for another of `all` (Claude Code after `/clear`) no
+    /// longer runs `s`. Blocking: reads files and runs `ps`.
+    pub fn read(s: &Session, all: &[Session]) -> Option<Self> {
         if let Some(live) = Self::of_busy(s.id().and_then(|id| codync_network::sessions::busy(s.kind, id))) {
             return Some(live);
         }
-        // Claude Code lists every session it runs: one it no longer lists has ended, even when its
-        // MCP server's process lives on in another session (after `/clear`).
-        if s.kind == AgentKind::ClaudeCode && s.id().is_some() && cfg!(unix) {
+        let (pid, started) = s.running.as_ref()?;
+        if all.iter().any(|o| o.key != s.key && o.running == s.running && o.seen > s.seen) {
             return Some(Self::Offline);
         }
-        let (pid, started) = s.running.as_ref()?;
         // ponytail: one `ps` per session; one `ps -A` for all if listings grow long.
         let now = crate::dev_servers::process_start(*pid);
         Some(if now.as_ref() == Some(started) { Self::Online } else { Self::Offline })

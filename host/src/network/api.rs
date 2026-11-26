@@ -41,7 +41,7 @@ fn refresh_live(hub: &Arc<Hub>) {
         let started = crate::store::now_ms();
         let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
         let read = tokio::task::spawn_blocking(move || {
-            listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s)?))).collect::<HashMap<_, _>>()
+            listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s, &listed)?))).collect::<HashMap<_, _>>()
         });
         if let Ok(now) = read.await
             && hub.network.sessions.renew_live(now, started)

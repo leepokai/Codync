@@ -223,3 +223,25 @@ fn the_apps_hear_only_of_a_change_in_what_a_session_does() {
     sessions.renew_live(HashMap::from([("b".to_owned(), Live::Offline)]), started);
     assert_eq!(sessions.live.locked().get("b").map(|e| e.0), Some(Live::Online));
 }
+
+#[test]
+fn a_session_whose_process_moved_on_to_another_is_offline() {
+    let process = Some((u32::MAX, "never".to_owned()));
+    let session = |key: &str, seen: i64| Session {
+        key: key.into(),
+        kind: AgentKind::ClaudeCode,
+        address: key.into(),
+        cwd: "/".into(),
+        title: None,
+        busy: None,
+        temporary: false,
+        named: None,
+        seen,
+        hooked: false,
+        announced: None,
+        running: process.clone(),
+    };
+    let (old, new) = (session("old", 1), session("new", 2));
+    let all = [old.clone(), new.clone()];
+    assert_eq!(Live::read(&old, &all), Some(Live::Offline), "after /clear its process serves the newer one");
+}

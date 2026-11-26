@@ -290,11 +290,7 @@ internal fun String.storedChunkRanges(size: Int = STORED_CHUNK_CHARS): List<IntR
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
 @Composable private fun ChatHeader(bot: Bot, state: AppState, store: AppStore, openFind: () -> Unit, openDetails: () -> Unit) {
     Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp)) {
-        val (source, pressed) = rememberPress()
-        Box(Modifier.align(Alignment.CenterStart).size(44.dp).glass(Capsule(), pressed = pressed)
-            .then(Modifier.plainButton { store.openBot(null) }).semantics { contentDescription = "Back" }, contentAlignment = Alignment.Center) {
-            Symbol("chevron.left", size = 32.dp, tint = Palette.text)
-        }
+        Box(Modifier.align(Alignment.CenterStart)) { GlassBackButton { store.openBot(null) } }
         val label = tr("{name}, view details").replace("{name}", bot.name)
         Box(Modifier.align(Alignment.Center).plainButton(action = openDetails).semantics { contentDescription = label }) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -335,7 +331,7 @@ internal fun String.storedChunkRanges(size: Int = STORED_CHUNK_CHARS): List<IntR
 @Composable private fun ComputerButton(operating: Boolean, modifier: Modifier, action: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "Operating").animateFloat(1f, 0.35f,
         infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Pulse")
-    HeaderButton("desktopcomputer", "Computer", modifier, Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, action)
+    HeaderButton("desktopcomputer", "Computer", modifier, Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, action = action)
 }
 
 /** The link to the computer: route icon (or a spinner) and a word, then what the bot keeps running. */

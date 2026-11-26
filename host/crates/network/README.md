@@ -207,6 +207,11 @@ applies).
 `clientInfo.name`), `session_id(kind, env, meta)` (from the server's environment or a tool call's `_meta`), and
 `info` / `busy` (the title and busy/idle the agent writes in its own files).
 
+`hooks` is the turn tier's per-agent part: `hook_input` reads a Codex, Copilot CLI or Grok hook's stdin (the
+session and whether it is `PostToolUse` or `Stop`), `hook_output` writes the answer that agent reads back. `post_to_own_claude_session` hands text to the Claude Code
+session the calling process runs in (an MCP server it started), on its inbox socket with the token it gave that
+child.
+
 `node.changes()` ticks whenever `node.directory()` would show something new (a computer joins or leaves, a role,
 name or presence changes, another computer offers different agents), for an app that shows the network live.
 

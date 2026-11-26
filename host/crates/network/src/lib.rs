@@ -22,6 +22,7 @@
 //!   which of its own; with none, every member may.
 
 pub mod guard;
+pub mod hooks;
 mod node;
 mod reach;
 mod roster;
@@ -31,7 +32,7 @@ mod types;
 mod wire;
 
 pub use node::{INVITE_FOR, Node};
-pub use reach::Reach;
+pub use reach::{Reach, post_to_own_claude_session};
 pub use roster::Role;
 pub use rules::{Access, Rule};
 pub use types::{Address, Connector, Letter, Message, Peer, Sent};

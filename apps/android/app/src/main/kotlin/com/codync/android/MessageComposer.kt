@@ -210,18 +210,18 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
  * microphone: [send] takes what was typed (the draft's files go with it), only while the computer is there to take it.
  * What is typed and added is saved under [draftKey], as a chat's draft is. The messages waiting behind the thread's turn
  * show on top as a chat's do ([queued], with [steer] and [remove]). [accessory]: what the thread runs on, in the box's row;
- * while the thread is [working], an empty box's button is Stop ([stop]).
+ * while the thread is [working], an empty box's button is Stop ([stop]). Send waits while the box isn't [ready]; [send]
+ * empties the box when it calls its second argument.
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, takesFiles: Boolean, queued: List<Entry>,
-    steer: (Entry) -> Unit, remove: (Entry) -> Unit, working: Boolean, stop: () -> Unit, accessory: @Composable RowScope.() -> Unit,
-    send: (String) -> Unit) {
+@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, takesFiles: Boolean, queued: List<Entry> = emptyList(),
+    steer: (Entry) -> Unit = {}, remove: (Entry) -> Unit = {}, working: Boolean = false, stop: () -> Unit = {}, accessory: @Composable RowScope.() -> Unit,
+    placeholder: String = tr("Message this thread"), ready: Boolean = true, send: (String, clear: () -> Unit) -> Unit) {
     val text = rememberTextFieldState(initialText = state.drafts[draftKey]?.text.orEmpty())
     LaunchedEffect(text, draftKey) { snapshotFlow { text.text.toString() }.collect { store.editDraft(draftKey, it) } }
-    val placeholder = tr("Message this thread")
     val files = state.drafts[draftKey]?.files.orEmpty()
     val importing = "attachments" in state.busy
-    val canSend = (text.text.isNotBlank() || files.isNotEmpty()) && !importing && state.actualConnection is LinkState.Ready
+    val canSend = (text.text.isNotBlank() || files.isNotEmpty()) && !importing && ready && state.actualConnection is LinkState.Ready
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         QueuedMessages(queued, state, store, Modifier.padding(horizontal = 16.dp), steer, remove)
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp).glass(RoundedRectangle(24.dp))
@@ -232,10 +232,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                 field = Modifier.semantics { contentDescription = placeholder }.contentReceiver(fileReceiver(store, draftKey, importing || !takesFiles)),
                 leading = { if (takesFiles) AddFilesButton(store, draftKey, enabled = true) }, accessory = accessory) {
                 if (trailing == Trailing.Stop) stop()
-                else {
-                    send(text.text.toString())
-                    text.clearText()
-                }
+                else send(text.text.toString()) { text.clearText() }
             }
         }
     }

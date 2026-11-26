@@ -643,6 +643,8 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
     await expect(section.locator('[data-thread-row]')).toHaveCount(2)
     await expect(thread('Long job')).toHaveAttribute('data-work-status', 'working')
     await expect(thread('Next job')).toHaveAttribute('data-work-status', 'waiting')
+    // Each row starts with the coding agent's icon (a custom command's is the terminal), a waiting one's too.
+    for (const title of ['Long job', 'Next job']) await expect(thread(title).locator('.thread-agent > *')).toHaveCount(1)
 
     // Search in the header finds a thread by its bot's name (one waiting has none yet) and picks it in the list.
     await page.locator('.sidebar-header').getByRole('button', { name: 'Search', exact: true }).click()

@@ -98,6 +98,18 @@ pub enum SessionAction {
     Expired,
     /// Its full inbox dropped a bot's request unread.
     Dropped,
+    /// Its agent ran our hook for the first time (it has the turn tier now).
+    Hooked,
+    /// A hook told it that letters wait.
+    Told,
+    /// Its MCP server waits to tell it of letters as they come (it has the push tier now).
+    Pushes,
+    /// Its MCP server told it that letters wait (waking it when idle).
+    Pushed,
+    /// A letter came but the session was woken too often this hour: it reads it itself.
+    WakeLimited,
+    /// Its MCP server couldn't write a notice to it (its inbox socket didn't take it).
+    PushFailed,
 }
 
 pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
@@ -111,6 +123,12 @@ pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::A
         SessionAction::AskFailed => "ask_failed",
         SessionAction::Expired => "expired",
         SessionAction::Dropped => "dropped",
+        SessionAction::Hooked => "hooked",
+        SessionAction::Told => "told",
+        SessionAction::Pushes => "pushes",
+        SessionAction::Pushed => "pushed",
+        SessionAction::WakeLimited => "wake_limited",
+        SessionAction::PushFailed => "push_failed",
     };
     capture(
         hub,

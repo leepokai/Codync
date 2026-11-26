@@ -209,6 +209,8 @@ sealed interface MirrorEvent {
     data class ThreadEntryChanged(val thread: String, val entry: Entry) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
     data class Screen(val value: JsonObject) : MirrorEvent
+    /** An agent's model list the computer just read ([loginProfile] null: the default login): live only, no rev. */
+    data class Models(val backend: String, val loginProfile: String?, val models: AgentModels) : MirrorEvent
     /** An artifact was published, updated or renamed (the catch-up replays it too), never a checkpoint. */
     data class ArtifactChanged(val artifact: Artifact) : MirrorEvent
     /** For the voice of a call on this device: live only, never a checkpoint. */
@@ -242,6 +244,10 @@ sealed interface MirrorEvent {
                 .getOrDefault(Ignored)
             "usage" -> Usage(value.getValue("usage").jsonObject)
             "screen" -> Screen(value.getValue("screen").jsonObject)
+            // One this app can't read is passed over: a model panel asks for the list when it opens.
+            "models" -> runCatching {
+                Models(requireNotNull(value.text("backend")), value.text("loginProfile"), WireJson.decodeFromJsonElement(value.getValue("models")))
+            }.getOrDefault(Ignored)
             // One this app can't read is passed over rather than fetching everything again: a card or the Library reads it again.
             "artifact" -> runCatching { ArtifactChanged(Artifact.decode(value.getValue("artifact"))) }.getOrDefault(Ignored)
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored

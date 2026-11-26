@@ -2493,5 +2493,18 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "每个 thread 都在自己的 worktree 里工作，你的 checkout 永远不会被动到",
   "Its chat, routines and files live here.": "它的聊天、例行任务和文件都在这里。",
   "Add folder": "添加文件夹",
-  "Remove folder": "移除文件夹"
+  "Remove folder": "移除文件夹",
+  "Fewer models": "收起旧模型",
+  "More models (%d)": "更多模型（%d）",
+  "Search or enter a model ID": "搜索或输入模型 ID",
+  "Approvals": "批准",
+  "Speed": "速度",
+  "Close search": "关闭搜索",
+  "Bots and other agents message these sessions at their address; each reads its mail itself.": "Bot 和其他智能体通过地址给这些会话发消息；每个会话自己读取信件。",
+  "Checks its mail": "自行查看信件",
+  "Told of mail at its next step": "下一步时得知新信",
+  "Told of mail as it comes": "来信即得知",
+  "Idle": "空闲",
+  "Older sessions: {count}": "较早的会话：{count}",
+  "More sessions: {count}": "更多会话：{count}"
 }

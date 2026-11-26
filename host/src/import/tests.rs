@@ -204,6 +204,7 @@ fn an_export_that_names_imate_keeps_it() {
 
 #[tokio::test]
 async fn an_imate_import_keeps_it_and_says_when_no_token_is_saved() {
+    use crate::LockExt;
     let dir = std::env::temp_dir().join(format!("codync-import-imate-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let store = crate::store::Store::open(&dir.join("t.db")).unwrap();
@@ -221,7 +222,6 @@ async fn an_imate_import_keeps_it_and_says_when_no_token_is_saved() {
     let id = done["bots"][0]["id"].as_str().unwrap();
     assert_eq!(hub.store.bot(id).unwrap().unwrap().config.backend, "imate");
 
-    use crate::LockExt;
     *hub.store.secret_key.locked() = Some(zeroize::Zeroizing::new(vec![7; 32]));
     crate::agent::auth::save_env(&hub.store, "agent-env:imate", &[("IMATE_API_TOKEN".into(), Some("saved".into()))])
         .unwrap();

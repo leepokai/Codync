@@ -673,7 +673,7 @@ fn write_terminal(
 ) -> Result<()> {
     let step = new_id();
     write_step(&hub.store, run, node, &step, status, input, output.as_deref(), branch, truncated, error, passes, now)?;
-    emit_step(hub, &run.workflow, &run.id, &step);
+    emit_step(hub, &run.workflow, Some(&run.id), &step);
     Ok(())
 }
 
@@ -690,11 +690,12 @@ fn write_open(
     let step = new_id();
     let output = (status == StepStatus::Done).then_some(input);
     write_step(&hub.store, run, node, &step, status, input, output, None, truncated, None, passes, now)?;
-    emit_step(hub, &run.workflow, &run.id, &step);
+    emit_step(hub, &run.workflow, Some(&run.id), &step);
     Ok(step)
 }
 
-fn emit_step(hub: &Hub, workflow: &str, run: &str, step: &str) {
+/// `run` None: a step run on its own ("Run this step").
+pub(super) fn emit_step(hub: &Hub, workflow: &str, run: Option<&str>, step: &str) {
     hub.emit_workflow(
         json!({"type": "workflow", "change": "step", "workflowId": workflow, "runId": run, "stepId": step}),
     );
@@ -1189,9 +1190,7 @@ pub fn run_solo(hub: &Hub, workflow: &str, node_id: &str, request: &str) -> Resu
         NodeKind::Output => finish_solo_output(hub, workflow, &title, &node, &step, attempt, request, &input, now)?,
         _ => bail!("This step can't run on its own"),
     }
-    hub.emit_workflow(
-        json!({"type": "workflow", "change": "step", "workflowId": workflow, "runId": Value::Null, "stepId": step}),
-    );
+    emit_step(hub, workflow, None, &step);
     step_value(hub, &step)
 }
 

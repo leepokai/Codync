@@ -204,11 +204,11 @@ A script insert freezes `script_text` and `exec = script`, then the gate drops a
 
 ### Stopping, retry, approval
 
-Stop marks the run `stopping` and stops the open step. Retry of a failed step runs it again. For a script run, retry replays after its own write, not under a caller's gate. Accepting an approval copies the input to the output and advances. Rejecting stops the run. A script approval replays after the gate drops.
+Stop marks the run `stopping` and stops the open step. Retry of a failed step runs it again. For a script run, retry replays after its own write, not under a caller's gate. Accepting an approval copies the input to the output and advances. Rejecting stops the run. A script approval replays after the gate drops. Only a step still in `approval` takes an answer: a late one (a second device, a stale card) changes nothing and re-emits the step event, except that approving an already approved step advances (or replays) its run again, so an approval whose follow-up failed can be sent again.
 
 ### Restart
 
-`recover` on host start takes the gate, walks open graph runs, and collects script run ids. It drops the gate, then replays those scripts. A script step whose bot session is gone settles as interrupted and is replayed outside the gate.
+`recover` on host start takes the gate, walks open graph runs, and collects script run ids. It drops the gate, then replays those scripts. A script step whose bot session is gone settles as interrupted and is replayed outside the gate. A running agent step that belongs to no run (Run this step) is picked up the same way: sent to its bot again, or settled as interrupted.
 
 ## Agent steps and prompts
 
@@ -240,7 +240,7 @@ A delivery id (`hooks::delivery_id`) is remembered, and a retry of that id retur
 
 ### Notification
 
-An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app (the workflow's detail when there is no `runId`).
+An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app (the workflow's detail when there is no `runId`). The desktop app's `alert` event carries `workflowId` too, and clicking that notification opens the workflow. A step run on its own sends step events with `runId` null and its `stepId`; the desktop app reads that step back with `workflowStep`.
 
 ## API and events
 
@@ -260,7 +260,7 @@ Methods, all `POST /api/<method>`:
 | `setWorkflowEnabled` | Pause or resume. |
 | `workflowVersions` / `workflowVersion` / `restoreWorkflowVersion` | History. |
 | `startWorkflowRun` / `stopWorkflowRun` / `workflowRuns` / `workflowRun` | Runs. |
-| `decideWorkflowStep` / `runWorkflowStep` / `stopWorkflowStep` / `retryWorkflowStep` | One step. |
+| `workflowStep` / `decideWorkflowStep` / `runWorkflowStep` / `stopWorkflowStep` / `retryWorkflowStep` | One step (`workflowStep` reads one, for a step run on its own). |
 | `rotateWorkflowWebhook` | Replace the secret. The old one stops at once. |
 | `workflowCall` | The bot MCP tools. Requires `botId`. Async, because save and run wait for approval. |
 

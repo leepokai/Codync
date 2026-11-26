@@ -15,8 +15,13 @@ export interface ApplyPlan {
 export const filterChecked = (items: RosterItem[], checked: Set<string>) =>
   items.filter((i) => checked.has(refKey(i.ref)))
 
-/** One bot's fate: `ok` rows are saved, the rest carry the reason they were skipped. */
-export type PlanRow = { item: RosterItem; ok: boolean; reason?: string }
+/** Why a row was not written, as the event counts it: the reason's text stays in the row, never in analytics. */
+export type PlanRefusal = 'modelMissing' | 'catalogUnreadable' | 'settingsRejected'
+
+/** One bot's fate: `ok` rows are saved, the rest carry the reason they were skipped and which count they add. */
+export type PlanRow =
+  | { item: RosterItem; ok: true }
+  | { item: RosterItem; ok: false; reason: string; refusal: PlanRefusal }
 
 /** `Not available on {computer}`, with the computer's name filled in. */
 export const notAvailable = (computer: string) => trNow('Not available on {computer}').replace('{computer}', () => computer)
@@ -83,18 +88,64 @@ export const planRows = (plan: ApplyPlan, catalogFor: (item: RosterItem) => Cata
   return plan.items.map((item) => {
     if (!needsCatalog(plan.backend, model || null, plan.options)) return { item, ok: true }
     const check = catalogFor(item)
-    if (check.kind !== 'ok') return { item, ok: false, reason: notCheckable(item.computer.name) }
+    if (check.kind !== 'ok')
+      return { item, ok: false, reason: notCheckable(item.computer.name), refusal: 'catalogUnreadable' } as const
     const entryId = model || check.catalog.currentModelId || ''
     const entry = entryId ? check.catalog.models.find((candidate) => candidate.id === entryId) : undefined
     if (!entry) {
-      return { item, ok: false, reason: model ? notAvailable(item.computer.name) : notCheckable(item.computer.name) }
+      return model
+        ? ({ item, ok: false, reason: notAvailable(item.computer.name), refusal: 'modelMissing' } as const)
+        : ({ item, ok: false, reason: notCheckable(item.computer.name), refusal: 'catalogUnreadable' } as const)
     }
-    return optionsFit(entry, options) ? { item, ok: true } : { item, ok: false, reason: settingsUnavailable(item.computer.name) }
+    return optionsFit(entry, options)
+      ? { item, ok: true }
+      : ({ item, ok: false, reason: settingsUnavailable(item.computer.name), refusal: 'settingsRejected' } as const)
   })
 }
 
 /** Every roster key, for `Select all`. */
 export const allKeys = (items: RosterItem[]) => items.map((i) => refKey(i.ref))
+
+/** Why an apply failed, in the five kinds the event counts: a refused row's kind, the host's guard, or the save. */
+export type ApplyFailure = PlanRefusal | 'hostGuard' | 'saveError'
+
+/**
+ * An apply run's counts, in the shape the event sends. The five failure kinds always sum to `failed`: every refusal
+ * is counted once in `failed` and once in its own kind, so the event can say what went wrong without any text, model
+ * id or bot id.
+ */
+export type ApplyTally = {
+  requested: number
+  applied: number
+  failed: number
+  modelMissing: number
+  catalogUnreadable: number
+  settingsRejected: number
+  hostGuard: number
+  saveError: number
+}
+
+export const runTally = (requested: number): ApplyTally => ({
+  requested,
+  applied: 0,
+  failed: 0,
+  modelMissing: 0,
+  catalogUnreadable: 0,
+  settingsRejected: 0,
+  hostGuard: 0,
+  saveError: 0,
+})
+
+/** One save that landed. */
+export const countApplied = (tally: ApplyTally) => {
+  tally.applied += 1
+}
+
+/** One save that did not: counted in `failed` and in the kind that stopped it. */
+export const countFailure = (tally: ApplyTally, failure: ApplyFailure) => {
+  tally.failed += 1
+  tally[failure] += 1
+}
 
 /**
  * How many checked bots the current filter hides. They stay checked, and Apply leaves them

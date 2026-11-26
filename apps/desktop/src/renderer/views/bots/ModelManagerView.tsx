@@ -21,7 +21,7 @@ import { agentModelsRequest } from './agent-models-query.ts'
 import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -300,8 +300,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     busy.current = true
     setApplying(true)
     setOutcomes({})
-    let applied = 0
-    let failed = 0
+    // Counted as the run goes, so the event can say what went wrong by kind, with no text and no ids: the five
+    // kinds always sum to `failed`.
+    const tally = runTally(chosen.length)
     // What this run changed: an applied bot leaves the selection afterwards, so a later Apply can
     // never sweep it up again by surprise.
     const appliedKeys = new Set<string>()
@@ -333,14 +334,14 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         if (!alive.current || run.current !== myRun) return
         const key = refKey(row.item.ref)
         if (!row.ok) {
-          failed++
-          setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason ?? tr('Failed') } }))
+          countFailure(tally, row.refusal)
+          setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason } }))
           continue
         }
         // An older host cannot make the login expectation atomic with its save, so fail this row
         // rather than silently restoring the login the catalog check used.
         if (row.item.store.hello?.modelManagerApplyGuard !== true) {
-          failed++
+          countFailure(tally, 'hostGuard')
           const text = tr('Update Codync on {computer} to apply models safely').replace('{computer}', () => row.item.computer.name)
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text } }))
           continue
@@ -359,12 +360,12 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
             })
             .then((sent) => {
               if (sent !== 'sent') return
-              applied++
+              countApplied(tally)
               appliedKeys.add(key)
               if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
             })
         } catch (e) {
-          failed++
+          countFailure(tally, 'saveError')
           if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
         }
       }
@@ -382,7 +383,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         })
       // One event per apply, whatever ended it: closed mid-run, pick changed mid-run, or completed.
       // Rows the run never reached are the remainder (requested - applied - failed).
-      analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed })
+      analytics.track({ event: 'model_manager_applied', ...tally })
     }
   }
 

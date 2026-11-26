@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -381,4 +381,34 @@ test('modelPathWords finds a bot by its agent, provider and model, however the m
     'opus-5.2',
     'opus 5.2',
   ])
+})
+
+test('planRows names the kind each refusal counts as, never the reason text', () => {
+  const plan: ApplyPlan = { items: [item('mac', 'Mac', 'b1', 'Alpha')], backend: 'claude', model: 'ghost', options: {} }
+  const missing = planRows(plan, () => ok(['opus']))
+  assert.equal(missing[0]?.ok, false)
+  assert.equal(missing[0]?.ok === false && missing[0].refusal, 'modelMissing')
+
+  const unreadable = planRows(plan, () => bad)
+  assert.equal(unreadable[0]?.ok === false && unreadable[0].refusal, 'catalogUnreadable')
+
+  const withSettings: ApplyPlan = { ...plan, model: 'opus', options: { effort: 'high' } }
+  const refused = planRows(withSettings, () => effortCatalog('opus', ['low']))
+  assert.equal(refused[0]?.ok === false && refused[0].refusal, 'settingsRejected')
+})
+
+test('an apply run counts applied once and every failure once in failed and in its kind', () => {
+  const tally = runTally(7)
+  countApplied(tally)
+  countApplied(tally)
+  for (const failure of ['modelMissing', 'catalogUnreadable', 'settingsRejected', 'hostGuard', 'saveError'] as const)
+    countFailure(tally, failure)
+
+  assert.equal(tally.requested, 7)
+  assert.equal(tally.applied, 2)
+  assert.equal(tally.failed, 5, 'each failure is counted in failed exactly once')
+  const kinds = tally.modelMissing + tally.catalogUnreadable + tally.settingsRejected + tally.hostGuard + tally.saveError
+  assert.equal(kinds, tally.failed, 'the five kinds sum to failed')
+  const { requested: _r, applied: _a, failed: _f, ...counts } = tally
+  assert.deepEqual(Object.values(counts).sort(), [1, 1, 1, 1, 1], 'no kind is counted twice or left out')
 })

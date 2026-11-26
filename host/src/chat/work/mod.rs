@@ -361,7 +361,7 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
             tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a stopped turn's work");
         }
     }
-    dispatch::run(hub, bot, Some(bot));
+    dispatch::run(hub, bot, Some(bot), None);
 }
 
 /// Thread `cfg`'s turn ended: its task says how, its result goes where its source reads it (the bot's own work: a
@@ -371,7 +371,7 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
     let Some(bot) = cfg.thread_of.as_deref() else { return };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
-    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
+    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread), None);
     let ended = tasks::change(hub, bot, |tasks| {
         Ok(if thread::unheard(&hub.store, &cfg.id) { None } else { end_claimed(tasks, &cfg.id, outcome) })
     });

@@ -78,7 +78,20 @@ pub struct BotHandle {
     pub task: tokio::task::JoinHandle<()>,
 }
 
-pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
+/// The pause flag and the active run ids, read together. The caller holds the pause transition for this
+/// whole read: the flag at one instant and the ids at another would cancel a run admitted in between,
+/// or spare one that was already active. A thread has no runs of its own, so its pair is the flag and
+/// an empty list, with no second read.
+pub(crate) fn startup_pair(hub: &Hub, cfg: &BotConfig) -> (bool, Vec<String>) {
+    let was_paused = hub.paused(cfg.owner()) || hub.pause.blocked(cfg.owner());
+    let runs = if was_paused && !cfg.is_thread() { hub.routines.active_ids(&cfg.id) } else { Vec::new() };
+    (was_paused, runs)
+}
+
+/// `startup` is `(was_paused, active run ids)` from [`startup_pair`], already captured by the caller.
+/// This does not take the pause transition. The scheduler holds that mutex across the admission that
+/// reaches here, and `std::sync::Mutex` is not reentrant.
+pub fn spawn(hub: Arc<Hub>, base: BotConfig, startup: (bool, Vec<String>)) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
@@ -93,16 +106,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
-    // One pause transition for the flag and the active runs. Reading the ids later, inside `run`, would
-    // cancel a routine admitted after a resume that landed before the task started. `run` decides from
-    // this pair, not from the flag or the run list it would see later.
-    let owner = cfg.owner().to_owned();
-    let startup = {
-        let _transition = hub.pause.transition();
-        let was_paused = hub.paused(&owner) || hub.pause.blocked(&owner);
-        let runs = if was_paused && !cfg.is_thread() { hub.routines.active_ids(&cfg.id) } else { Vec::new() };
-        (was_paused, runs)
-    };
+    // `startup` was read under one pause transition by the caller. Reading the ids again here, or later
+    // inside `run`, would cancel a routine admitted after a resume that landed before the task started.
+    // `run` decides from this pair, not from the flag or the run list it would see later.
     let actor = Actor {
         hub,
         base,
@@ -447,7 +453,7 @@ impl Actor {
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
-    /// `was_paused` and `paused_runs` were read together in `spawn`, before this task ran.
+    /// `was_paused` and `paused_runs` were read together by whoever spawned this actor, before this task ran.
     async fn run(
         mut self,
         mut rx: mpsc::UnboundedReceiver<Cmd>,
@@ -612,5 +618,59 @@ async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {
         Some(c) => c.rx.recv().await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::startup_pair;
+    use crate::chat::calls::context::tests::{bot, hub};
+    use serde_json::json;
+
+    fn run_status(hub: &crate::hub::Hub, id: &str) -> String {
+        hub.routines.list("b1")["runs"]
+            .as_array()
+            .and_then(|runs| runs.iter().find(|run| run["id"] == id))
+            .and_then(|run| run["status"].as_str())
+            .unwrap_or("")
+            .to_owned()
+    }
+
+    /// The ids read with the pause flag are the ones a paused startup cancels. A run admitted after that
+    /// read is not one of them. This is the pair `Actor::run` passes to `cancel_ids_for_pause`.
+    #[test]
+    fn startup_cancels_exactly_the_ids_read_with_the_pause_flag() {
+        let hub = hub();
+        let cfg = crate::store::BotConfig { paused: true, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        let saved = hub
+            .routines
+            .save(&hub, "b1", &json!({"name": "Check", "instruction": "x", "triggers": [{"type": "webhook"}]}))
+            .expect("routine");
+        let routine = saved["routine"]["id"].as_str().expect("id");
+        let enqueue = |mark: &str| {
+            hub.routines.enqueue(&hub.store, "b1", routine, json!({"source": mark}), None, true).expect("queued")["run"]
+                ["id"]
+                .as_str()
+                .expect("run id")
+                .to_owned()
+        };
+        let first = enqueue("first");
+        let second = enqueue("second");
+        let startup = {
+            let _transition = hub.pause.transition();
+            startup_pair(&hub, &cfg)
+        };
+        let later = enqueue("later");
+        assert!(startup.0, "the flag and the ids are one read, and the bot was paused");
+        let mut ids = startup.1.clone();
+        ids.sort();
+        let mut expected = vec![first.clone(), second.clone()];
+        expected.sort();
+        assert_eq!(ids, expected, "a run admitted after the read is not in the snapshot");
+        hub.routines.cancel_ids_for_pause(&hub.store, &startup.1).expect("cancel");
+        assert_eq!(run_status(&hub, &first), "cancelled");
+        assert_eq!(run_status(&hub, &second), "cancelled");
+        assert_eq!(run_status(&hub, &later), "pending");
     }
 }

@@ -233,9 +233,20 @@ impl Hub {
     }
 
     pub(crate) fn spawn_bot(self: &Arc<Self>, cfg: BotConfig) {
+        // Outermost holder for this actor: the flag and the active ids, one read, then the pair is passed in.
+        // `spawn` does not take the transition. A caller that already holds it uses [`Self::spawn_bot_with`].
+        let startup = {
+            let _transition = self.pause.transition();
+            bot::startup_pair(self, &cfg)
+        };
+        self.spawn_bot_with(cfg, startup);
+    }
+
+    /// [`Self::spawn_bot`] when `startup` was already read under the pause transition this thread holds.
+    pub(crate) fn spawn_bot_with(self: &Arc<Self>, cfg: BotConfig, startup: (bool, Vec<String>)) {
         let id = cfg.id.clone();
         self.runtime.locked().insert(id.clone(), Runtime::default());
-        let handle = bot::spawn(self.clone(), cfg);
+        let handle = bot::spawn(self.clone(), cfg, startup);
         self.bots.locked().insert(id, handle);
     }
 

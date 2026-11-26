@@ -413,6 +413,52 @@ async fn a_routine_admitted_during_paused_startup_is_not_cancelled() {
     assert!(leaked.is_none(), "paused startup resumed the cut-off turn because resume won the branch: {leaked:?}");
 }
 
+/// A run that was already active when startup read the pause flag is cancelled. A run admitted in the
+/// gap after that read is not. The two reads are one pair: cancelling both, or cancelling neither, is wrong.
+#[tokio::test]
+async fn a_paused_startup_cancels_only_the_runs_captured_with_the_flag() {
+    let gates = Gates::new();
+    let mut host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.works_in_chat(&bot).await;
+    let already = routine(&host, &bot, "Already", "ALREADY_ACTIVE").await;
+    let fresh = routine(&host, &bot, "Fresh", "ADMITTED_LATER").await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    let started = host.call("runRoutine", json!({"botId": bot, "id": already})).await;
+    let captured = started["run"]["id"].as_str().unwrap().to_owned();
+
+    gates.arm("before_startup_pause_read");
+    host.crash();
+    host.restart(|_| {}).await;
+    gates.entered("before_startup_pause_read").await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    let later = host.call("runRoutine", json!({"botId": bot, "id": fresh})).await;
+    let admitted = later["run"]["id"].as_str().unwrap().to_owned();
+    gates.release("before_startup_pause_read");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let (captured_run, admitted_run) = loop {
+        let runs = host.call("routines", json!({"botId": bot})).await["runs"].as_array().unwrap().clone();
+        let captured_run = runs.iter().find(|row| row["id"] == captured).cloned().unwrap_or(Value::Null);
+        let admitted_run = runs.iter().find(|row| row["id"] == admitted).cloned().unwrap_or(Value::Null);
+        let captured_settled = captured_run["status"] == "cancelled";
+        let admitted_cancelled = admitted_run["status"] == "cancelled";
+        if captured_settled || admitted_cancelled || Instant::now() >= deadline {
+            break (captured_run, admitted_run);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(
+        captured_run["status"], "cancelled",
+        "a run active at the startup read was not cancelled: {captured_run}"
+    );
+    assert_ne!(
+        admitted_run["status"], "cancelled",
+        "a run admitted after the startup read was cancelled with the captured ids: {admitted_run}"
+    );
+}
+
 fn user_status(history: &Value, text: &str) -> Option<String> {
     history["entries"].as_array()?.iter().find_map(|entry| {
         (entry["kind"] == "user" && entry["data"]["text"] == text)
@@ -466,4 +512,30 @@ async fn a_user_message_queued_before_a_pause_is_delivered_on_resume() {
         "a message sent while paused was delivered after resume: {}",
         around(&prompts, "WHILE_PAUSED")
     );
+}
+
+/// A boxed routine is admitted while the scheduler holds the pause transition, and that
+/// admission starts a thread. The thread's startup snapshot is one read of the pause flag
+/// and the active runs. It must not take the transition again: `std::sync::Mutex` is not
+/// reentrant, so the same thread would wait forever and the run would never reach the agent.
+/// The wait is bounded. A deadlock fails here. It does not hang the suite.
+#[tokio::test]
+async fn a_boxed_routine_starts_while_the_scheduler_holds_the_pause_transition() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    let id = routine(&host, &bot, "Boxed", "BOXED_ROUTINE_MUST_START").await;
+
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if prompt_blob(&host).contains("BOXED_ROUTINE_MUST_START") {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a boxed routine never started; the scheduler's pause transition was taken twice on one thread"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }

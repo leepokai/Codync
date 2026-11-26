@@ -102,13 +102,15 @@ impl Routines {
     }
 
     /// Run `run` waits in its bot's box from here (`chat::work`), not in the bot's queue.
-    pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run) -> Result<()> {
+    /// `startup` is the pause flag and the run ids, already read together by the caller that holds the
+    /// pause transition. The thread this admission may start takes that pair and does not read it again.
+    pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run, startup: (bool, Vec<String>)) -> Result<()> {
         let name = self.state.locked().routines.iter().find(|r| r.id == run.routine_id).map(|r| r.name.clone());
         // Marked first: a host that stops in between finds a run the box doesn't hold and queues it again, where
         // an unmarked run its thread already began would be taken for one cut off in the chat.
         self.set_boxed(&hub.store, &run.id, true)?;
         let name = name.unwrap_or_default();
-        crate::chat::work::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name).inspect_err(|_| {
+        crate::chat::work::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name, startup).inspect_err(|_| {
             if let Err(error) = self.set_boxed(&hub.store, &run.id, false) {
                 tracing::warn!(run = run.id, error = format!("{error:#}"), "couldn't queue a run again");
             }
@@ -542,14 +544,18 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
         // start it later. Its routine's schedule has already advanced to its next trigger. The transition is held
         // through admission, so a resume cannot open the gate between this check and the run being placed.
         let _transition = hub.pause.transition();
-        if hub.pause.blocked(&run.bot_id) || hub.paused(&run.bot_id) {
+        // One instant, while this guard is held. A thread this admission starts does not carry run ids:
+        // those belong to the bot, and they are captured when the bot's own actor is spawned.
+        let was_paused = hub.pause.blocked(&run.bot_id) || hub.paused(&run.bot_id);
+        if was_paused {
             hub.routines.cancel_for_pause(&hub.store, &run.bot_id)?;
             continue;
         }
         // A task in the bot's box: it waits its turn there, and the chat stays free.
         // One with a folder of its own too: only a thread can work elsewhere than the bot's folder.
         if crate::chat::work::boxed(&bot.config) || hub.routines.has_folder(&run.routine_id) {
-            hub.routines.put_in_box(hub, &run)?;
+            let startup = (was_paused, Vec::new());
+            hub.routines.put_in_box(hub, &run, startup)?;
             continue;
         }
         if !hub.routines.active.locked().insert(run.bot_id.clone()) {

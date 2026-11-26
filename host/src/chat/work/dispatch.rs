@@ -208,11 +208,17 @@ struct Plan {
 /// Looks over `bot`'s box: waiting tasks go to threads where they can, threads with nothing left end. Run whenever the
 /// box or one of its threads changes.
 pub fn dispatch(hub: &Arc<Hub>, bot: &str) {
-    run(hub, bot, None);
+    run(hub, bot, None, None);
+}
+
+/// [`dispatch`] while the caller holds the pause transition and has already read `startup`.
+/// The thread this pass starts takes that pair. [`dispatch`] captures its own pair instead.
+pub(super) fn dispatch_with_startup(hub: &Arc<Hub>, bot: &str, startup: (bool, Vec<String>)) {
+    run(hub, bot, None, Some(startup));
 }
 
 /// [`dispatch`], from the end of `over`'s turn (the bot's own, or one of its threads').
-pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
+pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>, startup: Option<(bool, Vec<String>)>) {
     let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted).map(|r| r.config) else { return };
     // Paused: the box starts nothing (nothing is spent); resuming looks over it again.
     if hub.paused(bot) {
@@ -228,11 +234,11 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     };
     for (thread, task) in plan.start {
-        begin(hub, bot, &thread, &task, true);
+        begin(hub, bot, &thread, &task, true, startup.clone());
     }
     for (thread, task) in plan.join {
         if let Ok(Some(row)) = hub.store.bot(&thread) {
-            begin(hub, bot, &row.config, &task, false);
+            begin(hub, bot, &row.config, &task, false, None);
         } else {
             host_error!(hub, "a thread that took more work is gone", thread);
         }
@@ -255,7 +261,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         worktree::settle_then(hub, &bot.clone(), &task, left, move |hub| dispatch(hub, &bot));
     }
     if plan.again {
-        return run(hub, bot, over);
+        return run(hub, bot, over, startup);
     }
     hub.emit_bot(bot);
     // What follows the bot from outside its chat counts it working while its box holds work.
@@ -342,7 +348,14 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
 /// prompt and another bot's request go as they are: they say themselves what the turn is and where its reply goes.
 /// Under the box's lock, and only while the task is still on that thread: a Stop since the plan found no turn to stop.
 /// The files a user's task starts with are copied before it.
-fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool) {
+fn begin(
+    hub: &Arc<Hub>,
+    bot: &str,
+    thread: &BotConfig,
+    task: &Task,
+    first: bool,
+    startup: Option<(bool, Vec<String>)>,
+) {
     // Copied before the lock, which every bot's box shares: a copy again is harmless.
     let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
     let posted = {
@@ -351,7 +364,16 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             return;
         }
         if first {
-            hub.spawn_bot(thread.clone());
+            match startup {
+                // The caller already holds the pause transition and captured this pair for a thread.
+                // Taking the lock here never returns. A bot's own ids are captured in `spawn_bot`, not here.
+                Some(startup) if thread.is_thread() => hub.spawn_bot_with(thread.clone(), startup),
+                Some(_) => {
+                    tracing::error!(thread = %thread.id, "refusing to start a bot with a thread's startup pair");
+                    return;
+                }
+                None => hub.spawn_bot(thread.clone()),
+            }
             sources::watch(hub, bot, &thread.id, task);
         }
         let message = match task.source {
@@ -589,7 +611,7 @@ mod tests {
         })
         .expect("stopped");
         let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..cfg };
-        begin(&hub, "b1", &thread, &planned, true);
+        begin(&hub, "b1", &thread, &planned, true, None);
         assert!(!hub.has_actor("thread-1"), "it never starts");
     }
 
@@ -601,7 +623,7 @@ mod tests {
         let waiting = json!({"id": "i1", "title": "Work", "brief": "x", "status": "waiting", "order": 1,
             "createdAt": 0, "worktree": worktree});
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([waiting]).to_string()).expect("saved");
-        run(&hub, "b1", None);
+        run(&hub, "b1", None, None);
         assert_eq!(tasks::load(&hub.store, "b1")[0].status, Status::Waiting);
     }
 

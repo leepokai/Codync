@@ -28,7 +28,11 @@ impl Actor {
             }
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
-            Cmd::WorkflowStep { step_id } => self.enqueue(Queued::WorkflowStep(step_id), done_tx).await,
+            Cmd::WorkflowStep { step_id } => {
+                self.enqueue(Queued::WorkflowStep(step_id), done_tx).await;
+                // The step is in `self.queue` and has not started. A later pause can still see it.
+                super::race_gate::wait("workflow_step_queued").await;
+            }
             Cmd::WorkflowStop { step_id } => self.stop_workflow(&step_id).await,
             Cmd::Watchdog(stuck) => {
                 // A newer look at the thread stands for one still waiting.
@@ -40,7 +44,13 @@ impl Actor {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
                 if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {
-                    self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                    // Already paused: this message was not waiting in the queue. It is refused now.
+                    // One that was queued before the pause stays there (`refuse_paused`).
+                    if self.paused() {
+                        self.cancel_paused_message(&entry_id);
+                    } else {
+                        self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                    }
                 }
             }
             Cmd::Steer { entry_id } => self.steer(entry_id).await,
@@ -305,7 +315,8 @@ impl Actor {
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
         }
-        // Paused: no turn of its starts, so nothing is spent. What waits on it hears so now (see `refuse_paused`).
+        // Paused: no turn starts, so nothing is spent. What is already queued stays for resume, except the
+        // kinds `refuse_paused` drops. A user message that arrives while paused never reaches this queue.
         if self.paused() {
             self.refuse_paused();
             return;
@@ -328,8 +339,21 @@ impl Actor {
                                 self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx, epoch).await;
                             if let Err(error) = result {
                                 self.routine_deadline = None;
-                                self.hub.workflows.finish(&self.hub, &id, None, Some(format!("{error:#}")), false);
+                                // Admission rejected the carried epoch. Stopping the step is the same end as
+                                // `WorkflowStop`. Recording the error would mark it failed, and reading a fresh
+                                // epoch here would reopen the race the carried epoch closes.
+                                let paused = error.to_string() == super::PAUSED_BEFORE_PROMPT;
+                                self.hub.workflows.finish(
+                                    &self.hub,
+                                    &id,
+                                    None,
+                                    (!paused).then(|| format!("{error:#}")),
+                                    paused,
+                                );
                                 self.active_workflow = None;
+                                if paused {
+                                    self.start_error(error, done_tx).await;
+                                }
                             } else if let Err(error) = crate::workflows::agent_mark_started(&self.hub, &id) {
                                 tracing::warn!(error = format!("{error:#}"), "couldn't mark a workflow step started");
                             }
@@ -534,15 +558,13 @@ impl Actor {
                 continue;
             };
             let mut batch = Vec::new();
-            let mut epoch = u64::MAX;
             while self
                 .queue
                 .front()
                 .is_some_and(|queued| matches!(&queued.item, Queued::User { lane: l, .. } if l == &lane))
             {
-                let Some(Admitted { item, epoch: queued }) = self.queue.pop_front() else { break };
+                let Some(Admitted { item, .. }) = self.queue.pop_front() else { break };
                 let Queued::User { entry_id, text, .. } = item else { break };
-                epoch = epoch.min(queued);
                 batch.push((entry_id, text));
             }
             let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
@@ -552,6 +574,11 @@ impl Actor {
             if lane == main {
                 self.handoff = self.take_handoff().or_else(|| self.handoff.take());
             }
+            // The generation stored at enqueue is the one from before a pause, and admission would reject it
+            // after resume. This start is the actor deciding to run the message now, so it reads the generation
+            // here, as a task report does. A pause during setup still rejects the prompt: the read is not repeated
+            // at the write.
+            let epoch = self.hub.pause.epoch(self.cfg.owner());
             if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx, epoch).await {
                 self.start_error(e, done_tx).await;
             }
@@ -575,14 +602,32 @@ impl Actor {
         }
     }
 
-    /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. The user's messages go out
-    /// cancelled with a notice (they don't wait to run on a later resume), a bot's request ends as not started,
-    /// replies go to their notices, and a room's turn is dropped with why. Host turns (a task's report, the
-    /// watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due routine run is
-    /// cancelled instead (see below): its schedule continues from the next trigger after the resume.
+    /// A user message that reached an already-paused bot. It was not waiting in the queue, so it does not run
+    /// on resume. The chat keeps it, marked cancelled, with the same notice as before.
+    fn cancel_paused_message(&mut self, entry_id: &str) {
+        if let Some(mut entry) = self.hub.store.entry(entry_id) {
+            entry.data["status"] = "cancelled".into();
+            self.hub.set_entry(entry_id, &entry.data);
+        }
+        self.add_between_turns(EntryKind::Notice, &json!({"text": PAUSED_NOTICE, "style": "info"}));
+    }
+
+    /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. A user message already in
+    /// this queue keeps waiting and runs when the bot is resumed. A message that arrives while paused is refused
+    /// at `Cmd::Send` instead. A bot's request ends as not started, replies go to their notices, a room's turn is
+    /// dropped with why, a workflow step is stopped, and a call's opening is not spoken. Host turns (a task's
+    /// report, the watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due
+    /// routine run is cancelled instead (see below): its schedule continues from the next trigger after the resume.
     pub(super) fn refuse_paused(&mut self) {
         let (kept, refused): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queue).into_iter().partition(|q| {
-            !matches!(&q.item, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
+            !matches!(
+                &q.item,
+                Queued::BotRequest(_)
+                    | Queued::BotReply(_)
+                    | Queued::Group(_)
+                    | Queued::WorkflowStep(_)
+                    | Queued::Prompt { .. }
+            )
         });
         // Only the routine runs still in this queue. A run admitted after the resume is not one of them, so a late
         // pause notification cannot cancel it.
@@ -599,16 +644,8 @@ impl Actor {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
         }
         self.queue = kept.into_iter().collect();
-        let mut told = false;
         for item in refused {
             match item.item {
-                Queued::User { entry_id, .. } => {
-                    if let Some(mut e) = self.hub.store.entry(&entry_id) {
-                        e.data["status"] = "cancelled".into();
-                        self.hub.set_entry(&entry_id, &e.data);
-                    }
-                    told = true;
-                }
                 Queued::BotRequest(request) => {
                     request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
                 }
@@ -616,11 +653,15 @@ impl Actor {
                 Queued::Group(turn) => {
                     let _ = turn.reply.send(Err(anyhow!("this bot is paused")));
                 }
+                // The same end as `stop` and `WorkflowStop`: stopped, not failed at the next admission.
+                Queued::WorkflowStep(step) => {
+                    self.hub.workflows.finish(&self.hub, &step, None, None, true);
+                }
+                // A call opening speaks on the call. Stop drops one that is still queued; a pause does too,
+                // so it is not started later with the epoch from before the pause.
+                Queued::Prompt { .. } => {}
                 _ => unreachable!("only the queued kinds above are refused"),
             }
-        }
-        if told {
-            self.add_between_turns(EntryKind::Notice, &json!({"text": PAUSED_NOTICE, "style": "info"}));
         }
     }
 

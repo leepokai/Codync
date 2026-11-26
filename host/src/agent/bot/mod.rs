@@ -93,10 +93,16 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
-    // Read before the task is spawned. A resume that lands before `run` starts must not reopen cut-off work:
-    // `run` decides from this value, not from the flag it would see later.
+    // One pause transition for the flag and the active runs. Reading the ids later, inside `run`, would
+    // cancel a routine admitted after a resume that landed before the task started. `run` decides from
+    // this pair, not from the flag or the run list it would see later.
     let owner = cfg.owner().to_owned();
-    let was_paused = hub.paused(&owner) || hub.pause.blocked(&owner);
+    let startup = {
+        let _transition = hub.pause.transition();
+        let was_paused = hub.paused(&owner) || hub.pause.blocked(&owner);
+        let runs = if was_paused && !cfg.is_thread() { hub.routines.active_ids(&cfg.id) } else { Vec::new() };
+        (was_paused, runs)
+    };
     let actor = Actor {
         hub,
         base,
@@ -161,7 +167,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
     };
-    let task = tokio::spawn(actor.run(rx, interrupted, was_paused));
+    let task = tokio::spawn(actor.run(rx, interrupted, startup.0, startup.1));
     BotHandle { tx, task }
 }
 
@@ -441,8 +447,16 @@ impl Actor {
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
-    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>, was_paused: bool) {
-        // `was_paused` was read in `spawn`, before this task ran. The gate only lets a test hold that gap open.
+    /// `was_paused` and `paused_runs` were read together in `spawn`, before this task ran.
+    async fn run(
+        mut self,
+        mut rx: mpsc::UnboundedReceiver<Cmd>,
+        interrupted: Option<Lane>,
+        was_paused: bool,
+        paused_runs: Vec<String>,
+    ) {
+        // The gate only lets a test hold the gap after that read and before this branch. The branch does not
+        // read `paused()` again: a resume in the gap must not reopen cut-off work, and must not change the ids.
         race_gate::wait("before_startup_pause_read").await;
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
@@ -450,7 +464,7 @@ impl Actor {
             // Paused while the host was down: nothing resumes now (that would spend). A thread's cut-off task is
             // settled here: one of the bot's own waits again and starts only after an explicit resume, while a
             // routine run or request ends as interrupted. The bot's own run that was going says interrupted, and
-            // every active routine run is cancelled as a pause while running does.
+            // the runs captured with the pause flag are cancelled. A run admitted after the resume is not one.
             self.set_inflight(false);
             if self.cfg.is_thread() {
                 self.turn_over(crate::chat::work::Outcome::Failed(
@@ -471,7 +485,7 @@ impl Actor {
                         tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
                     }
                 }
-                if let Err(error) = self.hub.routines.cancel_for_pause(&self.hub.store, &self.cfg.id) {
+                if let Err(error) = self.hub.routines.cancel_ids_for_pause(&self.hub.store, &paused_runs) {
                     tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
                 }
             }

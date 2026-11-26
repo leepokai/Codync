@@ -282,12 +282,44 @@ impl Routines {
         self.cancel_queued(store, &ids)
     }
 
+    /// Active run ids for `bot`. Read in the same pause transition as the pause flag, so a resume cannot
+    /// admit a run between the two.
+    pub fn active_ids(&self, bot: &str) -> Vec<String> {
+        self.state
+            .locked()
+            .runs
+            .iter()
+            .filter(|run| run.bot_id == bot && run.status.active())
+            .map(|run| run.id.clone())
+            .collect()
+    }
+
     /// A pause is not the bot's Stop: it ends every run of the bot, including a run working in a box thread and a
     /// webhook delivery whose sender was already acknowledged, and a run that came due while it is paused. The
     /// routine's schedule keeps its next trigger, so resuming starts nothing from this pause.
     pub fn cancel_for_pause(&self, store: &Store, bot: &str) -> Result<()> {
         self.change(store, |s| {
             for run in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Ends the named runs the way [`Self::cancel_for_pause`] does. A run that is not named stays, including one
+    /// admitted after the ids were read.
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|run| ids.iter().any(|id| id == &run.id) && run.status.active()) {
                 let running = run.status != Status::Pending;
                 cancel_run(run);
                 run.not_before = None;

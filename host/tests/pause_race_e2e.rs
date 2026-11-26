@@ -303,3 +303,167 @@ async fn a_turn_cut_off_while_paused_is_not_resumed_if_resume_wins_startup() {
     let leaked = resumed_within(&host, &bot, 15).await;
     assert!(leaked.is_none(), "a turn cut off while paused was resumed because resume won startup: {leaked:?}");
 }
+
+/// A workflow step queued behind a running turn is stopped when the bot is paused. It is not
+/// started after the resume, and it is not recorded as a failure.
+#[tokio::test]
+async fn a_workflow_step_queued_before_a_pause_ends_cancelled() {
+    let gates = Gates::new();
+    let host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+
+    host.call("send", json!({"botId": bot, "text": "HOLD:chat", "clientNonce": "hold-chat"})).await;
+    wait_for("the held turn's prompt", async || prompt_blob(&host).contains("HOLD:chat")).await;
+
+    let created =
+        host.call("createWorkflow", json!({"title": "Pause step", "graph": {"nodes": [], "edges": []}})).await;
+    let workflow = created["workflow"]["id"].as_str().unwrap();
+    let graph = json!({
+        "nodes": [{
+            "id": "a",
+            "kind": "agent",
+            "at": {"x": 80, "y": 80},
+            "fields": {"botId": bot, "task": "WORKFLOW_SHOULD_NOT_RUN"}
+        }],
+        "edges": []
+    });
+    host.call(
+        "saveWorkflowGraph",
+        json!({"id": workflow, "baseRevision": created["workflow"]["revision"], "graph": graph}),
+    )
+    .await;
+
+    gates.arm("workflow_step_queued");
+    let run = host.call("startWorkflowRun", json!({"id": workflow, "requestId": "pause-step-1"})).await;
+    let run_id = run["run"]["id"].as_str().unwrap().to_owned();
+    gates.entered("workflow_step_queued").await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    gates.release("workflow_step_queued");
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let detail = loop {
+        let detail = host.call("workflowRun", json!({"runId": run_id})).await;
+        let status = detail["run"]["steps"]
+            .as_array()
+            .and_then(|steps| steps.iter().find(|step| step["kind"] == "agent"))
+            .and_then(|step| step["status"].as_str())
+            .unwrap_or("");
+        if status != "running" || Instant::now() >= deadline {
+            break detail;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let step = detail["run"]["steps"]
+        .as_array()
+        .and_then(|steps| steps.iter().find(|step| step["kind"] == "agent"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert_eq!(
+        step["status"], "stopped",
+        "a workflow step queued before the pause failed at admission instead of being cancelled: {detail}"
+    );
+    assert!(step["error"].is_null(), "a cancelled workflow step carries an error: {step}");
+    assert_eq!(detail["run"]["status"], "stopped", "{detail}");
+    assert!(!prompt_blob(&host).contains("WORKFLOW_SHOULD_NOT_RUN"), "a cancelled workflow step was sent to the agent");
+}
+
+/// The actor was spawned paused and has not reached its startup branch. A resume and a new routine
+/// land in that gap. Startup must not cancel the new run, and it must not resume the cut-off turn.
+#[tokio::test]
+async fn a_routine_admitted_during_paused_startup_is_not_cancelled() {
+    let gates = Gates::new();
+    let mut host = gates.host().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.works_in_chat(&bot).await;
+    host.reply(&bot, "hello").await;
+    let fresh = routine(&host, &bot, "Fresh", "PASS").await;
+
+    gates.arm("after_inflight_marked");
+    host.call("send", json!({"botId": bot, "text": "CUT_OFF_TURN", "clientNonce": "cut-off"})).await;
+    gates.entered("after_inflight_marked").await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+
+    gates.arm("before_startup_pause_read");
+    host.crash();
+    gates.release("after_inflight_marked");
+    host.restart(|_| {}).await;
+    gates.entered("before_startup_pause_read").await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    let started = host.call("runRoutine", json!({"botId": bot, "id": fresh})).await;
+    let run_id = started["run"]["id"].as_str().unwrap().to_owned();
+    gates.release("before_startup_pause_read");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let run = loop {
+        let run = host.call("routines", json!({"botId": bot})).await["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == run_id)
+            .cloned()
+            .unwrap_or(Value::Null);
+        if run["status"] != "pending" || Instant::now() >= deadline {
+            break run;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_ne!(run["status"], "cancelled", "a routine admitted after resume was cancelled by paused startup: {run}");
+    let leaked = resumed_within(&host, &bot, 5).await;
+    assert!(leaked.is_none(), "paused startup resumed the cut-off turn because resume won the branch: {leaked:?}");
+}
+
+fn user_status(history: &Value, text: &str) -> Option<String> {
+    history["entries"].as_array()?.iter().find_map(|entry| {
+        (entry["kind"] == "user" && entry["data"]["text"] == text)
+            .then(|| entry["data"]["status"].as_str().unwrap_or("").to_owned())
+    })
+}
+
+/// A user message queued behind a running turn is delivered after resume.
+/// A message sent while the bot is paused stays cancelled.
+#[tokio::test]
+async fn a_user_message_queued_before_a_pause_is_delivered_on_resume() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+
+    host.call("send", json!({"botId": bot, "text": "HOLD:chat", "clientNonce": "hold-chat"})).await;
+    wait_for("the held turn's prompt", async || prompt_blob(&host).contains("HOLD:chat")).await;
+
+    host.call("send", json!({"botId": bot, "text": "QUEUED_BEFORE_PAUSE", "clientNonce": "queued-before"})).await;
+    wait_for("the second message to queue behind the turn", async || {
+        let history = host.call("history", json!({"botId": bot})).await;
+        user_status(&history, "QUEUED_BEFORE_PAUSE").as_deref() == Some("queued")
+    })
+    .await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    std::fs::write(host.workspace(&bot).join("release-chat"), "").unwrap();
+    wait_for("the paused bot to be idle", async || common::bot(&host.snapshot().await, &bot)["status"] == "idle").await;
+
+    host.call("send", json!({"botId": bot, "text": "WHILE_PAUSED", "clientNonce": "while-paused"})).await;
+    wait_for("a message sent while paused to be cancelled", async || {
+        let history = host.call("history", json!({"botId": bot})).await;
+        user_status(&history, "WHILE_PAUSED").as_deref() == Some("cancelled")
+    })
+    .await;
+
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    wait_for("the message queued before the pause to reach the agent", async || {
+        prompt_blob(&host).contains("QUEUED_BEFORE_PAUSE")
+    })
+    .await;
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_ne!(
+        user_status(&history, "QUEUED_BEFORE_PAUSE").as_deref(),
+        Some("cancelled"),
+        "a message queued before the pause was cancelled instead of delivered: {history}"
+    );
+    let prompts = prompt_blob(&host);
+    assert!(
+        !prompts.contains("WHILE_PAUSED"),
+        "a message sent while paused was delivered after resume: {}",
+        around(&prompts, "WHILE_PAUSED")
+    );
+}

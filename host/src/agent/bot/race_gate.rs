@@ -14,25 +14,39 @@
 //! - `before_boxed_request_insert` — the boxed-request arm passed the epoch check and has not
 //!   called `work::add_request`. Pause cleanup can run in that gap.
 //! - `routine_queued` — a `Queued::Routine` sits behind a running turn.
+//! - `workflow_step_queued` — a `Queued::WorkflowStep` sits behind a running turn.
 //! - `before_refuse_paused` — a pause notification has cancelled the running turn and has not
 //!   yet refused the queue. A resume and a fresh `runRoutine` can land first.
 //! - `before_fallback` — a turn failed and `fall_back` has not looked at `stop_requested`.
 //! - `after_inflight_marked` — `start_turn` has recorded `turn.inflight` and has not returned
 //!   to the command loop, so a pause notification stays unread.
-//! - `before_startup_pause_read` — a restarted actor has not yet read `paused()`.
+//! - `before_startup_pause_read` — a restarted actor has the pause snapshot from `spawn` and has not
+//!   yet taken the paused or not-paused branch.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// How long an armed gate may hold the actor. A forgotten hold file must not block a pause forever.
+const HOLD_LIMIT: Duration = Duration::from_secs(15);
 
 fn dir() -> Option<&'static PathBuf> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
     DIR.get_or_init(|| std::env::var_os("CODYNC_RACE_GATE_DIR").map(PathBuf::from)).as_ref()
 }
 
-/// Blocks while `<name>.hold` exists in the gate directory. No-op when the directory is unset
-/// or that file is absent.
+/// Blocks while `<name>.hold` exists in the gate directory. No-op in a release build, when the
+/// directory is unset, or when that file is absent. A hold that outlives [`HOLD_LIMIT`] is logged
+/// and the actor continues.
 pub(crate) async fn wait(name: &str) {
+    #[cfg(debug_assertions)]
+    wait_armed(name).await;
+    #[cfg(not(debug_assertions))]
+    let _ = name;
+}
+
+#[cfg(debug_assertions)]
+async fn wait_armed(name: &str) {
     let Some(dir) = dir() else { return };
     let hold = dir.join(format!("{name}.hold"));
     if !hold.exists() {
@@ -40,7 +54,12 @@ pub(crate) async fn wait(name: &str) {
     }
     let entered = dir.join(format!("{name}.entered"));
     let _ = std::fs::write(&entered, "1");
+    let deadline = Instant::now() + HOLD_LIMIT;
     while hold.exists() {
+        if Instant::now() >= deadline {
+            tracing::warn!(gate = name, "a pause race gate was still held; continuing");
+            break;
+        }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     let _ = std::fs::remove_file(&entered);

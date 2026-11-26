@@ -572,7 +572,7 @@ async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
     };
     // Use the production constructor: later Session fields keep their production defaults too.
     let (session, _) =
-        f.hub.network.sessions.register(&f.hub.store, &caller, None, || Ok("local-agent".into())).unwrap();
+        f.hub.network.sessions.register(&f.hub.store, &caller, None, None, || Ok("local-agent".into())).unwrap();
     let source = f.hub.store.bot("b").unwrap().unwrap().config;
     let err = remote::to_local_session(&f.hub, &source, "b", &session, "blocked").unwrap_err();
     assert!(err.to_string().contains("the lead was notified"), "{err}");

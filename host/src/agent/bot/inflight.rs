@@ -49,6 +49,14 @@ pub(crate) fn resumable(store: &Store, bot: &str) -> bool {
     Inflight::load(store, bot).is_some_and(|turn| now_ms() - turn.started < STALE_RESUME_MS)
 }
 
+/// Drops the mark, so a later start of `bot` does not resume the turn the last process cut off.
+pub(crate) fn clear(store: &Store, bot: &str) {
+    let (key, mark) = Inflight::row(bot, None);
+    if let Err(error) = store.kv_set(&key, &mark) {
+        tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a cut-off turn's resume mark");
+    }
+}
+
 /// A cut-off turn older than this isn't resumed.
 const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
 

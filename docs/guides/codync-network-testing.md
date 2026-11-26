@@ -79,12 +79,17 @@ host/target/debug/codync-network --dir ~/codync-net-mac invite          # codync
 ~/codync-target-network/debug/codync-network --dir ~/codync-net-vm join 'codync-network:…' lima
 ```
 
-Then, from either side:
+Then check both directions:
 
 ```sh
-codync-network --dir <dir> peers                         # both computers listed, one online
-codync-network --dir <dir> send terminal@desk hello      # delivered to terminal@desk
+# Mac
+host/target/debug/codync-network --dir ~/codync-net-mac peers                    # both computers listed, one online
+host/target/debug/codync-network --dir ~/codync-net-mac send terminal@lima hello  # delivered in the VM
+# VM
+~/codync-target-network/debug/codync-network --dir ~/codync-net-vm send terminal@desk hello  # delivered on the Mac
 ```
+
+Below, `codync-network --dir <dir>` stands for the side's own binary and folder as above.
 
 Use `--connector` to choose how the computers reach each other:
 
@@ -99,7 +104,7 @@ code. For a guaranteed LAN, Lima's shared-network setup (`socket_vmnet`) is the 
 
 ## Things to check
 
-- **Away computer → queued.** Stop the VM daemon, send from the Mac, and check the letter waits in the Mac's outbox
+- **Away computer → queued.** Stop the VM daemon, send `terminal@lima` from the Mac, and check the letter waits in the Mac's outbox
   (up to a day). Start the VM daemon again and it arrives.
 - **Budgets.** Five messages in a burst, then one every 2 minutes per pair of agents. The same words twice within
   10 minutes are refused. A refused send is the expected result, not a bug.

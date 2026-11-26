@@ -20,7 +20,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } })
 
 const { HostClient, parseEvent } = await import('../client/host-client.ts')
-const { speaksThreads } = await import('@shared/old-host')
+const { pauseEcho, speaksThreads } = await import('@shared/old-host')
 
 /** A client of a host at `version` that answers each method with `answers[method]`, and what it was sent. */
 async function clientOf(version: string, answers: Record<string, unknown> = {}) {
@@ -52,6 +52,19 @@ async function callAll(client: InstanceType<typeof HostClient>) {
   await client.call('updateBot', { id: 'b', maxThreads: 2, threadWorktrees: false })
   await client.call('send', { botId: 'b', text: 'to the chat' })
 }
+
+test("an older host's updateBot that omits paused did not pause the bot", () => {
+  // Success with the field left out: the host ignored it. Missing reads as not paused, and it is not an applied pause.
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', name: 'Bot' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', name: 'Bot' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: false } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: true } }), { applied: true, paused: true })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', paused: false } }), { applied: true, paused: false })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', paused: true } }), { applied: false, paused: true })
+  assert.deepEqual(pauseEcho(true, {}), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: 'yes' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, null), { applied: false, paused: false })
+})
 
 test('the first host that says task and thread is 2.51.0; one not known yet counts as new', () => {
   assert.equal(speaksThreads('2.51.0'), true)

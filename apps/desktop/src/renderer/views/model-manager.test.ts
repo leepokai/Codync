@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, loginProfileFor, needsCatalog, pausePatch, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -271,6 +271,21 @@ test('stepSize steps only the axis the handle advertises, toward the drag direct
   // Corners step both axes toward their own outside.
   assert.deepEqual(stepSize('corner-br', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
   assert.deepEqual(stepSize('corner-bl', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
+})
+
+test('pausePatch sends only the id and the flag', () => {
+  assert.deepEqual(pausePatch('b1', true), { id: 'b1', paused: true })
+  assert.deepEqual(pausePatch('b2', false), { id: 'b2', paused: false })
+  assert.deepEqual(Object.keys(pausePatch('b1', true)).sort(), ['id', 'paused'])
+})
+
+test('applyTargets gates a bulk pause to what the filter shows, exactly like Apply', () => {
+  const alpha = item('mac', 'Mac', 'b1', 'Alpha')
+  const beta = item('mac', 'Mac', 'b2', 'Beta')
+  const t = applyTargets([alpha, beta], [beta], new Set(['mac/b1', 'mac/b2']))
+  assert.deepEqual(t.chosen.map((i) => i.bot.name), ['Beta'])
+  assert.equal(t.hiddenCount, 1)
+  assert.equal(t.totalChecked, 2)
 })
 
 test('rowModelPath shows agent->model, display name when known, nothing when unreadable', () => {

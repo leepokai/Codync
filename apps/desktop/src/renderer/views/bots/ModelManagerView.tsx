@@ -16,9 +16,10 @@ import { botItems } from '../search-items'
 import { ModelPicker } from './ModelPicker'
 import { useAgentModels } from './agent-models'
 import { agentModelsRequest } from './agent-models-query.ts'
+import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, needsCatalog, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyPatch, applyTargets, clampSheetSize, defaultSheetSize, loginProfileFor, needsCatalog, pausePatch, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -208,6 +209,57 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     else setChecked(new Set())
   }
 
+  // Pause or resume every checked bot the filter still shows. The patch is `{ id, paused }` only.
+  // Trust the echo: a host that ignores the field still returns success, and that is not Paused.
+  const setPausedAll = async (paused: boolean) => {
+    const chosen = targets.chosen
+    if (!chosen.length || busy.current) return
+    const myRun = run.current
+    busy.current = true
+    setApplying(true)
+    setOutcomes({})
+    let applied = 0
+    let failed = 0
+    try {
+      for (const item of chosen) {
+        if (!alive.current || run.current !== myRun) return
+        const key = refKey(item.ref)
+        try {
+          await item.store
+            .ready()
+            .then((client) => {
+              if (!alive.current || run.current !== myRun) return 'skipped' as const
+              return client.call('updateBot', pausePatch(item.ref.botId, paused)).then((res) => {
+                if (!alive.current || run.current !== myRun) return 'skipped' as const
+                return pauseEcho(paused, res).applied ? 'applied' as const : 'ignored' as const
+              })
+            })
+            .then((result) => {
+              if (result === 'skipped') return
+              if (result === 'applied') {
+                applied++
+                if (alive.current && run.current === myRun) {
+                  setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr(paused ? 'Paused' : 'Resumed') } }))
+                }
+                return
+              }
+              failed++
+              if (alive.current && run.current === myRun) {
+                setOutcomes((o) => ({ ...o, [key]: { ok: false, text: tr('Not applied on this computer') } }))
+              }
+            })
+        } catch (e) {
+          failed++
+          if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
+        }
+      }
+    } finally {
+      analytics.track({ event: 'bot_manager_paused', requested: chosen.length, applied, failed, paused })
+      busy.current = false
+      setApplying(false)
+    }
+  }
+
   const apply = async () => {
     // Only the checked bots the filter still shows (pinned by applyTargets' tests): hidden
     // checked bots are left exactly as they are, so nothing the user cannot see is written.
@@ -323,12 +375,14 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       <HStack gap={8} className="model-manager-tools">
         <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>
+        <Button onClick={() => void setPausedAll(true)} disabled={!canApply}>{tr('Pause checked')}</Button>
+        <Button onClick={() => void setPausedAll(false)} disabled={!canApply}>{tr('Resume checked')}</Button>
         <Spacer />
         {targets.totalChecked === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : <Text size="caption" tone="secondary">{tr('Selected: {n}').replace('{n}', () => String(targets.totalChecked))}</Text>}
         <Button onClick={apply} disabled={!canApply}>{tr('Apply')}</Button>
       </HStack>
       {targets.hiddenCount > 0 ? (
-        <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (unchanged by Apply)').replace('{n}', () => String(targets.hiddenCount))}</Text>
+        <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (no action touches them)').replace('{n}', () => String(targets.hiddenCount))}</Text>
       ) : null}
       <div className="palette-list model-manager-list">
         {shown.map((item) => {
@@ -345,6 +399,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
               <AvatarWithStatus bot={item.bot} members={isGroup(item.bot) ? item.store.members(item.bot) : []} size={32} />
               <VStack as="span" gap={2} grow>
                 <Text size="body" tone="text" truncate>{item.bot.name}</Text>
+                {item.bot.paused ? <Text size="caption" tone="attention" truncate>{tr('Paused')}</Text> : null}
                 {modelPath ? <Text size="caption" tone="secondary" truncate className="model-manager-model-path">{modelPath}</Text> : null}
                 {line ? <Text size="subheadline" tone="secondary" truncate>{line}</Text> : null}
               </VStack>

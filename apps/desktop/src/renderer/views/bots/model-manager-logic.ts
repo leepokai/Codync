@@ -127,6 +127,12 @@ export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
 }
 
 /**
+ * The patch a bulk pause or resume writes for one bot: `{ id, paused }` only, so a host that
+ * understands the field keeps every other setting. A host that does not is answered by `pauseEcho`.
+ */
+export const pausePatch = (botId: string, paused: boolean) => ({ id: botId, paused })
+
+/**
  * The bot's current agent -> model path for the row's small line, the way Ryan asked to see it:
  * `opencode->open-design/deepseek 4.1 flash`. The agent shows the display name the picker knows
  * (else its raw id); the model shows its id. A custom-command bot or one whose model isn't

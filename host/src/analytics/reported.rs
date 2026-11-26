@@ -205,6 +205,13 @@ pub enum Reported {
         applied: u32,
         failed: u32,
     },
+    /// The Bot Manager paused or resumed the bots the user checked, all at once (desktop).
+    BotManagerPaused {
+        requested: u32,
+        applied: u32,
+        failed: u32,
+        paused: bool,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -721,6 +728,10 @@ mod tests {
             (
                 json!({"event": "model_manager_applied", "app": "desktop", "requested": 3, "applied": 2, "failed": 1}),
                 Event::ModelManagerApplied,
+            ),
+            (
+                json!({"event": "bot_manager_paused", "app": "desktop", "requested": 3, "applied": 2, "failed": 1, "paused": true}),
+                Event::BotManagerPaused,
             ),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),

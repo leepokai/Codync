@@ -9,7 +9,8 @@ phone's bot editor already picks a model per bot (see *Notes*).
 The sliders button at the top of the bot list, left of the computer filter (`ChatWindow`'s sidebar
 header); in a narrow sidebar, the same sliders button sits in the rail actions under the roster. It
 opens a sheet, top to bottom: the agent and model picker, a search field over the bots, `Select all`
-/ `Unselect all`, the bot list with a checkbox on each row, and `Apply`.
+/ `Unselect all`, `Pause checked` / `Resume checked`, the bot list with a checkbox on each row, and
+`Apply`.
 
 ## Choosing what to apply
 
@@ -24,7 +25,8 @@ The list is every bot on every computer the account reaches — the sidebar's co
 computers and bots hidden from the roster don't limit it; a bot's computer is named under it when
 the account has more than one. Groups are not listed: they carry members, not a model of their own.
 The search field filters by name, description and last message, reusing the sidebar search's matcher
-(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing.
+(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing. A bot whose record
+carries `paused` says `Paused` under its name.
 
 ## Apply
 
@@ -69,12 +71,22 @@ costs one read per distinct login plus the saves. Choosing the agent's default m
 settings skips the catalog checks and is allowed on every computer. Settings chosen for that
 default are checked on each computer, the same way a named model's settings are.
 
+## Pause and resume in bulk
+
+`Pause checked` and `Resume checked` act on the same checked bots Apply does — only the checked
+bots the filter still shows, one at a time, each as `{ id, paused }` and nothing else. This sheet
+does not add the host's pause field; that stays with the pause change. A host that does not echo
+`paused` still returns success, and the row does not say paused: it says *Not applied on this
+computer* and the call counts as failed. A host that echoes `paused` equal to what was asked shows
+*Paused* or *Resumed*.
+
 ## Analytics
 
 One `model_manager_applied` per Apply — including a run that ended early (sheet closed, pick
 changed): `requested`, `applied` and `failed` counts. `failed` counts the catalog skips, the
 unverifiable rows and the save errors; rows the run never reached are the remainder
-(`requested - applied - failed`) ([analytics events](../reference/analytics-events.md)).
+(`requested - applied - failed`). One `bot_manager_paused` per bulk pause or resume, with the same
+counts plus `paused` (true when the action paused) ([analytics events](../reference/analytics-events.md)).
 
 ## Notes
 

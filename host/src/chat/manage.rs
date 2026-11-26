@@ -398,7 +398,10 @@ fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotCo
     let mut moves: Vec<String> = Vec::new();
     let mut props = Map::new();
     props.insert("actorBotId".into(), source.id.clone().into());
-    props.insert("actorKind".into(), "lead".into());
+    // **Manage the team** can be on for any bot, and a manager can create another, so a change is not always the
+    // lead's. The role comes from the actor's own config, never from the call site: only the computer's lead
+    // (`BotConfig::lead`, see `chat::lead`) is a lead; every other manager is a manager.
+    props.insert("actorKind".into(), if source.lead { "lead" } else { "manager" }.into());
     props.insert("targetBotId".into(), after.id.clone().into());
     // The name stays in the local notice: analytics carries feature use, never content.
     props.insert("approvalMode".into(), mode.into());

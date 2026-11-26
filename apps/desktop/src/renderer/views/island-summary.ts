@@ -4,7 +4,7 @@ import { folderName, isGroup, isWorking, type Bot } from '@shared/models'
 import { outsideStatus } from '@shared/work'
 import { messagePreview } from '../lib/message-preview'
 import { useModels } from '../lib/observable'
-import { refKey, type AppModel, type RosterItem } from '../store/app-model'
+import { parseRef, refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './chat/PermissionCard'
@@ -29,8 +29,13 @@ export function useIslandSummary(app: AppModel) {
       const summary = islandSummary(app)
       const json = JSON.stringify(summary)
       if (json === sent) return
-      sent = json
       window.codync.island.setSummary(summary)
+      sent = json
+      for (const { ref, completion } of summary.bots) {
+        if (!completion) continue
+        const bot = parseRef(ref)
+        if (bot) app.store(bot.computerId)?.consumeCompletion(bot.botId, completion.id)
+      }
     }, 150)
   })
 }

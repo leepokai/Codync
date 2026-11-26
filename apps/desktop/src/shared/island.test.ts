@@ -82,6 +82,21 @@ test('a stopped turn stays quiet even after sending a reply, and the next succes
   assert.deepEqual(transitions(states, finished), [{ kind: 'finished', ref: 'a', text: 'New reply' }])
 })
 
+test('a queued turn failing in the same summary supersedes the earlier completion', () => {
+  const completion = { id: 'e1', text: 'Earlier reply' }
+  const failed = [bot('a', 'error', false, { completion, error: 'Queued turn failed', errorId: 'err-new' })]
+  for (const previous of ['working', 'idle'] as const) {
+    const states = nextTurnStates(null, [bot('a', previous, false, { completion: null, errorId: 'err-old' })])
+    assert.deepEqual(transitions(states, failed), [{ kind: 'failed', ref: 'a', text: 'Queued turn failed' }])
+    const failedStates = nextTurnStates(states, failed)
+    assert.deepEqual(transitions(failedStates, failed), [], 'the same failure is shown once')
+    const working = [bot('a', 'working', false, { completion, errorId: 'err-new' })]
+    assert.deepEqual(transitions(failedStates, working), [], 'the superseded reply stays quiet')
+    const next = [bot('a', 'idle', false, { completion: { id: 'e2', text: 'New reply' } })]
+    assert.deepEqual(transitions(nextTurnStates(failedStates, working), next), [{ kind: 'finished', ref: 'a', text: 'New reply' }])
+  }
+})
+
 test('coalescing adjacent own-chat and delegated turns uses the latest turn outcome', () => {
   const ownWorking = nextTurnStates(null, [bot('a', 'working', false, { completion: null })])
   const ownReply = { id: 'e1', text: 'Earlier own-chat reply' }

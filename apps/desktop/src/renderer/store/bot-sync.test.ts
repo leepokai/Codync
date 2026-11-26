@@ -70,11 +70,19 @@ test('only a changed completion received live can reach the island', () => {
   assert.equal(update(13, 'live'), 'live')
   assert.equal(update(14, 'live'), 'live', 'metadata before the next summary keeps the live completion')
   assert.equal(update(15, null), 'live', 'a summary during the next turn can still deliver the live completion')
+  store.consumeCompletion('a', 'older')
+  assert.equal(update(16, null), 'live', 'consuming an older id keeps the pending reply')
+  store.consumeCompletion('a', 'live')
+  assert.equal(update(17, null), null)
+  assert.equal(update(18, 'before-delete'), 'before-delete')
+  receive({ type: 'botDeleted', id: 'a', rev: 19 })
+  assert.equal(update(20, null), null, 'deletion clears the pending reply')
+  assert.equal(update(21, 'before-reconnect'), 'before-reconnect')
 
-  connect(20)
-  assert.equal(update(20, 'while-offline'), null)
-  assert.equal(update(21, 'while-offline'), null)
-  assert.equal(update(22), undefined, 'an older host still uses the transcript fallback for live updates')
+  connect(25)
+  assert.equal(update(25, 'while-offline'), null)
+  assert.equal(update(26, 'while-offline'), null)
+  assert.equal(update(27), undefined, 'an older host still uses the transcript fallback for live updates')
   store.retire()
 })
 
@@ -103,16 +111,18 @@ test('a live reply appears once when the next turn starts between island summari
   const sample = () => {
     const bot = store.bots.get('a')!
     const id = store.completionFor(bot)
+    const completion = typeof id === 'string' ? islandReply(store.allEntries(bot.id), undefined, id) : id
     const summary: IslandSummary = {
       bots: [{
         ref: 'c1/a', name: 'Alpha', shape: 'blob', color: 'blue', chat: bot.status, status: bot.status,
         away: Boolean(bot.workingChat && bot.workingChat !== bot.id),
-        completion: typeof id === 'string' ? islandReply(store.allEntries(bot.id), undefined, id) : id,
+        completion,
         backend: 'Custom', folder: '', detail: '', steps: [], error: null,
       }],
       permissions: [], usage: [],
     }
     ;(island as unknown as { apply(summary: IslandSummary): void }).apply(summary)
+    if (completion) store.consumeCompletion(bot.id, completion.id)
   }
 
   connect(10)
@@ -122,10 +132,12 @@ test('a live reply appears once when the next turn starts between island summari
   sample()
   assert.equal(island.mode, 'compact')
 
-  const reply = save('first-reply', 12, 'The report')
-  update(13, 'idle', reply.id)
+  update(13, 'idle', 'first-reply')
   update(14, 'working', null, 'a')
   save('unrelated', 15, 'Other visible text')
+  sample()
+  assert.equal(island.mode, 'compact', 'the saved reply has not arrived yet')
+  const reply = save('first-reply', 12, 'The report')
   sample()
   assert.equal(island.mode, 'finished', 'the idle summary was coalesced into the next working summary')
   assert.equal(island.notice?.text, 'The report')

@@ -230,18 +230,16 @@ export function nextTurnStates(before: ReadonlyMap<string, BotTurnState> | null,
 export function transitions(before: ReadonlyMap<string, BotTurnState>, bots: IslandBot[]): IslandNotice[] {
   return bots.flatMap((b): IslandNotice[] => {
     const prev = before.get(b.ref)
-    const reply = b.completion
-    if (reply && reply.id !== prev?.completionId) return [{ kind: 'finished', ref: b.ref, text: reply.text || null }]
-    if (!prev || !inTurn(prev.chat) || prev.away) return []
-    if (b.chat === 'idle') {
-      if (reply !== undefined || b.legacyStreamRev !== prev.legacyStreamRev || !b.reply || b.reply.id === prev.baselineReplyId) return []
-      return [{ kind: 'finished', ref: b.ref, text: b.reply.text || null }]
-    }
+    const completion = b.completion?.id !== prev?.completionId ? b.completion : null
+    const ownTurn = prev && inTurn(prev.chat) && !prev.away
     if (b.chat === 'error') {
-      const freshError = b.error && b.errorId !== prev.baselineErrorId ? b.error : null
-      return [{ kind: 'failed', ref: b.ref, text: freshError }]
+      const freshError = b.errorId != null && b.errorId !== prev?.baselineErrorId
+      if (ownTurn || (completion && freshError)) return [{ kind: 'failed', ref: b.ref, text: freshError ? b.error : null }]
     }
-    return []
+    if (completion) return [{ kind: 'finished', ref: b.ref, text: completion.text || null }]
+    if (!ownTurn || b.chat !== 'idle') return []
+    if (b.completion !== undefined || b.legacyStreamRev !== prev.legacyStreamRev || !b.reply || b.reply.id === prev.baselineReplyId) return []
+    return [{ kind: 'finished', ref: b.ref, text: b.reply.text || null }]
   })
 }
 

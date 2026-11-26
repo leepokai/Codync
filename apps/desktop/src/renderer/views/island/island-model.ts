@@ -235,8 +235,12 @@ export class IslandModel extends Observable {
       this.summary = summary
       // Answered and expired cards leave the put-off set.
       for (const id of this.deferred) if (!summary.permissions.some((p) => p.entryId === id)) this.deferred.delete(id)
-      const shown = this.notice?.kind === 'failed' ? this.noticeBot : undefined
-      if (shown && inTurn(shown.chat)) this.notice = null
+      const shown = this.noticeBot
+      if (this.notice?.kind === 'finished' && !shown) {
+        clearTimeout(this.noticeTimer)
+        this.notice = null
+      }
+      if (this.notice?.kind === 'failed' && shown && inTurn(shown.chat)) this.notice = null
       const next = changes.at(-1)
       if (next) this.showNotice(next)
     })

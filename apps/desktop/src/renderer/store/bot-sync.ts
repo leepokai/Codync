@@ -64,15 +64,19 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private replayRev = Infinity
-  /** Keep the last live reply through the next turn so a batched island summary can see it. */
-  private readonly liveCompletionReplies = new Map<string, string>()
+  /** The latest live reply per bot, kept through a queued start until sent to the island. */
+  private readonly pendingCompletionReplies = new Map<string, string>()
   private readingViews = new Map<string, string>()
 
   get replayedThrough() { return this.replayRev }
 
   completionFor(bot: Bot): string | null | undefined {
     if (bot.completionReplyId === undefined) return bot.rev > this.replayRev ? undefined : null
-    return this.liveCompletionReplies.get(bot.id) ?? null
+    return this.pendingCompletionReplies.get(bot.id) ?? null
+  }
+
+  consumeCompletion(botId: string, replyId: string) {
+    if (this.pendingCompletionReplies.get(botId) === replyId) this.pendingCompletionReplies.delete(botId)
   }
 
   // MARK: lifecycle
@@ -298,7 +302,7 @@ export class BotSync extends BotMirror {
         break
       case 'hello':
         this.replayRev = event.rev
-        this.liveCompletionReplies.clear()
+        this.pendingCompletionReplies.clear()
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
         this.hostId = event.hostId
         if (event.icons) this.applyIcons(event.icons)
@@ -315,7 +319,7 @@ export class BotSync extends BotMirror {
         const bot = event.bot
         const previous = this.bots.get(bot.id)
         if (bot.completionReplyId && bot.rev > this.replayRev && bot.completionReplyId !== previous?.completionReplyId) {
-          this.liveCompletionReplies.set(bot.id, bot.completionReplyId)
+          this.pendingCompletionReplies.set(bot.id, bot.completionReplyId)
         }
         this.putHostBot(bot)
         this.bump(bot.rev)
@@ -326,7 +330,7 @@ export class BotSync extends BotMirror {
       case 'botDeleted':
         this.composerDrafts.removeBot(event.id)
         this.bots.delete(event.id)
-        this.liveCompletionReplies.delete(event.id)
+        this.pendingCompletionReplies.delete(event.id)
         this.entries.delete(event.id)
         this.floors.delete(event.id)
         this.bump(event.rev)

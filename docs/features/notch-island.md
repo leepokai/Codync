@@ -35,6 +35,9 @@ red from 90 %, like the menu bar). A bot can be messaged from the island, and ‚å
 | Message a bot | The header's bubble, or the [voice input shortcut](voice-call.md#voice-input-shortcut) | The bot chip (click for the next bot) and a field with the mic (macOS); Enter sends, Esc closes. Until the shortcut is first used, a tip under the field says how to talk from any app |
 | Usage | The header's gauge or the usage meter | Claude and Codex limits side by side: each window's bar, percent and reset |
 
+The island shows each completion once across hiding and showing a bot. If the next queued turn
+fails before the island updates, it shows the failure.
+
 Opened by hover, the island folds 0.8 s after the pointer leaves; opened by a click or a tab,
 10 s after (a 2 pt line counts down). The message field stays until it sends, Esc or a click in
 another app; switching to another tab while it dictates stops dictation and keeps the words. An approval opens by itself and stays until answered; the Bots tab puts it off

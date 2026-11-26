@@ -70,6 +70,14 @@ internal fun AppStore.storedMessageText(entry: Entry): String {
     } catch (error: Exception) {
         throw IOException("Couldn't open the stored message.", error)
     } ?: throw IOException("That message is no longer on this phone.")
+    return storedTextOfPayload(payload)
+}
+
+/**
+ * The text a stored row's payload shows in that sheet. Throws when the payload cannot be read or has no text,
+ * the same failures [AppStore.storedMessageText] reports.
+ */
+internal fun storedTextOfPayload(payload: String): String {
     val text = try {
         WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
     } catch (error: CancellationException) {

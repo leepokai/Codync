@@ -6,11 +6,14 @@ import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.core.PendingSend
 import com.codync.android.core.SendStatus
+import com.codync.android.core.WireJson
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,5 +113,33 @@ class QueuedMessagesTest {
         val entries = listOf(user("waiting", 2, "queued", nonce = "n"))
         val pending = listOf(PendingSend("n", "bot", "waiting", 1))
         assertEquals(emptyList<ChatItem>(), chatItems(entries, pending, busy = true).filterNot { it is ChatItem.Separator })
+    }
+
+    @Test fun `a queued placeholder carrying a stored stub opens onto its stored text`() {
+        val body = "Read this before sending.\n" + "detail ".repeat(40)
+        val stored = user("waiting", 2, "queued", nonce = "n-waiting").let { row ->
+            row.copy(data = buildJsonObject {
+                put("text", body)
+                put("status", "queued")
+                put("clientNonce", "n-waiting")
+            })
+        }
+        val payload = WireJson.encodeToString(stored)
+        val stub = stored.copy(data = buildJsonObject {
+            put("text", storedStubText(payload.length.toLong()))
+            put("status", "queued")
+            put("storedOnly", true)
+            put("clientNonce", "n-waiting")
+        })
+        assertEquals(body, queuedStoredText(stub, payload))
+        // Not a stub, or the stored row is gone, unreadable, or blank: no open.
+        assertNull(queuedStoredText(user("waiting", 2, "queued"), payload))
+        assertNull(queuedStoredText(stub, null))
+        assertNull(queuedStoredText(stub, "{"))
+        assertNull(queuedStoredText(stub, WireJson.encodeToString(stored.copy(data = buildJsonObject {
+            put("text", "   ")
+            put("status", "queued")
+        }))))
+        assertNull(queuedStoredText(stub.copy(id = ""), payload))
     }
 }

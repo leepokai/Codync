@@ -159,7 +159,7 @@ test('schedule edits preserve lines and IME composition, reject stale clear-time
     await expect(inline).toHaveValue('edited\nin the sheet')
     await inline.fill('edited\ninline')
     await inline.dispatchEvent('compositionstart')
-    await inline.press('Enter')
+    await inline.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229, which: 229, isComposing: true, bubbles: true, cancelable: true })
     // Enter selected an IME candidate: it neither committed nor closed the field.
     await expect(inline).toBeVisible()
     await expect(inline).toHaveValue('edited\ninline')
@@ -179,6 +179,9 @@ test('schedule edits preserve lines and IME composition, reject stale clear-time
       return [entries[0]?.data.text, entries[0]?.data.status]
     }).toEqual(['newer from another window', 'scheduled'])
     await expect(row).toHaveCount(1)
+    const refusal = page.getByRole('alertdialog')
+    await expect(refusal).toContainText('changed underneath you')
+    await refusal.getByRole('button', { name: 'OK', exact: true }).click()
 
     await row.getByRole('button', { name: 'Remove', exact: true }).click()
     await expect(row).toHaveCount(0)
@@ -217,7 +220,7 @@ test('a delivered schedule moves behind the chat written after it was scheduled'
     const ordinary = entries.find((e) => e.data.text === 'written second, delivered second')!
     expect(scheduled.seq).toBeGreaterThan(ordinary.seq)
     expect(scheduled.createdAt).toBeGreaterThanOrEqual(ordinary.createdAt)
-    expect(entries.at(-1)?.id).toBe(scheduled.id)
+    expect(entries.filter((e) => e.kind === 'user').at(-1)?.id).toBe(scheduled.id)
   } finally {
     if (botId) {
       await api(page, 'stop', { botId }).catch(() => {})

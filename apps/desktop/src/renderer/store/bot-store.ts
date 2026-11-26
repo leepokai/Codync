@@ -570,21 +570,33 @@ export class BotStore extends BotSync {
   /** Paused: the bot answers nothing and spends nothing until it is resumed.
    * Shown at once, then replaced by the host's echo. A successful `updateBot` whose bot omits
    * `paused` did not apply it (an older host ignores the field): the row keeps the true state.
+   * A reply can arrive after the row has moved. Failure puts only `paused` back, and only while
+   * that row is still there, so a bot deleted meanwhile stays deleted. An echo is stored only
+   * when the row is still there and the echo's `rev`, if it has one, is not older than the row.
    */
   setPaused(bot: Bot, paused: boolean) {
     const current = this.bots.get(bot.id)
-    const before = current ? { ...current } : undefined
+    const beforePaused = current?.paused
     if (current) this.bots.set(bot.id, { ...current, paused })
     this.changed()
+    const restorePaused = () => {
+      if (beforePaused === undefined) return
+      const row = this.bots.get(bot.id)
+      if (!row) return
+      this.bots.set(bot.id, { ...row, paused: beforePaused })
+    }
     this.perform(async (c) => {
-      const res = await c.call<{ bot?: Partial<Bot> & { id?: string } }>('updateBot', { ...updatePayload(bot), paused })
+      const res = await c.call<{ bot?: Partial<Bot> & { id?: string; rev?: number } }>('updateBot', { ...updatePayload(bot), paused })
       const echoed = res?.bot
-      if (echoed && typeof echoed.id === 'string') this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
-      else if (before) this.bots.set(bot.id, before)
+      if (echoed && typeof echoed.id === 'string') {
+        const row = this.bots.get(bot.id)
+        const echoedRev = typeof echoed.rev === 'number' ? echoed.rev : undefined
+        if (row && (echoedRev === undefined || echoedRev >= row.rev)) this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
+      } else restorePaused()
       if (!pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
       this.changed()
     }, true, () => {
-      if (before) this.bots.set(bot.id, before)
+      restorePaused()
       this.changed()
     })
   }

@@ -315,8 +315,8 @@ fn mail_here(hub: &Hub, me: &Session, to: &Session, message: &str, reply_to: Opt
     }
     let id = super::mailbox::post(hub, to, None, &me.address, message, reply_to)?;
     Ok(json!({
-        "letterId": id, "to": to.address, "status": "delivered", "tier": to.tier(),
-        "note": "In its inbox: it reads it when it checks its mail (check_inbox), and answers, if it does, come to yours.",
+        "letterId": id, "to": to.address, "status": "delivered", "tier": to.tier,
+        "note": "In its inbox: it reads it with check_inbox (its tier says how soon it hears of it), and answers, if it does, come to yours.",
     }))
 }
 
@@ -337,7 +337,7 @@ pub fn tools() -> Value {
     let mut tools = json!([
         {
             "name": "list_bots",
-            "description": "List the agents you can message, with their IDs, kinds, specialties and status: this computer's Codync bots, the other coding-agent sessions here (tier pull: they read their mail themselves; tier turn: their hook tells them of it at their next step; temporary ones last only while their agent runs), then those on the user's other computers (IDs like reviewer@laptop). Narrow it with query or kind; it returns at most limit at a time, with next for the rest.",
+            "description": "List the agents you can message, with their IDs, kinds, specialties and status: this computer's Codync bots, the other coding-agent sessions here (tier pull: they read their mail themselves; tier turn: their hook tells them of it at their next step; tier push: told as soon as a letter comes, an idle session starts a turn; temporary ones last only while their agent runs), then those on the user's other computers (IDs like reviewer@laptop). Narrow it with query or kind; it returns at most limit at a time, with next for the rest.",
             "inputSchema": {"type": "object", "properties": {
                 "query": {"type": "string", "description": "Words that must all appear in the name or description."},
                 "kind": directory::kind_property(),

@@ -6,6 +6,7 @@ import androidx.annotation.DrawableRes
 /** The drawable for an SF Symbol name the iOS app uses, or null when Android has none. */
 @DrawableRes fun symbolRes(name: String): Int? = when (name) {
     "app" -> R.drawable.sf_app
+    "app.dashed" -> R.drawable.sf_app_dashed
     "arrow.clockwise" -> R.drawable.sf_arrow_clockwise
     "arrow.counterclockwise" -> R.drawable.sf_arrow_counterclockwise
     "arrow.down" -> R.drawable.sf_arrow_down
@@ -142,7 +143,6 @@ import androidx.annotation.DrawableRes
     "person.2" -> R.drawable.sf_person_2
     "person.crop.circle" -> R.drawable.sf_person_crop_circle
     "person.crop.circle.badge.checkmark" -> R.drawable.sf_person_crop_circle_badge_checkmark
-    "person.crop.circle.dashed" -> R.drawable.sf_person_crop_circle_dashed
     "person.fill" -> R.drawable.sf_person_fill
     "phone.fill" -> R.drawable.sf_phone_fill
     "photo" -> R.drawable.sf_photo

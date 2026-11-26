@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { isTold } from '@shared/threads'
-import { isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
+import { agentOf, isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { IconButton, Spinner } from '../../components/Controls'
@@ -124,7 +124,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   }
 
   const ownFolder = bot.managedWorkspace && !task.worktree && task.folder === bot.cwd
-  const agent = task.agent ?? bot.backend
+  const agent = agentOf(task, bot) ?? bot.backend
   const status = (
     <HStack as="span" gap={6} className="window-bar-status">
       <WorkDot mark={WORK_MARK[task.status]} />

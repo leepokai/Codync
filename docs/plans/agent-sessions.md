@@ -131,12 +131,12 @@ so this only matters if a bot's conversation title is ever shown.
 
 | Tier | Agents |
 |---|---|
-| push (wakes idle) | Claude Code (inbox socket): can wake an idle session or be read mid-turn, but it may hold a message from an outside sender, and a successful socket write confirms neither; pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
+| push (wakes idle) | Claude Code: built, through the session's own MCP server (its inbox socket and token), once idle; checked in an interactive session on aimock (an idle session takes it and starts a turn; one written mid-turn didn't reach the turn). Follow-ups: pi and opencode (their MCP calls carry no session id; opencode 1.19.5 sends no `_meta` id, ran), Amp (not installed), Claude Code on Windows (named pipe) |
 | queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
 | turn (next tool call or stop) | Codex, Copilot CLI and Grok: built (`codync-host network hook`), checked end to end on aimock. Cursor: its MCP calls carry no session id, so a hook can't find the mailbox (follow-up); Gemini CLI and Antigravity not installed / unverified (follow-up) |
 | pull (`check_inbox` + an unread notice, built in phase 1) | any MCP client, including the above before their hooks or plugins are installed |
 
-The network view's sessions take their tier from `Session::tier()`, and every client labels `pull`, `turn` and `push`.
+The network view's sessions take their tier from the session's saved `tier`, and every client labels `pull`, `turn` and `push`.
 
 ## Open design questions
 

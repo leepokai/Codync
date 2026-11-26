@@ -219,9 +219,10 @@ pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value
     let threads: Vec<Value> = found
         .into_iter()
         .map(|(bot, task)| {
-            let cwd = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id)).map(|c| c.cwd);
+            let thread = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id));
+            let runs_on = thread.as_ref().map(|c| tasks::agent_of(&hub.store, c));
             let status = task.status;
-            let mut row = tasks::row(task, status, "", None, false, cwd.as_ref());
+            let mut row = tasks::row(task, status, "", None, false, thread.as_ref().map(|c| &c.cwd), runs_on);
             row["botId"] = bot.into();
             row
         })
@@ -303,8 +304,14 @@ mod tests {
         let page = older(&hub, None, None).expect("a page");
         let row = &page["threads"][0];
         assert_eq!(
-            (row["botId"].as_str(), row["id"].as_str(), row["talk"].as_bool(), row["folder"].as_str()),
-            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"))
+            (
+                row["botId"].as_str(),
+                row["id"].as_str(),
+                row["talk"].as_bool(),
+                row["folder"].as_str(),
+                row["runsOn"].is_string()
+            ),
+            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"), true)
         );
         assert_eq!(page["more"], false);
         let earlier = older(&hub, Some("b1"), row["endedAt"].as_i64()).expect("the next page");

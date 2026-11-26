@@ -16,6 +16,7 @@ import urllib.request
 # SF Symbol name -> Material Symbols name ("+" suffix: filled variant).
 MAP = {
     "app": "apps",
+    "app.dashed": "select",
     "apple.logo": None,  # drawn from the bundled brand mark, not a symbol
     "arrow.clockwise": "refresh",
     "arrow.counterclockwise": "replay",
@@ -152,7 +153,6 @@ MAP = {
     "pause.fill": "pause+",
     "pencil": "edit",
     "person.2": "group",
-    "person.crop.circle.dashed": "person_off",
     "person.crop.circle": "account_circle",
     "person.crop.circle.badge.checkmark": "how_to_reg",
     "person.fill": "person+",

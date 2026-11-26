@@ -17,7 +17,7 @@ export function SessionsCard({ sessions }: { sessions: NetworkSession[] }) {
   const [showOlder, setShowOlder] = useState(false)
   const older = sessions.filter((s) => s.older)
   return (
-    <CardSection title="Coding agents" footer="Bots and other coding agents message these sessions at their address; each reads its mail itself.">
+    <CardSection title="Agents" footer="Bots and other agents message these sessions at their address; each reads its mail itself.">
       {sessions
         .filter((s) => !s.older)
         .map((s) => (

@@ -27,3 +27,29 @@ final class WorkspacePickerState {
         if request == generation { busy = false }
     }
 }
+
+/// The picker's answer: checks the folder on the computer (recording it there as recent) and hands back the path it
+/// resolved, or keeps the error on screen.
+@MainActor @Observable
+final class WorkspaceConfirm {
+    var saving = false
+    var error: String?
+
+    func confirm(
+        _ path: String, listing: DirListing?,
+        select: (String) async throws -> String, fetch: (String?) async throws -> DirListing
+    ) async -> String? {
+        guard !path.isEmpty, !saving else { return nil }
+        saving = true
+        error = nil
+        defer { saving = false }
+        do {
+            // Absence of `recent` means an older host: validate with its existing browsing API.
+            let chosen = listing?.recent != nil ? try await select(path) : try await fetch(path).path
+            return Task.isCancelled ? nil : chosen
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+}

@@ -54,7 +54,7 @@ pub use ui::{
 };
 pub use whats_new::WhatsNew;
 pub use work::{
-    Background, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, shared_line, threads_at_once,
+    Background, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, is_shared, threads_at_once,
     word,
 };
 
@@ -349,8 +349,7 @@ impl App {
     /// task that needs you picks its card), else the newest.
     fn to_answer(&self, wanted: impl Fn(&Entry) -> bool) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        let cards: Vec<&Entry> = self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)).collect();
-        cards.iter().find(|e| self.pick.as_ref() == Some(&e.id)).or(cards.last()).copied()
+        card_to_answer(self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)), self.pick.as_ref())
     }
 
     /// The card `task` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
@@ -535,6 +534,21 @@ pub fn copy(text: &str) {
     let mut out = std::io::stdout();
     let _ = write!(out, "\x1b]52;c;{}\x07", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, text));
     let _ = out.flush();
+}
+
+/// The card among `cards` (oldest first) that the chat's keys answer: the picked one, else the newest.
+pub(in crate::tui) fn card_to_answer<'a>(
+    cards: impl IntoIterator<Item = &'a Entry>,
+    pick: Option<&String>,
+) -> Option<&'a Entry> {
+    let mut newest = None;
+    for e in cards {
+        if pick == Some(&e.id) {
+            return Some(e);
+        }
+        newest = Some(e);
+    }
+    newest
 }
 
 fn page(h: usize) -> isize {

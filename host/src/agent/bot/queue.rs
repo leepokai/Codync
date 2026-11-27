@@ -239,6 +239,12 @@ impl Actor {
             });
             self.turn_over(Outcome::Stopped);
         }
+        // Nor does one whose task waits on what its agent runs in the background: that stops with its agent.
+        if self.turn.is_none() && self.cfg.is_thread() && self.runs_in_background() {
+            self.hub.set_runtime(&self.id(), |r| r.background.clear());
+            self.kill_agent().await;
+            self.turn_over(Outcome::Stopped);
+        }
     }
 
     async fn stop_workflow(&mut self, step_id: &str) {
@@ -271,9 +277,7 @@ impl Actor {
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
     pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.kill_agent().await;
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);
         }
@@ -630,12 +634,19 @@ impl Actor {
     }
 
     /// The turn is over, however it ended (or never began): a thread's task says how and its bot gets the report;
-    /// the tasks a bot added in the turn may start.
-    pub(super) fn turn_over(&mut self, outcome: Outcome) {
+    /// the tasks a bot added in the turn may start. Whether the thread's task goes on with what the turn left running
+    /// instead, which then stays as it is ([`work::finished`]).
+    pub(super) fn turn_over(&mut self, outcome: Outcome) -> bool {
         if self.cfg.is_thread() {
-            work::finished(&self.hub, &self.cfg, outcome);
+            let goes_on = work::finished(&self.hub, &self.cfg, outcome);
+            if !goes_on {
+                // Its task's next round begins from what runs then.
+                self.detached_before = None;
+            }
+            goes_on
         } else {
             work::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
+            false
         }
     }
 

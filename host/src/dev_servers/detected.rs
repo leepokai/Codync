@@ -138,8 +138,7 @@ pub(super) fn still_in_tree(pids: &[u32], tree: &[JobProcess]) -> Vec<u32> {
 /// Finds what each bot's agent left listening, and tells clients when that changed. `moved`: this computer's addresses
 /// changed, so the ones worked out before no longer hold.
 pub async fn scan(hub: &Hub, agents: &[RunningAgent], listening: &[Listening], moved: bool) {
-    let own_program = std::env::current_exe().ok().and_then(|exe| Some(exe.file_name()?.to_str()?.to_owned()));
-    let Some(own_program) = own_program else { return };
+    let Some(own_program) = own_program() else { return };
     let Some(trees) = agent_trees(agents).await else { return };
     let mut found: HashMap<String, Vec<Detected>> = HashMap::new();
     for (agent, tree) in agents.iter().zip(&trees) {
@@ -171,6 +170,17 @@ pub async fn scan(hub: &Hub, agents: &[RunningAgent], listening: &[Listening], m
     for bot in changed {
         hub.emit_bot(&bot);
     }
+}
+
+/// Whether `agent` runs a server it left listening through its own shell, read now. Unsure counts as not.
+pub(super) async fn serves(agent: &RunningAgent) -> bool {
+    let (Some(own_program), Ok(tree)) = (own_program(), agent_tree(agent).await) else { return false };
+    let Ok(Ok(listening)) = tokio::task::spawn_blocking(ports::listening).await else { return false };
+    !servers_in(&tree, &own_program, &agent.programs, &listening).is_empty()
+}
+
+fn own_program() -> Option<String> {
+    std::env::current_exe().ok().and_then(|exe| Some(exe.file_name()?.to_str()?.to_owned()))
 }
 
 /// The bots whose list changed, and how many servers are new.

@@ -1,7 +1,8 @@
 //! A turn its agent refused until the user signs in: the sign-in card that asks them to, in the chat they are in (a
 //! background thread's goes to its bot's chat, marked as its task's, with a line in the thread's own transcript), holding
 //! the turn's messages until they have. A thread's task isn't over then: it waits, needing the user, and goes on in
-//! the same thread once they've signed in.
+//! the same thread once they've signed in. [`Held`] names the other way a task goes on past its turn's end too: what
+//! the turn left running in the background (#634).
 
 use super::{Actor, NoticeStyle};
 use crate::agent::login_profiles::Login;
@@ -13,14 +14,17 @@ use crate::store::{Lane, now_ms};
 use serde_json::json;
 use std::time::Duration;
 
-/// What became of the messages of a turn that failed for a sign-in. A thread's task goes on with them, so the end of
-/// that turn doesn't end the task.
+/// Why a thread's task goes on past its turn's end: the messages of a turn that failed for a sign-in, held or sent
+/// again, or what the turn left running in the background.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Held {
     /// They went out again at once, to a new agent process.
     Again,
     /// A sign-in card holds them until the user signs in to agent `backend` (as the chat names it: `name`).
     SignIn { name: String, backend: String },
+    /// The turn ended while work it started in the background still ran: a message from the host asks the thread to
+    /// wait for it and report then, or one the user wrote takes the turn first (`work::finished`, #634).
+    Background,
 }
 
 impl Held {
@@ -29,7 +33,7 @@ impl Held {
     pub(super) fn needs(&self) -> Option<String> {
         match self {
             Self::SignIn { name, .. } => Some(format!("Needs {name} sign-in")),
-            Self::Again => None,
+            Self::Again | Self::Background => None,
         }
     }
 }
@@ -110,12 +114,12 @@ impl Actor {
     }
 
     /// The turn is over: a thread's task ends with `outcome` (its last message is its report to its bot), unless it
-    /// goes on past a sign-in, which this returns (its message held for one, or sent again). The bot's own turns
-    /// always end.
+    /// goes on past a sign-in (its message held for one, or sent again) or waits on what it left running in the
+    /// background, which this returns. The bot's own turns always end.
     pub(super) fn end_task(&mut self, outcome: impl FnOnce() -> Outcome) -> Option<Held> {
         let held = self.relay.held.take().filter(|_| self.cfg.is_thread());
-        if held.is_none() {
-            self.turn_over(outcome());
+        if held.is_none() && self.turn_over(outcome()) {
+            return Some(Held::Background);
         }
         held
     }

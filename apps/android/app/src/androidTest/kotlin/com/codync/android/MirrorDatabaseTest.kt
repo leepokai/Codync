@@ -20,37 +20,67 @@ class MirrorDatabaseTest {
     private fun entry(rev: Long, text: String = "new", nonce: String? = null): Entry = Entry("message", 1, "bot", rev = rev, kind = "user",
         data = buildJsonObject { put("text", text); nonce?.let { put("clientNonce", it) } })
 
-    /** Stores [payload] exactly as an older app could have left it, before routing metadata was kept beside the row. */
-    /** Replaces the mirror with a version 3 cache holding exact payloads, as an older app left them. */
-    private fun storeVersion3(rows: List<Pair<Entry, String>>) {
+    /**
+     * Replaces the mirror with one an older app left, written with that version's columns, and reopens it so the
+     * upgrade runs. Version 4 added `thread_id`, version 5 `routing_known`; version 6 keeps only `thread_id` and drops
+     * the conversation, so no stored row is ever read by a schema other than the one that wrote it.
+     */
+    private fun storeOldMirror(
+        version: Int,
+        rows: List<Pair<Entry, String>> = emptyList(),
+        pending: List<PendingSend> = emptyList(),
+        bots: List<Bot> = emptyList(),
+        rev: Long = 7,
+        withMeta: Boolean = true,
+        withConversation: Boolean = true,
+    ) {
         mirror.close()
         val path = File(directory, "mirror-$computer.db")
         path.delete()
         SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-            db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+            if (withMeta) db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
             db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
             db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
-            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "1") })
-            rows.forEach { (row, payload) ->
-                db.insertOrThrow("entries", null, ContentValues().apply {
-                    put("id", row.id); put("bot_id", row.botId); put("seq", row.seq); put("rev", row.rev)
-                    put("payload", payload)
+            if (withConversation) {
+                val route = if (version >= 5) "thread_id TEXT, routing_known INTEGER NOT NULL DEFAULT 0"
+                    else if (version >= 4) "thread_id TEXT" else null
+                db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL" +
+                    (route?.let { ", $it" } ?: "") + ")")
+                db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
+                db.insertOrThrow("history", null, ContentValues().apply { put("lane", "bot") })
+                rows.forEach { (row, payload) ->
+                    db.insertOrThrow("entries", null, ContentValues().apply {
+                        put("id", row.id); put("bot_id", row.botId); put("seq", row.seq); put("rev", row.rev)
+                        put("payload", payload)
+                        if (version >= 4) put("thread_id", row.routingThreadId())
+                    })
+                }
+            }
+            bots.forEach {
+                db.insertOrThrow("bots", null, ContentValues().apply {
+                    put("id", it.id); put("rev", it.rev); put("deleted", if (it.deleted) 1 else 0)
+                    put("payload", WireJson.encodeToString(it))
                 })
             }
-            db.version = 3
+            pending.forEach {
+                db.insertOrThrow("pending", null, ContentValues().apply {
+                    put("nonce", it.nonce); put("created", it.createdAt); put("payload", WireJson.encodeToString(it))
+                })
+            }
+            if (withMeta) db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", rev.toString()) })
+            db.version = version
         }
         mirror = MirrorDatabase(context, directory, computer)
     }
 
-    private fun storeRaw(approval: Entry, payload: String, neighbor: Entry = chat("bot", 2)) {
+    /** Stores one row the app could not have written, with [payload] exactly and no route beside it. */
+    private fun storeRaw(approval: Entry, payload: String, neighbor: Entry = chat("bot", 2), thread: String? = null) {
         mirror.receive(listOf(neighbor))
         mirror.close()
         SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.insertOrThrow("entries", null, ContentValues().apply {
                 put("id", approval.id); put("bot_id", approval.botId); put("seq", approval.seq); put("rev", approval.rev)
-                put("payload", payload)
+                put("payload", payload); put("thread_id", thread)
             })
         }
         mirror = MirrorDatabase(context, directory, computer)
@@ -408,7 +438,7 @@ class MirrorDatabaseTest {
 
     @Test fun anUnreadableThreadApprovalStaysInItsThreadAsANonActionableWarning() {
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
-            // The host writes the body first and marks the thread after it: a truncated stored head alone misses the marker.
+            // The host writes the body first and marks the thread after it: neither the stored head nor the tail names it.
             put("title", "Edit docs/design/bot-memory.md")
             put("status", "pending")
             put("detail", "D".repeat(3_000_000))
@@ -418,21 +448,10 @@ class MirrorDatabaseTest {
             put("task", "task-1")
         })
         val huge = WireJson.encodeToString(approval).dropLast(1)
-        // The stored row stops after a complete thread object: only the root object's last brace is missing.
         assertTrue("the stored fragment ends after a complete thread object",
-            huge.contains("\"thread\":{\"id\":\"thread-1\",\"title\":\"A thread's approval\"}") &&
-                huge.endsWith("\"task\":\"task-1\"},\"createdAt\":0,\"updatedAt\":0"))
-        val neighbor = chat("bot", 2)
-        mirror.receive(listOf(neighbor))
-        mirror.close()
-        val path = File(directory, "mirror-$computer.db").absolutePath
-        SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
-            db.insertOrThrow("entries", null, ContentValues().apply {
-                put("id", approval.id); put("bot_id", approval.botId); put("seq", approval.seq); put("rev", approval.rev)
-                put("payload", huge)
-            })
-        }
-        mirror = MirrorDatabase(context, directory, computer)
+            huge.endsWith("\"task\":\"task-1\"},\"createdAt\":0,\"updatedAt\":0"))
+        // The route is the column the schema wrote beside the row, so it survives a payload that no longer reads.
+        storeRaw(approval, huge, thread = "thread-1")
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         val card = entries.single { it.id == "ask" }
         assertTrue("the oversized thread approval stays as a stub", card.isStoredStub)
@@ -446,7 +465,7 @@ class MirrorDatabaseTest {
         assertTrue(shown.single().entry.approvalReadFailed)
     }
 
-    @Test fun aLegacyThreadCutBeforeItsObjectClosesStaysInTheOwnerChat() {
+    @Test fun aThreadMarkerInsideAnUnreadableRowsTextIsNotARoute() {
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
             put("title", "Edit docs/design/bot-memory.md")
             put("status", "pending")
@@ -457,7 +476,7 @@ class MirrorDatabaseTest {
         val marker = "\"thread\":{\"id\":\"thread-cut\""
         val at = full.indexOf(marker)
         assertTrue("the fixture names the thread after the body", at > PAYLOAD_HEAD_CHARS)
-        // The row is cut inside the thread object, so nothing on it proves where it belongs.
+        // The row is cut inside the thread object and no route was stored with it: its text is never read for one.
         val payload = full.substring(0, at + marker.length) + ",\"title\":\"A thr"
         storeRaw(approval, payload)
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
@@ -471,57 +490,6 @@ class MirrorDatabaseTest {
             })
     }
 
-    @Test fun aReadableDuplicateThreadRouteKeepsItsApprovalOutOfBothThreads() {
-        // 64,000 characters: past the window's head sample, but the whole row still decodes.
-        val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
-            put("title", "Edit docs/design/bot-memory.md")
-            put("status", "pending")
-            put("detail", "D".repeat(64_000))
-            put("options", buildJsonArray {
-                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
-            })
-        })
-        val payload = WireJson.encodeToString(approval)
-            .replaceFirst("\"data\":{", "\"data\":{\"thread\":{\"id\":\"thread-a\",\"id\":\"thread-b\"},")
-        assertTrue("the row is small enough to read whole", payload.length < 2 * 64 * 1_024)
-        storeVersion3(listOf(approval to payload))
-        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
-        val card = entries.single { it.id == "ask" }
-        assertTrue("the route is not proven, so the card keeps its read-only stub", card.isStoredStub)
-        assertNull("the decoder's last duplicate id is not a route", card.data["thread"])
-        assertNull("no answers are offered under an unproven thread", card.data["options"])
-        for (thread in listOf("thread-a", "thread-b")) {
-            assertTrue("the card is not offered under $thread",
-                threadChatItems(emptyList(), entries, thread, emptyList(), live = false).none {
-                    it is ChatItem.Message && it.entry.id == "ask"
-                })
-        }
-    }
-
-    @Test fun aSmallReadableDuplicateThreadRouteAlsoStaysInTheOwnerChat() {
-        val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
-            put("title", "Edit docs/design/bot-memory.md")
-            put("status", "pending")
-            put("detail", "D".repeat(1_000))
-            put("options", buildJsonArray {
-                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
-            })
-        })
-        val payload = WireJson.encodeToString(approval)
-            .replaceFirst("\"data\":{", "\"data\":{\"thread\":{\"id\":\"thread-a\",\"id\":\"thread-b\"},")
-        storeVersion3(listOf(approval to payload))
-        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
-        val card = entries.single { it.id == "ask" }
-        assertNull("the duplicate direct id proves no route", card.data["thread"])
-        assertNull("no answers are offered under an unproven thread", card.data["options"])
-        for (thread in listOf("thread-a", "thread-b")) {
-            assertTrue("the card is not offered under $thread",
-                threadChatItems(emptyList(), entries, thread, emptyList(), live = false).none {
-                    it is ChatItem.Message && it.entry.id == "ask"
-                })
-        }
-    }
-
     @Test fun aReadableThreadApprovalKeepsItsGenuineThreadAndAnswers() {
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
             put("title", "Edit docs/design/bot-memory.md")
@@ -532,11 +500,11 @@ class MirrorDatabaseTest {
                 add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
             })
         })
-        storeVersion3(listOf(approval to WireJson.encodeToString(approval)))
+        mirror.receive(listOf(approval))
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         val card = entries.single { it.id == "ask" }
         assertFalse("its whole row reads, so it is not a stub", card.isStoredStub)
-        assertEquals("the genuine direct marker still routes it", "thread-1",
+        assertEquals("the stored route has it", "thread-1",
             ((card.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
         assertEquals("its answers stay on the phone", "pending", card.status)
         assertEquals(listOf("ask"), threadChatItems(emptyList(), entries, "thread-1", emptyList(), live = false)
@@ -544,9 +512,6 @@ class MirrorDatabaseTest {
     }
 
     @Test fun aNulHiddenRoutingIdIsSkippedWithoutBreakingItsNeighbours() {
-        mirror.close()
-        val path = File(directory, "mirror-$computer.db")
-        path.delete()
         val before = chat("bot", 1)
         val after = chat("bot", 3)
         val approval = Entry("ask", 2, "bot", rev = 2, kind = "permission", data = buildJsonObject {
@@ -556,25 +521,15 @@ class MirrorDatabaseTest {
                 add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
             })
         })
-        fun row(entry: Entry, thread: String?) = ContentValues().apply {
-            put("id", entry.id); put("bot_id", entry.botId); put("thread_id", thread)
-            put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
-        }
-        SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-            db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
-            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "3") })
-            // SQLite's length() stops at the NUL, so this short-looking id used to project three million characters.
-            db.insertOrThrow("entries", null, row(before, null))
-            db.insertOrThrow("entries", null, row(approval, "A" + '\u0000' + "X".repeat(3_000_000)))
-            db.insertOrThrow("entries", null, row(after, null))
-            db.version = 4
+        mirror.receive(listOf(before, approval, after))
+        mirror.close()
+        // A route that got into the column somehow: SQLite's length() stops at the NUL, so this short-looking id
+        // would project three million characters into the cursor window.
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.execSQL("UPDATE entries SET thread_id=? WHERE id=?", arrayOf("A" + '\u0000' + "X".repeat(3_000_000), approval.id))
         }
         mirror = MirrorDatabase(context, directory, computer)
-        assertEquals("the additive upgrade lands on schema 5", 5, mirror.readableDatabase.version)
+        assertEquals("the schema this build writes", 6, mirror.readableDatabase.version)
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         assertEquals("both healthy neighbours stay visible", setOf(before.id, after.id), entries.map { it.id }.toSet() - "ask")
         val card = entries.single { it.id == "ask" }
@@ -604,7 +559,7 @@ class MirrorDatabaseTest {
             })
     }
 
-    @Test fun aNestedThreadMarkerCannotReplaceTheGenuineThreadThatPrecedesIt() {
+    @Test fun aNestedThreadMarkerCannotReplaceTheStoredThread() {
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
             put("title", "Edit docs/design/bot-memory.md")
             put("status", "pending")
@@ -612,7 +567,16 @@ class MirrorDatabaseTest {
             putJsonObject("thread") { put("id", "thread-real") }
             putJsonObject("metadata") { putJsonObject("thread") { put("id", "thread-nested") } }
         })
-        storeRaw(approval, WireJson.encodeToString(approval).dropLast(1))
+        val broken = WireJson.encodeToString(approval).dropLast(1)
+        assertFalse("the stored head does not name the thread", broken.take(PAYLOAD_HEAD_CHARS).contains("\"thread\""))
+        assertFalse("the stored tail does not name the thread", broken.takeLast(PAYLOAD_TAIL_CHARS).contains("\"thread\""))
+        mirror.receive(listOf(approval))
+        mirror.close()
+        // The payload is damaged afterwards, as a half-written row would be, and the stored route is all that is left.
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.execSQL("UPDATE entries SET payload=? WHERE id=?", arrayOf(broken, approval.id))
+        }
+        mirror = MirrorDatabase(context, directory, computer)
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         val card = entries.single { it.id == "ask" }
         assertEquals("thread-real", ((card.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
@@ -645,71 +609,6 @@ class MirrorDatabaseTest {
         assertTrue("an unreadable card offers no answer", (card.data["options"] as? JsonArray).isNullOrEmpty())
     }
 
-    @Test fun aLegacyDuplicateIdInTheHeadStaysUnroutedThroughTheRealSnapshot() {
-        val before = chat("bot", 2)
-        val after = chat("bot", 3)
-        val payload = """{"id":"ask","seq":1,"botId":"bot","rev":1,"kind":"permission","data":{"title":"Edit","status":"pending","thread":{"id":"thread-a","id":"thread-b"},"detail":"""" +
-            "D".repeat(3_000_000) + """"}}"""
-        val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject { put("title", "Edit") })
-        assertTrue(payload.take(PAYLOAD_HEAD_CHARS).contains("\"id\":\"thread-b\""))
-        storeVersion3(listOf(before to WireJson.encodeToString(before), approval to payload, after to WireJson.encodeToString(after)))
-        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
-        assertEquals("healthy rows survive on both sides", setOf(before.id, approval.id, after.id), entries.map { it.id }.toSet())
-        val card = entries.single { it.id == "ask" }
-        assertTrue(card.isApprovalStub)
-        assertTrue(card.approvalReadFailed)
-        assertNull("two direct ids are ambiguous even when one survives a lenient decode", card.data["thread"])
-        for (thread in listOf("thread-a", "thread-b")) {
-            assertTrue("the warning is not routed to $thread",
-                threadChatItems(emptyList(), entries, thread, emptyList(), live = false).none {
-                    it is ChatItem.Message && it.entry.id == "ask"
-                })
-        }
-    }
-
-    @Test fun anEscapedLegacyThreadKeyRoutesAndIsScannedOnlyOnce() {
-        val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
-            put("title", "Edit docs/design/bot-memory.md")
-            put("status", "pending")
-            put("detail", "D".repeat(3_000_000))
-            putJsonObject("thread") { put("id", "thread-escaped") }
-            put("after", "N".repeat(512))
-        })
-        val payload = WireJson.encodeToString(approval).replaceFirst("\"thread\":", "\"th\\u0072ead\":")
-        assertFalse("the literal key is absent from both sampled edges", payload.take(PAYLOAD_HEAD_CHARS).contains("\"thread\""))
-        assertFalse(payload.takeLast(PAYLOAD_TAIL_CHARS).contains("\"thread\"") || payload.takeLast(PAYLOAD_TAIL_CHARS).contains("th\\u0072ead"))
-        storeVersion3(listOf(approval to payload))
-        val baseline = mirror.routingScanAttempts
-        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
-        val card = entries.single { it.id == "ask" }
-        assertEquals("the escaped key is a genuine direct marker", "thread-escaped",
-            ((card.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
-        assertEquals("one structural scan", baseline + 1, mirror.routingScanAttempts)
-        mirror.snapshot(Residency(setOf("bot"), window = 10))
-        assertEquals("a cached positive route is not scanned again", baseline + 1, mirror.routingScanAttempts)
-    }
-
-    @Test fun aLegacyNegativeRouteIsScannedOnceAndANewNullRouteNeedsNoScan() {
-        val legacy = Entry("legacy-ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
-            put("title", "Edit"); put("status", "pending"); put("detail", "D".repeat(40_000))
-        })
-        val brokenLegacy = WireJson.encodeToString(legacy).dropLast(1)
-        storeVersion3(listOf(legacy to brokenLegacy))
-        val baseline = mirror.routingScanAttempts
-        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
-        assertNull("an unthreaded legacy warning stays in the owner chat", entries.single().data["thread"])
-        assertEquals("the negative route is scanned once", baseline + 1, mirror.routingScanAttempts)
-        mirror.snapshot(Residency(setOf("bot"), window = 10))
-        assertEquals("the cached negative route is not scanned again", baseline + 1, mirror.routingScanAttempts)
-        val fresh = Entry("fresh-ask", 2, "bot", rev = 2, kind = "permission", data = buildJsonObject {
-            put("title", "Edit"); put("status", "pending"); put("detail", "D".repeat(40_000))
-        })
-        mirror.receive(listOf(fresh))
-        mirror.snapshot(Residency(setOf("bot"), window = 10))
-        mirror.snapshot(Residency(setOf("bot"), window = 10))
-        assertEquals("a route written as null by the current schema is already known", baseline + 1, mirror.routingScanAttempts)
-    }
-
     @Test fun anOversizedRoutingIdCannotBreakTheSnapshotOrHealthyNeighbours() {
         val before = chat("bot", 1)
         val after = chat("bot", 3)
@@ -720,105 +619,40 @@ class MirrorDatabaseTest {
         })
         mirror.receive(listOf(before, oversized, after))
         SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-            db.rawQuery("SELECT thread_id, routing_known FROM entries WHERE id=?", arrayOf(oversized.id)).use {
+            db.rawQuery("SELECT thread_id FROM entries WHERE id=?", arrayOf(oversized.id)).use {
                 assertTrue(it.moveToFirst())
                 assertTrue("a huge route id is not stored in the column", it.isNull(0))
-                assertEquals("the absence is authoritative", 1, it.getInt(1))
             }
         }
-        val baseline = mirror.routingScanAttempts
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         assertEquals("both healthy neighbours still load", setOf(before.id, after.id), entries.map { it.id }.toSet() - oversized.id)
         val card = entries.single { it.id == oversized.id }
         assertTrue(card.isApprovalStub)
         assertNull("a huge id is not routing metadata", card.data["thread"])
         assertTrue("an unreadable card offers no answer", (card.data["options"] as? JsonArray).isNullOrEmpty())
-        assertEquals("a written null route does not trigger a legacy scan", baseline, mirror.routingScanAttempts)
     }
 
-    @Test fun aLegacyMarkerInTheMiddleOfAnOversizedApprovalReachesItsThread() {
-        mirror.close()
-        val path = File(directory, "mirror-$computer.db")
-        path.delete()
+    @Test fun anOversizedApprovalsRouteComesFromTheColumnNotItsEdges() {
         val approval = Entry("ask", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
             put("title", "Edit docs/design/bot-memory.md")
             put("status", "pending")
-            put("detail", "D".repeat(3_000_000))
+            // Larger than the resident budget, smaller than the cursor window: the stub stays, and the read does not fail.
+            put("detail", "D".repeat(200_000))
             putJsonObject("thread") { put("id", "thread-middle") }
             put("after", "N".repeat(512))
         })
         val payload = WireJson.encodeToString(approval)
-        assertFalse("the head does not name the thread", payload.take(PAYLOAD_HEAD_CHARS).contains("\"thread\""))
-        assertFalse("the tail does not name the thread", payload.takeLast(PAYLOAD_TAIL_CHARS).contains("\"thread\""))
-        SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-            db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
-            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "1") })
-            db.insertOrThrow("entries", null, ContentValues().apply {
-                put("id", approval.id); put("bot_id", approval.botId); put("seq", approval.seq); put("rev", approval.rev)
-                put("payload", payload)
-            })
-            db.version = 3
-        }
-        mirror = MirrorDatabase(context, directory, computer)
+        assertFalse("the stored head does not name the thread", payload.take(PAYLOAD_HEAD_CHARS).contains("\"thread\""))
+        assertFalse("the stored tail does not name the thread", payload.takeLast(PAYLOAD_TAIL_CHARS).contains("\"thread\""))
+        mirror.receive(listOf(approval))
         val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
         val card = entries.single { it.id == "ask" }
-        assertTrue("the v3 approval remains as a warning", card.isStoredStub)
-        assertTrue("the warning says its row could not be read", card.approvalReadFailed)
-        assertEquals("the middle marker routes the warning", "thread-middle",
+        assertTrue("the oversized approval's body is not read whole", card.isStoredStub)
+        assertFalse("its whole row reads, so the card is not a warning", card.approvalReadFailed)
+        assertEquals("the route stored beside the row is the one it keeps", "thread-middle",
             ((card.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
         assertEquals(listOf("ask"), threadChatItems(emptyList(), entries, "thread-middle", emptyList(), live = false)
             .filterIsInstance<ChatItem.Message>().map { it.entry.id })
-    }
-
-    @Test fun legacyRoutingRejectsDuplicateAndTruncatedDirectThreadIds() {
-        val path = File(directory, "routing.db")
-        val db = SQLiteDatabase.openOrCreateDatabase(path, null)
-        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
-        var next = 0
-        fun route(json: String): String? {
-            val id = "route-${next++}"
-            db.insertOrThrow("entries", null, ContentValues().apply { put("id", id); put("payload", json) })
-            return storedRoutingThread(db, id)
-        }
-        fun payload(thread: String) =
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission",""" +
-                """"data":{"title":"Edit","thread":$thread}}"""
-        assertEquals("t", route(payload("""{"id":"t","title":"A thread"}""")))
-        assertNull("two direct ids are ambiguous", route(payload("""{"id":"a","id":"b","title":"A thread"}""")))
-        assertNull("an id before the object closes is ambiguous", route(
-            "{\"id\":\"ask\",\"seq\":4,\"botId\":\"bot\",\"rev\":4,\"kind\":\"permission\"," +
-                "\"data\":{\"thread\":{\"id\":\"a\",\"title\":\"A thread\""))
-        assertEquals("a fragment that ends after a complete thread object keeps its route", "t", route(
-            "{\"id\":\"ask\",\"seq\":4,\"botId\":\"bot\",\"rev\":4,\"kind\":\"permission\"," +
-                "\"data\":{\"thread\":{\"id\":\"t\",\"title\":\"A thread\"}"))
-        assertNull("a bracket closed by the wrong character is malformed", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission","data":{"metadata":[},"thread":{"id":"A"}}}"""))
-        assertNull("a trailing comma is not a field", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission","data":{"thread":{"id":"A",}}}"""))
-        assertNull("a non-string id is not routing metadata", route(payload("""{"id":{"nested":"t"},"title":"A thread"}""")))
-        assertEquals("the direct thread wins over a nested one", "real", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission","data":{"metadata":{"thread":{"id":"nested"}},""" +
-                """"thread":{"id":"real","title":"A thread"}}}"""))
-        assertEquals("an escaped field name is still the direct key", "escaped", route(
-            "{\"id\":\"ask\",\"seq\":4,\"botId\":\"bot\",\"rev\":4,\"kind\":\"permission\"," +
-                "\"data\":{\"th\\u0072ead\":{\"id\":\"escaped\",\"title\":\"A thread\"}}}"))
-        assertNull("two direct thread fields are ambiguous", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission",""" +
-                """"data":{"thread":{"id":"a"},"thread":{"id":"b"}}}"""))
-        assertNull("two root data fields are ambiguous", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission",""" +
-                """"data":{"thread":{"id":"a"}},"data":{"thread":{"id":"b"}}}"""))
-        assertNull("a multi-megabyte route id is malformed", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission","data":{"thread":{"id":"""" +
-                "I".repeat(3_000_000) + """"}}}"""))
-        assertNull("a huge thread key is malformed without being buffered", route(
-            """{"id":"ask","seq":4,"botId":"bot","rev":4,"kind":"permission","data":{"thread":{"""" +
-                "K".repeat(10_000) + """": "ignored","id":"t"}}}"""))
-        db.close()
     }
 
     @Test fun anAnsweredOversizedApprovalIsNotReplacedAndStaysInsideTheWindowBudget() {
@@ -883,60 +717,150 @@ class MirrorDatabaseTest {
     private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
         data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })
 
-    @Test fun upgradingFromVersionThreeAddsRoutingAndKeepsTheConversation() {
-        mirror.close()
-        val path = File(directory, "mirror-$computer.db")
-        path.delete()
-        SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-            db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
-            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "3") })
-            db.insertOrThrow("entries", null, ContentValues().apply {
-                put("id", "message"); put("bot_id", "bot"); put("seq", 1); put("rev", 3)
-                put("payload", WireJson.encodeToString(entry(3)))
-            })
-            db.insertOrThrow("history", null, ContentValues().apply { put("lane", "bot") })
-            db.version = 3
+    /** A chat row whose route is [thread], or none; [filler] makes it a row too large to read whole. */
+    private fun routed(seq: Long, thread: String?, bot: String = "bot", filler: Int = 0): Entry =
+        Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user", data = buildJsonObject {
+            put("text", if (filler > 0) "M".repeat(filler) else "$bot-$seq")
+            put("clientNonce", "n-$bot-$seq")
+            if (thread != null) putJsonObject("thread") { put("id", thread) }
+        })
+
+    private fun queued(nonce: String = "unsent", text: String = "aside", createdAt: Long = 1) =
+        PendingSend(nonce, "bot", text = text, createdAt = createdAt, status = SendStatus.Held)
+
+    /** The ids [entries] shows in thread [thread]. */
+    private fun inThread(entries: List<Entry>, thread: String): List<String> =
+        threadChatItems(emptyList(), entries, thread, emptyList(), live = false)
+            .filterIsInstance<ChatItem.Message>().map { it.entry.id }
+
+    @Test fun anUpgradeFromEveryOlderSchemaDropsTheCacheAndKeepsWhatWasNotFetched() {
+        for (version in listOf(2, 3, 4, 5)) {
+            storeOldMirror(
+                version = version,
+                rows = listOf(chat("bot", 1) to WireJson.encodeToString(chat("bot", 1))),
+                bots = listOf(Bot("bot", "Bot", rev = 2)),
+                pending = listOf(queued()),
+            )
+            assertEquals("$version upgrades to the schema this build writes", 6, mirror.readableDatabase.version)
+            val snapshot = mirror.snapshot()
+            assertTrue("$version: the cached conversation goes", snapshot.entries.isEmpty())
+            assertEquals("$version: the cursor starts over", 0, snapshot.rev)
+            assertFalse("$version: the chat pages its history again", mirror.historyComplete("bot"))
+            assertEquals("$version: the roster stays", listOf("bot"), snapshot.bots.map { it.id })
+            assertEquals("$version: the unsent message stays", "aside", snapshot.pending.single().text)
         }
-        mirror = MirrorDatabase(context, directory, computer)
-        val snapshot = mirror.snapshot()
-        assertEquals("the cached row survives the additive schema change", listOf("message"), snapshot.entries.map { it.id })
-        assertEquals("the event cursor is kept", 3, snapshot.rev)
-        assertTrue("the history completion is kept", mirror.historyComplete("bot"))
     }
 
-    @Test fun upgradingTheMirrorFetchesTheConversationAgainAndKeepsUnsentMessages() {
-        mirror.close()
-        val path = File(directory, "mirror-$computer.db")
-        path.delete()
-        SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-            db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
-            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "3") })
-            db.insertOrThrow("entries", null, ContentValues().apply {
-                put("id", "message"); put("bot_id", "bot"); put("thread_id", "root"); put("seq", 1); put("rev", 3)
-                put("payload", WireJson.encodeToString(entry(3)))
-            })
-            db.insertOrThrow("pending", null, ContentValues().apply {
-                put("nonce", "unsent"); put("created", 1)
-                put("payload", """{"nonce":"unsent","botId":"bot","threadId":"root","text":"aside","createdAt":1}""")
-            })
-            db.insertOrThrow("history", null, ContentValues().apply { put("lane", "bot") })
-            db.version = 2
+    @Test fun anUpgradeWithMissingTablesOrACorruptRowStillOpens() {
+        // A cache whose conversation tables never existed: nothing to drop, and no row to read.
+        storeOldMirror(version = 2, withConversation = false, bots = listOf(Bot("bot", "Bot", rev = 2)), pending = listOf(queued()))
+        assertEquals(6, mirror.readableDatabase.version)
+        assertTrue(mirror.snapshot().entries.isEmpty())
+        assertEquals("the unsent message survives a cache with no conversation tables",
+            listOf("unsent"), mirror.snapshot().pending.map { it.nonce })
+        assertFalse("a missing conversation is recreated empty, not left half-dropped", mirror.historyComplete("bot"))
+        // A payload that no longer reads, and no meta table to write the cursor into.
+        storeOldMirror(version = 5, rows = listOf(chat("bot", 1) to "not a payload"), withMeta = false)
+        assertEquals(6, mirror.readableDatabase.version)
+        assertEquals("the upgrade writes the cursor it could not find", 0, mirror.revision())
+        assertTrue(mirror.snapshot().entries.isEmpty())
+        assertFalse("the corrupt row and its history lane are both gone", mirror.historyComplete("bot"))
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            val columns = db.rawQuery("PRAGMA table_info(entries)", null).use { info ->
+                buildList { while (info.moveToNext()) add(info.getString(1)) }
+            }
+            assertTrue("the new conversation table is whole", "thread_id" in columns && "payload" in columns)
+            assertFalse("the compatibility column is not kept", "routing_known" in columns)
+            assertEquals(0, db.compileStatement("SELECT COUNT(*) FROM entries").simpleQueryForLong())
+            assertEquals(0, db.compileStatement("SELECT COUNT(*) FROM history").simpleQueryForLong())
         }
+        // Opening it again does not run the upgrade a second time.
+        mirror.close()
         mirror = MirrorDatabase(context, directory, computer)
+        assertEquals(6, mirror.readableDatabase.version)
+        assertEquals(0, mirror.revision())
+    }
+
+    @Test fun aReconnectAfterTheUpgradeBringsTheConversationBackWithItsRoutes() {
+        val stale = routed(1, "thread-old")
+        storeOldMirror(version = 4, rows = listOf(stale to WireJson.encodeToString(stale)))
+        assertTrue("the old cache is dropped before the reconnect", mirror.snapshot().entries.isEmpty())
+
+        val short = routed(2, "thread-1")
+        val large = routed(3, "thread-2", filler = PER_MESSAGE_CHARS + 1)
+        // The reconnect: a hello, then the catch-up and history pages the computer sends from rev 0.
+        mirror.apply(MirrorEvent.Hello("host", 0, JsonObject(emptyMap()), null))
+        mirror.receive(listOf(short, large))
+        val entries = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries
+        assertEquals("the conversation comes back", listOf(short.id, large.id), entries.map { it.id })
+        assertEquals("the small row keeps its route", listOf(short.id), inThread(entries, "thread-1"))
+        assertEquals("the large row keeps its route", listOf(large.id), inThread(entries, "thread-2"))
+        mirror.receive(listOf(short, large))
+        assertEquals("the same page a second time does not duplicate them", listOf(short.id, large.id),
+            mirror.snapshot(Residency(setOf("bot"), window = 10)).entries.map { it.id })
+        assertFalse("the large row's edges cannot name its thread", WireJson.encodeToString(large).take(PAYLOAD_HEAD_CHARS)
+            .contains("\"thread\""))
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            db.rawQuery("SELECT thread_id FROM entries WHERE id=?", arrayOf(large.id)).use {
+                assertTrue(it.moveToFirst())
+                assertEquals("its route is the column, not its text", "thread-2", it.getString(0))
+            }
+        }
+    }
+
+    @Test fun aDuplicateOrStaleRefetchDoesNotDuplicateOrOvershadowARow() {
+        val older = Entry("stale", 1, "bot", rev = 1, kind = "user", data = buildJsonObject {
+            put("text", "stale"); put("clientNonce", "same")
+        })
+        val copy = Entry("copy", 2, "bot", rev = 2, kind = "user", data = buildJsonObject {
+            put("text", "also stale"); put("clientNonce", "same")
+        })
+        storeOldMirror(version = 3, rows = listOf(
+            older to WireJson.encodeToString(older),
+            copy to WireJson.encodeToString(copy),
+        ))
+        assertTrue("duplicate and stale rows in the old cache are dropped together", mirror.snapshot().entries.isEmpty())
+
+        mirror.receive(listOf(routed(1, null), routed(2, null)))
+        // The same page twice.
+        mirror.receive(listOf(routed(1, null), routed(2, null)))
+        assertEquals(listOf(1L, 2L), mirror.snapshot().entries.map { it.seq })
+
+        mirror.receive(listOf(routed(2, null).copy(rev = 9, data = buildJsonObject { put("text", "newer") })))
+        assertEquals("a newer copy replaces the one held", listOf("newer"),
+            mirror.snapshot().entries.filter { it.seq == 2L }.map { it.text })
+        // A page from before it, and a live event replayed behind it: neither may resurrect the old text.
+        mirror.receive(listOf(routed(2, null).copy(rev = 4, data = buildJsonObject { put("text", "stale") })))
+        mirror.apply(MirrorEvent.EntryChanged(routed(2, null).copy(rev = 5, data = buildJsonObject { put("text", "replay") })))
+        assertEquals("a stale copy neither duplicates nor overshadows the row", listOf("newer"),
+            mirror.snapshot().entries.filter { it.seq == 2L }.map { it.text })
+        assertEquals("no row is duplicated", 2, mirror.snapshot().entries.size)
+        // A whole chat fetched again out of order ends with each row once.
+        mirror.receive(listOf(routed(3, null), routed(1, null), routed(2, null)))
+        assertEquals(listOf(1L, 2L, 3L), mirror.snapshot().entries.map { it.seq })
+    }
+
+    @Test fun anOfflineStartAfterTheUpgradeShowsNoHistoryAndStillSendsItsQueuedMessage() {
+        storeOldMirror(
+            version = 5,
+            rows = listOf(chat("bot", 1) to WireJson.encodeToString(chat("bot", 1))),
+            bots = listOf(Bot("bot", "Bot", rev = 2)),
+            pending = listOf(queued()),
+        )
         val snapshot = mirror.snapshot()
-        assertTrue(snapshot.entries.isEmpty())
-        assertEquals(0, snapshot.rev)
-        assertFalse(mirror.historyComplete("bot"))
-        assertEquals("aside", snapshot.pending.single().text)
-        mirror.apply(MirrorEvent.EntryChanged(entry(4, nonce = "unsent")))
-        assertTrue(mirror.snapshot().pending.isEmpty())
+        assertTrue("offline, the chat is empty and the app is not", snapshot.entries.isEmpty())
+        assertFalse("the chat asks the computer for its history again", mirror.historyComplete("bot"))
+        assertFalse("there is no row left to page back to", mirror.hasOlder("bot", Long.MAX_VALUE))
+        assertEquals("the queued message is still listed", listOf("unsent"), snapshot.pending.map { it.nonce })
+        assertEquals(SendStatus.Held, snapshot.pending.single().status)
+        // It is still sendable: a second one joins it, in the order they were written.
+        mirror.save(queued(nonce = "second", text = "second", createdAt = 2))
+        assertEquals(listOf("aside", "second"), mirror.snapshot().pending.map { it.text })
+        // The computer confirms the first: the queued copy goes when its message arrives.
+        mirror.apply(MirrorEvent.EntryChanged(chat("bot", 2).copy(data = buildJsonObject {
+            put("text", "aside"); put("clientNonce", "unsent")
+        })))
+        assertEquals(listOf("second"), mirror.snapshot().pending.map { it.text })
+        assertTrue("its message is the one now in the chat", mirror.hasNonce("bot", "unsent"))
     }
 }

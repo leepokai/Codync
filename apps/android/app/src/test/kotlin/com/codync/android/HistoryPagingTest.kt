@@ -158,7 +158,7 @@ class HistoryPagingTest {
         val unstored = newestWindow(sequenceOf(broken), 10, Long.MAX_VALUE).single()
         assertTrue(unstored.isStoredStub)
         assertEquals(null, unstored.data["thread"])
-        // Routing stored beside the payload (or structurally recovered in MirrorDatabase for an older row) is.
+        // Routing stored beside the payload is, wherever in the row the marker sits.
         val kept = windowRows(sequenceOf(StoredRow(
             broken.take(PAYLOAD_HEAD_CHARS),
             broken.length.toLong(),
@@ -192,14 +192,16 @@ class HistoryPagingTest {
         assertEquals(null, row(2, "permission").routingThreadId())
     }
 
-    @Test fun `an unreadable approval keeps its thread and shows there as a warning`() {
+    @Test fun `an unreadable approval keeps the route stored beside it and shows there as a warning`() {
         val approval = row(2, "permission").copy(botId = "b", data = buildJsonObject {
             putJsonObject("thread") { put("id", "thread-1") }
             put("title", "Edit")
             put("status", "pending")
         })
         val broken = WireJson.encodeToString(approval).dropLast(1)
-        val kept = newestWindow(sequenceOf(broken), 10, Long.MAX_VALUE).single()
+        // The route is the column the schema stored with the row, so a payload that no longer decodes still has one.
+        val kept = windowRows(sequenceOf(StoredRow(broken, broken.length.toLong(), null, "thread-1")),
+            10, Long.MAX_VALUE).single().entry
         assertTrue(kept.isStoredStub)
         assertTrue(kept.isApprovalStub)
         val thread = kept.data["thread"] as kotlinx.serialization.json.JsonObject
@@ -211,6 +213,39 @@ class HistoryPagingTest {
         assertTrue(card.approvalReadFailed)
         assertTrue(card.isApprovalStub)
         assertEquals("thread-1", ((card.data["thread"] as kotlinx.serialization.json.JsonObject)["id"] as kotlinx.serialization.json.JsonPrimitive).content)
+    }
+
+    @Test fun `a short row is never routed by a thread marker in its text`() {
+        val approval = row(2, "permission").copy(data = buildJsonObject {
+            putJsonObject("thread") { put("id", "thread-in-text") }
+            put("status", "pending")
+        })
+        val payload = WireJson.encodeToString(approval)
+        // The route is the column stored beside the row; a row with none has no route, whatever its text says.
+        val kept = windowRows(sequenceOf(StoredRow(payload, payload.length.toLong())), 10, Long.MAX_VALUE).single().entry
+        assertEquals(null, kept.data["thread"])
+    }
+
+    @Test fun `an approval whose payload disagrees with its stored route keeps no answers`() {
+        val approval = row(2, "permission").copy(data = buildJsonObject {
+            putJsonObject("thread") { put("id", "thread-b") }
+            put("status", "pending")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+        })
+        val payload = WireJson.encodeToString(approval)
+        val kept = windowRows(sequenceOf(StoredRow(payload, payload.length.toLong(), null, "thread-a")),
+            10, Long.MAX_VALUE).single().entry
+        assertTrue("an unproven route keeps the card a stub", kept.isStoredStub)
+        assertEquals("thread-a", ((kept.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
+        assertTrue("no answers under a route the row does not name", kept.data["options"] == null)
+        // The same row, routed the way it names itself, reads whole and keeps its answers.
+        val agree = windowRows(sequenceOf(StoredRow(payload, payload.length.toLong(), null, "thread-b")),
+            10, Long.MAX_VALUE).single().entry
+        assertFalse(agree.isStoredStub)
+        assertEquals("thread-b", ((agree.data["thread"] as JsonObject)["id"] as JsonPrimitive).content)
+        assertEquals("pending", agree.status)
     }
 
     @Test fun `a preview that does not fit is dropped whole and a later one still joins`() {

@@ -51,7 +51,8 @@ that stays undecodable after the one rewind, or a `hello` whose other fields can
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
 
 **The cached conversation survives an update.** A client keeps a copy of each computer's bots and newest messages
-(its mirror), and an update of the app or the host never empties what a chat shows:
+(its mirror), and an update of the app or the host leaves what a chat shows in place, with one exception on the
+phone's side:
 
 - iPhone and desktop keep their event cursor across app and host updates, so a reconnect catches up only on what
   is new: a catch-up from rev 0 would bring every chat again. Their copy records what it was synced under: a
@@ -60,12 +61,13 @@ that stays undecodable after the one rewind, or a `hello` whose other fields can
   everything again from rev 0 underneath what's shown and, once that catch-up has all arrived (`hello.catchUp`
   events), keep exactly what the computer sent again; a refetch the link cut short starts over. A bot field a
   host update adds shows once that bot next changes.
-- Android stores each row as the computer sent it, so a new app or host version keeps the whole conversation: it
-  only reads the bots again. Its event cursor stays where it was: a catch-up from rev 0 brings only each chat's
-  newest entries, and onto the rows held it could leave a gap paging never fills. The one exception is a change of `hello.schema` (the host's store
-  schema), since a migration may rewrite or delete rows in place; a host that sends no `schema` is judged by its
-  version. The conversation is dropped then and the chats are empty until the catch-up fills them: refetching
-  underneath, as the iPhone does, isn't built on Android
+- Android stores each row as the computer sent it, so a new host version keeps the whole conversation: it only reads
+  the bots again. Its event cursor stays where it was: a catch-up from rev 0 brings only each chat's newest entries,
+  and onto the rows held it could leave a gap paging never fills. It empties the chats and lets the catch-up fill them
+  in two cases, keeping the bots and the unsent messages: a change of `hello.schema` (the host's store schema), since
+  a migration may rewrite or delete rows in place, and a change of the mirror's own schema, since a cache is only read
+  by the schema that wrote it (a host that sends no `schema` is judged by its version). The chats are empty until the
+  reconnect fetches them again: refetching underneath, as the iPhone does, isn't built on Android
   ([Android parity](../plans/android-app.md#different-from-the-iphone-on-purpose-or-by-platform)).
 
 Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.

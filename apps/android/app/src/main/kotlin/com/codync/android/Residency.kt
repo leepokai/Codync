@@ -62,16 +62,15 @@ data class Residency(
 
 /**
  * One stored payload. [text] is the whole row, or only its first [PAYLOAD_HEAD_CHARS] when [chars] exceeds
- * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null. [routingThread] is its separately
- * stored `data.thread.id`, or one structurally recovered from an older row.
+ * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null. [routingThread] is the
+ * `data.thread.id` stored beside the row by the schema that wrote it: a row's route is read, never recovered from
+ * its text, so a body that mentions a thread cannot move it.
  */
 internal class StoredRow(
     val text: String,
     val chars: Long,
     val tail: String? = null,
     val routingThread: String? = null,
-    /** Whether routing is authoritative: a stored value, or a legacy oversized row already structurally evaluated. */
-    val routingKnown: Boolean = false,
     /** The stored route could not be trusted (over the id bound, or holding an embedded NUL): no route and no actions. */
     val routingAmbiguous: Boolean = false,
 )
@@ -111,24 +110,20 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
         val row = rows.next()
         val oversized = row.chars > PER_MESSAGE_CHARS
         if (!oversized && !row.routingAmbiguous && row.chars <= budget - bytes) {
-            // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0 (rows an earlier app saved from one).
             // A malformed stored row must not abort the whole snapshot: keep what its head identifies as a stub.
-            val checked = if (row.routingKnown) row.routingThread else routingThreadIn(row.text)
             val read = try {
                 WireJson.decodeFromString<Entry>(row.text).threadNamed()
             } catch (_: Exception) {
-                // This row fits in memory whole: a structural walk of it can find `data.thread` wherever it sits.
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, row.routingKnown,
-                    offerAnswers = false)
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, offerAnswers = false)
                     ?.threadNamed() ?: continue
             }
-            // WireJson accepts duplicate object keys and other routing evidence the strict walk rejected. An approval
+            // The decoder accepts duplicate object keys and other routing evidence beside the stored route. An approval
             // whose decoded route disagrees keeps a non-actionable stub in the owner chat instead of offering answers
-            // under a thread nothing checked; every other row follows the checked route.
-            val entry = if (read.isApproval && read.routingThreadId() != checked) {
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, checked, true, offerAnswers = false)
+            // under a thread the row does not name; every other row follows the route stored with it.
+            val entry = if (read.isApproval && read.routingThreadId() != row.routingThread) {
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, offerAnswers = false)
                     ?.threadNamed() ?: continue
-            } else read.withCheckedThread(checked)
+            } else read.withCheckedThread(row.routingThread)
             decoded += KeptRow(entry, row.chars.toInt(), entry.routingThreadId())
             bytes += row.chars
             if (entry.isChat) shown++
@@ -141,7 +136,6 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
             row.tail ?: row.text.takeLast(PAYLOAD_TAIL_CHARS),
             row.chars,
             row.routingThread,
-            row.routingKnown || row.routingAmbiguous,
             offerAnswers = !row.routingAmbiguous,
         )?.threadNamed() ?: continue
         val cost = retainedStubChars(entry)
@@ -204,23 +198,18 @@ internal fun previewsWithin(order: List<String>, budget: Long, read: (String) ->
 
 /**
  * [head] is at most [PAYLOAD_HEAD_CHARS] of a payload, [tail] its last [PAYLOAD_TAIL_CHARS] where its times sit, and
- * [storedThread] the routing metadata kept beside an oversized row. [fullLength] is the stored row, which is not copied.
+ * [storedThread] the routing metadata kept beside the row. [fullLength] is the stored row, which is not copied.
  */
 private fun boundedEntry(
     head: String,
     tail: String,
     fullLength: Long,
     storedThread: String? = null,
-    routingKnown: Boolean = false,
     /** False when the route is unproven: the stub must not carry answers. */
     offerAnswers: Boolean = true,
 ): Entry? {
     val fields = headFields(head)
     val seq = fields["seq"]?.toLongOrNull() ?: return null
-    // A stored value, or a completed scan of an older oversized row, is authoritative even when it found no thread.
-    // A legacy short row may still expose a complete direct marker in the visible payload; that fallback uses the same
-    // strict structural walk as the full-row scan, so nesting and duplicate ids cannot route it.
-    val thread = if (routingKnown) storedThread else storedThread ?: routingThreadIn(head)
     val times = tailTimes(tail)
     return Entry(
         id = fields["id"].orEmpty(),
@@ -229,7 +218,7 @@ private fun boundedEntry(
         rev = fields["rev"]?.toLongOrNull() ?: 0L,
         kind = fields["kind"].orEmpty(),
         turn = fields["turn"]?.toLongOrNull() ?: 0L,
-        data = stubData(head, tail, fullLength, thread, offerAnswers),
+        data = stubData(head, tail, fullLength, storedThread, offerAnswers),
         createdAt = times["createdAt"] ?: 0L,
         updatedAt = times["updatedAt"] ?: 0L,
     )
@@ -492,6 +481,9 @@ internal val Entry.isStoredStub: Boolean
  */
 internal val Entry.isApprovalStub: Boolean
     get() = isStoredStub && kind == "permission"
+
+/** A routing id is a small identifier, not a message body. Larger ids are malformed and never stored or queried. */
+internal const val MAX_ROUTING_ID_CHARS = 1_024
 
 /** The thread this entry belongs to (`data.thread.id`), stored beside its payload so routing never depends on field order. */
 internal fun Entry.routingThreadId(): String? =

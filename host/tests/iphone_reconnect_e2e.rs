@@ -181,10 +181,12 @@ struct Phone(Child);
 
 impl Phone {
     fn start(simulator: &str, dir: &Path) -> Self {
-        let kit = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../apps/ios/Kit");
-        let child = Command::new("xcodebuild")
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let kit = repo.join("apps/ios/Kit");
+        let child = Command::new(repo.join("tools/xcodebuild.sh"))
             .current_dir(&kit)
-            .args(["test", "-scheme", "CodyncKit-Package", "-derivedDataPath", "../../../build/dd"])
+            .args(["test", "-scheme", "CodyncKit-Package", "-derivedDataPath"])
+            .arg(repo.join("build/dd"))
             .args(["-destination", &format!("platform=iOS Simulator,id={simulator}")])
             .arg("-only-testing:CodyncUITests/aRestartedHostCatchesTheIPhoneUpOnlyOnWhatIsNew()")
             .env("TEST_RUNNER_CODYNC_RESTART_DIR", dir)

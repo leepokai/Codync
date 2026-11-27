@@ -180,7 +180,7 @@ and states.
 ### Verification
 
 Run Rust format, Clippy and tests for `host/`, `npm run typecheck && npm test` in
-`apps/desktop/`, and `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator
+`apps/desktop/`, and `../../../tools/xcodebuild.sh test -scheme CodyncKit-Package` on an iOS simulator
 from `apps/ios/Kit/`. Desktop UI checks use the `CODYNC_DEBUG_OPEN` and
 `CODYNC_REMOTE_DEBUG` switches described in the
 [desktop app doc](../architecture/desktop-app.md#development). Host tests cover TUI

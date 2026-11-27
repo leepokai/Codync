@@ -140,6 +140,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
+        detached_before: None,
         plan_entry: None,
         last_text: None,
         sent: Vec::new(),
@@ -346,6 +347,9 @@ struct Actor {
     prompt_call: Option<String>,
     seg: Seg,
     tools: HashMap<String, String>,
+    /// A thread's: the sessions its agent ran detached in when its task's round began, which aren't what the task
+    /// leaves running (`left_running`, #634). Kept while the task goes on with what a turn left running.
+    detached_before: Option<Vec<i32>>,
     plan_entry: Option<String>,
     /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
@@ -422,7 +426,11 @@ impl Actor {
         }
         let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
         let failed = done.as_ref().is_err_and(acp::may_end_session);
-        self.finish_turn(&done);
+        let left = self.left_running(&done).await;
+        if self.finish_turn(&done, left) {
+            // Its task waits on what it left running, in this session and this agent: nothing of either goes.
+            return self.next_in_queue(done_tx).await;
+        }
         match session {
             // A thread's session is spent like a run's; a task that follows reopens it.
             Some(sid) if routine || self.cfg.is_thread() => self.release_spent(&sid).await,

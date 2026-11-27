@@ -1,7 +1,8 @@
-//! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, and
-//! whether it still runs Codync's MCP servers.
+//! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, whether
+//! it still runs Codync's MCP servers, and what a thread's turn left running that its task waits on (#634).
 
-use codync_agent::acp::Acp;
+use super::{Actor, Done};
+use codync_agent::acp::{Acp, StopReason};
 use codync_agent::process::{self, JobProcess};
 
 /// Whether one of Codync's MCP servers (`codync-host mcp`) still runs under the agent. OpenCode 2.x drops them from a
@@ -65,14 +66,116 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
-    let Some(leader) = leader else { return true };
-    let Some(host) = host_program() else { return true };
+    detached_sessions_of(leader).await.is_none_or(|sessions| !sessions.is_empty())
+}
+
+/// The sessions of what the agent led by `leader` runs detached ([`detached_sessions`]); None when unsure.
+#[cfg(unix)]
+async fn detached_sessions_of(leader: Option<u32>) -> Option<Vec<i32>> {
+    let (leader, host) = (leader?, host_program()?);
     let listed = process::list_processes().await;
-    let Ok(processes) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes"))
-    else {
-        return true;
-    };
-    detached_descendant(&processes, leader, &host, process::session)
+    let processes = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")).ok()?;
+    detached_sessions(&processes, leader, &host, running_session)
+}
+
+/// `pid`'s session while it runs. A zombie is work that ended and its parent hasn't reaped yet: macOS gives no session
+/// for it, Linux still does.
+// ponytail: the crate's `process::session` belongs to answer None for a Linux zombie too; this stays here so the fix
+// costs no codync-agent release, and moves there with its next change.
+#[cfg(unix)]
+fn running_session(pid: u32) -> Option<i32> {
+    #[cfg(target_os = "linux")]
+    if std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .is_ok_and(|stat| stat.rsplit_once(") ").is_some_and(|(_, state)| state.starts_with('Z')))
+    {
+        return None;
+    }
+    process::session(pid)
+}
+
+/// The sessions `acp` runs detached in now ([`detached_sessions`]), which aren't what a thread's task leaves running
+/// later ([`Actor::left_running`]). None when unsure, and on Windows.
+#[cfg(unix)]
+async fn detached_now(acp: &Acp) -> Option<Vec<i32>> {
+    detached_sessions_of(acp.pid()).await
+}
+
+#[cfg(windows)]
+#[allow(clippy::unused_async, reason = "the Unix one awaits")]
+async fn detached_now(_acp: &Acp) -> Option<Vec<i32>> {
+    None
+}
+
+/// Whether a thread's agent left something running detached that its task may wait on: a session of its own
+/// ([`background_work`]) that isn't one of `before` (already there when its task's round began), where nothing
+/// listens. A server left listening is meant to stay, and shows among the bot's dev servers. Unsure counts as
+/// nothing, so no task waits on a guess.
+#[cfg(unix)]
+async fn left_detached(acp: &Acp, before: &[i32]) -> bool {
+    left_detached_under(acp.pid(), before).await
+}
+
+#[cfg(unix)]
+async fn left_detached_under(leader: Option<u32>, before: &[i32]) -> bool {
+    let Some(sessions) = detached_sessions_of(leader).await else { return false };
+    let sessions: Vec<i32> = sessions.into_iter().filter(|sid| !before.contains(sid)).collect();
+    if sessions.is_empty() {
+        return false;
+    }
+    let listening = tokio::task::spawn_blocking(crate::dev_servers::ports::listening).await;
+    let Ok(Ok(listening)) = listening else { return false };
+    let serving: Vec<i32> = listening.iter().filter_map(|l| process::session(l.pid)).collect();
+    sessions.iter().any(|sid| !serving.contains(sid))
+}
+
+/// Windows has no sessions to tell what the agent left running from its own servers ([`runs_something_else`]): unsure,
+/// so nothing.
+#[cfg(windows)]
+#[allow(clippy::unused_async, reason = "the Unix one awaits")]
+async fn left_detached(_acp: &Acp, _before: &[i32]) -> bool {
+    false
+}
+
+impl Actor {
+    /// A thread's turn begins: what its agent already runs detached isn't what its task leaves running, unless the
+    /// task's round began earlier and goes on with what a turn left running ([`Self::turn_over`]).
+    pub(super) async fn note_detached(&mut self) {
+        if self.cfg.is_thread()
+            && self.detached_before.is_none()
+            && let Some(conn) = &self.conn
+        {
+            self.detached_before = Some(detached_now(&conn.acp).await.unwrap_or_default());
+        }
+    }
+
+    /// What a thread's turn that just ended normally (`done`) left running in the background, which its task waits on,
+    /// in words that fit "while … still runs": a subagent Claude's adapter launched this turn to run in the
+    /// background (`isAsync`), or something its agent runs detached since its task's round began
+    /// ([`left_detached`]). None for any other turn.
+    pub(super) async fn left_running(&self, done: &Done) -> Option<String> {
+        let ended = done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::EndTurn);
+        if !self.cfg.is_thread() || self.stop_requested || !ended {
+            return None;
+        }
+        let subagents = self
+            .tools
+            .values()
+            .filter_map(|id| self.hub.store.entry(id))
+            .filter(|e| e.data["subagent"]["background"] == true)
+            .count();
+        let mut left = Vec::new();
+        match subagents {
+            0 => {}
+            1 => left.push("a subagent launched in the background".to_owned()),
+            n => left.push(format!("{n} subagents launched in the background")),
+        }
+        if let Some(conn) = &self.conn
+            && left_detached(&conn.acp, self.detached_before.as_deref().unwrap_or_default()).await
+        {
+            left.push("a command started in the background".to_owned());
+        }
+        (!left.is_empty()).then(|| left.join(" and "))
+    }
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its
@@ -101,7 +204,8 @@ fn runs_something_else(processes: &[JobProcess], own: &str) -> bool {
     processes.iter().filter(|p| !process::is_console(p) && !ours(p)).any(|p| process::starts_nothing(processes, p))
 }
 
-/// `processes`: what's on the computer; `session` finds a live process's session. One that exited since the listing
+/// The sessions what the agent led by `leader` runs detached in, each once; None when the agent's own can't be looked
+/// up. `processes`: what's on the computer; `session` finds a live process's session. One that exited since the listing
 /// holds nothing. In a session of its own, these are still the agent's: what runs the agent's own program and what it
 /// starts in that session, Codync's MCP servers and what they start (`host`: the host's program name), and a process
 /// the agent's program starts to lead a session of its own, without what that one starts. OpenCode 2.x starts its
@@ -111,13 +215,13 @@ fn runs_something_else(processes: &[JobProcess], own: &str) -> bool {
 // engine, a generic runtime (node, python) never exempts its own name, and what an MCP server from the user's own agent
 // config starts still holds the agent; match the launched program or the agent's config if one such shows up.
 #[cfg(any(unix, test))]
-fn detached_descendant(
+fn detached_sessions(
     processes: &[JobProcess],
     leader: u32,
     host: &str,
     session: impl Fn(u32) -> Option<i32>,
-) -> bool {
-    let Some(own) = session(leader) else { return true };
+) -> Option<Vec<i32>> {
+    let own = session(leader)?;
     let agent = processes
         .iter()
         .find(|p| p.pid == leader)
@@ -136,7 +240,13 @@ fn detached_descendant(
             u32::try_from(sid).ok().and_then(find).is_some_and(runs_agent)
         }
     };
-    descendants.iter().any(|p| session(p.pid).is_some_and(|sid| sid != own && !codync(p) && !agents_own(p, sid)))
+    let mut sessions: Vec<i32> = descendants
+        .iter()
+        .filter_map(|p| session(p.pid).filter(|&sid| sid != own && !codync(p) && !agents_own(p, sid)))
+        .collect();
+    sessions.sort_unstable();
+    sessions.dedup();
+    Some(sessions)
 }
 
 /// A shell or an interpreter (`python3.12` too, and `Python`, as macOS names a framework build's process): as an
@@ -154,6 +264,15 @@ mod tests {
     use std::collections::HashMap;
 
     const HOST: &str = "codync-host";
+
+    fn detached_descendant(
+        processes: &[JobProcess],
+        leader: u32,
+        host: &str,
+        session: impl Fn(u32) -> Option<i32>,
+    ) -> bool {
+        detached_sessions(processes, leader, host, session).is_none_or(|sessions| !sessions.is_empty())
+    }
 
     fn process(pid: u32, parent: u32, name: &str) -> JobProcess {
         JobProcess { pid, parent, name: name.to_owned() }
@@ -307,7 +426,26 @@ mod tests {
         }
         assert!(!detached_work(plain.id()).await);
         assert!(!detached_work(grouped.id()).await);
-        for child in [plain, grouped, detached] {
+        // #634: what a thread's task waits on, unless it serves (a dev server left listening is meant to stay).
+        assert!(left_detached_under(detached.id(), &[]).await);
+        let before = detached_sessions_of(detached.id()).await.expect("its sessions");
+        assert!(!left_detached_under(detached.id(), &before).await, "there before its task's round began");
+        let serving = spawn(
+            "use POSIX (); use IO::Socket::INET; my $pid = fork; if (!$pid) { POSIX::setsid(); \
+             my $s = IO::Socket::INET->new(LocalAddr => '127.0.0.1', LocalPort => 0, Listen => 1) or die; sleep 30; \
+             exit } sleep 30",
+        );
+        while !detached_work(serving.id()).await {
+            assert!(tokio::time::Instant::now() < deadline, "the serving child never showed up");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while left_detached_under(serving.id(), &[]).await {
+            assert!(tokio::time::Instant::now() < deadline, "a detached server still reads as work its task waits on");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(!left_detached_under(None, &[]).await, "unsure is nothing");
+        for child in [plain, grouped, detached, serving] {
             if let Some(pid) = child.id() {
                 let _ = std::process::Command::new("/bin/kill").args(["-KILL", "--", &format!("-{pid}")]).status();
             }

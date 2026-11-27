@@ -229,6 +229,10 @@ pub(super) struct Task {
     /// A host restart already sent it back to waiting once: the next one fails it.
     #[serde(default)]
     pub restarted: bool,
+    /// Its thread ended a turn while what it started in the background still ran, and was asked to wait for it: the
+    /// next such end fails it (`work::hold`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
     #[serde(default)]
     pub hops: u8,
     pub created_at: i64,
@@ -339,6 +343,7 @@ impl Task {
             thread: None,
             cut_in: false,
             restarted: false,
+            held: false,
             hops,
             created_at: now_ms(),
             started_at: None,
@@ -356,13 +361,14 @@ impl Task {
         }
     }
 
-    /// Back to waiting at the front of `tasks`, to start again in a new thread.
+    /// Back to waiting at the front of `tasks`, to start again in a new thread, which may be asked to wait once again.
     pub(super) fn set_aside(&mut self, front: i64) {
         self.status = Status::Waiting;
         self.order = front;
         self.thread = None;
         self.started_at = None;
         self.began = false;
+        self.held = false;
     }
 }
 

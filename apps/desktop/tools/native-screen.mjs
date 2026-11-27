@@ -15,7 +15,10 @@ const configuration = env === 'dev' ? 'DevRelease' : 'Release'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repo = join(root, '../..')
 const derived = join(repo, 'build/dd')
-execFileSync('xcodebuild', [
+// The release build (`main`, run by release CI) stays on plain xcodebuild so the shipped helper keeps
+// its real paths; dev builds share the compile cache: docs/guides/xcode-build-cache.md.
+const xcodebuild = env === 'dev' ? join(repo, 'tools/xcodebuild.sh') : 'xcodebuild'
+execFileSync(xcodebuild, [
   'build', '-project', join(repo, 'apps/Codync.xcodeproj'), '-scheme', env === 'dev' ? 'Screen Dev' : 'Screen', '-configuration', configuration,
   '-destination', 'generic/platform=macOS', '-derivedDataPath', derived, '-quiet',
   'CODE_SIGN_IDENTITY=-', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGNING_ALLOWED=NO',

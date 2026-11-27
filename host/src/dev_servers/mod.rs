@@ -6,7 +6,7 @@
 mod detected;
 mod logs;
 mod platform;
-mod ports;
+pub(crate) mod ports;
 mod run;
 mod scan;
 #[cfg(test)]

@@ -9,14 +9,14 @@ sequenceDiagram
   alt Peer unreachable
     S->>S: Queue in outbox and retry (up to one day)
   else Peer reachable
-    R->>R: Check membership, delivery ID and budgets
+    R->>R: Check membership, rules, delivery ID and budgets
     alt Already accepted delivery ID
       R-->>S: Acknowledge without delivering again
-    else Refused by policy
+    else Refused by a rule or a budget
       R-->>S: Return refusal
     else New accepted letter
-      alt App-managed agent
-        R->>T: Put message in app inbox (caller handles wake)
+      alt App-managed agent or mailbox
+        R->>T: Put message in app inbox (caller handles wake), with its rule's access
       else Claude Code or Codex notice
         R->>R: Keep until the next waking message
       else Claude Code or Codex waking message

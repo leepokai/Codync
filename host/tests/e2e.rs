@@ -175,8 +175,10 @@ async fn turn_with_approval_reaches_a_final_reply() {
     assert_eq!(
         shown(&card["data"], &card_keys),
         shown(
+            // The request leaves out the change; the tool call's own update named it.
             &json!({"title": "Edit a.txt", "toolKind": "edit", "command": "sed -i s/x/y/ a.txt", "detail": "",
-                "diffs": [], "status": "pending", "selected": null, "options": [
+                "diffs": [{"path": "a.txt", "added": 1, "removed": 1, "isNew": false, "startLine": 1,
+                    "patch": "-x\n+y\n"}], "status": "pending", "selected": null, "options": [
                     {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
                     {"optionId": "always", "name": "Always", "kind": "allow_always"},
                     {"optionId": "no", "name": "Reject", "kind": "reject_once"}]}),

@@ -2145,6 +2145,7 @@
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "このリリースのその他の変更",
   "Watch the full video": "動画を全編見る",
+  "Background": "バックグラウンド",
   "Work": "作業",
   "Worktree per thread": "thread ごとに worktree",
   "Threads that work at once in this repository each get their own branch.": "このリポジトリで同時に作業する thread は、それぞれ自分のブランチを使います。",

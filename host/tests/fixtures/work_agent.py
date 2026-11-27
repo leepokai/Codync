@@ -218,7 +218,8 @@ def work(text, session):
 
 def thread(text):
     """A thread's turn on what the user wrote to its thread."""
-    words = re.findall(r"^\[Codync: message [^\]]+\]\n([^\n]*)", text, re.M)
+    # An outside app's message (MCP) opens with a line naming the app, before its words.
+    words = re.findall(r"^\[Codync: message [^\]]+\]\n(?:\[Codync: a message from [^\]]+\]\n)?([^\n]*)", text, re.M)
     notes = ["picked up" if "in a session that can't be picked up" in text else "same session"]
     if any("NEST" in word for word in words):
         notes.append(said(chat_tool("add_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])

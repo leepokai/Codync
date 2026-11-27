@@ -4,12 +4,14 @@ Other apps can start Codync threads and follow them: a coding agent in your term
 
 Every app works at a level you choose:
 
-- **Read only:** it can list and read threads, and nothing else.
+- **Read only:** it can list and read threads, routines and workflows, and start or change none of them.
 - **Ask for every request:** it can start threads and write to them. Every request those threads make comes to your devices as an approval.
 - **Auto:** its threads run in the agent's own auto mode. Anything the agent asks for still comes to you.
 - **Full access:** its threads approve their own requests, and it can run routines and workflows.
 
 **Approvals are never answered through MCP.** An app can see that a thread is waiting on you and tell you, but only you can answer the approval, in Codync. It can answer a question a thread asks with a choice.
+
+Levels cover threads, routines and workflows. Messaging a bot (the way a [cloud assistant](/docs/cloud-assistants) or another bot asks one for help) keeps its own switches: **Cloud assistants** on the computer and **Reachable by cloud assistants** on each bot.
 
 A thread keeps the level it was started at. An app can't act on a thread that works more freely than the app is allowed to.
 
@@ -44,7 +46,7 @@ A thread an app started names the app under its title, for example **Started by 
 - **Apps are managed on the computer**, in the desktop app or the terminal UI. Phones don't show the list yet.
 - **At most 8 threads** of one app run at once, and an app can make 60 calls a minute.
 - **A cloud assistant waits at most 8 seconds** for a thread at a time, and asks again.
-- **A computer needs this version of Codync or later.** On an older one the section isn't there, and a cloud assistant is told to update Codync.
+- **A computer needs Codync 2.55.0 or later.** On an older one the section isn't there, and a cloud assistant is told to update Codync.
 
 ## Privacy
 

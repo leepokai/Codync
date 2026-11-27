@@ -42,6 +42,9 @@ principal default, and the call's `accessLimit` (which can narrow it but never w
 | Auto | the same | in the agent's own auto mode; anything it asks for is a card (ceiling Auto) |
 | Full | the same, plus pick the agent's mode and model options, run routines and workflows | with requests approved by themselves |
 
+Levels govern the worker tools only. The older messaging tools (`list_bots`, `message_bot`, `read_replies`, the
+mailbox) keep their own switches: Cloud assistants and each bot's Reachable by cloud assistants (`Class::Messages`).
+
 A thread keeps the level it was started at (`Task::started_by`): `work::access_of` turns it into the thread's
 per-turn ceiling, so a restart doesn't widen it. An app may act only on threads at or below its level. A thread the
 user started that approves its own requests counts as Full. **Approval cards are never answered through MCP**:
@@ -55,8 +58,9 @@ in `control/schema.rs`. The cloud's copy is in `cloud/src/routes/assistant.ts`.
 
 - **Access classes** (`access::class`, one table with a completeness test): reads, starts threads, writes threads,
   writes the owner's work (routines and workflows run with the bot's own setup, so they need Full).
-- **Order of checks** (`control::call`): the principal is live → rate limit (60 calls a minute per principal) →
-  level ceiling → read-only refusal → class and scope → bot, folder and no-bot allowances → the tool.
+- **Order of checks** (`control::call`): the principal is live → rate limit (60 calls a minute per principal, first
+  so a flood costs nothing) → level ceiling → read-only refusal → class and scope → bot, folder and no-bot
+  allowances → the tool.
 - **Refusals** carry a code: `capability_denied`, `mode_escalation_denied`, `not_found` (also for a thread the
   caller can't see), `invalid_request`, `rate_limited`, `revoked`, `expired`.
 - **Idempotency**: `thread_launch`, `thread_send`, `routine_run` and `workflow_run` take `clientRequestId`. The same
@@ -79,6 +83,14 @@ in `control/schema.rs`. The cloud's copy is in `cloud/src/routes/assistant.ts`.
 - An audit log of the last 500 calls (`mcp.audit`: client, tool, outcome, code, time; never arguments) comes with
   `mcpClients`. Analytics: `mcp_client_created`, `mcp_client_revoked`, `mcp_call`, `mcp_thread_launched`, and
   `work_added.mcp` ([events](../reference/analytics-events.md)).
+
+## Verification
+
+- `control/access.rs`, `control/clients/tests.rs`, `control/threads/tests.rs`: every tool has a class, levels
+  narrow, tokens, expiry and revocation, folders, replays, rate limits, visibility, what each level may act on.
+- `host/tests/mcp_access_e2e.rs`: through `agentCall` with a token on a real host and scripted agents, an Ask app
+  starts, replays, waits for, reads and writes to a thread that runs in a mode that asks; a Full app waits on and
+  stops one; a revoked token is refused.
 
 ## Not built yet
 

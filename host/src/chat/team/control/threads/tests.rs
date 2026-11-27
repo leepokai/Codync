@@ -179,6 +179,18 @@ async fn an_app_acts_only_on_threads_within_its_level_and_never_approves() {
         assert_eq!(refused(&hub, &auto, tool, args).await, Code::ModeEscalationDenied, "{tool}");
     }
     assert!(call(&hub, &auto, "thread_read", &free).await.is_ok(), "reading is fine");
+    // So is one with no approval of its own on a bot that approves by itself.
+    let free_bot = BotConfig { permission: crate::store::Permission::Auto, ..bot_cfg("b2") };
+    hub.store.save_bot(&free_bot).unwrap();
+    put_task(&hub, "b2", "inherits", "thread-i", None, json!({}));
+    let inherits = json!({"botId": "b2", "taskId": "inherits", "how": "stop"});
+    assert_eq!(refused(&hub, &auto, "thread_steer", inherits).await, Code::ModeEscalationDenied);
+    // Only answering writes: any other action reads, and one it doesn't know is refused.
+    let odd = json!({"botId": "b1", "taskId": "mine", "action": "Answer"});
+    assert_eq!(refused(&hub, &auto, "thread_pending", odd).await, Code::InvalidRequest);
+    let reader = app("r", Level::ReadOnly, &all);
+    let answer = json!({"botId": "b1", "taskId": "mine", "action": "answer", "requestId": "x", "option": "A"});
+    assert_eq!(refused(&hub, &reader, "thread_pending", answer).await, Code::CapabilityDenied);
     // An approval waits: the app sees it, can't answer it.
     let card = hub
         .add_entry(

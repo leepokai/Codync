@@ -1,28 +1,38 @@
 import { test, expect } from '@playwright/test'
-import { api, attach, openGeneralSettings } from './sandbox.ts'
+import { api, appPage, attach, openPage, withPrefs } from './sandbox.ts'
 
 type Hello = { name: string }
 
-test('Settings › Computers pairs any phone: "Pair phone" opens "Pair phone with <name>", with no iPhone-only copy', async () => {
+test('Computers › Pair phone uses device-neutral copy and closes with one Escape', async () => {
   const { browser, page } = await attach()
+  let restorePrefs: (() => Promise<void>) | undefined
   try {
+    restorePrefs = await withPrefs(page, { appLanguage: 'en' })
     const { name } = await api<Hello>(page, 'hello', {})
-    await openGeneralSettings(page)
-    const settings = page.getByRole('dialog')
-    await settings.getByRole('button', { name: 'Computers', exact: true }).click()
-    await expect(settings.getByRole('button', { name: 'Pair iPhone' })).toHaveCount(0)
-    await settings.getByRole('button', { name: 'Pair phone', exact: true }).first().click()
+    await openPage(page, 'Computers')
+    const computers = appPage(page)
+    const heading = computers.getByRole('heading', { name: 'Computers & devices', exact: true })
+    const localComputer = computers.locator('.card-section').filter({
+      has: page
+        .locator('.settings-row > .settings-stack > span[style*="var(--text-caption)"][style*="var(--secondary)"]')
+        .filter({ hasText: /^This (Mac|computer) · / }),
+    })
+    await expect(heading).toBeVisible()
+    await expect(localComputer).toBeVisible()
+    await expect(computers.getByRole('button', { name: 'Pair iPhone', exact: true })).toHaveCount(0)
+    await localComputer.getByRole('button', { name: 'Pair phone', exact: true }).click()
 
-    const sheet = page.getByRole('dialog').filter({ hasText: `Pair phone with ${name}` })
+    const sheet = page.getByRole('dialog', { name: `Pair phone with ${name}`, exact: true })
     await expect(sheet).toBeVisible()
     await expect(sheet.getByText(/Scan with the Codync app or your phone's camera\./)).toBeVisible()
-    await expect(sheet.getByText(/iPhone/)).toHaveCount(0)
-    // The first Escape closes the sheet, the second Settings.
+    const localNetworkNote = `“Reach from anywhere” is off, so the phone only reaches ${name} on the same network.`
+    const iPhoneNotes = await sheet.locator('.pairing-note').filter({ hasText: /iPhone/i }).allTextContents()
+    expect(iPhoneNotes.filter((note) => note !== localNetworkNote)).toEqual([])
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(heading).toBeVisible()
   } finally {
+    await restorePrefs?.()
     await browser.close()
   }
 })

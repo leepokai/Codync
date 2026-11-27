@@ -1,0 +1,54 @@
+# A thread without a bot works in a folder Codync makes for it: the phones name that folder "Own folder", never its id,
+# in the Threads list (one Own folder group for all such threads) and in the thread's header. The phone must already
+# be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes); the flow
+# starts its own thread there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags thread-own-folder \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - thread-own-folder
+onFlowComplete:
+  - runScript:
+      file: thread-own-folder.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: thread-own-folder.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn:
+    text: "Threads(, .*)?"
+    waitToSettleTimeoutMs: 300
+- extendedWaitUntil:
+    visible: ".*${output.thread.title}.*"
+    timeout: 20000
+# One group for every thread in a folder of its own, named so; no folder named by an id.
+- assertVisible: "Own folder"
+- assertNotVisible: "[0-9a-f]{8}-[0-9a-f]{4}-.*"
+- takeScreenshot: thread-own-folder-list
+- runScript:
+    file: thread-own-folder.js
+    env:
+      ENDED: "true"
+- tapOn:
+    text: ".*${output.thread.title}.*"
+    waitToSettleTimeoutMs: 300
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 30000
+# Where it works, beside the agent: the folder's name, not its path (the agent's own reply may still quote the path).
+- assertVisible: "Own folder"
+- takeScreenshot: thread-own-folder-thread
+- runFlow: subflows/thread-back.yaml

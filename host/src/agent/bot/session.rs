@@ -315,11 +315,20 @@ impl Actor {
                         Ok(res) => res,
                         Err(error) => {
                             // Resume refuses a session this process already holds.
-                            if reopen == acp::Reopen::Resume
-                                && self.close_session(&sid).await
-                                && let Some(conn) = self.conn.as_mut()
-                            {
-                                conn.opening = false;
+                            if reopen == acp::Reopen::Resume {
+                                let closed =
+                                    tokio::time::timeout(FAILED_RESUME_CLOSE_TIMEOUT, self.close_session(&sid)).await;
+                                match closed {
+                                    Ok(true) => {
+                                        if let Some(conn) = self.conn.as_mut() {
+                                            conn.opening = false;
+                                        }
+                                    }
+                                    Ok(false) => {}
+                                    Err(elapsed) => tracing::warn!(
+                                        bot = %self.cfg.id, session = %sid, %elapsed, "timed out closing a failed resume"
+                                    ),
+                                }
                             }
                             return Err(error);
                         }
@@ -472,6 +481,9 @@ async fn watch_servers(conn: &mut Conn) {
 
 /// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
+
+/// How long cleanup of a failed resume may hold the actor.
+const FAILED_RESUME_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// An agent replays a session's history as `session/update` before it answers a reopen: drops it, and
 /// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for

@@ -351,7 +351,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 storedPayload(row.entry.botId, row.entry.id)
             } catch (error: Exception) {
                 android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
-                Analytics.capture(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Load))
+                reportReadFailure(row.entry.id, ApprovalReadFailure.Load)
                 kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
                 continue
             } ?: continue
@@ -359,10 +359,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 WireJson.decodeFromString<Entry>(payload)
             } catch (error: Exception) {
                 android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
-                Analytics.capture(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Decode))
+                reportReadFailure(row.entry.id, ApprovalReadFailure.Decode)
                 kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
                 continue
             }
+            ReadFailureReports.clear(row.entry.id)
             // WireJson takes the last of two duplicate keys, so it can name a thread the strict walk rejected. A row whose
             // decoded route disagrees stays the read-only stub the window built: no answers under an unproven thread, and
             // it appears in the owner chat only. The checked route is what a decoded row keeps everywhere else.
@@ -375,6 +376,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             kept[index] = KeptRow(named.withCheckedThread(row.routingThread), payload.length, row.routingThread)
         }
         return kept
+    }
+
+    /** One approval-read event per row per failure. [answerable] forgets the row when the payload decodes. */
+    private fun reportReadFailure(rowId: String, reason: ApprovalReadFailure) {
+        if (ReadFailureReports.once(rowId, reason.wire)) Analytics.capture(AnalyticsEvent.ApprovalReadFailed(reason))
     }
 
     /**

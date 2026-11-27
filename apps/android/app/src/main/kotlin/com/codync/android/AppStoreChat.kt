@@ -68,33 +68,39 @@ internal fun AppStore.storedMessageText(entry: Entry): String {
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
-        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Open))
+        reportStoredReadFailure(entry.id, StoredReadFailure.Open)
         throw IOException("Couldn't open the stored message.", error)
     } ?: run {
-        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Missing))
+        reportStoredReadFailure(entry.id, StoredReadFailure.Missing)
         throw IOException("That message is no longer on this phone.")
     }
-    return storedTextOfPayload(payload)
+    return storedTextOfPayload(payload, entry.id)
 }
 
 /**
  * The text a stored row's payload shows in that sheet. Throws when the payload cannot be read or has no text,
  * the same failures [AppStore.storedMessageText] reports.
  */
-internal fun storedTextOfPayload(payload: String): String {
+internal fun storedTextOfPayload(payload: String, rowId: String): String {
     val text = try {
         WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
-        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Unreadable))
+        reportStoredReadFailure(rowId, StoredReadFailure.Unreadable)
         throw IOException("Couldn't read the stored message.", error)
     }
     if (text.isBlank()) {
-        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Blank))
+        reportStoredReadFailure(rowId, StoredReadFailure.Blank)
         throw IOException("That message has no text on this phone.")
     }
+    ReadFailureReports.clear(rowId)
     return text
+}
+
+/** One event per row per failure. A later successful read of [rowId] allows a new one. */
+private fun reportStoredReadFailure(rowId: String, reason: StoredReadFailure) {
+    if (ReadFailureReports.once(rowId, reason.wire)) Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(reason))
 }
 
 /**

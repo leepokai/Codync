@@ -117,6 +117,17 @@ class AnalyticsTest {
         assertEquals(CloudRemoveOutcome.Failed, CloudRemoveOutcome.of(IOException("Offline")))
     }
 
+    @Test fun `a row's read failure is reported once until that row is read`() {
+        ReadFailureReports.reset()
+        assertEquals(true, ReadFailureReports.once("row", "load"))
+        assertEquals(false, ReadFailureReports.once("row", "load"))
+        assertEquals(true, ReadFailureReports.once("row", "decode"))
+        assertEquals(true, ReadFailureReports.once("other", "load"))
+        ReadFailureReports.clear("row")
+        assertEquals(true, ReadFailureReports.once("row", "load"))
+        assertEquals(false, ReadFailureReports.once("other", "load"))
+    }
+
     @Test fun `a crash keeps its type and Codync frames but never its message`() {
         val error = IllegalStateException("secret prompt text")
         val properties = CrashReports.properties(error).toString()

@@ -863,4 +863,62 @@ class MirrorDatabaseTest {
         assertEquals(listOf("second"), mirror.snapshot().pending.map { it.text })
         assertTrue("its message is the one now in the chat", mirror.hasNonce("bot", "unsent"))
     }
+
+    @Test fun aFailingApprovalReadIsReportedOnce() {
+        armAnalytics()
+        val approval = Entry("once-approval", 1, "bot", rev = 1, kind = "permission", data = buildJsonObject {
+            put("title", "Edit docs/design/bot-memory.md")
+            put("status", "pending")
+            put("detail", "D".repeat(3_000_000))
+        })
+        val huge = WireJson.encodeToString(approval).dropLast(1)
+        mirror.receive(listOf(chat("bot", 2)))
+        mirror.close()
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.insertOrThrow("entries", null, ContentValues().apply {
+                put("id", approval.id); put("bot_id", approval.botId); put("seq", approval.seq); put("rev", approval.rev)
+                put("payload", huge)
+            })
+        }
+        mirror = MirrorDatabase(context, directory, computer)
+        val window = Residency(setOf("bot"), window = 10)
+        mirror.snapshot(window)
+        mirror.snapshot(window)
+        assertEquals("two snapshots of a row that cannot be read send one event", 1, reported("approval_read_failed"))
+        assertTrue(mirror.snapshot(window).entries.single { it.id == approval.id }.approvalReadFailed)
+    }
+
+    @Test fun aFailingStoredMessageReadIsReportedOnce() {
+        armAnalytics()
+        val bad = "{not-json"
+        repeat(2) { assertTrue(runCatching { storedTextOfPayload(bad, "once-stored") }.isFailure) }
+        assertEquals("two reads of a payload that will not decode send one event", 1, reported("stored_message_read_failed"))
+        val approval = Entry("once-open", 1, "bot", rev = 1, kind = "user", data = buildJsonObject {
+            put("text", "D".repeat(3_000_000))
+        })
+        mirror.receive(listOf(chat("bot", 2)))
+        mirror.close()
+        SQLiteDatabase.openDatabase(File(directory, "mirror-$computer.db").absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.insertOrThrow("entries", null, ContentValues().apply {
+                put("id", approval.id); put("bot_id", approval.botId); put("seq", approval.seq); put("rev", approval.rev)
+                put("payload", WireJson.encodeToString(approval))
+            })
+        }
+        mirror = MirrorDatabase(context, directory, computer)
+        val store = previewStore()
+        store.database = mirror
+        repeat(2) { assertTrue(runCatching { store.storedMessageText(approval) }.isFailure) }
+        assertEquals("opening that row twice adds one event, not a second copy of the first", 2, reported("stored_message_read_failed"))
+    }
+
+    private fun armAnalytics() {
+        ReadFailureReports.reset()
+        Analytics.start(context)
+        Analytics.setEnabled(true)
+        Analytics.pending.clear()
+    }
+
+    private fun reported(name: String) = Analytics.pending.count {
+        it["event"]?.jsonPrimitive?.contentOrNull == name
+    }
 }

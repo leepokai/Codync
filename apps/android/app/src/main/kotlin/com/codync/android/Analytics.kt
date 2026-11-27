@@ -172,3 +172,24 @@ internal object Analytics {
     fun computerTag(id: String): String =
         MessageDigest.getInstance("SHA-256").digest("codync-analytics:$id".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
 }
+
+/**
+ * Read failures already sent for a row. Memory only, keyed by the row id the snapshot already holds.
+ * A later successful read forgets the row, so a new failure can be sent again. Not stored in the mirror.
+ */
+internal object ReadFailureReports {
+    private val seen = mutableSetOf<String>()
+
+    private fun key(rowId: String, reason: String) = reason + "\u0000" + rowId
+
+    /** True the first time [rowId] fails for [reason]. */
+    fun once(rowId: String, reason: String): Boolean = synchronized(seen) { seen.add(key(rowId, reason)) }
+
+    /** The row was read. Its failure states can be reported again if a later read fails. */
+    fun clear(rowId: String) = synchronized(seen) {
+        val suffix = "\u0000$rowId"
+        seen.removeAll { it.endsWith(suffix) }
+    }
+
+    fun reset() = synchronized(seen) { seen.clear() }
+}

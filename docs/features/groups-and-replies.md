@@ -45,6 +45,18 @@ quotes itself.
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
 | `markRead` | `botId` | Reads the chat. A no-op when nothing arrived since it was last read (a waiting permission card stays counted, `waiting` of `unread`), so clients call it whenever a chat is on screen. `send` marks its chat read. |
 
+## Bots managing local groups
+
+A bot with **Manage the team** also gets the local `manage` MCP group tools: `list_groups` lists this computer's
+groups with their topic and member ids/names, never chat messages; `create_group {name, topic?, members}` and
+`update_group {groupId, name?, topic?, members? | addMembers? + removeMembers?}` change them. Members must be
+existing, undeleted, non-plain agent bots of this computer — a group, a thread bot, a deleted bot or a bot on another
+computer is refused; a group needs at least one member and can't contain itself. Creating with exactly the members an
+existing group has opens that group rather than making a duplicate. Under Ask each change goes on an approval card
+listing the name, topic and members by name; under Auto it happens. A notice in the manager's chat records the result.
+A network [ceiling](codync-network.md#ceilings-auto-and-ask) allows `list_groups` but refuses the two writes. No client
+change is needed: group updates already reach every app over the existing `bot` events.
+
 ## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 
 - The user's message starts a *room turn* in the group: up to 3 rounds, 10 replies in all.

@@ -222,6 +222,13 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
             Event::TeamManaged
         }
+        // Group changes report the kind of change, never the group, its topic or its members.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_group" | "update_group")) => {
+            let tool = if b["name"] == "create_group" { "group_create" } else { "group_update" };
+            p.insert("tool".into(), tool.into());
+            p.insert("fields".into(), Value::Array(vec![]));
+            Event::TeamManaged
+        }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
         "chatCall" if b["name"] == "publish_artifact" => {
             let update = b["arguments"]["artifact"].as_str().is_some_and(|id| !id.is_empty());

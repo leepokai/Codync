@@ -95,6 +95,78 @@ async fn a_lead_creates_a_bot_the_user_allowed_and_not_one_change_they_denied() 
     );
 }
 
+/// A manager lists local groups and creates and changes them through cards; a read needs no card.
+#[tokio::test]
+async fn a_lead_manages_local_groups_with_cards() {
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "ask", "manageTeam": true})).await;
+    let new_bot = |name: &'static str| {
+        let host = &host;
+        async move {
+            host.call("createBot", json!({"name": name, "backend": "custom", "command": "unused"})).await["bot"]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+    let ada = new_bot("Ada").await;
+    let ben = new_bot("Ben").await;
+
+    host.call("send", json!({"botId": lead, "text": "MANAGE list_groups {}"})).await;
+    let reply = wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Done: {\"groups\""))
+    })
+    .await;
+    assert_eq!(reply["data"]["text"], "Done: {\"groups\":[]}", "{reply}");
+
+    let made_args = json!({"name": "Crew", "topic": "Ship it", "members": [lead, ada]});
+    let reply = manage(&host, &lead, "create_group", &made_args, "allow", |detail| {
+        assert_eq!(detail, "Name: Crew\nTopic: Ship it\nMembers: Lead, Ada");
+    })
+    .await;
+    let made: Value = serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    let group = made["group"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["group"]["topic"], "Ship it");
+    wait(&host, &lead, |e| e["data"]["text"] == "Created group Crew").await;
+    let row = |sync: &Value| sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == group).cloned().unwrap();
+    assert_eq!(row(&host.snapshot().await)["kind"], "group");
+
+    let changed_args = json!({"groupId": group, "name": "Squad", "addMembers": [ben], "removeMembers": [ada]});
+    let reply = manage(&host, &lead, "update_group", &changed_args, "allow", |detail| {
+        assert_eq!(detail, "Name: Squad\nMembers: Lead, Ben");
+    })
+    .await;
+    let changed: Value =
+        serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    assert_eq!(changed["group"]["name"], "Squad");
+    let ids: Vec<&str> =
+        changed["group"]["members"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [lead.as_str(), ben.as_str()]);
+    wait(&host, &lead, |e| e["data"]["text"] == "Updated Crew: name, members").await;
+
+    let denied = json!({"groupId": group, "name": "Nope"});
+    let reply = manage(&host, &lead, "update_group", &denied, "deny", |detail| {
+        assert_eq!(detail, "Name: Nope");
+    })
+    .await;
+    assert!(reply.starts_with("Refused: ") && reply.contains("didn't allow"), "{reply}");
+    assert_eq!(row(&host.snapshot().await)["name"], "Squad");
+
+    host.call("send", json!({"botId": lead, "text": "MANAGE list_groups {}"})).await;
+    let reply = wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.contains("\"name\":\"Squad\""))
+    })
+    .await;
+    let text = reply["data"]["text"].as_str().unwrap();
+    assert!(text.contains("\"topic\":\"Ship it\""), "{text}");
+    assert!(!text.contains("\"messages\""), "{text}");
+}
+
 /// A change whose wait ends without an answer ends its card too, and changes nothing.
 #[tokio::test]
 async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {

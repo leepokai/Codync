@@ -126,6 +126,109 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[tokio::test]
+async fn a_manager_lists_creates_and_changes_local_groups() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}-groups", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let plain: BotConfig = serde_json::from_value(json!({"id": "plain", "name": "Plain", "plain": true,
+        "hidden": true, "backend": "custom", "command": "unused"}))
+    .unwrap();
+    let nested: BotConfig = serde_json::from_value(json!({"id": "nested", "name": "Nested", "kind": "group",
+        "members": ["dev"]}))
+    .unwrap();
+    let thread: BotConfig = serde_json::from_value(json!({"id": "thread-1", "name": "Thread", "backend": "claude",
+        "cwd": dir.to_string_lossy(), "threadOf": "dev"}))
+    .unwrap();
+    let old: BotConfig = serde_json::from_value(json!({"id": "old", "name": "Old", "backend": "claude",
+        "cwd": dir.to_string_lossy()}))
+    .unwrap();
+    for cfg in [plain, nested, thread, old] {
+        hub.store.save_bot(&cfg).unwrap();
+    }
+    hub.store.delete_bot("old").unwrap();
+
+    let groups = call(&hub, "lead", "list_groups", &json!({})).await.unwrap();
+    assert_eq!(groups["groups"][0]["name"], "Nested");
+    assert_eq!(groups["groups"][0]["members"][0]["name"], "dev", "metadata only, never a chat");
+
+    let refused = |bot: &'static str, name: &'static str, args: Value| {
+        let hub = hub.clone();
+        async move { call(&hub, bot, name, &args).await.unwrap_err().to_string() }
+    };
+    assert!(refused("dev", "list_groups", json!({})).await.contains("may not manage the team"));
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["nested"]}))
+            .await
+            .contains("group can't be a member")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["plain"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["thread-1"]})).await.contains("not a thread")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["remote@mac"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["missing"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["old"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["lead", "lead"]}))
+            .await
+            .contains("same bot twice")
+    );
+    assert!(refused("lead", "create_group", json!({"name": "G", "members": []})).await.contains("at least one"));
+
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "topic": "Ship it", "members": ["lead"]}))
+        .await
+        .unwrap();
+    let id = made["group"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["group"]["topic"], "Ship it");
+    assert_eq!(made["group"]["members"][0]["name"], "lead");
+    assert_eq!(hub.store.bot(&id).unwrap().unwrap().config.created_by.as_deref(), Some("lead"));
+
+    let changed = call(&hub, "lead", "update_group", &json!({"groupId": id, "name": "Squad", "addMembers": ["dev"]}))
+        .await
+        .unwrap();
+    assert_eq!(changed["group"]["name"], "Squad", "a name change lands");
+    assert_eq!(changed["group"]["members"][0]["id"], "lead");
+    assert_eq!(changed["group"]["members"][1]["id"], "dev", "addMembers appends");
+    let removed = call(&hub, "lead", "update_group", &json!({"groupId": id, "removeMembers": ["dev"]})).await.unwrap();
+    assert_eq!(removed["group"]["members"].as_array().unwrap().len(), 1, "removeMembers takes one out");
+    assert!(
+        refused("lead", "update_group", json!({"groupId": id, "members": ["lead"]}))
+            .await
+            .contains("nothing to change")
+    );
+    assert!(
+        refused("lead", "update_group", json!({"groupId": "unknown", "name": "X"})).await.contains("unknown group")
+    );
+    assert!(refused("lead", "update_group", json!({"groupId": "dev", "name": "X"})).await.contains("unknown group"));
+    assert!(
+        refused("lead", "update_group", json!({"groupId": id, "members": ["lead"], "addMembers": ["dev"]}))
+            .await
+            .contains("not both")
+    );
+    assert_eq!(
+        notices(&hub, "lead"),
+        [json!("Created group Crew"), json!("Updated Crew: name, members"), json!("Updated Squad: members")]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();

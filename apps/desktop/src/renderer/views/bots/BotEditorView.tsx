@@ -305,6 +305,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               onChange={(on) => set('manageTeam', on)}
             />
           ) : null}
+          {/* Desktop check: two switches are two card-rows with one hairline, one switch is a row with none, and no switch adds no row. network-switches.test.ts. */}
           {networkSwitches(draft, store.network, set)}
         </CardSection>
 

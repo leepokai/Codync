@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { Children, createElement, type ReactNode } from 'react'
 import type { BotDraft } from '../../../shared/models.ts'
-import { visibleNetworkSwitches } from './network-switches.ts'
+import { visibleNetworkSwitches, type NetworkSwitch } from './network-switches.ts'
+
+/** What `CardSection` lays out (`Controls.tsx`): one `.card-row` per child, a `.hairline.inset` between them. */
+function cardSectionRows(children: ReactNode) {
+  const rows = Children.toArray(children)
+  return { rows: rows.length, hairlines: Math.max(0, rows.length - 1) }
+}
+
+function switchChildren(rows: NetworkSwitch[]): ReactNode {
+  return rows.map((row) => createElement('div', { key: row.key }, row.title))
+}
 
 const draft = (rest: Partial<BotDraft> = {}) => ({ offeredToNetwork: false, reachableByAssistants: false, ...rest }) as BotDraft
 test('the network switches are separate rows in settings order', () => {
@@ -31,4 +42,13 @@ test('an on switch is reported on and names the draft field it writes', () => {
   const [row] = visibleNetworkSwitches(draft({ offeredToNetwork: true }), { joined: true })
   assert.equal(row.on, true)
   assert.equal(row.field, 'offeredToNetwork')
+})
+
+test('CardSection gives 2, 1 and 0 switches their rows and hairlines', () => {
+  const both = visibleNetworkSwitches(draft(), { joined: true, assistants: true })
+  assert.deepEqual(cardSectionRows(switchChildren(both)), { rows: 2, hairlines: 1 })
+  const one = visibleNetworkSwitches(draft(), { joined: true })
+  assert.deepEqual(cardSectionRows(switchChildren(one)), { rows: 1, hairlines: 0 })
+  const none = visibleNetworkSwitches(draft(), null)
+  assert.deepEqual(cardSectionRows(switchChildren(none)), { rows: 0, hairlines: 0 })
 })

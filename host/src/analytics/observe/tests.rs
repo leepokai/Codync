@@ -477,6 +477,20 @@ fn a_team_change_names_the_settings_it_passes_never_their_values() {
 }
 
 #[test]
+fn a_group_change_names_no_group_its_topic_or_its_members() {
+    let arguments = json!({"name": "Secret Crew", "topic": "Secret plan",
+        "members": ["b1", "b2"], "groupId": "g1"});
+    for (tool, kind) in [("create_group", "group_create"), ("update_group", "group_update")] {
+        let b = json!({"botId": "b1", "name": tool, "arguments": arguments});
+        assert_eq!(
+            props("manageCall", &b),
+            Some((Event::TeamManaged, json!({"tool": kind, "fields": [], "client": "local"})))
+        );
+    }
+    assert_eq!(props("manageCall", &json!({"name": "list_groups", "arguments": {}})), None, "a read");
+}
+
+#[test]
 fn a_refused_team_change_reports_why_never_what_it_said() {
     let b = json!({"name": "create_bot", "arguments": {"name": "Scout"}});
     let (event, p) = observe(&Caller::Local, "manageCall", &b).unwrap();

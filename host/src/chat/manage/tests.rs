@@ -126,6 +126,330 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[tokio::test]
+async fn a_manager_lists_creates_and_changes_local_groups() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}-groups", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let plain: BotConfig = serde_json::from_value(json!({"id": "plain", "name": "Plain", "plain": true,
+        "hidden": true, "backend": "custom", "command": "unused"}))
+    .unwrap();
+    let nested: BotConfig = serde_json::from_value(json!({"id": "nested", "name": "Nested", "kind": "group",
+        "members": ["dev"]}))
+    .unwrap();
+    let thread: BotConfig = serde_json::from_value(json!({"id": "thread-1", "name": "Thread", "backend": "claude",
+        "cwd": dir.to_string_lossy(), "threadOf": "dev"}))
+    .unwrap();
+    let old: BotConfig = serde_json::from_value(json!({"id": "old", "name": "Old", "backend": "claude",
+        "cwd": dir.to_string_lossy()}))
+    .unwrap();
+    for cfg in [plain, nested, thread, old] {
+        hub.store.save_bot(&cfg).unwrap();
+    }
+    hub.store.delete_bot("old").unwrap();
+
+    let groups = call(&hub, "lead", "list_groups", &json!({})).await.unwrap();
+    assert_eq!(groups["groups"][0]["name"], "Nested");
+    assert_eq!(groups["groups"][0]["members"][0]["name"], "dev", "metadata only, never a chat");
+
+    let refused = |bot: &'static str, name: &'static str, args: Value| {
+        let hub = hub.clone();
+        async move { call(&hub, bot, name, &args).await.unwrap_err().to_string() }
+    };
+    assert!(refused("dev", "list_groups", json!({})).await.contains("may not manage the team"));
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["nested"]}))
+            .await
+            .contains("group can't be a member")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["plain"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["thread-1"]})).await.contains("not a thread")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["remote@mac"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["missing"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["old"]}))
+            .await
+            .contains("unknown or unavailable")
+    );
+    assert!(
+        refused("lead", "create_group", json!({"name": "G", "members": ["lead", "lead"]}))
+            .await
+            .contains("same bot twice")
+    );
+    assert!(refused("lead", "create_group", json!({"name": "G", "members": []})).await.contains("at least one"));
+
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "topic": "Ship it", "members": ["lead"]}))
+        .await
+        .unwrap();
+    let id = made["group"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["group"]["topic"], "Ship it");
+    assert_eq!(made["group"]["members"][0]["name"], "lead");
+    assert_eq!(hub.store.bot(&id).unwrap().unwrap().config.created_by.as_deref(), Some("lead"));
+
+    // With no topic the group still builds: `description` must be left out, not sent as null.
+    let plain =
+        call(&hub, "lead", "create_group", &json!({"name": "Plain", "members": ["dev", "lead"]})).await.unwrap();
+    assert_eq!(plain["group"]["topic"], "");
+    // Same members reopen the existing group and report its real name, not the requested one.
+    let reopened =
+        call(&hub, "lead", "create_group", &json!({"name": "Again", "members": ["lead", "dev"]})).await.unwrap();
+    assert_eq!(reopened["group"]["id"], plain["group"]["id"]);
+    assert_eq!(reopened["group"]["name"], "Plain", "the real group name is returned");
+
+    let changed = call(&hub, "lead", "update_group", &json!({"groupId": id, "name": "Squad", "addMembers": ["dev"]}))
+        .await
+        .unwrap();
+    assert_eq!(changed["group"]["name"], "Squad", "a name change lands");
+    assert_eq!(changed["group"]["members"][0]["id"], "lead");
+    assert_eq!(changed["group"]["members"][1]["id"], "dev", "addMembers appends");
+    let removed = call(&hub, "lead", "update_group", &json!({"groupId": id, "removeMembers": ["dev"]})).await.unwrap();
+    assert_eq!(removed["group"]["members"].as_array().unwrap().len(), 1, "removeMembers takes one out");
+    assert!(
+        refused("lead", "update_group", json!({"groupId": id, "members": ["lead"]}))
+            .await
+            .contains("nothing to change")
+    );
+    assert!(
+        refused("lead", "update_group", json!({"groupId": "unknown", "name": "X"})).await.contains("unknown group")
+    );
+    assert!(refused("lead", "update_group", json!({"groupId": "dev", "name": "X"})).await.contains("unknown group"));
+    assert!(
+        refused("lead", "update_group", json!({"groupId": id, "members": ["lead"], "addMembers": ["dev"]}))
+            .await
+            .contains("not both")
+    );
+    assert_eq!(
+        notices(&hub, "lead"),
+        [
+            json!("Created group Crew"),
+            json!("Created group Plain"),
+            json!("Opened group Plain"),
+            json!("Updated Crew: name, members"),
+            json!("Updated Squad: members")
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A user edit to a group's members while the manager's card waits must win: the update writes back
+/// only if the saved name, topic and members are still what the card described. `update_bot_if`
+/// rechecks under the same `emit_lock` as the write, so no stale overwrite can slip in between.
+#[tokio::test]
+async fn a_group_changed_while_the_card_waits_is_not_overwritten() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    // Force a card under Auto: a ceiling holds the manager's turn to Ask, so the change waits.
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let call_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&call_hub, "lead", "update_group", &json!({"groupId": call_gid, "addMembers": ["lead"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Change group Crew"), "{title}");
+            break reply;
+        }
+    };
+    // While the card is up, the user edits the group: another bot joins it.
+    hub.update_bot(&json!({"id": gid, "members": ["dev", "lead"]})).unwrap();
+    reply.send(true).unwrap();
+
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("the group changed while your card was up"), "{err}");
+    let members = hub.store.bot(&gid).unwrap().unwrap().config.members;
+    assert_eq!(members, ["dev".to_owned(), "lead".to_owned()], "the user's edit survives");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// In the group's own room the approval card marks the member `NeedsInput`, and that bumps the group's
+/// rev without changing its saved setup. Allow still applies; only a real change to the saved group refuses.
+#[tokio::test]
+async fn an_approval_in_the_groups_room_still_applies() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-room-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    // The manager's turn is in this group's room, so NeedsInput touches the group as well as the member.
+    hub.set_runtime("lead", |r| {
+        r.status = crate::hub::BotStatus::Working;
+        r.lane = Some(Lane::main(&gid));
+    });
+    let rev_before = hub.store.bot(&gid).unwrap().unwrap().rev;
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let call_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&call_hub, "lead", "update_group", &json!({"groupId": call_gid, "name": "Squad"})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Change group Crew"), "{title}");
+            break reply;
+        }
+    };
+    hub.set_runtime("lead", |r| r.status = crate::hub::BotStatus::NeedsInput);
+    let rev_after = hub.store.bot(&gid).unwrap().unwrap().rev;
+    assert!(rev_after > rev_before, "the room's card bumps the group's rev");
+    reply.send(true).unwrap();
+
+    let updated = task.await.unwrap().unwrap();
+    assert_eq!(updated["group"]["name"], "Squad", "Allow applies when only rev moved");
+    assert_eq!(hub.store.bot(&gid).unwrap().unwrap().config.members, ["dev".to_owned()]);
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Same members reopen the existing group. The card must describe that group, not the requested name and topic.
+#[tokio::test]
+async fn reopening_a_group_asks_about_the_group_that_will_be_returned() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-reopen-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made =
+        call(&hub, "lead", "create_group", &json!({"name": "Plain", "topic": "Keep", "members": ["dev", "lead"]}))
+            .await
+            .unwrap();
+    let id = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let task = tokio::spawn(async move {
+        call(
+            &call_hub,
+            "lead",
+            "create_group",
+            &json!({"name": "Again", "topic": "Different", "members": ["lead", "dev"]}),
+        )
+        .await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, detail, reply } = cmd {
+            assert_eq!(title, "Open group Plain", "{title}");
+            assert!(detail.contains("Name: Plain"), "{detail}");
+            assert!(detail.contains("Topic: Keep"), "{detail}");
+            assert!(!detail.contains("Again") && !detail.contains("Different"), "{detail}");
+            break reply;
+        }
+    };
+    reply.send(true).unwrap();
+    let got = task.await.unwrap().unwrap();
+    assert_eq!(got["group"]["id"], id);
+    assert_eq!(got["group"]["name"], "Plain");
+    assert_eq!(got["group"]["topic"], "Keep");
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Same member list with a name/topic change is a real change, not "nothing to change".
+#[tokio::test]
+async fn the_same_members_still_allow_a_name_or_topic_change() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-same-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "topic": "Old", "members": ["lead", "dev"]}))
+        .await
+        .unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    let changed = call(
+        &hub,
+        "lead",
+        "update_group",
+        &json!({"groupId": gid, "members": ["lead", "dev"], "name": "Squad", "topic": "New"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(changed["group"]["name"], "Squad");
+    assert_eq!(changed["group"]["topic"], "New");
+    assert_eq!(changed["group"]["members"].as_array().unwrap().len(), 2);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A member deleted while the create card waits must refuse the create, not silently make a short group.
+#[tokio::test]
+async fn a_member_deleted_before_create_allow_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-create-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let mut commands = hub.attach_bot_for_test("lead");
+    let create_hub = hub.clone();
+    let task = tokio::spawn(async move {
+        call(&create_hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    hub.store.delete_bot("dev").unwrap();
+    reply.send(true).unwrap();
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("unknown or unavailable bot dev"), "{err}");
+    assert!(group_list(&hub).unwrap().is_empty(), "no short group was created");
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A member deleted while the update card waits must refuse the add, not silently drop that member.
+#[tokio::test]
+async fn a_member_deleted_before_update_allow_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-update-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let mut commands = hub.attach_bot_for_test("lead");
+    let update_hub = hub.clone();
+    let update_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&update_hub, "lead", "update_group", &json!({"groupId": update_gid, "addMembers": ["lead"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    // `lead` is the caller and a member of no group here; delete it while the card waits.
+    hub.store.delete_bot("lead").unwrap();
+    reply.send(true).unwrap();
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("unknown or unavailable bot lead"), "{err}");
+    let members = hub.store.bot(&gid).unwrap().unwrap().config.members;
+    assert_eq!(members, ["dev".to_owned()], "no member was silently dropped or added");
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();

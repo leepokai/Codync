@@ -13,7 +13,7 @@ use std::sync::Mutex;
 /// (a routine, background work, a follow-up, a message to another bot, the bot's instructions, skills, fallbacks or
 /// memory, a dev server, the team) could act later or elsewhere without the ceiling, so it is refused, and so is any
 /// tool added after this list: a new tool is held until it is listed here.
-const UNDER_CEILING: [&str; 18] = [
+const UNDER_CEILING: [&str; 19] = [
     "send_message",
     "send_file",
     "request_decision",
@@ -29,6 +29,7 @@ const UNDER_CEILING: [&str; 18] = [
     "read_progress",
     "list_bots",
     "list_team",
+    "list_groups",
     "search_memory",
     "search_history",
     "read_memory",
@@ -113,6 +114,9 @@ mod tests {
         let refused = ceilings.check_tool("a", "save_routine").expect_err("it would run without the ceiling");
         assert!(refused.to_string().contains("save_routine isn't available"), "{refused}");
         assert!(ceilings.check_tool("a", "list_routines").is_ok(), "reading changes nothing");
+        assert!(ceilings.check_tool("a", "list_groups").is_ok(), "group metadata is read-only");
+        assert!(ceilings.check_tool("a", "create_group").is_err(), "a group change isn't reading");
+        assert!(ceilings.check_tool("a", "update_group").is_err(), "a group change isn't reading");
         assert!(ceilings.check_tool("b", "save_routine").is_ok(), "another bot's turn isn't held");
         ceilings.set("a", Access::Allow);
         assert!(!ceilings.holds("a"));

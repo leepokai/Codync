@@ -24,7 +24,20 @@ impl Hub {
         crate::agent::workspace::prepare(cfg)
     }
 
-    pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
+    pub fn create_bot(self: &Arc<Self>, cfg: BotConfig) -> Result<Value> {
+        self.create_bot_if(cfg, |_, _| Ok(()))
+    }
+
+    /// Creates `cfg` like [`Self::create_bot`], but runs `check` inside the same `emit_lock` as the save,
+    /// handing it the config and the **original** member list: a caller that waited on an approval card can
+    /// refuse a member deleted meanwhile without a read-then-write gap (`chat::manage::groups`). Group member
+    /// normalization and the "open the existing group" lookup happen after that check, under the same lock,
+    /// so neither can turn a vanished member into a shorter group.
+    pub fn create_bot_if(
+        self: &Arc<Self>,
+        mut cfg: BotConfig,
+        check: impl FnOnce(&BotConfig, &[String]) -> Result<()>,
+    ) -> Result<Value> {
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
         cfg.position = self.new_bot_position()?;
@@ -33,16 +46,18 @@ impl Hub {
         if cfg.auto_name {
             crate::chat::naming::PLACEHOLDER.clone_into(&mut cfg.name);
         }
-        if cfg.is_group() {
-            cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
-            // The same bots again: open the group they already share (Grok Bot's rule).
-            if let Some(existing) = crate::chat::group::with_members(&self.store, &cfg.members)? {
-                return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
-            }
-        }
+        let requested_members = cfg.members.clone();
         {
             let _g = self.emit_lock.locked();
             self.settle_config(&mut cfg, None)?;
+            check(&cfg, &requested_members)?;
+            if cfg.is_group() {
+                cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
+                // The same bots again: open the group they already share (Grok Bot's rule).
+                if let Some(existing) = crate::chat::group::with_members(&self.store, &cfg.members)? {
+                    return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
+                }
+            }
             self.store.save_bot(&cfg)?;
         }
         projects::changed(self, &[], &cfg.projects);
@@ -57,11 +72,24 @@ impl Hub {
     }
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
+        self.update_bot_if(patch, |_| Ok(()))
+    }
+
+    /// Applies `patch` like [`Self::update_bot`], but runs `check` on the live row inside the same
+    /// `emit_lock` as the write: a caller that waited on an approval card can refuse a stale edit
+    /// without another read-then-write window.
+    pub fn update_bot_if(
+        &self,
+        patch: &Value,
+        check: impl FnOnce(&crate::store::BotRow) -> Result<()>,
+    ) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
+        // Read, check, merge and save under one lock: a section rename or group edit in between would
+        // otherwise be written back over.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            check(&row)?;
             let mut cfg = patch::patched(&row.config, patch)?;
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
@@ -133,5 +161,77 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::remote::identity::Identity;
+    use crate::store::Store;
+    use anyhow::bail;
+
+    /// A check that refuses under the save lock leaves no bot behind: the caller saw a card, not a half create.
+    #[test]
+    fn a_create_whose_check_refuses_saves_nothing() {
+        let dir = std::env::temp_dir().join(format!("codync-create-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "create-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let member: BotConfig = serde_json::from_value(json!({
+            "id": "a", "name": "Alice", "backend": "claude", "cwd": "/tmp",
+        }))
+        .unwrap();
+        hub.store.save_bot(&member).unwrap();
+        let crew: BotConfig = serde_json::from_value(json!({
+            "id": "", "name": "Crew", "kind": "group", "members": ["a"],
+        }))
+        .unwrap();
+
+        let error = hub
+            .create_bot_if(crew.clone(), |_, _| {
+                Err(anyhow!("a member of the group was removed while your card was up"))
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("was removed"), "{error}");
+        assert!(hub.store.bots().unwrap().iter().all(|r| r.config.name != "Crew"), "nothing was saved");
+        assert!(hub.create_bot(crew).is_ok(), "and the same create without that check still works");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A delete landing in the lock window is visible against the original roster, not the normalized
+    /// one `valid_members` would have already shortened before the check ran.
+    #[test]
+    fn a_member_deleted_in_the_create_lock_is_seen_in_the_original_roster() {
+        let dir = std::env::temp_dir().join(format!("codync-create-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "create-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        for id in ["a", "b"] {
+            let member: BotConfig = serde_json::from_value(json!({
+                "id": id, "name": id, "backend": "claude", "cwd": "/tmp",
+            }))
+            .unwrap();
+            hub.store.save_bot(&member).unwrap();
+        }
+        let crew: BotConfig = serde_json::from_value(json!({
+            "id": "", "name": "Crew", "kind": "group", "members": ["a", "b"],
+        }))
+        .unwrap();
+        let checking = hub.clone();
+        let error = hub
+            .create_bot_if(crew.clone(), move |_, requested| {
+                assert_eq!(requested, &["a".to_owned(), "b".to_owned()], "the check gets the original roster");
+                checking.store.delete_bot("b")?;
+                let kept = crate::chat::group::valid_members(&checking.store, "", requested)?;
+                if kept.len() != requested.len() {
+                    bail!("a member of the group was removed while your card was up");
+                }
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("was removed"), "{error}");
+        assert!(hub.store.bots().unwrap().iter().all(|r| r.config.name != "Crew"), "nothing was saved");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

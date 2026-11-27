@@ -4,6 +4,7 @@ use super::{SKILLS_REPO, Skill, TIMEOUT, UA, save, skills, skills_dir, slug, uni
 use crate::LockExt;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::fmt;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -309,6 +310,46 @@ pub fn add_custom_skill(
     })
 }
 
+#[derive(Debug)]
+pub(crate) enum SkillSaveError {
+    Invalid(String),
+    NotOwner(String),
+    ParkedThreadOwner(String),
+    Enable(anyhow::Error),
+}
+
+impl SkillSaveError {
+    pub(crate) fn category(&self) -> &'static str {
+        match self {
+            Self::Invalid(_) => "invalid",
+            Self::NotOwner(_) => "not_owner",
+            Self::ParkedThreadOwner(_) => "parked_thread_owner",
+            Self::Enable(_) => "enable",
+        }
+    }
+}
+
+impl fmt::Display for SkillSaveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Invalid(message) => f.write_str(message),
+            Self::NotOwner(name) | Self::ParkedThreadOwner(name) => {
+                write!(f, "{name} wasn't saved by you: only skills you saved can be changed")
+            }
+            Self::Enable(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for SkillSaveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Enable(error) => error.source(),
+            _ => None,
+        }
+    }
+}
+
 /// New text for a skill `bot` wrote; files beside its `SKILL.md` stay. The user's and other bots' skills stay as
 /// they are.
 pub fn update_custom_skill(
@@ -320,10 +361,23 @@ pub fn update_custom_skill(
     body: &str,
 ) -> Result<Skill> {
     update_skills(store, |all| {
-        let s = all.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("There's no skill with the id {id}"))?;
+        let s = all
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| SkillSaveError::Invalid(format!("There's no skill with the id {id}")))?;
         let owner = s.written_by.as_deref().map(|writer| crate::chat::work::owner(store, writer));
         if owner.as_deref() != Some(bot) {
-            bail!("{} wasn't saved by you: only skills you saved can be changed", s.name);
+            let parked_owner = s.written_by.as_deref().is_some_and(|writer| {
+                crate::store::is_thread_id(writer)
+                    && matches!(store.bot(writer), Ok(None))
+                    && matches!(store.parked_thread(writer), Ok(Some(cfg)) if cfg.thread_of.as_deref() == Some(bot))
+            });
+            return Err(if parked_owner {
+                SkillSaveError::ParkedThreadOwner(s.name.clone())
+            } else {
+                SkillSaveError::NotOwner(s.name.clone())
+            }
+            .into());
         }
         s.written_by = Some(bot.to_owned());
         s.name = one_line(name);

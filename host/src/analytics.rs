@@ -387,4 +387,139 @@ mod tests {
         assert_eq!(hub.store.kv_get(KV_IDENTIFIED).as_deref(), Some("user_1"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn skill_saves_report_one_content_free_event_through_the_loopback_api() {
+        use crate::{api, chat::skills, market, remote::identity::Identity, store::BotConfig};
+        use reqwest::StatusCode;
+
+        let dir = std::env::temp_dir().join(format!("codync-skill-events-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("host.sqlite");
+        let store = Store::open(&db).unwrap();
+        let config = |id| -> BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": &dir})).unwrap()
+        };
+        for id in ["fixture-owner", "fixture-other"] {
+            store.save_bot(&config(id)).unwrap();
+        }
+        let mut parked = config("thread-parked-fixture");
+        parked.thread_of = Some("fixture-owner".into());
+        store.save_bot(&parked).unwrap();
+        store.park_thread(&parked).unwrap();
+        let legacy =
+            market::add_custom_skill(&store, "Parked skill", "Private", "Private body", Some(&parked.id)).unwrap();
+        let unknown =
+            market::add_custom_skill(&store, "Unknown owner", "Private", "Private body", Some("thread-missing"))
+                .unwrap();
+
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hub = Hub::new(
+            store,
+            "skill-events-test".into(),
+            Identity::load_or_create(&dir).unwrap(),
+            "test".into(),
+            addr.port(),
+        );
+        let mut queue = hub.analytics.rx.locked().take().unwrap();
+        let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let (stop, stopped) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move { stopped.await.unwrap_or_default() })
+                .await
+                .unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build().unwrap();
+        let request = |method: &str, body: Value| {
+            client.post(format!("http://{addr}/api/{method}")).bearer_auth(&hub.token).json(&body).send()
+        };
+        let save = |bot: &str, arguments: Value| {
+            request("chatCall", json!({"botId": bot, "name": skills::TOOL, "arguments": arguments}))
+        };
+        let args = json!({"name": "Synthetic skill", "description": "Synthetic description", "instructions": "Synthetic body"});
+        let rewrite = |id: &str| {
+            let mut args = args.clone();
+            args["id"] = id.into();
+            args
+        };
+        let mut expect_event = |name: &str, properties: Value| {
+            let Msg::Event(mut event) = queue.try_recv().unwrap() else { panic!("expected a queued event") };
+            assert_eq!(event["event"], name);
+            assert_eq!(event["distinct_id"], "skill-events-test");
+            let actual = event["properties"].as_object_mut().unwrap();
+            for key in
+                ["$lib", "app_version", "env", "$os", "arch", "computer", "$session_id", "$process_person_profile"]
+            {
+                assert!(actual.remove(key).is_some(), "missing {key}");
+            }
+            assert_eq!(event["properties"], properties);
+            assert!(queue.is_empty());
+        };
+
+        let response = save("fixture-owner", args.clone()).await.unwrap().error_for_status().unwrap();
+        let saved: Value = response.json().await.unwrap();
+        let id = saved["skill"]["id"].as_str().unwrap();
+        expect_event("skill_written", json!({"change": "new", "client": "local"}));
+        let response = save("fixture-owner", rewrite(id)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        expect_event("skill_written", json!({"change": "update", "client": "local"}));
+
+        for (bot, skill, category) in [
+            ("fixture-owner", &legacy, "parked_thread_owner"),
+            ("fixture-other", &legacy, "not_owner"),
+            ("fixture-owner", &unknown, "not_owner"),
+        ] {
+            let response = save(bot, rewrite(&skill.id)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body: Value = response.json().await.unwrap();
+            assert_eq!(
+                body["error"],
+                format!("{} wasn't saved by you: only skills you saved can be changed", skill.name)
+            );
+            expect_event("skill_save_failed", json!({"change": "update", "client": "local", "error": category}));
+        }
+        let response = save("fixture-owner", json!({"name": " "})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        expect_event("skill_save_failed", json!({"change": "new", "client": "local", "error": "invalid"}));
+        let response = save("fixture-owner", rewrite("missing-skill-id")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            json!({"error": "There's no skill with the id missing-skill-id"})
+        );
+        expect_event("skill_save_failed", json!({"change": "update", "client": "local", "error": "invalid"}));
+        let response = save("fixture-missing", args.clone()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        expect_event("skill_save_failed", json!({"change": "new", "client": "local", "error": "other"}));
+
+        let conn = rusqlite::Connection::open(db).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_enable BEFORE UPDATE OF config ON bots WHEN old.id = 'fixture-owner'\n             BEGIN SELECT RAISE(ABORT, 'synthetic enable write error'); END;",
+        ).unwrap();
+        let owner = hub.store.bot("fixture-owner").unwrap().unwrap().config;
+        let storage_error = hub.store.save_bot(&owner).unwrap_err();
+        let response = save("fixture-owner", args.clone()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"error": format!("{storage_error:#}")}));
+        assert_eq!(market::skills(&hub.store).len(), 4, "the new skill was stored before enabling failed");
+        assert_eq!(hub.store.bot("fixture-owner").unwrap().unwrap().config.skills, [id]);
+        expect_event("skill_save_failed", json!({"change": "new", "client": "local", "error": "enable"}));
+
+        let response = request("setAnalytics", json!({"enabled": false})).await.unwrap().error_for_status().unwrap();
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"enabled": false}));
+        assert_eq!(save("fixture-owner", args.clone()).await.unwrap().status(), StatusCode::BAD_REQUEST);
+        assert_eq!(save("fixture-owner", rewrite(id)).await.unwrap().status(), StatusCode::OK);
+        assert!(queue.is_empty());
+
+        stop.send(()).unwrap();
+        server.await.unwrap();
+        for skill in market::skills(&hub.store) {
+            market::remove_skill(&hub.store, &skill.id).unwrap();
+        }
+        drop(conn);
+        drop(hub);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

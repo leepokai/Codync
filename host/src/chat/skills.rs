@@ -6,7 +6,7 @@
 use crate::hub::Hub;
 use crate::market;
 use crate::store::{EntryKind, Lane};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -56,7 +56,7 @@ pub async fn call(hub: &Arc<Hub>, caller: &str, args: &Value) -> Result<Value> {
             (skill, "Updated the skill")
         } else {
             let skill = market::add_custom_skill(&hub.store, &name, &description, &instructions, Some(&bot))?;
-            hub.enable_skills(&bot, std::slice::from_ref(&skill.id))?;
+            hub.enable_skills(&bot, std::slice::from_ref(&skill.id)).map_err(market::SkillSaveError::Enable)?;
             (skill, "Saved the skill")
         };
         let notice = json!({"text": format!("{notice} {}", skill.name)});
@@ -75,7 +75,10 @@ pub fn rewritten_id(args: &Value) -> Option<&str> {
 fn field<'a>(args: &'a Value, key: &str, max_chars: usize) -> Result<&'a str> {
     let text = args[key].as_str().map(str::trim).unwrap_or_default();
     if text.is_empty() || text.chars().count() > max_chars {
-        bail!("`{key}` must be nonempty and at most {max_chars} characters");
+        return Err(market::SkillSaveError::Invalid(format!(
+            "`{key}` must be nonempty and at most {max_chars} characters"
+        ))
+        .into());
     }
     Ok(text)
 }

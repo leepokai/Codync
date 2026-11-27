@@ -407,9 +407,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
-/// change and a message to a task's thread report their category and a credentials reset or a computer rename `other`, never the message; other
-/// failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and recognized failures report a fixed category, never
+/// the error's message.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -436,6 +435,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))
+        }
+        Event::SkillWritten => {
+            use crate::market::SkillSaveError;
+            let category = error.downcast_ref::<SkillSaveError>().map_or("other", SkillSaveError::category);
+            p.insert("error".into(), category.into());
+            Some((Event::SkillSaveFailed, p))
         }
         // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no thread to write to.
         // `unsupported`: a quote or a call.

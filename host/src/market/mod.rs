@@ -41,11 +41,11 @@ pub use connector_update::update_connector;
 pub use custom::add_custom_connector;
 pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
+pub(crate) use skills::{SkillSaveError, body as skill_body, front_matter};
 pub use skills::{
     add_custom_skill, adopt_thread_skills, browse_skills, expand_command, install_skill, list_skills, remove_skill,
     skill_details, skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
 };
-pub(crate) use skills::{body as skill_body, front_matter};
 
 pub use updates::{automatic_loop, refresh_connector};
 

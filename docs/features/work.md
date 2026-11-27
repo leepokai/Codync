@@ -246,12 +246,10 @@ chat's own queue: nothing here is a second copy of it.
   ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The desktop and the phones show a thread in the chat's form (desktop
   `ThreadChat`, iPhone `ThreadChatView`, Android `ThreadChat.kt`): each of these is the chat's own row, in time order
   among the thread's own entries, the same entry of the bot's chat, answered, downloaded and opened in the thread as in
-  the chat ([UI conventions](../design/ui-conventions.md)). Only the terminal shows each as one quiet line with a
-  symbol (`shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
-  `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
-  expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
-  [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry.
+  the chat ([UI conventions](../design/ui-conventions.md)). The terminal's thread page draws each among the steps as
+  the chat draws it (`view::transcript::shared_entry_lines`), and a waiting card answers there with the chat's keys
+  (`y` / `a` / `n` / `N`, `F1`…, `1`–`9`; `C` its agent's [sign-in](#fallbacks-and-sign-in)), the picked one first,
+  else the newest; on a picked file or artifact `o` opens it and `f` saves it, and `↵` opens the chat at it.
 
 With the rest:
 
@@ -416,8 +414,8 @@ The apps show the `Work · <title>` line on the sign-in card and on the failure,
 out and a fallback was signed out too, there are two cards: the row names, and opens, the one that holds the task's
 message (`connectionRequest.entryIds`), whose sign-in is what sends the work again; an approval or choice newer than
 it comes first, as what the running turn waits on. In the task's
-[thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
-(`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
+[thread](#talking-to-a-thread) the sign-in card shows beside that transcript line as the chat shows it, and on the
+terminal's thread page `C` signs in there as in the chat; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.
 
 ## Advisor mode

@@ -27,12 +27,13 @@ const DEPLOYS = [
   { target: 'relay', check: 'GET https://push.codync.dev/health answers 200 {"ok":true}' },
   { target: 'discord', check: 'GET https://discord.codync.dev/ answers 302 to https://discord.com/oauth2/authorize' },
 ]
+const DEPLOY_DIRS = DEPLOYS.map((d) => d.target + '/').join(', ')
 
 const FACTS = {
   type: 'object',
   properties: {
     version: { type: 'string', description: 'MARKETING_VERSION on origin/dev' },
-    latest_tag: { type: 'string' },
+    latest_tag: { type: 'string', description: 'the newest v* tag, with its v prefix (e.g. v2.54.0)' },
     needs_bump: { type: 'boolean', description: 'version is not above latest_tag' },
     ships_code: { type: 'boolean', description: 'what would ship changes apps/, host/ or packaging/ against origin/main (docs, web/, cloud/, relay/ and CI-only changes don\'t bump)' },
     nothing_to_release: { type: 'boolean', description: 'origin/dev has no commits origin/main lacks' },
@@ -106,7 +107,7 @@ const FOLLOWED = {
     runs: { type: 'array', items: { type: 'object', properties: { workflow: { type: 'string' }, conclusion: { type: 'string' }, url: { type: 'string' } }, required: ['workflow', 'conclusion'] } },
     dev_merge: { type: 'string', description: 'how the release branch got back into dev' },
     cloud: { type: 'string', description: 'deploy:main result, or not needed' },
-    deploys: { type: 'array', items: { type: 'object', properties: { target: { type: 'string', enum: ['relay', 'discord'] }, changed: { type: 'boolean' }, result: { type: 'string', enum: ['deployed', 'not_changed', 'failed', 'rolled_back'] }, version: { type: 'string', description: 'the Worker version id now live' }, check: { type: 'string', description: 'what the real path answered before and after' } }, required: ['target', 'changed', 'result'] }, description: 'one row per Worker in DEPLOYS' },
+    deploys: { type: 'array', items: { type: 'object', properties: { target: { type: 'string', enum: DEPLOYS.map((d) => d.target) }, changed: { type: 'boolean' }, result: { type: 'string', enum: ['deployed', 'not_changed', 'failed', 'rolled_back'] }, version: { type: 'string', description: 'the Worker version id now live' }, check: { type: 'string', description: 'what the real path answered before and after' } }, required: ['target', 'changed', 'result'] }, description: 'one row per Worker in DEPLOYS' },
     cleanup: { type: 'string' },
     detail: { type: 'string', description: 'for incomplete, which steps are left' },
   },
@@ -235,14 +236,15 @@ status ready only when 1 and 2 hold and everything in main_needs can be created 
 const merged = await agent(`Merge release PR #${pr}, which passed its gate on ${gate.head}: \`gh pr merge ${pr} --repo ${REPO} --merge --match-head-commit ${gate.head}\`, a merge commit, never squash or rebase (the crate mirrors only fast-forward). Do nothing else. If it fails: status merge_failed with why. Otherwise status merged with merge_commit (\`gh pr view ${pr} --repo ${REPO} --json mergeCommit\`).`,
   { label: 'merge', phase: 'Release', schema: MERGED })
 if (merged?.status !== 'merged') {
-  return end({ outcome: 'stopped', pr, version, facts, gate, fixes, merge: merged, why: merged?.detail ?? 'merging did not finish', next: `Check \`gh pr view ${pr} --json state,mergeCommit\` before saying anything: if it did merge, the release steps after the merge (cloud deploy, relay/ and discord/ deploys, merging ${branch} into dev, watching the runs, cleanup) are still to do. If not, report why; the release branch and its worktree are kept.` })
+  return end({ outcome: 'stopped', pr, version, facts, gate, fixes, merge: merged, why: merged?.detail ?? 'merging did not finish', next: `Check \`gh pr view ${pr} --json state,mergeCommit\` before saying anything: if it did merge, the release steps after the merge (cloud deploy, ${DEPLOY_DIRS} deploys, merging ${branch} into dev, watching the runs, cleanup) are still to do. If not, report why; the release branch and its worktree are kept.` })
 }
 
 // A missing merge_commit still leaves the follow-up a runnable ancestor check.
 const mergeCommit = /^[0-9a-f]{40}$/.test(merged.merge_commit ?? '') ? merged.merge_commit : `$(gh pr view ${pr} --repo ${REPO} --json mergeCommit --jq .mergeCommit.oid)`
+const AT_MAIN = `\`git fetch origin\`, then \`git checkout --detach origin/main\`; go on only when \`git merge-base --is-ancestor ${mergeCommit} HEAD\` holds`
 const steps = [
-  facts.cloud_changed && `cloud/ changed: from the worktree ${worktree} checked out at the merged main (\`git fetch origin\` first, then \`git checkout --detach origin/main\`; go on only when \`git merge-base --is-ancestor ${mergeCommit} HEAD\` holds and \`git status --porcelain -- cloud\` is empty), create what main lacks (${JSON.stringify(mainNeeds)}; R2 buckets private) and apply new migrations (\`npx wrangler d1 migrations apply codync --remote\`, restore point first: \`npx wrangler d1 time-travel info codync\`), then \`npm run deploy:main\` in cloud/ and check each new route on api.codync.dev answers (401 without credentials, not 404) and \`npx wrangler deployments list\` shows the new version. If the deploy or a check fails: \`npx wrangler rollback <the version live before>\` when the new one broke a route, then status incomplete, no later steps.`,
-  `Deploy each Worker the release changed, from the same worktree at the merged main (\`git fetch origin\`, \`git checkout --detach origin/main\`; go on only when \`git merge-base --is-ancestor ${mergeCommit} HEAD\` holds). For each of ${DEPLOYS.map((d) => d.target + '/').join(', ')}: it changed when \`git diff --quiet ${facts.latest_tag} ${mergeCommit} -- <dir>\` exits 1; otherwise its row is not_changed and nothing runs. A changed one, in <dir>/ with \`git status --porcelain -- <dir>\` empty: \`npm ci\`; note the live version (\`npx wrangler deployments list\`, the newest) and what its real path answers now; \`npm run deploy\`; then check the new version is the newest in \`npx wrangler deployments list\` and the real path answers as before (${DEPLOYS.map((d) => d.target + ': ' + d.check).join('; ')}). If the deploy fails, its row is failed; if the new version breaks the path, \`npx wrangler rollback <the noted version>\`, check the path answers again, and its row is rolled_back. A failed or rolled_back row stops here: status incomplete, no later steps. Report every Worker in deploys.`,
+  facts.cloud_changed && `cloud/ changed: from the worktree ${worktree} checked out at the merged main (${AT_MAIN} and \`git status --porcelain -- cloud\` is empty), create what main lacks (${JSON.stringify(mainNeeds)}; R2 buckets private) and apply new migrations (\`npx wrangler d1 migrations apply codync --remote\`, restore point first: \`npx wrangler d1 time-travel info codync\`), then \`npm run deploy:main\` in cloud/ and check each new route on api.codync.dev answers (401 without credentials, not 404) and \`npx wrangler deployments list\` shows the new version. If the deploy or a check fails: \`npx wrangler rollback <the version live before>\` when the new one broke a route, then status incomplete, no later steps.`,
+  `Deploy each Worker the release changed, from the same worktree at the merged main (${AT_MAIN}). For each of ${DEPLOY_DIRS}: \`git diff --quiet ${facts.latest_tag} ${mergeCommit} -- <dir>\` exiting 0 means not_changed (nothing runs) and 1 means changed; any other exit (a bad ref) makes its row failed. A changed one, in <dir>/ with \`git status --porcelain -- <dir>\` empty: \`npm ci\`; note the live version (\`npx wrangler deployments list\`, the newest) and what its real path answers now; \`npm run deploy\`; then check the new version is the newest in \`npx wrangler deployments list\` and the real path answers as before (${DEPLOYS.map((d) => d.target + ': ' + d.check).join('; ')}). If the deploy fails, its row is failed; if the new version breaks the path, \`npx wrangler rollback <the noted version>\`, check the path answers again, and its row is rolled_back. A failed or rolled_back row stops here: status incomplete, no later steps. Report every Worker in deploys.`,
   `Bring the release branch back into dev from the same worktree: \`git fetch origin\`, \`git checkout --detach origin/dev\`, \`git merge --no-edit origin/${branch}\` (resolve conflicts keeping both sides' intent, never dropping another agent's hunk), \`git push origin HEAD:dev\` (fetch and merge again if dev moved).`,
   tags
     ? `Watch the release: Auto Tag on the merge commit creates v${version}; then the tag's runs (codync-host, Release desktop, Submit iOS, Submit Android: \`gh run list --repo ${REPO} --branch v${version}\`), polled every few minutes for up to 90 minutes. Report each run's conclusion and URL; for a failure, read its log and say what failed (its fix is the next patch release, not this run).`
@@ -255,12 +257,13 @@ status done once every step is; otherwise incomplete, with the steps left in det
   { label: 'follow-up', phase: 'Release', schema: FOLLOWED })
 
 // Every Worker gets a row and none failed: a follow-up that says done without them did not finish.
-const deployed = DEPLOYS.every((d) => followed?.deploys?.some((r) => r.target === d.target && ['deployed', 'not_changed'].includes(r.result)))
-const done = followed?.status === 'done' && deployed
+const undeployed = DEPLOYS.filter((d) => !followed?.deploys?.some((r) => r.target === d.target && ['deployed', 'not_changed'].includes(r.result))).map((d) => d.target)
+const done = followed?.status === 'done' && !undeployed.length
+const unfinished = followed?.status === 'done' ? 'no deployed result for: ' + undeployed.join(', ') : followed?.detail || 'the follow-up did not return'
 return end({
   outcome: done ? 'released' : 'merged_incomplete',
   pr, version, facts, gate, fixes, merge: merged, release: followed,
   next: done
     ? 'Report the release to the user: version, PR, the fixes made at the gate, each release run, the cloud deploy, each Worker deploy (deploys), and the open PRs into main it left alone (other_prs) or closed (superseded).'
-    : `#${pr} is merged into main, but the release did not finish: ${followed?.detail ?? 'the follow-up did not return'}. Report it and do what is left of: ${steps.join(' / ')}`,
+    : `#${pr} is merged into main, but the release did not finish: ${unfinished}. A Worker left failed, rolled back or undeployed is deployed by hand now: the next release diffs from this release's tag and will not see it. Report it and do what is left of: ${steps.join(' / ')}`,
 })

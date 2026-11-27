@@ -166,6 +166,14 @@ pub(crate) async fn start_first<F: Future<Output = Result<Conn>>>(
     Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")))
 }
 
+/// Whether an agent is asked to report the work it runs apart from its turn ([`Event::Task`](codync_agent::events::Event::Task)).
+/// A thread's is: its task waits on that work, and the user follows it there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Background {
+    Reported,
+    Unreported,
+}
+
 /// Spawns `backend`'s ACP agent and completes the `initialize` handshake. An agent that quits during it fails
 /// with what it printed on the way out (`backends::exit_reason`).
 pub(crate) async fn start_agent(
@@ -174,8 +182,14 @@ pub(crate) async fn start_agent(
     cwd: &str,
     env: &[(String, String)],
     budget: Duration,
+    background: Background,
 ) -> Result<Conn> {
     let (acp, mut rx) = Acp::spawn(command, cwd, env)?;
+    let mut meta = json!({"parameterizedModelPicker": true});
+    // Claude's adapter reads it; every other agent passes over a `_meta` key it doesn't know.
+    if background == Background::Reported {
+        meta["jetbrains"] = acp::claude::background_tasks_meta()["jetbrains"].take();
+    }
     let init = tokio::time::timeout(
         budget,
         acp.request(
@@ -191,7 +205,7 @@ pub(crate) async fn start_agent(
                     "terminal": false,
                     "session": {"compaction": {}},
                     "elicitation": crate::agent::elicitation::capability(),
-                    "_meta": {"parameterizedModelPicker": true},
+                    "_meta": meta,
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
             }),
@@ -243,7 +257,15 @@ mod tests {
         let command = format!(
             r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#
         );
-        let Err(e) = start_agent("dsh", &command, env!("CARGO_MANIFEST_DIR"), &[], Duration::from_secs(10)).await
+        let Err(e) = start_agent(
+            "dsh",
+            &command,
+            env!("CARGO_MANIFEST_DIR"),
+            &[],
+            Duration::from_secs(10),
+            Background::Unreported,
+        )
+        .await
         else {
             panic!("the agent quit, so it can't start");
         };
@@ -264,7 +286,7 @@ mod tests {
                 let Candidate::Ready(Cmd { program: version, .. }) = candidate else { unreachable!() };
                 anyhow::ensure!(version != "broken", "didn't start");
                 let command = format!("sh -c '{}' {version}", AGENT.replace('\'', "'\\''"));
-                start_agent("opencode", &command, "/tmp", &env, Duration::from_secs(10)).await
+                start_agent("opencode", &command, "/tmp", &env, Duration::from_secs(10), Background::Unreported).await
             }
         })
         .await

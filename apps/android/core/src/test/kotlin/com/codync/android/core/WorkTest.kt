@@ -387,4 +387,14 @@ class WorkTest {
         assertEquals(emptyList<Entry>(), thread.queue(working = false))
         assertEquals(listOf(mine, passed), thread.hidingQueue(working = false))
     }
+
+    @Test fun `a thread's background work decodes, an unknown kind as other, and survives the mirror's copy`() {
+        val bot = bot(""","work":[{"id":"w","status":"working","background":[
+            {"id":"a","kind":"workflow","name":"probe","activity":"Count: two","startedAt":7},
+            {"id":"b","kind":"timer","name":"wait","startedAt":8}]}]""")
+        assertEquals(listOf(BackgroundTask("a", BackgroundKind.Workflow, "probe", "Count: two", 7),
+            BackgroundTask("b", BackgroundKind.Other, "wait", startedAt = 8)), bot.work.single().background)
+        assertEquals(bot, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), bot)).jsonObject))
+        assertTrue(work("""[{"id":"w","status":"working"}]""").single().background.isEmpty())
+    }
 }

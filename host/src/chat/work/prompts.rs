@@ -63,6 +63,15 @@ pub(super) fn wait_for(running: &str) -> String {
     )
 }
 
+/// What a thread is told when background work it ran (`name`) was stopped while its task waited on it: its agent
+/// hears nothing of a stop, so the host asks for the report (`work::ask_report`).
+pub(super) fn report_after_stop(name: &str) -> String {
+    format!(
+        "[Codync: your background work \"{name}\" was stopped before it finished, and nothing else of yours still \
+         runs. End with your report: what you did, what it found before it stopped, and what is left.]"
+    )
+}
+
 /// The prompt of the turn the watchdog starts in the bot's chat for `task`, which looks stuck (`evidence`: what
 /// shows it).
 pub(super) fn stuck(task: &Task, evidence: &str) -> String {

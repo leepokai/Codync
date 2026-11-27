@@ -314,8 +314,9 @@ its task: its last message is a progress line ("started the review, waiting for 
 ending the thread would stop its agent and what runs inside it (#634). The task prompt already says not to; the host
 also checks, as a fact, never from the message's wording (`Actor::left_running`, `agent/bot/background_work.rs`):
 
-- a subagent Claude's adapter launched in the background in that turn (`isAsync`, read into `Subagent.background`);
-- a process the agent runs detached, in a session of its own (`background_work`), that wasn't there when the task's
+- what the agent itself [reports running in the background](#background-work-its-agent-reports) (Claude's adapter):
+  then nothing else is checked, since the agent says when that work ends;
+- otherwise, a process the agent runs detached, in a session of its own (`background_work`), that wasn't there when the task's
   round began (`Actor::detached_before`, noted as its first turn starts and kept while the task goes on with what a
   turn left running), where nothing listens: a server left listening is meant to stay and shows among the bot's
   [dev servers](dev-servers.md). Unsure counts as nothing, so no task waits on a guess; Windows can't tell (no
@@ -332,6 +333,38 @@ doesn't use the hold up: the task goes on with the agent and session kept the sa
 checked again; a turn held for a [sign-in](#fallbacks-and-sign-in) never reaches this check; the watchdog looks at the waiting turn as
 at any long one; the hold adds no hop (no report, `MAX_HOPS`). Analytics: `work_held` when a task is held, and
 `work_finished` says `held` with how it then ended.
+
+### Background work its agent reports
+
+A thread's Claude session asks its adapter to report the work it runs apart from its turn (`Background::Reported`
+in `agent/bot/launch.rs`: `_meta.jetbrains.air` with `asyncTasks` on `session/new`; a chat's session doesn't ask, so
+it reads as before). The adapter then sends `async_task_*` updates, which the `codync-agent` crate reads as
+`Event::Task` (`events/task.rs`): a command sent to the background, a workflow (Claude's `Workflow` tool), a
+monitor, and a turn the agent begins by itself to answer what such work said as it ended. In this mode the adapter
+leaves out what a tool call's later updates said before (`_meta.claudeCode`) and a permission request's kind and
+diff; the crate puts them back (`acp/calls.rs`), so every event reads as from any other client.
+
+- **The list.** What runs shows in the thread's `runtime.background` (`hub::BackgroundTask`: id, kind, name,
+  activity, since when) and on its task's wire row (`background`); a workflow's progress updates its activity
+  (`Count: two`). Every client shows it as a capsule over the thread's composer (`Background · <name> · <activity>`,
+  or the names of several, with the time). Background subagents aren't in the list: the adapter holds the turn
+  that launched them open until they finish, so their steps nest in that turn's as before.
+- **The task waits.** A turn that ends while something in the list runs ends `Outcome::Waiting`: its last message is
+  kept, no report goes out, the task stays working (the dispatcher counts the seat, `turn_runs`) and the thread isn't
+  ended. `work_status` names what runs (`inBackground`).
+- **The agent's own turn.** When the work ends, Claude begins a turn by itself (`taskType: turn`). With no turn of
+  the thread's running it becomes one (`background_tasks.rs`, `AgentTurn::Own`): the thread shows working, its
+  steps and approvals show as a turn's, and its end ends the task's round as a prompt's does, so its last message
+  is the report when nothing else still runs. One that begins while a turn runs joins it (`AgentTurn::Joined`): that
+  turn ends once both have.
+- **A stop.** The agent hears nothing of a stopped piece, so no turn of its own follows: when the stopped piece was
+  the last that ran and no turn runs, the host asks the thread for its report (`work::ask_report`,
+  `prompts::report_after_stop`).
+- **Its agent stops.** The list goes with it (`background_lost`): a turn the agent began by itself ends failed, and
+  a task that waited between turns fails (`Failure::Agent`, "its agent stopped while its background work still
+  ran").
+- Analytics: `thread_background` (`agent`, `kind`, `outcome`: started, completed, failed, stopped) and
+  `thread_agent_turn` (`agent`).
 
 ## Approvals
 
@@ -720,7 +753,10 @@ only recalled, never listed.
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is
-  `{branch, path}` while the task has a [worktree](#worktrees) that is still there, and absent otherwise. The bot's own `status` stays the chat's.
+  `{branch, path}` while the task has a [worktree](#worktrees) that is still there, and absent otherwise.
+  `background` is `[{id, kind: shell | workflow | monitor | other, name, activity?, startedAt}]` while its thread's
+  agent [reports work running in the background](#background-work-its-agent-reports), and absent otherwise; a
+  client reads a kind it doesn't know as `other`. The bot's own `status` stays the chat's.
 - Cards and messages a thread posts in the chat carry `data.thread = {id, title}` (the thread's id, the title of the
   task it works on) and `data.task` (the task's id, or null): permission cards,
   choice cards (`data.decision`), agent sign-in cards (`data.connectionRequest`, `kind: agent`), failure notices that
@@ -866,7 +902,9 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
   again with the message's words and the names of its files, not the files.
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
-- No subagent rows.
+- No subagent rows. A workflow shows its name and its latest activity, not its phases and agents.
+- Background work an agent reports needs Claude's adapter (`async_task_*`); other agents' background work is only
+  what [background work left running](#background-work-left-running) sees.
 - A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
   files) isn't in it, and removing an untouched one deletes what its thread left there ignored.
 - On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
@@ -880,10 +918,8 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
   detached into a session of its own (a server from its shell) isn't reached and keeps running; one left listening
   shows among the bot's [dev servers](dev-servers.md). Only some of that holds its task when the turn ends
   ([background work left running](#background-work-left-running)): a background shell a harness keeps in its own
-  session (whether Claude Code's `run_in_background` does isn't checked yet), another adapter's in-process background
-  work, and on Windows any process aren't seen, and a Claude background subagent only in the turn that launched it
-  (it never says that it finished), so a held turn, or one a waiting message took first, that ends again while it
-  runs is done, not failed. Asked to wait for a subagent that already finished in its turn, the thread reports then. A detached
+  session, another adapter's in-process background work, and on Windows any process aren't seen, so a held turn,
+  or one a waiting message took first, that ends again while it runs is done, not failed. A detached
   process meant to stay that doesn't listen (a watcher, a daemon) holds its task once, then fails it.
 - A thread ends as soon as its task does when nothing waits to follow it, so `after` is for work that is still
   working or waiting.

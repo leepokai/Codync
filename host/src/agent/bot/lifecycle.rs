@@ -137,6 +137,7 @@ impl Actor {
             && self.active_workflow.is_none()
             && self.routine_completion.is_none()
             && self.cancel_deadline.is_none()
+            && !self.runs_in_background()
     }
 
     /// A routine run's session is spent once the run is. When it was the only session open and nothing waits, the

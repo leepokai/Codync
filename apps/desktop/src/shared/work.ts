@@ -65,6 +65,20 @@ export interface WorkTask {
   seat: boolean | null
   /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
   runsOn: string | null
+  /** What its thread's agent runs in the background (a command, a workflow, a monitor), oldest first: the task waits
+   * on it. Empty from an older host, and for an agent that doesn't say. */
+  background: BackgroundTask[]
+}
+
+/** A piece of work a thread's agent reports running in the background. */
+export interface BackgroundTask {
+  id: string
+  kind: 'shell' | 'workflow' | 'monitor' | 'other'
+  /** What the agent calls it: a workflow's name, a command's description. */
+  name: string
+  /** What it does now, when the agent says (a workflow's phase and agent). */
+  activity: string | null
+  startedAt: number
 }
 
 /** The agent a task's thread runs on, or will: its own, else the one it was started on, else its bot's (none for the
@@ -91,7 +105,7 @@ export interface ThreadSetup {
 }
 
 type Translate = (text: string) => string
-type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
+type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree' | 'background'>> & { background?: unknown } & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
 /** `bot.work`; a host from before the box sends none, and the feature doesn't show. A task in a status this app
  * doesn't know is left out. */
@@ -120,9 +134,39 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
           runsOn: typeof t.runsOn === 'string' && t.runsOn ? t.runsOn : null,
+          background: normalizeBackground(t.background),
         }]
       : [],
   )
+}
+
+const BACKGROUND_KINDS: BackgroundTask['kind'][] = ['shell', 'workflow', 'monitor', 'other']
+
+function normalizeBackground(raw: unknown): BackgroundTask[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as (Partial<BackgroundTask> | null)[]).flatMap((t) =>
+    t && typeof t.id === 'string'
+      ? [{
+          id: t.id,
+          // A kind this app doesn't know reads as other work.
+          kind: BACKGROUND_KINDS.includes(t.kind as BackgroundTask['kind']) ? t.kind as BackgroundTask['kind'] : 'other',
+          name: t.name ?? '',
+          activity: t.activity || null,
+          startedAt: t.startedAt ?? 0,
+        }]
+      : [],
+  )
+}
+
+/** The capsule over a thread's message box while its agent runs work in the background: what the one piece does, or
+ * the names of several, since the oldest began. Null while nothing runs there. */
+export function backgroundLabel(task: WorkTask): { text: string; since: number } | null {
+  const [first] = task.background
+  if (!first) return null
+  const text = task.background.length === 1
+    ? [first.name, first.activity].filter(Boolean).join(' · ')
+    : task.background.map((t) => t.name).join(', ')
+  return { text, since: first.startedAt }
 }
 
 /** `bot.maxThreads`, within 1 to 6; null from a host before the box. */

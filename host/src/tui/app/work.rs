@@ -64,6 +64,22 @@ pub struct WorkTask {
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); none from an
     /// older host, where every live task takes one ([`Self::takes_seat`]).
     pub seat: Option<bool>,
+    /// What its thread's agent runs in the background, as the capsule says it, and since when the first piece runs.
+    pub background: Option<(String, i64)>,
+}
+
+/// A task's `background`, as its capsule says it: what the one piece does, or the names of several; none while nothing
+/// runs there.
+fn background(v: &Value) -> Option<(String, i64)> {
+    let tasks: Vec<&Value> = v.as_array()?.iter().filter(|t| t["id"].is_string()).collect();
+    let first = tasks.first()?;
+    let words = |key: &str, t: &Value| t[key].as_str().filter(|w| !w.is_empty()).map(str::to_owned);
+    let text = if let [one] = tasks.as_slice() {
+        [words("name", one), words("activity", one)].into_iter().flatten().collect::<Vec<_>>().join(" · ")
+    } else {
+        tasks.iter().filter_map(|t| words("name", t)).collect::<Vec<_>>().join(", ")
+    };
+    Some((text, first["startedAt"].as_i64().unwrap_or_default()))
 }
 
 impl WorkTask {
@@ -91,6 +107,7 @@ impl WorkTask {
             talk: v["talk"] == true,
             talk_files: v["talkFiles"] == true,
             seat: v["seat"].as_bool(),
+            background: background(&v["background"]),
         })
     }
 

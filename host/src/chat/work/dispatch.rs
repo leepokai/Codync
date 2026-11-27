@@ -142,10 +142,11 @@ pub(super) fn held(hub: &Hub, task: &Task) -> bool {
     sources::held(hub, task) || task.worktree.as_ref().is_some_and(|w| w.left == worktree::Left::Settling)
 }
 
-/// Whether a turn of `id` runs. `over`: the actor whose turn is ending as this is asked (its status still says it
-/// works).
-fn turn_runs(hub: &Hub, id: &str, over: Option<&str>) -> bool {
-    over != Some(id) && matches!(hub.runtime(id).status, BotStatus::Working | BotStatus::NeedsInput)
+/// Whether a turn of `id` runs, or work its agent reports running in the background. `over`: the actor whose turn
+/// is ending as this is asked (its status still says it works).
+pub(super) fn turn_runs(hub: &Hub, id: &str, over: Option<&str>) -> bool {
+    let rt = hub.runtime(id);
+    over != Some(id) && (matches!(rt.status, BotStatus::Working | BotStatus::NeedsInput) || !rt.background.is_empty())
 }
 
 pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> ThreadState {

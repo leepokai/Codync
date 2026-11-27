@@ -273,28 +273,54 @@ async fn a_task_whose_thread_ends_its_turn_while_its_background_work_runs_is_not
     assert_eq!(asked.count(), 1, "asked once to wait");
 }
 
-/// #634: a Claude subagent launched in the background holds its task the same way, and the thread waits for it in the
-/// same agent process and session, which nothing closes or stops meanwhile (that would end the subagent).
+/// Work its agent reports running in the background (Claude's adapter, `asyncTasks`, asked for by a thread only)
+/// holds its task between turns without a word to the thread: it shows on the task, the agent stays, and the turn the
+/// agent begins by itself once that work ends is the thread's, whose last message is the report.
 #[tokio::test]
-async fn a_background_subagent_holds_its_task_in_the_same_session() {
+async fn a_workflow_its_agent_reports_holds_its_task_until_the_agents_own_turn_reports() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
-    host.reply(&bot, "ADD Review|SUBAGENT").await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let thread = working["thread"].clone();
+    let progress = "Report Review: briefed; no chat; started the workflow, waiting for it to finish";
+    wait("the thread's turn to end", async || {
+        finals(&host, &bot, &thread).await.contains(&progress.into()).then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let now = work(&host, &bot).await.into_iter().find(|i| i["title"] == "Review").unwrap();
+    release(&host, &bot, "review");
+    assert_eq!(now["status"], "working", "the workflow still runs: {now}");
+    assert_eq!(now["activity"], "Review: diff", "what it does now is the workflow's: {now}");
+    let background = &now["background"][0];
+    assert_eq!((&background["kind"], &background["name"]), (&json!("workflow"), &json!("after-change")), "{now}");
     let done = task(&host, &bot, "Review", "done").await;
-    assert_eq!(done["result"], "Report Review: it finished, all green", "{done}");
+    assert_eq!(done["result"], "Report Review: the workflow passed", "the agent's own turn reported: {done}");
+    assert!(done.get("background").is_none(), "{done}");
     let prompts = host.log(&bot, "prompts.jsonl");
-    let turns: Vec<&Value> = prompts
-        .iter()
-        .filter(|p| {
-            let text = p["text"].as_str().unwrap_or_default();
-            text.contains("[Task]") || text.contains("[Codync: you ended your turn while a subagent")
-        })
-        .collect();
-    assert_eq!(turns.len(), 2, "its task's turn and the one that waits: {prompts:?}");
-    assert_eq!((&turns[0]["session"], &turns[0]["pid"]), (&turns[1]["session"], &turns[1]["pid"]), "same session");
-    let closed = host.log(&bot, "closed.jsonl");
-    let between = closed.iter().any(|c| c["session"] == turns[0]["session"] && c["prompts"].as_u64() < Some(2));
-    assert!(!between, "nothing closed its session before the turn that waits: {closed:?}");
+    let to_thread = prompts.iter().filter(|p| p["session"] != prompts[0]["session"]).count();
+    assert_eq!(to_thread, 1, "the thread was told nothing more than its task: {prompts:?}");
+    let details = host.call("threadEntries", json!({"botId": bot, "threadId": thread})).await;
+    let merged = details["entries"].as_array().into_iter().flatten().any(|e| e["data"]["title"] == "git merge");
+    assert!(merged, "what the agent did by itself is the thread's: {details}");
+    let asked: Vec<bool> = host.log(&bot, "initialize.jsonl").iter().map(|i| i["asyncTasks"] == true).collect();
+    assert!(asked.contains(&true) && asked.contains(&false), "a thread asks, the chat doesn't: {asked:?}");
+}
+
+/// The agent hears nothing of a stop of its background work, so no turn of its own follows: the task that waited on
+/// the last of it asks its thread for the report.
+#[tokio::test]
+async fn a_stopped_workflow_has_its_thread_asked_for_the_report() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review STOP").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let thread = working["thread"].clone();
+    wait("the thread's turn to end", async || (!finals(&host, &bot, &thread).await.is_empty()).then_some(())).await;
+    release(&host, &bot, "review");
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report after the stop", "{done}");
 }
 
 /// #634: a thread that ends its turn again while its background work still runs, after it was asked to wait, has

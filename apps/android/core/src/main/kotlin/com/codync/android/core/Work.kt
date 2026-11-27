@@ -54,6 +54,20 @@ data class WorkSource(val kind: SourceKind, val id: String? = null)
 @Serializable
 data class Worktree(val branch: String, val path: String = "")
 
+/** What a piece of background work is; one this app doesn't know reads as [Other]. */
+@Serializable enum class BackgroundKind { @SerialName("shell") Shell, @SerialName("workflow") Workflow, @SerialName("monitor") Monitor, @SerialName("other") Other }
+
+/** A piece of work a thread's agent reports running in the background: a command, a workflow, a monitor. */
+@Serializable data class BackgroundTask(
+    val id: String,
+    val kind: BackgroundKind,
+    /** What the agent calls it: a workflow's name, a command's description. */
+    val name: String,
+    /** What it does now, when the agent says (a workflow's phase and agent). */
+    val activity: String? = null,
+    val startedAt: Long = 0,
+)
+
 /** One piece of work in a bot's box (`bot.work`). */
 @Serializable
 data class WorkTask(
@@ -88,6 +102,8 @@ data class WorkTask(
     val seat: Boolean? = null,
     /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
     val runsOn: String? = null,
+    /** What its thread's agent runs in the background, oldest first: the task waits on it. Empty from an older host, and for an agent that doesn't say. */
+    val background: List<BackgroundTask> = emptyList(),
 ) {
     /** The agent its thread runs on, or will: its own, else the one it was started on, else [bot]'s (none for the box of threads without a bot). */
     fun agentOf(bot: Bot): String? = runsOn ?: agent ?: bot.backend.takeUnless { bot.plain }
@@ -181,10 +197,21 @@ internal object WorkSerializer : KSerializer<List<WorkTask>> {
             val source = fields["source"]?.present()?.let { runCatching { json.json.decodeFromJsonElement(WorkSource.serializer(), JsonObject(it)) }.getOrNull() }
             val worktree = fields["worktree"]?.present()?.let { runCatching { json.json.decodeFromJsonElement(Worktree.serializer(), JsonObject(it)) }.getOrNull() }
                 ?.takeIf { it.branch.isNotEmpty() }
-            runCatching { json.json.decodeFromJsonElement(WorkTask.serializer(), JsonObject(fields - "wait" - "source" - "worktree")) }.getOrNull()
-                ?.takeIf { it.id.isNotEmpty() }?.copy(wait = wait, source = source, worktree = worktree)
+            val background = (fields["background"] as? JsonArray).orEmpty().mapNotNull { backgroundTask(it) }
+            runCatching { json.json.decodeFromJsonElement(WorkTask.serializer(), JsonObject(fields - "wait" - "source" - "worktree" - "background")) }.getOrNull()
+                ?.takeIf { it.id.isNotEmpty() }?.copy(wait = wait, source = source, worktree = worktree, background = background)
         }
     }
+}
+
+/** One of a task's `background` items; one without an id is unreadable. */
+private fun backgroundTask(item: JsonElement): BackgroundTask? {
+    val fields = item.present() ?: return null
+    fun text(key: String) = (fields[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val id = text("id")?.takeIf { it.isNotEmpty() } ?: return null
+    val kind = BackgroundKind.entries.firstOrNull { it.name.lowercase() == text("kind") } ?: BackgroundKind.Other
+    val startedAt = (fields["startedAt"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: 0
+    return BackgroundTask(id, kind, text("name").orEmpty(), text("activity")?.takeIf { it.isNotEmpty() }, startedAt)
 }
 
 /** An object's fields that have a value: a null field is a missing one. */

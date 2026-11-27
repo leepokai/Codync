@@ -9,9 +9,11 @@ choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the t
 `NEST` tries what a thread may not, `CHATQ:<question>;` asks its chat (`ask_chat`, its result logged to `ask_chat.jsonl`), `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `DETACH:<name>` starts a command in a
 session of its own (its pid in `detached.pid`) that writes `detached-done` once `release-<name>` is there, and ends its
-turn while that command still runs, `SUBAGENT` launches a subagent in the background the way Claude's adapter reports
-one and ends its turn: asked by the host to wait for what it left running, it waits for `detached-done` (or for nothing,
-for the subagent) and reports, or ends at once again with `AGAIN` in its brief. `LOOP` makes the same tool call six
+turn while that command still runs: asked by the host to wait for what it left running, it waits for `detached-done`
+and reports, or ends at once again with `AGAIN` in its brief. `WORKFLOW:<name>` (to a host that asked for
+`asyncTasks` in `initialize`, which `initialize.jsonl` logs, of an agent started with `tasks`) starts a workflow the way Claude's adapter reports one and
+ends its turn; once `release-<name>` is there the workflow ends and the agent begins a turn by itself that reports
+(`STOP` in the brief: the workflow is stopped instead, and no such turn follows). `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
 A thread's question (`ask_chat`) the chat answers with `answer_task` (`Chat: <the question>`) and `(pass)`;
 `QUIET` in it: it doesn't answer; `DECIDE`: it tries `request_decision` first (logged to `chat_decision.jsonl`)
@@ -47,6 +49,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
@@ -56,6 +59,8 @@ if pathlib.Path("no-start").exists():
 
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
+# Like Claude's adapter, it reports its background work to a host that asks (`asyncTasks`).
+HAS_TASKS = "tasks" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
 # What the user's messages steered into the running turn said.
 joined = []
@@ -69,13 +74,15 @@ LONG_COMMAND = (
     "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
     " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
 )
-# What the thread's task left running in the background (`DETACH`, `SUBAGENT`), for the host's ask to wait for it.
+# What the thread's task left running in the background (`DETACH`), for the host's ask to wait for it.
 left = {}
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
 servers = []
 forked = set()
+# The host asked for the work it runs in the background (`asyncTasks`).
+reports_tasks = False
 count = 0
 # Prompts this process took so far, which `closed.jsonl` says of each session it closed.
 prompted = 0
@@ -207,15 +214,19 @@ def work(text, session):
         pathlib.Path("detached.pid").write_text(str(started.pid), encoding="utf-8")
         notes.append("started the review, waiting for it to finish")
         left.update(title=title, again="AGAIN" in brief, detached=True)
-    if "SUBAGENT" in brief:
-        send({"method": "session/update", "params": {"sessionId": session, "update": {
-            "sessionUpdate": "tool_call", "toolCallId": "agent", "title": "Review the change", "kind": "think",
-            "status": "completed", "rawInput": {"subagent_type": "general-purpose", "run_in_background": True},
-            "_meta": {"claudeCode": {"toolName": "Agent", "toolResponse": {
-                "isAsync": True, "status": "async_launched", "agentId": "a1"}}},
-        }}})
-        notes.append("launched a reviewer, waiting for it to finish")
-        left.update(title=title, again="AGAIN" in brief, detached=False)
+    workflow = re.search(r"WORKFLOW:(\w+)", brief)
+    if workflow and reports_tasks:
+        for update in (
+            {"sessionUpdate": "tool_call", "toolCallId": "workflow", "title": "Workflow", "kind": "other",
+             "status": "completed", "_meta": {"claudeCode": {"toolName": "Workflow"}}},
+            {"sessionUpdate": "async_task_spawned", "asyncTaskId": "w1", "name": "after-change", "taskType": "workflow",
+             "description": "after-change", "toolCallId": "workflow"},
+            {"sessionUpdate": "async_task_progress", "asyncTaskId": "w1", "description": "Review: diff"},
+        ):
+            send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+        threading.Thread(target=run_workflow, args=(session, workflow.group(1), title, "STOP" in brief),
+                         daemon=True).start()
+        notes.append("started the workflow, waiting for it to finish")
     if "LOOP" in brief:
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
@@ -248,6 +259,27 @@ def work(text, session):
     if AGENT:
         notes.append("on " + AGENT)
     return f"Report {title}: " + "; ".join(notes)
+
+
+def run_workflow(session, name, title, stopped):
+    """The workflow `WORKFLOW:<name>` started: it ends once `release-<name>` is there, and the agent's own turn that
+    answers its end reports (none after a stop)."""
+    while not pathlib.Path("release-" + name).exists():
+        time.sleep(0.05)
+    updates = [{"sessionUpdate": "async_task_state_update", "asyncTaskId": "w1",
+                "state": "stopped" if stopped else "completed"}]
+    if not stopped:
+        updates += [
+            {"sessionUpdate": "async_task_spawned", "asyncTaskId": "turn-1", "name": "Claude is working",
+             "taskType": "turn", "description": 'Dynamic workflow "after-change" completed'},
+            {"sessionUpdate": "tool_call", "toolCallId": "merge", "title": "git merge", "kind": "execute",
+             "status": "completed"},
+            {"sessionUpdate": "agent_message_chunk",
+             "content": {"type": "text", "text": f"Report {title}: the workflow passed"}},
+            {"sessionUpdate": "async_task_state_update", "asyncTaskId": "turn-1", "state": "completed"},
+        ]
+    for update in updates:
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
 
 
 def thread(text):
@@ -301,6 +333,8 @@ def answer(text, session):
     """What this turn replies."""
     if "[Codync: you ended your turn while" in text:
         return waited()
+    if "[Codync: your background work" in text:
+        return "Report after the stop"
     if ASKED in text:
         # An agent that can't take it mid-turn: the question is a turn of its own.
         return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
@@ -400,10 +434,15 @@ for line in sys.stdin:
     method = message.get("method")
     params = message.get("params") or {}
     if method == "initialize":
+        asked = params.get("clientCapabilities", {}).get("_meta", {}).get("jetbrains", {}).get("air", {})
+        reports_tasks = HAS_TASKS and "asyncTasks" in asked.get("capabilities", [])
+        log("initialize.jsonl", {"asyncTasks": "asyncTasks" in asked.get("capabilities", [])})
         initialized = {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
+            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}, "_meta": {}}
         if CAN_STEER:
-            initialized["_meta"] = {"steering": {"supported": True}}
+            initialized["_meta"]["steering"] = {"supported": True}
+        if reports_tasks:
+            initialized["_meta"]["jetbrains"] = {"air": {"version": 1, "capabilities": ["asyncTasks"]}}
         send({"id": message["id"], "result": initialized})
     elif method in ("session/new", "session/fork", "session/load"):
         servers = params.get("mcpServers", servers)

@@ -499,6 +499,7 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
+        let waiting = self.background_line().is_some();
         let goes_on = self.end_task(|| {
             if stopped {
                 Outcome::Stopped
@@ -506,6 +507,8 @@ impl Actor {
                 Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
             } else if stop_reason != "end_turn" {
                 Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+            } else if waiting {
+                Outcome::Waiting { text: final_text.clone() }
             } else if let Some(running) = left {
                 Outcome::LeftRunning { running, text: final_text.clone() }
             } else {

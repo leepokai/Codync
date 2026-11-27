@@ -1,5 +1,5 @@
 //! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, whether
-//! it still runs Codync's MCP servers, and what a thread's turn left running that its task waits on (#634).
+//! it still runs Codync's MCP servers, and what a thread's turn left running detached that its task waits on (#634).
 
 use super::{Actor, Done};
 use codync_agent::acp::{Acp, StopReason};
@@ -148,33 +148,20 @@ impl Actor {
         }
     }
 
-    /// What a thread's turn that just ended normally (`done`) left running in the background, which its task waits on,
-    /// in words that fit "while … still runs": a subagent Claude's adapter launched this turn to run in the
-    /// background (`isAsync`), or something its agent runs detached since its task's round began
-    /// ([`left_detached`]). None for any other turn.
+    /// What a thread's turn that just ended normally (`done`) left running in the background, which its task waits
+    /// on, in words that fit "while … still runs": something its agent runs detached since its task's round began
+    /// ([`left_detached`]). An agent that reports its background work ([`Capabilities::tasks`](codync_agent::acp::Capabilities))
+    /// says so itself (`background_tasks`), and Claude's adapter holds a turn open until the subagents it started
+    /// end, so neither is guessed here. None for any other turn.
     pub(super) async fn left_running(&self, done: &Done) -> Option<String> {
         let ended = done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::EndTurn);
         if !self.cfg.is_thread() || self.stop_requested || !ended {
             return None;
         }
-        let subagents = self
-            .tools
-            .values()
-            .filter_map(|id| self.hub.store.entry(id))
-            .filter(|e| e.data["subagent"]["background"] == true)
-            .count();
-        let mut left = Vec::new();
-        match subagents {
-            0 => {}
-            1 => left.push("a subagent launched in the background".to_owned()),
-            n => left.push(format!("{n} subagents launched in the background")),
-        }
-        if let Some(conn) = &self.conn
-            && left_detached(&conn.acp, self.detached_before.as_deref().unwrap_or_default()).await
-        {
-            left.push("a command started in the background".to_owned());
-        }
-        (!left.is_empty()).then(|| left.join(" and "))
+        let conn = self.conn.as_ref().filter(|conn| !conn.sessions.tasks)?;
+        left_detached(&conn.acp, self.detached_before.as_deref().unwrap_or_default())
+            .await
+            .then(|| "a command started in the background".to_owned())
     }
 }
 

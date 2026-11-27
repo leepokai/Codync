@@ -116,6 +116,11 @@ pub enum Event {
     /// A thread ended its turn while what it started in the background still ran, so its task waits on it, once
     /// (`agent`, `source`); `work_finished`'s `held` says how it then ended (#634).
     WorkHeld,
+    /// Work a thread's agent reported running in the background began or ended (`agent`, `kind`: `shell`,
+    /// `workflow`, `monitor`, `other`; `outcome`: `started`, `completed`, `failed`, `stopped`).
+    ThreadBackground,
+    /// A thread's agent began a turn by itself, once background work ended (`agent`).
+    ThreadAgentTurn,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
     /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
@@ -320,6 +325,8 @@ impl Event {
             Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkHeld => "work_held",
+            Self::ThreadBackground => "thread_background",
+            Self::ThreadAgentTurn => "thread_agent_turn",
             Self::WorkTold => "work_told",
             Self::TaskAsked => "task_asked",
             Self::ChatAsked => "chat_asked",

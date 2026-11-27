@@ -382,12 +382,17 @@ fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let now = now_ms();
     let tasks: Vec<Value> = tasks::seen_by_bot(hub, &cfg)
         .into_iter()
-        .map(|Shown { task, status, activity, wait }| {
+        .map(|Shown { task, status, activity, wait, background }| {
             let seconds = task.started_at.map(|at| (task.ended_at.unwrap_or(now) - at) / 1000);
-            json!({
+            let mut row = json!({
                 "taskId": task.id, "title": task.title, "status": status, "doingNow": activity, "wait": wait,
                 "seconds": seconds, "result": task.result,
-            })
+            });
+            // What its thread's agent runs in the background, which the task waits on: it isn't stuck.
+            if !background.is_empty() {
+                row["inBackground"] = background.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().into();
+            }
+            row
         })
         .collect();
     Ok(json!({"tasks": tasks}))

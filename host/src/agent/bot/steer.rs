@@ -132,9 +132,12 @@ impl Actor {
     }
 
     /// The agent ended the running turn. Its answer to a steer travels apart from this, and a message it took belongs
-    /// to this turn, so the end waits for every answer (at most `STEER_ANSWER`).
+    /// to this turn, so the end waits for every answer (at most `STEER_ANSWER`), and for a turn the agent began by
+    /// itself meanwhile.
     pub(super) async fn turn_ended(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
-        if self.steers_in_flight.is_empty() {
+        // A turn the agent began by itself as this one ended goes on with it, and its end ends both
+        // (`background_tasks`).
+        if self.steers_in_flight.is_empty() && self.agent_turn.is_none() {
             self.on_turn_done(done, done_tx).await;
         } else {
             self.held_done = Some(done);
@@ -150,6 +153,7 @@ impl Actor {
     ) {
         self.steered(entry_id, outcome);
         if self.steers_in_flight.is_empty()
+            && self.agent_turn.is_none()
             && let Some(done) = self.held_done.take()
         {
             self.on_turn_done(done, done_tx).await;

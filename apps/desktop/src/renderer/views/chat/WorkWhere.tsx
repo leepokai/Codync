@@ -12,6 +12,13 @@ import './work.css'
  * branch. A folder too long for the line is cut in the middle, so its last name stays in view.
  */
 export function WorkWhere({ where }: { where: WhereLine }) {
+  const tr = useTr()
+  if (where.kind === 'own') return (
+    <HStack as="span" gap={4} shrink className="work-where">
+      <Icon name="folder" size={10} color="var(--tertiary)" />
+      <Text size="caption" tone="secondary" truncate>{tr(where.text)}</Text>
+    </HStack>
+  )
   const cut = where.kind === 'folder' ? Math.max(where.text.lastIndexOf('/'), where.text.lastIndexOf('\\')) : -1
   return (
     <HStack as="span" gap={4} shrink className="work-where">

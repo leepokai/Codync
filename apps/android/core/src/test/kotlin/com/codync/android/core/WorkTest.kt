@@ -166,6 +166,12 @@ class WorkTest {
         assertEquals(listOf("early", "late"), threadSections(listOf(moved), { it }, { it.id }, { "Mac" }, ThreadGrouping.None, byActivity = true).recent.map { it.task.id })
         // An empty folder names no place.
         assertEquals(null, WorkTask("x", "x", WorkStatus.Done, folder = "").wherePath)
+        // Every thread in a folder Codync made for it, in one "Own folder" group, not one per folder.
+        val box = bot(""","cwd":"/home/me","plain":true""").copy(work = listOf(
+            WorkTask("x", "x", WorkStatus.Done, createdAt = 1, folder = "/home/me/.codync/threads/1", ownFolder = true),
+            WorkTask("y", "y", WorkStatus.Done, createdAt = 2, folder = "/home/me/.codync/threads/2", ownFolder = true)))
+        val alone = threadSections(listOf(box), { it }, { it.id }, { "Mac" }, ThreadGrouping.Folder).groups
+        assertEquals(listOf(Triple(OWN_FOLDER_GROUP, "Own folder", listOf("y", "x"))), alone.map { Triple(it.key, it.title, it.rows.map { r -> r.task.id }) })
     }
 
     @Test fun `the threads search finds threads by title or bot name, newest first, and never a plain box by its name`() {
@@ -307,6 +313,7 @@ class WorkTest {
         assertEquals(listOf(true, false, false), tasks.map { it.talk })
         assertEquals(listOf(true, false, false), tasks.map { it.talkFiles })
         assertEquals(listOf("/Users/kai/code/app", null, null), tasks.map { it.folder })
+        assertEquals(listOf(true, false), work("""[{"id":"o","status":"working","folder":"/h/.codync/threads/1","ownFolder":true},{"id":"p","status":"working"}]""").map { it.ownFolder })
     }
 
     @Test fun `a task says where it works, the branch for one in a worktree of its own`() {
@@ -319,6 +326,9 @@ class WorkTest {
         assertEquals("/w/a", whereLine(tree.copy(folder = null), home)?.path)
         assertNull(whereLine(tree.copy(folder = null, worktree = Worktree("codync/x")), home)?.path)
         assertNull(whereLine(task("w", WorkStatus.Waiting), home))
+        // The folder Codync made for a thread without a bot: a phrase, its path still the one to copy.
+        assertEquals(WhereLine(WhereKind.Own, "Own folder", "/Users/kai/.codync/threads/1"),
+            whereLine(folder.copy(folder = "/Users/kai/.codync/threads/1", ownFolder = true), home))
         assertEquals("folder" to "arrow.triangle.branch", WhereKind.Folder.symbol to WhereKind.Branch.symbol)
     }
 

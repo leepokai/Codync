@@ -42,6 +42,7 @@ import com.codync.android.core.Bot
 import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
 import com.codync.android.core.ThreadGroup
+import com.codync.android.core.OWN_FOLDER_GROUP
 import com.codync.android.core.ThreadGroupKind
 import com.codync.android.core.ThreadGrouping
 import com.codync.android.core.ThreadRow
@@ -272,7 +273,7 @@ private fun kindTitle(kind: ThreadGroupKind) = when (kind) {
             ThreadGroupKind.Routine -> Symbol("clock", size = 14.dp, tint = Palette.secondary)
             ThreadGroupKind.Computer -> Symbol("desktopcomputer", size = 14.dp, tint = Palette.secondary)
         }
-        Text(if (plain) tr("No bot") else group.title, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (plain) tr("No bot") else if (group.key == OWN_FOLDER_GROUP) tr(group.title) else group.title, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         loud?.let { WorkMark(it.task.status) }
         Symbol("chevron.down", Modifier.rotate(turn), size = 12.dp, tint = Palette.tertiary)
     }

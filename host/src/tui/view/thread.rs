@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Bot, Entry, Kind, Source, WorkStatus, WorkTask, nested, tilde};
+use super::super::app::{App, Bot, Entry, Folder, Kind, Source, WorkStatus, WorkTask, nested, tilde};
 use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
@@ -25,10 +25,15 @@ use super::work::{mark, standing};
 const TOLD_LINES: usize = 6;
 
 /// Where a task's thread works, for its transcript's heading in `room` cells: the branch of its worktree while it has
-/// one, else its folder, cut in the middle so its last name stays.
+/// one, else its folder, cut in the middle so its last name stays ("Own folder" for the one Codync made for it).
 fn place(app: &App, task: &WorkTask, room: usize) -> Option<String> {
     let branch = task.branch.as_ref().map(|branch| truncate(&format!("⎇ {branch}"), room));
-    branch.or_else(|| task.folder.as_ref().map(|folder| md::truncate_path(&tilde(folder, &app.home), room)))
+    branch.or_else(|| {
+        Some(match task.folder.as_ref()? {
+            Folder::Own => truncate(&tr("Own folder"), room),
+            Folder::Path(folder) => md::truncate_path(&tilde(folder, &app.home), room),
+        })
+    })
 }
 
 /// Why a task's thread takes no message, where a client says so: its result has an owner already.
@@ -366,7 +371,9 @@ mod tests {
                 "worktree": {"branch": "codync/fix-login", "path": "/w/a/i"}},
             {"id": "j", "title": "Docs", "status": "working", "thread": "thread-2"},
             {"id": "k", "title": "Far", "status": "working", "thread": "thread-3",
-                "folder": format!("/private/tmp/{}/gitrepo", "x".repeat(120))}]),
+                "folder": format!("/private/tmp/{}/gitrepo", "x".repeat(120))},
+            {"id": "o", "title": "Alone", "status": "working", "thread": "thread-4",
+                "folder": "/Users/me/.codync/threads/0b5c", "ownFolder": true}]),
         );
         let area = Rect::new(0, 0, 100, 20);
         let heading = |task: &str| {
@@ -377,6 +384,7 @@ mod tests {
         };
         assert_eq!(heading("i"), "◷ Working · ⎇ codync/fix-login");
         assert_eq!(heading("j"), "◷ Working", "a host that names no folder");
+        assert_eq!(heading("o"), "◷ Working · Own folder", "the folder Codync made, not its path");
         let far = heading("k");
         assert!(
             far.starts_with("◷ Working · /private/tmp/x") && far.ends_with("x…/gitrepo"),

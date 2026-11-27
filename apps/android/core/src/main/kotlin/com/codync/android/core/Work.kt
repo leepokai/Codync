@@ -92,6 +92,8 @@ data class WorkTask(
     val talkFiles: Boolean = false,
     /** Where its thread works (a worktree's folder for one in a worktree); null for one no thread has taken, and from an older host. */
     val folder: String? = null,
+    /** [folder] is the one Codync made for a thread without a bot, which reads "Own folder". False from an older host. */
+    val ownFolder: Boolean = false,
     /** The agent its thread runs on (a backend id); null for the bot's own, and from an older host. */
     val agent: String? = null,
     /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */
@@ -252,6 +254,9 @@ enum class ThreadGroupKind { Folder, Routine, Bot, Computer }
 
 data class ThreadRow<T>(val of: T, val task: WorkTask)
 
+/** The one Threads group of every thread in a folder Codync made for it ([WorkTask.ownFolder]), titled "Own folder", a phrase the view looks up. */
+const val OWN_FOLDER_GROUP = "folder:own"
+
 /** One group of the Threads list; [title] is the folder's last name, the routine's, the bot's or the computer's. */
 data class ThreadGroup<T>(val key: String, val kind: ThreadGroupKind, val title: String, val rows: List<ThreadRow<T>>)
 
@@ -289,6 +294,7 @@ fun <T> threadSections(roster: List<T>, bot: (T) -> Bot, keyOf: (T) -> String, c
             grouping == ThreadGrouping.Computer -> ThreadGroup("computer:${computerOf(of)}", ThreadGroupKind.Computer, computerOf(of), emptyList())
             grouping == ThreadGrouping.None -> null
             source?.kind == SourceKind.Routine -> ThreadGroup("routine:${keyOf(of)}:${source.id ?: task.title}", ThreadGroupKind.Routine, task.title, emptyList())
+            task.ownFolder -> ThreadGroup(OWN_FOLDER_GROUP, ThreadGroupKind.Folder, "Own folder", emptyList())
             path != null && task.worktree == null && path != bot(of).cwd ->
                 ThreadGroup("folder:$path", ThreadGroupKind.Folder, folderName(path), emptyList())
             else -> null
@@ -375,7 +381,7 @@ fun workActions(task: WorkTask, work: List<WorkTask>, maxThreads: Int?): List<Wo
 }
 
 /** What a task's where line shows before its text. */
-enum class WhereKind(val symbol: String) { Folder("folder"), Branch("arrow.triangle.branch") }
+enum class WhereKind(val symbol: String) { Folder("folder"), Branch("arrow.triangle.branch"), Own("folder") }
 
 /** Where a task's thread works, as its row and its thread's header say it: [text] after the symbol, and the full [path] a tap copies (null when the host didn't say). */
 data class WhereLine(val kind: WhereKind, val text: String, val path: String?)
@@ -384,6 +390,8 @@ data class WhereLine(val kind: WhereKind, val text: String, val path: String?)
 fun whereLine(task: WorkTask, home: String): WhereLine? {
     val path = task.folder ?: task.worktree?.path?.takeIf(String::isNotEmpty)
     task.worktree?.let { return WhereLine(WhereKind.Branch, it.branch, path) }
+    // The folder Codync made for it: a phrase the view looks up, not its id.
+    if (task.ownFolder && task.folder != null) return WhereLine(WhereKind.Own, "Own folder", task.folder)
     return task.folder?.let { WhereLine(WhereKind.Folder, homeRelative(it, home), it) }
 }
 

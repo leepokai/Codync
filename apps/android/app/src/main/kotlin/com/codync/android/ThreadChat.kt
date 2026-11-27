@@ -291,7 +291,7 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
 @Composable private fun WherePath(where: WhereLine, modifier: Modifier) {
     val path = where.path ?: return WhereLabel(where, modifier)
     val (copied, copy) = rememberCopyPath()
-    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = tr("Copy path")) { copy(path) }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else where.text)
+    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = tr("Copy path")) { copy(path) }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else whereText(where))
 }
 
 /** What the host told the thread first (the task's prompt), folded on top of its thread. */

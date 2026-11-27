@@ -53,8 +53,8 @@ pub use ui::{
 };
 pub use whats_new::WhatsNew;
 pub use work::{
-    Background, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, is_shared, threads_at_once,
-    word,
+    Background, Folder, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, is_shared,
+    threads_at_once, word,
 };
 
 use crate::tui::l10n::tr;

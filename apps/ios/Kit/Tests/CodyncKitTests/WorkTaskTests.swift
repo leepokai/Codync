@@ -266,6 +266,12 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         c.work = [WorkTask(id: "late", title: "late", status: .done, createdAt: 5), WorkTask(id: "early", title: "early", status: .done, createdAt: 1, endedAt: 9)]
         let moved = ThreadSections([(key: "c", bot: c)], grouping: .none, byActivity: true, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
         #expect(moved.recent.map(\.task.id) == ["early", "late"])
+        // Every thread in a folder Codync made for it, in one "Own folder" group, not one per folder.
+        var box = try bot(#","cwd":"/home","plain":true"#)
+        box.work = [WorkTask(id: "x", title: "x", status: .done, createdAt: 1, folder: "/home/.codync/threads/1", ownFolder: true),
+                    WorkTask(id: "y", title: "y", status: .done, createdAt: 2, folder: "/home/.codync/threads/2", ownFolder: true)]
+        let alone = ThreadSections([(key: "box", bot: box)], grouping: .folder, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+        #expect(alone.groups.map { "\($0.key)=\($0.title):" + $0.rows.map(\.task.id).joined() } == ["folder:own=Own folder:yx"])
         // An empty folder names no place: the worktree's, if any.
         #expect(WorkTask(id: "x", title: "x", status: .done, folder: "").wherePath == nil)
         #expect(ThreadSections.working(in: roster, bot: \.bot) == 1)

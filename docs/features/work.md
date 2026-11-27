@@ -550,7 +550,11 @@ picked, the approvals and the model with it. With no folder picked it works in *
 share the home folder. It counts as the thread's own folder (`workspace::own_folder`), so it never gets a worktree,
 and it goes with the task (when the user's [`threadKeepDays`](#older-threads) deletes it, as its transcript; or when
 the user drops the task). An app sends no `cwd` for it only on a host that says `hello.threadFolders: true`;
-an older host gets the home folder, as before. Its task waits in the computer's **box of
+an older host gets the home folder, as before. The task's wire row says `ownFolder: true` while its `folder` is that
+folder (`tasks::row`, live and older threads alike), so every client names it **Own folder** (never its id) where
+it shows where the thread works, and the Threads list gathers all such threads in one **Own folder** group under
+Folders instead of one group per folder; copying the path still copies the real one. An older host sends no flag and
+the path shows as before. Its task waits in the computer's **box of
 threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
 hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
 memory or alerts, `maxThreads` 6, the harness's own memory kept. Apps that know it (`hello.threadsWithoutBot: true`)

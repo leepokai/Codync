@@ -51,14 +51,28 @@ function ticks(n = 8) {
 function pausingStore() {
   const update = gate<{ bot?: { id?: string; rev?: number; paused?: boolean; name?: string } }>()
   let started = false
+  let sent: unknown
   const store = new BotStore({ id: 'c1', name: 'Mac', signKey: '', urls: [] }, true, () => ({ call: () => new Promise(() => {}), stream: () => () => {} }), '2.54.0')
   store.connection = { kind: 'online' }
-  store.client = { call: (method: string) => {
-    if (method === 'updateBot') { started = true; return update.promise }
+  store.client = { call: (method: string, body?: unknown) => {
+    if (method === 'updateBot') { started = true; sent = body; return update.promise }
     return Promise.resolve({})
   } } as HostClient
-  return { store, update, started: () => started }
+  return { store, update, started: () => started, sent: () => sent }
 }
+
+test('a pause sends only the id and the paused flag, not the menu snapshot', async () => {
+  const { store, started, sent } = pausingStore()
+  const current = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false, model: 'new-model' })
+  store.bots.set(current.id, current)
+  const menu = normalizeBot({ id: 'b', name: 'Bee', rev: 5, paused: false, model: 'old-model' })
+
+  store.setPaused(menu, true)
+  await ticks()
+
+  assert.equal(started(), true)
+  assert.deepEqual(sent(), { id: 'b', paused: true })
+})
 
 test('a failed pause does not bring back a bot deleted while the update was in flight', async () => {
   const { store, update, started } = pausingStore()

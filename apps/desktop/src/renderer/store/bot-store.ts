@@ -591,7 +591,9 @@ export class BotStore extends BotSync {
       this.bots.set(bot.id, { ...row, paused: beforePaused })
     }
     this.perform(async (c) => {
-      const res = await c.call<{ bot?: Partial<Bot> & { id?: string; rev?: number } }>('updateBot', { ...updatePayload(bot), paused })
+      // The menu's `bot` is a snapshot. The host keeps every field a patch leaves out, so a pause
+      // names only `id` and `paused` and cannot put an older model or permission back.
+      const res = await c.call<{ bot?: Partial<Bot> & { id?: string; rev?: number } }>('updateBot', { id: bot.id, paused })
       const echoed = res?.bot
       const row = echoed && typeof echoed.id === 'string' ? this.bots.get(bot.id) : undefined
       const echoedRev = echoed && typeof echoed.rev === 'number' ? echoed.rev : undefined

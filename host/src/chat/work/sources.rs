@@ -188,7 +188,13 @@ pub fn add_request(hub: &Arc<Hub>, bot: &str, request: BotRequest) {
         Ok(saved) => saved,
         Err(error) => {
             host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
-            if let Some(request) = held.take() {
+            // The closure inserts the request before `kv_set`. A failed save leaves `held` empty and the
+            // request in the map, with no task, so nothing would ever complete it.
+            let stranded = {
+                let mut requests = hub.work.requests.locked();
+                recover_inserted(&mut held, &mut requests, &task.id)
+            };
+            if let Some(request) = stranded {
                 request.complete(Err(no_reply::not_started(format!("{error:#}"))), false);
             }
             return;
@@ -202,6 +208,12 @@ pub fn add_request(hub: &Arc<Hub>, bot: &str, request: BotRequest) {
     }
     added(hub, &source);
     dispatch(hub, bot);
+}
+
+/// The request to complete when a box save fails. The closure may already have moved it out of `held`
+/// and into the map; either place, it must not be left waiting.
+fn recover_inserted<T>(held: &mut Option<T>, map: &mut std::collections::HashMap<String, T>, id: &str) -> Option<T> {
+    held.take().or_else(|| map.remove(id))
 }
 
 /// A row's title from `text`: its first line, as long as a title may be.
@@ -468,5 +480,23 @@ mod tests {
         assert!(!boxed(&BotConfig { manage_team: true, ..plain.clone() }));
         assert!(!boxed(&BotConfig { thread_of: Some("b1".into()), ..plain.clone() }));
         assert_eq!(source_of(&store, &plain), Source::Bot);
+    }
+
+    #[test]
+    fn a_failed_save_still_returns_the_request_it_already_inserted() {
+        let mut held = Some("waiting".to_string());
+        let mut map = std::collections::HashMap::<String, String>::new();
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), Some("waiting".to_string()));
+        assert!(held.is_none());
+        assert!(map.is_empty());
+
+        let mut held = None;
+        map.insert("id".to_string(), "saved".to_string());
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), Some("saved".to_string()));
+        assert!(!map.contains_key("id"));
+
+        let mut held = None;
+        let mut map = std::collections::HashMap::<String, String>::new();
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), None);
     }
 }

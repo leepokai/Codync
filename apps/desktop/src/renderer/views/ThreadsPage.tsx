@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
-import { taskLine, threadSections, type WorkTask } from '@shared/work'
+import { agentOf, taskLine, threadSections, type WorkTask } from '@shared/work'
+import { AgentIcon } from '../components/AgentIcon'
 import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
@@ -60,6 +61,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
       <ThreadRow
         flip={`${refKey(of.ref)}/${task.id}`}
         task={task}
+        agent={agentOf(task, of.bot)}
         label={label}
         selected={picked !== null && picked.taskId === task.id && sameRef(picked.ref, of.ref)}
         open={task.thread ? () => pick({ ref: of.ref, taskId: task.id }) : undefined}
@@ -157,9 +159,9 @@ function StatusMark({ status }: { status: WorkTask['status'] }) {
   return status === 'done' ? null : <WorkDot mark={WORK_MARK[status]} />
 }
 
-/** One thread of the list: its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
+/** One thread of the list: the coding agent it runs on, its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
  * row is hovered; the `…` and a right-click open its menu. */
-function ThreadRow({ flip, task, label, selected, open, items }: { flip: string; task: WorkTask; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
+function ThreadRow({ flip, task, agent, label, selected, open, items }: { flip: string; task: WorkTask; agent: string | null; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
   const tr = useTr()
   const store = useStore()
   const context = useContextMenu()
@@ -169,6 +171,7 @@ function ThreadRow({ flip, task, label, selected, open, items }: { flip: string;
   return (
     <div className={`thread-item ${more || context.open ? 'menu-open' : ''}`} data-flip={flip} onContextMenu={context.onContextMenu}>
       <Open className={`thread-row ${selected ? 'selected' : ''}`} data-thread-row={task.title} data-work-status={task.status} onClick={open} title={task.title}>
+        <span className="thread-agent">{agent ? <AgentIcon registry={store.agentRegistry(agent)} size={14} /> : null}</span>
         <Text tone="text" truncate grow>{label}</Text>
         <span className="thread-mark"><StatusMark status={task.status} /></span>
       </Open>

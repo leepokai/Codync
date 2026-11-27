@@ -12,6 +12,7 @@ extension Image {
 /// Changes are made at a computer. The computer is the `BotStore` in the environment.
 public struct NetworkSheet: View {
     @Environment(BotStore.self) private var store
+    @State private var showOlder = false
 
     public init() {}
 
@@ -46,6 +47,22 @@ public struct NetworkSheet: View {
                 if !networks.isEmpty {
                     CardSection(footer: "Changes are made on a computer: in Codync's settings there, or with codync-host network.") {}
                 }
+                if let sessions = store.network?.sessions, !sessions.isEmpty {
+                    // In the host's order: running first, then the most recent.
+                    let older = sessions.filter { $0.older == true }
+                    CardSection("Agents", footer: "Bots and other agents message these sessions at their address; each reads its mail itself.") {
+                        ForEach(sessions.filter { $0.older != true }) { NetworkSessionRow(session: $0) }
+                        if !older.isEmpty {
+                            Disclosure(isExpanded: $showOlder) {
+                                ForEach(older) { NetworkSessionRow(session: $0) }
+                            } label: {
+                                Text(L10n.fill(L10n.tr("Older sessions: {count}"), ["count": "\(older.count)"]))
+                                    .font(.subheadline).foregroundStyle(Palette.secondary)
+                            }
+                            .accessibilityIdentifier("network.olderSessions")
+                        }
+                    }
+                }
                 if store.network?.assistantsAvailable == true {
                     CardSection(footer: "ChatGPT or Claude in your Codync account can message this computer's bots when it's on. Codync's cloud can read these calls.") {
                         ValueRow("Cloud assistants", value: store.network?.assistants == true ? "On" : "Off")
@@ -58,6 +75,38 @@ public struct NetworkSheet: View {
         // Presence as of now: the host asks the others when stale, and its event updates this.
         .task { await store.refreshNetwork() }
         .tracked(.screenViewed(.network))
+    }
+}
+
+/// A coding agent's session: whether it runs, its logo and title (else address), then its address, what it does and how it gets its mail.
+private struct NetworkSessionRow: View {
+    let session: NetworkView.Session
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // No state, no dot: unknown isn't offline.
+            Circle()
+                .fill(session.runs == true ? Palette.added : Palette.tertiary)
+                .frame(width: 7, height: 7)
+                .opacity(session.state == nil ? 0 : 1)
+                .accessibilityLabel(session.dotTitle.map { L10n.tr($0) } ?? "")
+                .accessibilityHidden(session.dotTitle == nil)
+            AgentIcon(registry: session.registry, size: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.title ?? session.address).font(.body).foregroundStyle(Palette.text).lineLimit(1)
+                if !detail.isEmpty {
+                    Text(detail).font(.footnote).foregroundStyle(Palette.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var detail: String {
+        [session.title == nil ? nil : session.address, session.stateTitle.map { L10n.tr($0) }, session.tierTitle.map { L10n.tr($0) }]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 }
 

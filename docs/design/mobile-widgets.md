@@ -68,7 +68,7 @@ State 分頁的 Live Activity 頁顯示鎖定畫面形式，Dynamic Island 頁�
 模擬器截圖看不到 Live Activity，所以 Live Activity、動態島（各狀態 × Lock Screen／Compact／Minimal／Expanded，淺色與深色）和 widget 卡片改用 render 測試輸出 PNG 檢查：
 
 ```sh
-cd apps/ios/Kit && TEST_RUNNER_CODYNC_RENDER_DIR=<輸出資料夾> xcodebuild test -scheme CodyncKit-Package \
+cd apps/ios/Kit && TEST_RUNNER_CODYNC_RENDER_DIR=<輸出資料夾> ../../../tools/xcodebuild.sh test -scheme CodyncKit-Package \
   -derivedDataPath ../../../build/dd -destination 'platform=iOS Simulator,id=<sim-id>' '-only-testing:CodyncKitTests/renderSurfaces()'
 ```
 
@@ -100,7 +100,7 @@ Dynamic Island 固定黑底，文字採淺色；Lock Screen 卡片配合系統�
 
 ## 驗證
 
-在 `apps/ios/Kit` 以 iOS 模擬器執行 `xcodebuild test -scheme CodyncKit-Package`檢查共用邏輯。系統 WidgetKit／ActivityKit 預覽在 `apps/ios/Widgets/WidgetPreviews.swift`。
+在 `apps/ios/Kit` 以 iOS 模擬器執行 `../../../tools/xcodebuild.sh test -scheme CodyncKit-Package` 檢查共用邏輯。系統 WidgetKit／ActivityKit 預覽在 `apps/ios/Widgets/WidgetPreviews.swift`。
 
 實機仍需分別確認加入 Home／Lock Screen widget、編輯 provider、跨帳號切換、背景刷新，以及 Live Activity／APNs 更新。共用圖片與 build 成功不等於這些系統整合已通過。[歷史檢查紀錄](../archive/mobile-widgets-verification-2026-09-26.md) 保留當時的測試範圍與操作限制。
 

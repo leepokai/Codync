@@ -45,7 +45,7 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
-pub use network_rules::{LEVELS, RuleField, RuleForm, level_detail, level_name};
+pub use network_rules::{RuleField, RuleForm, label, level_detail, level_name};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use older::OlderThreads;
 pub use pages::Page;
@@ -78,8 +78,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
-    /// A page of a bot's older threads (`olderThreads`).
-    OlderThreads(String),
+    /// A page of a bot's older threads (`olderThreads`), for that request (`older::ask`).
+    OlderThreads(String, u64),
     /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
     FollowUpCancelled(String),
     RoutineSaved,

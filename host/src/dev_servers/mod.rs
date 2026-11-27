@@ -13,6 +13,7 @@ mod scan;
 mod tests;
 mod tools;
 
+pub(crate) use platform::process_start;
 pub use run::{remove, restart, stop};
 pub use scan::scan_loop;
 pub use tools::{BRIEF, START, TOOLS, call, tools};

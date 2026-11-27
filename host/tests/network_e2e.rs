@@ -532,7 +532,7 @@ async fn a_computer_in_two_networks_keeps_them_apart() {
 async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailbox() {
     let (desk, laptop, _, lead) = two_computers().await;
     let call = |session: Option<&str>, name: &str| {
-        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api"});
         json!({"agent": agent, "name": name, "arguments": {}})
     };
     let address = desk.call("agentCall", call(Some("t1"), "whoami")).await["address"].as_str().unwrap().to_owned();
@@ -543,6 +543,13 @@ async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailb
         agents.iter().filter_map(|a| a["id"].as_str().map(str::to_owned)).collect::<Vec<_>>()
     };
     assert!(!offered().await.contains(&address), "`allow * -> *` doesn't open a session");
+    // It reads its own mail: no one there to hold it to Auto or Ask, so such a rule denies it.
+    let ask = json!({"rules": [{"fromComputer": "*", "fromAgent": "*", "toAgent": address, "access": "ask"}]});
+    let saved = desk.call("setNetworkRules", ask).await;
+    assert_eq!(saved["networks"][0]["rules"][0]["access"], "deny", "{saved}");
+    let view = desk.call("networkView", json!({})).await;
+    let shown: Vec<&str> = view["sessions"].as_array().unwrap().iter().filter_map(|s| s["address"].as_str()).collect();
+    assert_eq!(shown, [address.as_str()], "the temporary one isn't listed");
     // A rule that names it opens it; never the temporary one.
     let rules = json!({"rules": [
         {"fromComputer": "laptop", "fromAgent": "lead", "toAgent": address, "access": "allow"},
@@ -606,7 +613,7 @@ async fn an_agents_hook_tells_its_session_of_new_mail_in_the_shape_its_agent_rea
         serde_json::from_str(&run(agent, &event(name, session), &[]).await).unwrap()
     };
     let tool = |kind: &str, session: &str, name: &str, arguments: Value| {
-        let agent = json!({"kind": kind, "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        let agent = json!({"kind": kind, "session": session, "process": "1-e2e", "cwd": "/work/api"});
         json!({"agent": agent, "name": name, "arguments": arguments})
     };
     let address = async |kind: &str, session: &str| {

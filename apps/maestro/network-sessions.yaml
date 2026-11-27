@@ -1,0 +1,56 @@
+# A computer's Network sheet on the phones (docs/features/codync-network.md, sessions in the apps): the coding agents'
+# sessions on it, each with its address and how it gets its mail. The script registers one on the host; a computer
+# with sessions and no network still shows the Network row. The phone must already be signed in and paired with the
+# host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`.
+#   maestro --device "<simulator udid or adb serial>" test --include-tags network \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - network
+---
+- runScript: network-sessions.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# `when` doesn't wait: first let the spinner give way to first-run setup or the tabs.
+- extendedWaitUntil:
+    visible: "(Connect a computer|Settings)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header (Computers, or how many are connected) opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "(Computers|\\d+ connected)"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- scrollUntilVisible:
+    element: "Network"
+    centerElement: true
+- tapOn: "Network"
+- extendedWaitUntil:
+    visible: "Agents"
+    timeout: 20000
+- scrollUntilVisible:
+    element: ".*${output.session}.*"
+- assertVisible: ".*Checks its mail.*"
+- takeScreenshot: network-sessions

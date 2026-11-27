@@ -41,11 +41,16 @@ import java.io.IOException
         delay(600)
         store.saveSettings(draft) { error -> if (open) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    ChipLabel(Modifier.clip(Capsule()).clickable(enabled = online, role = Role.Button) { open = true }.semantics { contentDescription = "Model" }) {
-        AgentIcon(agentRegistry(state, bot.backend), 14.dp)
-        Text(bot.model ?: tr("Default"), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    ModelChipLabel(agentRegistry(state, bot.backend), bot.model, enabled = online) { open = true }
     CodyncSheet(open, { open = false }) { ModelSheet(bot, draft, { draft = it }, saveError, state, store) }
+}
+
+/** The model chip itself: the agent's logo ([registry]) and [model] (null: the agent's default); [open] opens its picker. */
+@Composable internal fun ModelChipLabel(registry: String, model: String?, modifier: Modifier = Modifier, enabled: Boolean = true, open: () -> Unit) {
+    ChipLabel(modifier.clip(Capsule()).clickable(enabled = enabled, role = Role.Button, onClick = open).semantics { contentDescription = "Model" }) {
+        AgentIcon(registry, 14.dp)
+        Text(model ?: tr("Default"), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** The bot's agent, login and model. */

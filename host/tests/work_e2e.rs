@@ -733,7 +733,7 @@ async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
     let there = logged(&folder, "prompts.jsonl");
     assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
 
-    std::fs::remove_dir_all(&folder).unwrap();
+    common::remove_dir_all_when_free(&folder).unwrap();
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
@@ -773,7 +773,7 @@ async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routi
         there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
         "{there:?}"
     );
-    std::fs::remove_dir_all(&folder).unwrap();
+    common::remove_dir_all_when_free(&folder).unwrap();
 }
 
 #[tokio::test]

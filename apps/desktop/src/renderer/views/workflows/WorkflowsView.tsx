@@ -210,6 +210,11 @@ export function WorkflowsView({ focus, onFocused, shown: lastShown, onShown, ros
     sync(selected, dirtyRef.current)
   }, [store.workflowRun])
 
+  useEffect(() => {
+    const step = store.workflowSoloStep
+    if (step) setSolo((current) => current.map((item) => (item.id === step.id ? step : item)))
+  }, [store.workflowSoloStep])
+
   useEffect(() => () => store.setWorkflowSession(null), [store])
 
   const applyFlush = (result: FlushResult): 'ok' | 'failed' | 'conflict' => {

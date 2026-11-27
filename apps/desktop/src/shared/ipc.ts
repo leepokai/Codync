@@ -129,8 +129,8 @@ export interface TraySummary {
 /** Things the tray menu (or the app menu) asks the window to do. */
 export type WindowCommand =
   | { kind: 'openBot'; ref: string }
-  /** A system notification was clicked: opens its bot (`desktop_notification_opened`). */
-  | { kind: 'openAlert'; ref: string; alert: AlertKind }
+  /** A system notification was clicked: opens its workflow, or else its bot (`desktop_notification_opened`). */
+  | { kind: 'openAlert'; ref: string; alert: AlertKind; workflowId?: string }
   | { kind: 'stopBot'; ref: string }
   | { kind: 'reviewApprovals' }
   | { kind: 'confirmReset' }

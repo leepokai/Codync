@@ -136,6 +136,10 @@ test("another device's choice of when old threads are deleted shows here", async
   assert.equal(store.hello?.threadKeepDays, 30)
   // What the new choice no longer keeps is gone on the computer: the older list loads again.
   assert.deepEqual(store.olderThreads.rows, [])
+  // The daily look deleted some under the same choice: listed again too.
+  store.olderThreads.rows = [{ id: 'a', botId: 'b1' } as (typeof store.olderThreads.rows)[number]]
+  send({ type: 'threadKeepDays', days: 30 })
+  assert.deepEqual(store.olderThreads.rows, [])
   store.retire()
 })
 

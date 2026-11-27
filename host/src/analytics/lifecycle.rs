@@ -31,6 +31,32 @@ pub fn host_started(hub: &Hub, service: bool, loopback: bool) {
     capture(hub, Event::HostStarted, p);
 }
 
+/// `host_install_failed`, once after an installer couldn't start the service. The
+/// marker carries no content; its filesystem checks and removal stay off async workers.
+pub async fn host_install_failed(hub: std::sync::Arc<Hub>) {
+    let marker = crate::service::data_dir().join("host-install-failed");
+    report_install_failure_at(hub, marker).await;
+}
+
+/// [`host_install_failed`], with the marker path given by the caller.
+async fn report_install_failure_at(hub: std::sync::Arc<Hub>, marker: std::path::PathBuf) {
+    let exists = tokio::task::spawn_blocking({
+        let marker = marker.clone();
+        move || marker.is_file()
+    })
+    .await
+    .unwrap_or(false);
+    if !exists || !hub.analytics.state() {
+        return;
+    }
+    let removed = tokio::task::spawn_blocking(move || std::fs::remove_file(marker)).await;
+    match removed {
+        Ok(Ok(())) => capture(&hub, Event::HostInstallFailed, Map::new()),
+        Ok(Err(e)) => tracing::warn!(error = format!("{e:#}"), "couldn't remove the host install failure marker"),
+        Err(e) => tracing::warn!(error = format!("{e:#}"), "couldn't remove the host install failure marker"),
+    }
+}
+
 /// `host_started`'s properties, from the version the host last started as (`None`: a host
 /// from before this was kept, which is neither new nor known to have changed).
 fn started(last: Option<&str>, version: &str, service: bool, loopback: bool) -> Map<String, Value> {
@@ -230,21 +256,46 @@ mod tests {
         assert_eq!(started(None, "2.20.0", true, true)["loopback"], json!(true));
     }
 
+    #[tokio::test]
+    async fn an_install_failure_is_reported_once() {
+        let dir = std::env::temp_dir().join(format!("codync-install-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("host-install-failed");
+        std::fs::write(&marker, b"").unwrap();
+        let hub = test_hub(&dir);
+        report_install_failure_at(hub.clone(), marker.clone()).await;
+        report_install_failure_at(hub.clone(), marker.clone()).await;
+        let sent = queued_events(&hub);
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["event"], "host_install_failed");
+        assert!(!marker.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// The events `report` queued on a throwaway host.
     fn queued(report: impl FnOnce(&Hub)) -> Vec<Value> {
-        use crate::LockExt as _;
         let dir = std::env::temp_dir().join(format!("codync-cloud-event-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
-        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
-        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
+        let hub = test_hub(&dir);
         report(&hub);
+        let sent = queued_events(&hub);
+        std::fs::remove_dir_all(dir).unwrap();
+        sent
+    }
+
+    fn test_hub(dir: &std::path::Path) -> std::sync::Arc<Hub> {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(dir).unwrap();
+        Hub::new(store, "h".into(), identity, "t".into(), 0)
+    }
+
+    fn queued_events(hub: &Hub) -> Vec<Value> {
+        use crate::LockExt as _;
         let mut rx = hub.analytics.rx.locked().take().unwrap();
         let mut sent = Vec::new();
         while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
             sent.push(event);
         }
-        std::fs::remove_dir_all(&dir).unwrap();
         sent
     }
 

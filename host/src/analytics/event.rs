@@ -10,6 +10,8 @@ pub enum Event {
     AppOpened,
     WindowOpened,
     HostStarted,
+    /// The installer couldn't start the host service; reported on the next host start.
+    HostInstallFailed,
     /// The watchdog aborted the last host process, which had stopped answering, and the service started this one.
     HostRestartedStuck,
     OnboardingCompleted,
@@ -252,6 +254,7 @@ impl Event {
             Self::AppOpened => "app_opened",
             Self::WindowOpened => "window_opened",
             Self::HostStarted => "host_started",
+            Self::HostInstallFailed => "host_install_failed",
             Self::HostRestartedStuck => "host_restarted_stuck",
             Self::OnboardingCompleted => "onboarding_completed",
             Self::ComputerAccessFinished => "computer_access_finished",

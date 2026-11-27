@@ -130,12 +130,19 @@ Open Codync: it sets up the host on first launch. **Open Codync** opens the full
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh
-# or: brew install leepokai/codync/codync-host
-codync-host install   # systemd --user service
-codync-host pair      # QR code in the terminal, or Settings in the app
 ```
 
-The script also installs the desktop app (`codync`, an AppImage, with its `.desktop` file) when you're in a graphical session. By hand: `codync-linux-<arch>.AppImage`, `.deb` or `.tar.gz` from [Releases](https://github.com/leepokai/Codync/releases/latest).
+The script installs the background host, adds `codync-host` to the `PATH` of new shells, and installs the desktop app (`codync`, an AppImage, with its `.desktop` file and Dock pin) when you're in a graphical session. Open Codync, then choose **Pair phone…**. By hand: `codync-linux-<arch>.AppImage`, `.deb` or `.tar.gz` from [Releases](https://github.com/leepokai/Codync/releases/latest).
+
+Homebrew installs the host only. Finish its service and pairing from a new terminal:
+
+```bash
+brew install leepokai/codync/codync-host
+codync-host install
+codync-host pair
+```
+
+That path does not install the desktop app; install the AppImage separately when you want it.
 
 Building the desktop app yourself: `cd apps/desktop && npm ci && npm run dev`.
 

@@ -569,6 +569,7 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
     network::start(&hub).await;
+    analytics::host_install_failed(hub.clone()).await;
     analytics::host_started(&hub, service::started_by_service(), bind.is_loopback());
     if watchdog::restarted(&service::data_dir()) {
         analytics::capture(&hub, analytics::Event::HostRestartedStuck, serde_json::Map::new());

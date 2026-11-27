@@ -230,7 +230,7 @@ The Xcode project is generated: `xcodegen generate --spec apps/project.yml`.
 ```bash
 cd host && cargo test            # host
 cd apps/desktop && npm test      # desktop app (also: npm run typecheck)
-# iPhone package: xcodebuild test -scheme CodyncKit-Package (apps/ios/Kit, iOS Simulator)
+# iPhone package: ../../../tools/xcodebuild.sh test -scheme CodyncKit-Package (from apps/ios/Kit, iOS Simulator)
 cd cloud && npm test            # cloud API / channel relay
 cd relay && npm test             # relay tickets
 ```

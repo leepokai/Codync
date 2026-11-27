@@ -92,10 +92,10 @@ Install Xcode and XcodeGen, then generate the project from its source. The Xcode
 
 ```sh
 xcodegen generate --spec apps/project.yml
-xcodebuild build -project apps/Codync.xcodeproj -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
+tools/xcodebuild.sh build -project apps/Codync.xcodeproj -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
 ```
 
-Use `iOS Dev` for development and `iOS` for production, with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
+`tools/xcodebuild.sh` is `xcodebuild` with the machine-wide compile cache, so a new worktree reuses what other checkouts compiled: [Xcode build cache](xcode-build-cache.md). Use `iOS Dev` for development and `iOS` for production, with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
 
 Install the device build and replace the old iPhone process (substitute its device ID):
 
@@ -112,7 +112,7 @@ Unlock the phone when required. Build, install, launch, and visual inspection ar
 | --- | --- | --- |
 | Host | `cd host && cargo build` | rustup; `host/rust-toolchain.toml` pins the version CI uses (a Homebrew `rust` ahead of rustup on PATH ignores it) |
 | Host checks | `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` | Local agent credentials are unnecessary for unit tests |
-| iOS Kit | `cd apps/ios/Kit && xcodebuild test -scheme CodyncKit-Package -destination 'platform=iOS Simulator,id=<sim-id>'` | Swift 6 / Xcode; iOS-only package |
+| iOS Kit | `cd apps/ios/Kit && ../../../tools/xcodebuild.sh test -scheme CodyncKit-Package -destination 'platform=iOS Simulator,id=<sim-id>'` | Swift 6 / Xcode; iOS-only package |
 | Desktop | `cd apps/desktop && npm ci && npm run typecheck && npm test` | Node and npm; CI uses Node 24 |
 | Cloud | `cd cloud && npm ci && npm test && npm run typecheck` | Node and npm; CI uses Node 24 |
 | Cloud integration | `cd cloud && env -u CODYNC_CLOUD npm run e2e` | Built host; see [Cloudflare testing](cloudflare-testing.md) |
@@ -190,7 +190,7 @@ A release runs through the `release-pr` workflow (`.claude/workflows/release-pr.
 2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. An open `release/X.Y.Z` PR of our own is picked up instead of cutting a new one, and a release PR opened straight from `dev` is closed as superseded; any other PR into `main` is neither gated nor merged, only reported. On that branch it bumps the version when shipped code changed and the version isn't ahead of the latest tag (docs, `web/`, `cloud/`, `relay/` and CI-only releases don't bump, so they get no tag), raises the crates, writes the missing WhatsNew sections, runs the agent check once when shipped code changed (aimock for every covered agent, a real turn only for Cursor: [test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
 3. Works the gate, at most four rounds: `tools/pr-gate.py` on the head, then every failing check, the findings in Greptile's summary of that head and every unresolved Greptile review thread, whatever commit it was left on (a later push doesn't fix it), are checked against the code and fixed on the release branch, not routed to the owning agent, and those fixes go through `after-change` before the next round commits them; each thread fixed or refuted gets a reply and is resolved, and a known flaky test is rerun once. It stops to ask about a finding that needs a product decision, and stops when the gate still fails after four rounds or when a failing round leaves nothing fixed or rerun.
 4. Only with `{merge: true}`: when `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
-5. Only with `{merge: true}`: merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
+5. Only with `{merge: true}`: merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), deploys `relay/` and `discord/` when the merge changed them (against `main` before it) and checks their real paths, rolling a broken version back and stopping ([releasing Worker changes](environments-and-deployment.md#releasing-worker-changes)), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
 
 `node tools/release-pr-test.mjs` checks the workflow's routing with canned agent results.
 

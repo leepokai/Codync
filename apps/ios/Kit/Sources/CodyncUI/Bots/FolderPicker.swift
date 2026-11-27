@@ -31,7 +31,7 @@ struct FolderPicker: View {
         }
         .presentationDetents([.medium, .large], selection: $detent)
         // A page coming back into view keeps what it loaded.
-        .task(id: model.connection) { if recents.listing == nil { await recents.load(nil, model: model) } }
+        .task(id: model.connection) { await recents.refresh(nil, model: model) }
         .onChange(of: stack) { confirm.error = nil }
         .onDisappear { saveTask?.cancel() }
     }

@@ -61,8 +61,7 @@ struct FolderPage: View {
                 }
             }
         }
-        // A page coming back into view keeps what it loaded.
-        .task(id: model.connection) { if folder.listing == nil { await folder.load(route.path, model: model) } }
+        .task(id: model.connection) { await folder.refresh(route.path, model: model) }
     }
 
     @ViewBuilder private var titleMenu: some View {

@@ -9,6 +9,16 @@ final class WorkspacePickerState {
     var error: String?
     var busy = false
     private var generation = 0
+    /// The connection the shown listing was read on: a page coming back into view keeps it, a new connection reads again.
+    private var loadedOn: String?
+
+    /// Loads unless the page already shows what it read on this connection.
+    func refresh(_ path: String?, model: BotStore) async {
+        let connection = String(describing: model.connection)
+        guard listing == nil || loadedOn != connection else { return }
+        await load(path, model: model)
+        if listing != nil { loadedOn = connection }
+    }
 
     func load(_ path: String?, model: BotStore) async {
         generation += 1

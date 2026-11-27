@@ -7,6 +7,15 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.55.0
+### zh-Hant
+- 很長的訊息和核准現在會先顯示成一段簡短提示，不再整則載入，大聊天就不會把 App 的記憶體用完；完整內容仍留在裝置上，點一下就能看到。
+- 這次更新會清掉一次手機上已存的對話，重新連線後聊天會自己補回來；還沒送出的訊息不受影響。
+
+### en-US
+- Very long messages and approvals now show as a short placeholder instead of loading in full, so big conversations can't use up the app's memory; the full text stays on the phone and opens with a tap.
+- This update clears the phone's saved copy of the conversation once; the chats fill in again when it reconnects. Unsent messages are kept.
+
 ## 2.54.0
 ### zh-Hant
 - Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。

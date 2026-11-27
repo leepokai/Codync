@@ -32,6 +32,7 @@ impl Actor {
                 self.conn = None;
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
+                self.background_lost();
             }
             Some(Incoming::Update(update)) => {
                 if !self.on_session_wide(&update)
@@ -53,13 +54,14 @@ impl Actor {
     }
 
     /// Any session's update, turn or not, about the agent rather than a reply: an option or mode the agent changed
-    /// itself, or its commands. Returns whether it was one.
+    /// itself, its commands, or work it runs in the background. Returns whether it was one.
     pub(super) fn on_session_wide(&mut self, update: &Update) -> bool {
         let sid = update.session.as_deref();
         match (&update.event, sid) {
             (Event::ConfigOptions(options), Some(sid)) => self.note_options(sid, options, Listing::Update),
             (Event::ModeChanged { mode }, Some(sid)) => self.note_current_mode(sid, mode.as_deref()),
             (Event::Commands(commands), _) => self.note_commands(commands),
+            (Event::Task(task), sid) => self.on_task(task.clone(), sid),
             _ => return false,
         }
         true

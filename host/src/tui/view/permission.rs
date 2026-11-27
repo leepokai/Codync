@@ -218,7 +218,8 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
             card_row(out, vec![Span::styled(padded, s)], inner);
         }
         if n > 6 {
-            card_row(out, vec![Span::styled(format!("… {} more lines · t shows the whole diff", n - 6), t.dim)], inner);
+            let more = format!("… {} more lines{}", n - 6, if out.thread { "" } else { " · t shows the whole diff" });
+            card_row(out, vec![Span::styled(more, t.dim)], inner);
         }
     }
     if let Some(detail) = e.data["detail"].as_str().filter(|d| !d.trim().is_empty() && e.data["command"].is_null()) {

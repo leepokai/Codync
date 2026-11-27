@@ -18,6 +18,8 @@ const threadPrompts = (botId: string, title: string) =>
 //     `release-<name>` appears in the bot's workspace). `PERMISSION`: it asks for approval (a card titled
 //     `Run the tests`, one option, shown as `Allow once`) and goes on once answered. Neither: it finishes at once.
 //   - `SIGNIN`: the thread's turn fails once asking to sign in, and goes through when its message comes again.
+//   - `WORKFLOW:<name>` (on an agent started with `tasks`): its turn ends while a workflow it reports runs in the
+//     background, which ends once `release-<name>` appears; then the agent reports by itself.
 //   - A thread's report comes back to the chat as `Relayed: …`.
 //   - What the user writes to a task's thread is a turn of that thread, answered `Thread <their words>: same session`
 //     (or `picked up`); words that hold `HOLD:<name>` keep that turn working, and `ASK` raises a choice card
@@ -874,6 +876,76 @@ test('the bot passes words on to a working task: its thread shows them as told, 
     await expect(row(details, 'Recent', 'Audit the repo')).toHaveAttribute('data-work-status', 'done')
     await expect(page.locator('.transcript')).toContainText('Relayed: Heard and the tests')
     await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(1)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('a thread that ends its turn while its background work runs is held: it reads the ask as told and reports once', async () => {
+  const { browser, page } = await attach()
+  const name = `Work held e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Review the PR', 'DETACH:held')
+
+    // Its turn ended with a progress line, but the command it left runs: the task is still working.
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Review the PR'))
+    await expect(thread.locator('.work-thread-quote', { hasText: 'you ended your turn while' })).toBeVisible()
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('working')
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(0)
+    await closeThread(details)
+
+    // Once the command is done, the thread reports once: its real report.
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-held'), '')
+    await expect(row(details, 'Recent', 'Review the PR')).toHaveAttribute('data-work-status', 'done')
+    await expect(page.locator('.transcript')).toContainText('Relayed: Report Review the PR: it finished, all green')
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(1)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('a held thread that ends its turn again while its background work runs stopped early: a failed task', async () => {
+  const { browser, page } = await attach()
+  const name = `Work held again e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Watch the CI', 'DETACH:again AGAIN')
+
+    const details = await openDetails(page)
+    await expect(row(details, 'Recent', 'Watch the CI')).toHaveAttribute('data-work-status', 'failed')
+    await expect(page.locator('.transcript').first()).toContainText('still ran')
+  } finally {
+    if (botId) writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-again'), '')
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("a thread whose agent runs a workflow in the background shows it over its message box until it ends", async () => {
+  const { browser, page } = await attach()
+  const name = `Work background e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    // Like Claude's adapter, it reports its background work to a thread (`asyncTasks`).
+    await api(page, 'updateBot', { id: botId, command: `${fixtureCommand(workAgent)} tasks` })
+    await addWork(page, botId, 'Review the PR', 'WORKFLOW:capsule')
+
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Review the PR'))
+    const background = thread.locator('[data-background-capsule]')
+    await expect(background).toContainText('after-change · Review: diff')
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('working')
+
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-capsule'), '')
+    await expect(background).toHaveCount(0)
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('done')
   } finally {
     await cleanUp(page, botId)
     await browser.close()

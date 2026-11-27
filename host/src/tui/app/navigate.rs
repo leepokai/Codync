@@ -102,7 +102,7 @@ impl App {
         }
     }
 
-    pub(super) fn answer(&mut self, entry: &str, option: &str) {
+    pub(in crate::tui) fn answer(&mut self, entry: &str, option: &str) {
         // One answer per card: while it is on its way, the card spins and takes no other.
         if self.answering.contains_key(entry) {
             return;
@@ -128,24 +128,26 @@ impl App {
     }
 
     pub(super) fn answer_kind(&mut self, key: char) {
-        let Some(e) = self.pending_of(super::model::Kind::Permission) else { return };
-        let (entry, opts) = (e.id.clone(), e.options());
+        let Some(e) = self.pending_of(super::model::Kind::Permission).cloned() else { return };
+        if self.answer_card_kind(&e, key) && key == 'N' {
+            self.start_typing();
+        }
+    }
+
+    /// y / a / n / N on approval card `e`: the option of that kind it offers. Whether it offers one.
+    pub(in crate::tui) fn answer_card_kind(&mut self, e: &Entry, key: char) -> bool {
         let want: &[&str] = match key {
             'y' => &["allow_once", "allow_always"],
             'a' => &["allow_always", "allow_once"],
             _ => &["reject_once", "reject_always"],
         };
-        let pick = want.iter().find_map(|k| opts.iter().find(|(_, _, kind)| kind == k));
-        match pick {
-            Some((option, _, _)) => {
-                let option = option.clone();
-                self.answer(&entry, &option);
-                if key == 'N' {
-                    self.start_typing();
-                }
-            }
-            None => self.flash("That choice isn't offered; use 1–9"),
-        }
+        let opts = e.options();
+        let Some((option, _, _)) = want.iter().find_map(|k| opts.iter().find(|(_, _, kind)| kind == k)) else {
+            self.flash("That choice isn't offered; use 1–9");
+            return false;
+        };
+        self.answer(&e.id, option);
+        true
     }
 
     /// `r`: moves the pick through the chat's messages (none picked: the newest).

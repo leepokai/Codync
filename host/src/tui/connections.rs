@@ -98,6 +98,11 @@ impl App {
                 e.data["connectionRequest"]["status"] == "pending" && self.pick.as_ref().is_none_or(|id| *id == e.id)
             })
             .cloned();
+        self.open_connection_of(entry.as_ref());
+    }
+
+    /// `C` on a pending connection request `entry`: its agent's sign-in, or its setup form.
+    pub(in crate::tui) fn open_connection_of(&mut self, entry: Option<&Entry>) {
         if let Some(entry) = entry {
             let request = &entry.data["connectionRequest"];
             if request["kind"] == "agent" {
@@ -113,7 +118,7 @@ impl App {
                     None => self.open_agent(backend, true),
                 }
             } else {
-                self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
+                self.overlays.push(Overlay::Fields(Box::new(fields(entry))));
             }
         } else {
             self.flash("No pending connection request here");

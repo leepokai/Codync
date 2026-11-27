@@ -1,5 +1,5 @@
-//! A task's thread: its thread's transcript, with a dim line for each thing the thread put in the bot's chat (a card, a
-//! file), and the composer that writes to it, or why it takes no message.
+//! A task's thread: its thread's transcript, with what the thread put in the bot's chat (a card, a file, an artifact)
+//! drawn as the chat draws it, and the composer that writes to it, or why it takes no message.
 
 use std::borrow::Cow;
 
@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
+use super::super::app::{App, Bot, Entry, Kind, Source, WorkStatus, WorkTask, nested, tilde};
 use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadNavigationBlock, ThreadSheet};
 use super::super::md::{self, truncate};
@@ -16,7 +16,9 @@ use super::chat::{composer_lines, file_names};
 use super::queue::{QueueKeys, queued_rows};
 use super::set_cursor;
 use super::style::theme;
+use super::time::elapsed;
 use super::trace::push_nested;
+use super::transcript::shared_entry_lines;
 use super::work::{mark, standing};
 
 /// What a thread was told shows this many lines until `T` unfolds it.
@@ -43,11 +45,14 @@ enum Keys {
     /// The composer's: the message waits behind a turn that runs.
     Typing,
     EditingLocally,
-    /// A line of what the thread put in the chat is picked.
-    Picked,
+    /// What the thread put in the chat is picked: `opens` an artifact, `saves` its file or artifact.
+    Picked {
+        opens: bool,
+        saves: bool,
+    },
     SendingReference,
     BlockedReference(ThreadNavigationBlock),
-    /// The page's, with `tab` when it has such lines.
+    /// The page's, with `tab` when it has such entries.
     Reading {
         lines: bool,
     },
@@ -58,13 +63,17 @@ fn thread_keys(live: bool, keys: Keys) -> String {
     let lines = match keys {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
         Keys::EditingLocally => return " esc".into(),
-        Keys::Picked => return " ↵ shows it in the chat · tab ⇧tab another · esc".into(),
+        Keys::Picked { opens, saves } => {
+            let open = if opens { "o opens · " } else { "" };
+            let save = if saves { "f saves · " } else { "" };
+            return format!(" {open}{save}↵ shows it in the chat · tab ⇧tab another · esc");
+        }
         Keys::SendingReference => return format!(" {} · esc clears pick", ThreadNavigationBlock::Sending.label()),
         Keys::BlockedReference(block) => return format!(" {} · q back · esc clears pick", block.label()),
         Keys::Reading { lines } => lines,
     };
     let stop = live.then(|| tr("X stops"));
-    let tab = lines.then_some(Cow::Borrowed("tab picks a line"));
+    let tab = lines.then_some(Cow::Borrowed("tab picks a card or file"));
     let keys: Vec<_> = stop.into_iter().chain(tab).chain([tr("T full"), tr("↑↓ scroll · esc close")]).collect();
     format!(" {}", keys.join(" · "))
 }
@@ -154,14 +163,20 @@ pub(super) fn thread_details(
     }
     hline(buf, inner.x, inner.y + 2, inner.width, t.dim.patch(t.panel));
     let foot = inner.bottom() - 1;
+    let shared = app.shared(&s.bot, &s.thread);
     let keys = if s.typing && (replaying || !talks) {
         Keys::EditingLocally
     } else if s.typing {
         Keys::Typing
-    } else if s.pick.is_some() {
-        if s.send_in_flight() { Keys::SendingReference } else { block.map_or(Keys::Picked, Keys::BlockedReference) }
+    } else if s.pick.is_some() && s.send_in_flight() {
+        Keys::SendingReference
+    } else if let Some(block) = block.filter(|_| s.pick.is_some()) {
+        Keys::BlockedReference(block)
+    } else if let Some(e) = shared.iter().find(|e| s.pick.as_ref() == Some(&e.id)) {
+        let opens = e.artifact().is_some();
+        Keys::Picked { opens, saves: opens || e.data["files"].as_array().is_some_and(|f| !f.is_empty()) }
     } else {
-        Keys::Reading { lines: !app.shared(&s.bot, &s.thread).is_empty() }
+        Keys::Reading { lines: !shared.is_empty() }
     };
     put(buf, inner.x, foot, inner.width, &thread_keys(live, keys), t.dim.patch(t.panel));
     // Between the transcript and the keys: what waits in the thread over its composer, or why it has none.
@@ -171,6 +186,16 @@ pub(super) fn thread_details(
     } else if let Some(why) = task.and_then(read_only) {
         bottom = foot - 1;
         put(buf, inner.x, bottom, inner.width, &format!(" {why}"), t.dim.patch(t.panel));
+    }
+    // Over them: what the thread's agent runs in the background, as a chat's capsule shows its tasks.
+    if let Some((what, since)) = task.and_then(|task| task.background.as_ref()) {
+        bottom = bottom.saturating_sub(1);
+        let (glyph, style) = mark(false);
+        put(buf, inner.x, bottom, 1, glyph, style.patch(t.panel));
+        let room =
+            rput(buf, inner.right(), bottom, &elapsed(Some(*since)), t.dim.patch(t.panel)).saturating_sub(inner.x + 3);
+        let line = format!("{} · {what}", tr("Background"));
+        put(buf, inner.x + 2, bottom, room, &truncate(&line, usize::from(room)), t.secondary.patch(t.panel));
     }
     if bottom < foot {
         bottom = bottom.saturating_sub(1);
@@ -197,8 +222,9 @@ pub(super) fn thread_details(
     }
 }
 
-/// The transcript's lines, oldest first, with a dim line for what the thread put in the bot's chat (a card, answered or
-/// not, a file, a voice note, an artifact; `shared_line`) where it came; with none, that it loads or has nothing yet.
+/// The transcript's lines, oldest first, with what the thread put in the bot's chat (a card, answered or not, a file, a
+/// voice note, an artifact; `is_shared` says which) where it came, as the chat shows it; with none, that it loads or
+/// has nothing yet.
 /// A load that failed says so first, with the key that tries again. Also where the picked line is.
 fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>, Option<usize>) {
     let t = theme();
@@ -206,20 +232,26 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
     if let Fetched::Failed(error) = &s.fetched {
         out.push(Line::from(Span::styled(format!(" {error} · {}", tr("r retries")), t.red)));
     }
-    let own = app.thread_entries.of(&s.thread).map(|e| (e, false));
-    let shared = app.shared(&s.bot, &s.thread).into_iter().map(|e| (e, true));
-    let mut entries: Vec<(&Entry, bool)> = own.chain(shared).collect();
+    let own = app.thread_entries.of(&s.thread).map(|e| (e, None));
+    // Drawn with the bot whose chat they are in; a bot just removed leaves none.
+    let shared = app
+        .bots
+        .get(&s.bot)
+        .into_iter()
+        .flat_map(|b| app.shared(&s.bot, &s.thread).into_iter().map(move |e| (e, Some(b))));
+    let mut entries: Vec<(&Entry, Option<&Bot>)> = own.chain(shared).collect();
     // Stable: at the same moment the thread's own entry comes first.
     entries.sort_by_key(|(e, _)| e.created_at);
     let mut picked = None;
-    for ((e, shared), depth) in nested(&entries, |(e, _)| e) {
-        if shared {
+    for ((e, chat), depth) in nested(&entries, |(e, _)| e) {
+        if let Some(b) = chat {
+            if !out.is_empty() {
+                out.push(Line::default());
+            }
             if s.pick.as_ref() == Some(&e.id) {
                 picked = Some(out.len());
             }
-            if let Some((mark, text)) = shared_line(e) {
-                out.push(Line::from(Span::styled(truncate(&format!(" {mark} {text}"), width), t.dim)));
-            }
+            out.extend(shared_entry_lines(app, b, e, width));
         } else if e.kind == Kind::User && e.data["from"] == "host" {
             told(&mut out, e, width, s.full);
         } else if e.queued() {
@@ -312,19 +344,33 @@ mod tests {
             "options": [{"optionId": "ok", "name": "Allow", "kind": "allow_once"}]});
         app.on_msg(Msg::Event(chat("file", 1, 5, "agent", file)));
         app.on_msg(Msg::Event(chat("card", 2, 20, "permission", card)));
+        let choice = json!({"decision": true, "status": "pending", "question": "Squash?", "choices": ["Squash", "Merge"],
+            "thread": thread, "task": "i"});
+        let artifact = json!({"text": "Report", "final": true, "artifact": {"id": "art-1", "title": "Report"},
+            "thread": thread, "task": "i"});
+        app.on_msg(Msg::Event(chat("choice", 4, 22, "notice", choice)));
+        app.on_msg(Msg::Event(chat("art", 5, 24, "agent", artifact)));
         app.on_msg(Msg::Event(chat("own", 3, 30, "agent", json!({"text": "The chat's own reply", "final": true}))));
         let mut sheet =
             ThreadSheet { fetched: Fetched::Loaded, ..ThreadSheet::new("a".into(), "i".into(), "thread-1".into()) };
         let (lines, picked) = detail_lines(&app, &sheet, 60);
         let lines = text(&lines);
-        let at = |text: &str| lines.iter().position(|line| line == text);
-        let (file, card) = (at(" ▤ Sent a file: log.txt"), at(" ◆ Waiting for your approval: Run tests"));
-        let step = lines.iter().position(|line| line.contains("Reading the logs"));
-        assert!(file.is_some() && file < step && step < card, "one dim line each, in time order: {lines:?}");
+        let at = |text: &str| lines.iter().position(|line| line.contains(text));
+        let step = at("Reading the logs");
+        assert!(at("▤ log.txt · 3 B") < step && step < at("◆ A wants to: Run tests"), "in time order: {lines:?}");
+        // Each as the chat draws it: the file and the artifact messages under their author, the cards whole, with their
+        // keys.
+        let (file, card, art) = (at(" A "), at("╭─ ◆ A wants to: Run tests"), at("▤ Artifact: Report"));
+        assert!(file == Some(0) && at("y Allow once") > card, "{lines:?}");
+        assert!(card < at("Squash?") && at("F2 Merge") < art, "{lines:?}");
+        let art = art.map(|at| at - 2);
         assert!(!lines.iter().any(|line| line.contains("The chat's own reply")), "only what this thread put there");
         assert_eq!(picked, None);
 
-        // `tab` picks the newest line first, then the one before.
+        // `tab` picks the newest first (at its first line, the author's), then the one before.
+        sheet.step_pick(&app, true);
+        assert_eq!((sheet.pick.as_deref(), detail_lines(&app, &sheet, 60).1), (Some("art"), art));
+        sheet.step_pick(&app, true);
         sheet.step_pick(&app, true);
         assert_eq!((sheet.pick.as_deref(), detail_lines(&app, &sheet, 60).1), (Some("card"), card));
         sheet.step_pick(&app, true);
@@ -363,6 +409,12 @@ mod tests {
         );
     }
 
+    fn draw_details(app: &App, sheet: &ThreadSheet) -> Vec<String> {
+        let area = Rect::new(0, 0, 100, 24);
+        let lines = screen(area, |buf| thread_details(buf, area, app, sheet, None));
+        lines.iter().map(|line| line.trim().trim_matches('│').trim().to_owned()).collect()
+    }
+
     #[tokio::test]
     async fn the_transcript_has_a_composer_for_the_bots_own_task_and_says_why_another_has_none() {
         let mut app = test_app();
@@ -380,13 +432,8 @@ mod tests {
         };
         app.on_msg(Msg::Event(entry(1, json!({"text": "use tabs", "status": "sent"}))));
         app.on_msg(Msg::Event(entry(2, json!({"text": "and the tests", "status": "queued"}))));
-        let area = Rect::new(0, 0, 100, 24);
-        let draw = |app: &App, sheet: &ThreadSheet| {
-            let lines = screen(area, |buf| thread_details(buf, area, app, sheet, None));
-            lines.iter().map(|line| line.trim().trim_matches('│').trim().to_owned()).collect::<Vec<_>>()
-        };
         let mut own = ThreadSheet::new("a".into(), "i".into(), "thread-1".into());
-        let lines = draw(&app, &own);
+        let lines = draw_details(&app, &own);
         let at = |lines: &[String], text: &str| lines.iter().position(|line| line.contains(text));
         assert!(at(&lines, "◷ Working · ~/code/app").is_some(), "where it works: {lines:?}");
         assert!(at(&lines, "you").is_some_and(|row| lines[row].contains("use tabs")), "what was sent is a step");
@@ -401,22 +448,22 @@ mod tests {
 
         own.typing = true;
         own.draft.insert("one more");
-        let lines = draw(&app, &own);
+        let lines = draw_details(&app, &own);
         let composer = at(&lines, "› one more").expect("the draft");
         assert!(lines[composer - 1].ends_with("queued · esc · S sends now · D removes"), "{lines:?}");
         assert_eq!(lines[composer + 1], "↵ sends after this turn · esc");
 
         // Read-only threads: no composer, one quiet line saying why.
-        let run = draw(&app, &ThreadSheet::new("a".into(), "r".into(), "thread-2".into()));
+        let run = draw_details(&app, &ThreadSheet::new("a".into(), "r".into(), "thread-2".into()));
         assert!(
             at(&run, "Read only: a routine's run").is_some() && at(&run, "Message this thread").is_none(),
             "{run:?}"
         );
-        let asked = draw(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
+        let asked = draw_details(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
         assert!(at(&asked, "Read only: another bot's request").is_some(), "{asked:?}");
 
         app.on_msg(Msg::Rewind(SendReceipts::default()));
-        let rebuilding = draw(&app, &own);
+        let rebuilding = draw_details(&app, &own);
         let composer = at(&rebuilding, "› one more").expect("the draft stays visible during recovery");
         assert_eq!(rebuilding[composer + 1], "esc");
 
@@ -424,14 +471,41 @@ mod tests {
         app.on_msg(Msg::ReplayComplete);
         own.typing = false;
         own.files.push("draft.txt".into());
-        let restored = draw(&app, &own);
+        let restored = draw_details(&app, &own);
         assert!(at(&restored, "› one more").is_some() && at(&restored, "draft.txt").is_some());
 
         own.typing = true;
         own.draft.clear();
         own.files.clear();
-        let empty = draw(&app, &own);
+        let empty = draw_details(&app, &own);
         let composer = at(&empty, "Message this thread").expect("the empty editor stays visible while typing");
         assert_eq!(empty[composer + 1], "esc");
+    }
+
+    #[tokio::test]
+    async fn background_work_appears_above_the_thread_composer_and_queue() {
+        let mut app = test_app();
+        bot(
+            &mut app,
+            &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
+                "background": [{"id": "w", "kind": "workflow", "name": "probe", "activity": "Count: two",
+                    "startedAt": 0}]}]),
+        );
+        app.on_msg(Msg::Event(json!({"type": "threadEntry", "rev": 2, "thread": "thread-1", "entry": {
+            "id": "t2", "botId": "thread-1", "seq": 2, "rev": 2, "kind": "user", "turn": 2,
+            "data": {"text": "and the tests", "status": "queued"}
+        }})));
+        let sheet = ThreadSheet::new("a".into(), "i".into(), "thread-1".into());
+        let lines = draw_details(&app, &sheet);
+        let at = |lines: &[String], text: &str| lines.iter().position(|line| line.contains(text));
+        let running = at(&lines, "Background · probe · Count: two").expect("the background line");
+        assert!(lines[running + 1].starts_with("› and the tests"), "over what waits and the composer: {lines:?}");
+        bot(
+            &mut app,
+            &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
+            "background": [{"id": "w", "name": "probe", "startedAt": 0}, {"id": "s", "name": "Sleep", "startedAt": 1}]}]),
+        );
+        let lines = draw_details(&app, &sheet);
+        assert!(at(&lines, "Background · probe, Sleep").is_some(), "several, by name: {lines:?}");
     }
 }

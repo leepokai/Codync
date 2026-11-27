@@ -45,3 +45,30 @@ test('inline: links, strike and italic still parse', () => {
     { kind: 'em', children: [{ kind: 'text', text: 'here' }] },
   ])
 })
+
+test('inline: a delimiter inside a code span does not close the run around it', () => {
+  assert.deepEqual(inlineParts('**a `x**y` b**'), [
+    {
+      kind: 'strong',
+      children: [
+        { kind: 'text', text: 'a ' },
+        { kind: 'code', text: 'x**y' },
+        { kind: 'text', text: ' b' },
+      ],
+    },
+  ])
+  assert.deepEqual(inlineParts('**`**`**'), [
+    { kind: 'strong', children: [{ kind: 'code', text: '**' }] },
+  ])
+  // Underscores inside code stay code too, and a lone backtick stays text.
+  assert.deepEqual(inlineParts('_a `b_c` d_'), [
+    {
+      kind: 'em',
+      children: [
+        { kind: 'text', text: 'a ' },
+        { kind: 'code', text: 'b_c' },
+        { kind: 'text', text: ' d' },
+      ],
+    },
+  ])
+})

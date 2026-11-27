@@ -27,7 +27,8 @@ pub enum Cmd {
     },
     /// One of the bot's tasks looks stuck (`chat::work::watch`): a turn in its chat to look at it.
     Watchdog(crate::chat::work::Stuck),
-    /// A thread answered the bot's `ask_task` after the call gave up waiting: a turn in its chat with the answer.
+    /// A thread answered the bot's `ask_task` after the call gave up waiting, or asks the bot something
+    /// (`ask_chat`): a turn in its chat with it.
     TaskAnswer {
         prompt: String,
         /// The task's hops: a task added in that turn carries them on.
@@ -176,8 +177,8 @@ pub(super) enum HostTurn {
     /// The watchdog's look at a task that seems stuck (`Cmd::Watchdog`): the bot acts on it, which alerts like a
     /// reply, or passes. A restart doesn't resume it: the next look asks again if the task still seems stuck.
     Watchdog,
-    /// A thread's answer to the bot's `ask_task` that came after the call gave up (`Cmd::TaskAnswer`): the bot acts on
-    /// it, which alerts like a reply. A restart doesn't resume it.
+    /// A thread's answer to the bot's `ask_task` that came after the call gave up, or a thread's question
+    /// (`ask_chat`) (`Cmd::TaskAnswer`): the bot acts on it, which alerts like a reply. A restart doesn't resume it.
     TaskAnswer,
 }
 

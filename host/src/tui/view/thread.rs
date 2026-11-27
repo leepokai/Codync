@@ -16,6 +16,7 @@ use super::chat::{composer_lines, file_names};
 use super::queue::{QueueKeys, queued_rows};
 use super::set_cursor;
 use super::style::theme;
+use super::time::elapsed;
 use super::trace::push_nested;
 use super::work::{mark, standing};
 
@@ -154,6 +155,16 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     } else if let Some(why) = task.and_then(read_only) {
         bottom = foot - 1;
         put(buf, inner.x, bottom, inner.width, &format!(" {why}"), t.dim.patch(t.panel));
+    }
+    // Over them: what the thread's agent runs in the background, as a chat's capsule shows its tasks.
+    if let Some((what, since)) = task.and_then(|task| task.background.as_ref()) {
+        bottom = bottom.saturating_sub(1);
+        let (glyph, style) = mark(false);
+        put(buf, inner.x, bottom, 1, glyph, style.patch(t.panel));
+        let room =
+            rput(buf, inner.right(), bottom, &elapsed(Some(*since)), t.dim.patch(t.panel)).saturating_sub(inner.x + 3);
+        let line = format!("{} · {what}", tr("Background"));
+        put(buf, inner.x + 2, bottom, room, &truncate(&line, usize::from(room)), t.secondary.patch(t.panel));
     }
     if bottom < foot {
         bottom = bottom.saturating_sub(1);
@@ -397,5 +408,23 @@ mod tests {
         );
         let asked = draw(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
         assert!(at(&asked, "Read only: another bot's request").is_some(), "{asked:?}");
+
+        // What its agent runs in the background: one line over the composer, as a chat's capsule.
+        bot(
+            &mut app,
+            &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
+                "background": [{"id": "w", "kind": "workflow", "name": "probe", "activity": "Count: two",
+                    "startedAt": 0}]}]),
+        );
+        let lines = draw(&app, &ThreadSheet::new("a".into(), "i".into(), "thread-1".into()));
+        let running = at(&lines, "Background · probe · Count: two").expect("the background line");
+        assert!(lines[running + 1].starts_with("› and the tests"), "over what waits and the composer: {lines:?}");
+        bot(
+            &mut app,
+            &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
+            "background": [{"id": "w", "name": "probe", "startedAt": 0}, {"id": "s", "name": "Sleep", "startedAt": 1}]}]),
+        );
+        let lines = draw(&app, &ThreadSheet::new("a".into(), "i".into(), "thread-1".into()));
+        assert!(at(&lines, "Background · probe, Sleep").is_some(), "several, by name: {lines:?}");
     }
 }

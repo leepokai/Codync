@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { agentOf, threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
+import { agentOf, backgroundLabel, threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
-  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, ...change,
+  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [], ...change,
 })
 const ids = (tasks: WorkTask[]) => tasks.map((t) => t.id)
 
@@ -26,11 +26,28 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkTask[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: 'codex' },
-    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null },
-    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null },
-    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: 'codex', background: [] },
+    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
+    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
+    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
   ], 'a status this app does not know, or none, leaves the task out; a reason it does not know reads as none')
+})
+
+test("a thread's background work reads as the host sends it, and its capsule says what runs", () => {
+  const [read] = normalizeWork([{ id: 't', status: 'working', background: [
+    { id: 'w1', kind: 'workflow', name: 'after-change', activity: 'Review: diff', startedAt: 7 },
+    { id: 'b1', kind: 'future', name: 'npm test', startedAt: 9 },
+    { name: 'no id' },
+  ] }])
+  assert.deepEqual(read!.background, [
+    { id: 'w1', name: 'after-change', activity: 'Review: diff', startedAt: 7 },
+    { id: 'b1', name: 'npm test', activity: null, startedAt: 9 },
+  ], 'what it can do nothing with is left out')
+  assert.deepEqual(normalizeWork([{ id: 'o', status: 'working' }])[0]!.background, [], 'an older host says nothing')
+  assert.equal(backgroundLabel(task('a')), null)
+  const one = task('a', 'working', { background: [read!.background[0]!] })
+  assert.deepEqual(backgroundLabel(one), { text: 'after-change · Review: diff', since: 7 })
+  assert.deepEqual(backgroundLabel(task('a', 'working', { background: read!.background })), { text: 'after-change, npm test', since: 7 })
 })
 
 test('the most threads at once is a whole number from 1 to 6', () => {

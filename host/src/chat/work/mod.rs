@@ -13,12 +13,14 @@
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
 //! [`tools`] the bot's tools ([`recall`] the one that looks back, [`ask`] the one that asks a thread and waits for its
-//! answer), [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside another in one
-//! repository ([`fill`] what a new one is given), [`plain`] threads without a bot, [`watch`] the watchdog that wakes
-//! the bot for a thread that looks stuck, [`archive`] the threads that ended over a week ago.
+//! answer, [`ask_chat`] a thread's question to its bot), [`prompts`] the words, [`worktree`] the git worktree of a
+//! thread that works beside another in one repository ([`fill`] what a new one is given), [`plain`] threads without a
+//! bot, [`watch`] the watchdog that wakes the bot for a thread that looks stuck, [`archive`] the threads that ended
+//! over a week ago.
 
 pub mod archive;
 pub mod ask;
+pub mod ask_chat;
 mod dispatch;
 mod fill;
 pub mod plain;
@@ -104,6 +106,12 @@ pub enum Outcome {
         running: String,
         text: Option<String>,
     },
+    /// It ended normally while work its agent reports (`agent::bot::background_tasks`) still runs: its task waits,
+    /// as often as that happens, for the agent's own turn once that work ends, whose last message is the report.
+    /// `text`: its last message, a progress line.
+    Waiting {
+        text: Option<String>,
+    },
     /// Why, in words for its bot.
     Failed(Failure, String),
     /// The host couldn't give the task to its thread, so no agent was ever asked; why, in words for its bot.
@@ -170,6 +178,8 @@ pub struct Work {
     /// Thread → the question of its bot's it hasn't answered (`ask`). Gone with the host process: an answer that
     /// comes after a restart is the thread's report's.
     asks: Mutex<HashMap<String, ask::Pending>>,
+    /// Thread → its question to its bot that waits for the answer (`ask_chat`).
+    questions: Mutex<HashMap<String, ask_chat::Waiting>>,
 }
 
 impl Work {
@@ -336,18 +346,24 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 }
 
 /// Ends the thread's task, reports its result unless stopped, and dispatches after any worktree check.
-/// A pending message or the first turn that leaves background work running keeps the task open.
+/// Pending messages and running background work can keep the task open.
 /// Returns whether the thread keeps its agent and session for that background work.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome, turn: Option<Arc<()>>) -> bool {
     let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::after_thread(hub, &owner, &thread, turn.as_ref());
-    let left = matches!(outcome, Outcome::LeftRunning { .. });
+    let left = matches!(outcome, Outcome::LeftRunning { .. } | Outcome::Waiting { .. });
     let mut goes_on = false;
     let ended = tasks::change(hub, bot, |tasks| {
         goes_on = thread::unheard(&hub.store, &cfg.id);
         if goes_on {
             return Ok(None);
+        }
+        if matches!(outcome, Outcome::Waiting { .. }) {
+            goes_on = tasks::of_thread(tasks, &cfg.id).is_some();
+            if goes_on {
+                return Ok(None);
+            }
         }
         if let Outcome::LeftRunning { running, .. } = &outcome {
             goes_on = hold(hub, cfg, tasks, running);
@@ -366,6 +382,15 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome, turn: Option<
         }
     }
     goes_on && left
+}
+
+/// Thread `cfg`'s task waited on background work of its agent's, and the last of it (`name`) was stopped: its agent
+/// hears nothing of that, so a message from the host in its thread asks for its report (`Outcome::Waiting`).
+pub fn ask_report(hub: &Arc<Hub>, cfg: &BotConfig, name: &str) {
+    let data = json!({"text": prompts::report_after_stop(name), "from": "host"});
+    if let Err(error) = thread::post_to(hub, cfg, data) {
+        host_error!(hub, "couldn't ask a thread for its report", thread = %cfg.id, error = format!("{error:#}"));
+    }
 }
 
 /// Thread `cfg` ended its turn while `running` still runs: the first time, its task goes on, and a message from the
@@ -426,7 +451,8 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             task.cut_in = true;
             return None;
         }
-        Outcome::Done(text) => {
+        // Its agent's work ended with no turn of its own after it: what the thread said last is all there is.
+        Outcome::Done(text) | Outcome::Waiting { text } => {
             match report_text(task, text) {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
@@ -525,6 +551,7 @@ fn deliver(hub: &Hub, bot: &str, task: &Task) {
 fn ended(hub: &Hub, bot: &str, task: &Task) {
     if let Some(thread) = &task.thread {
         ask::forget(hub, thread);
+        ask_chat::forget(hub, thread);
     }
     let thread = task.thread.as_deref().and_then(|thread| hub.store.bot(thread).ok().flatten());
     let agent = thread.as_ref().map(|thread| thread.config.backend.as_str());

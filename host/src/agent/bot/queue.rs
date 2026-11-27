@@ -224,6 +224,12 @@ impl Actor {
             });
             self.turn_over(Outcome::Stopped);
         }
+        // Nor does one whose task waits on what its agent runs in the background: that stops with its agent.
+        if self.turn.is_none() && self.cfg.is_thread() && self.runs_in_background() {
+            self.hub.set_runtime(&self.id(), |r| r.background.clear());
+            self.kill_agent().await;
+            self.turn_over(Outcome::Stopped);
+        }
     }
 
     async fn stop_workflow(&mut self, step_id: &str) {
@@ -256,9 +262,7 @@ impl Actor {
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
     pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.kill_agent().await;
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);
         }

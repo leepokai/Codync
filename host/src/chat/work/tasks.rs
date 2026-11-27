@@ -445,6 +445,8 @@ pub(super) struct Shown {
     pub status: Status,
     pub activity: String,
     pub wait: Option<Wait>,
+    /// What its thread's agent runs in the background, which the task waits on.
+    pub background: Vec<crate::hub::BackgroundTask>,
 }
 
 /// `cfg`'s tasks worth showing: the working ones (oldest first), the waiting in dispatch order, then the ones ended
@@ -485,9 +487,18 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
                 task.thread.as_deref().filter(|_| task.status == Status::Working).map(|thread| hub.runtime(thread));
             let status = if asks_user(hub, &task) { Status::NeedsYou } else { task.status };
             let wait = waits.remove(&task.id);
-            Shown { status, activity: rt.map(|rt| rt.activity).unwrap_or_default(), wait, task }
+            let (activity, background) = rt.map(now_doing).unwrap_or_default();
+            Shown { task, status, activity, wait, background }
         })
         .collect()
+}
+
+/// What a working task's thread does (`rt`: its runtime): its turn's activity, else between turns what its agent runs
+/// in the background, which then is the task's work; and that work.
+fn now_doing(rt: crate::hub::Runtime) -> (String, Vec<crate::hub::BackgroundTask>) {
+    let between = || rt.background.first().map(|t| t.activity.clone().unwrap_or_else(|| t.name.clone()));
+    let activity = Some(rt.activity.clone()).filter(|a| !a.is_empty()).or_else(between).unwrap_or_default();
+    (activity, rt.background)
 }
 
 /// What the bot sees of its box: [`shown`] without the threads the user started, which are theirs.
@@ -515,7 +526,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     Value::Array(
         shown
             .into_iter()
-            .map(|Shown { task, status, activity, wait }| {
+            .map(|Shown { task, status, activity, wait, background }| {
                 // It takes one of the bot's seats.
                 let seat = task.source.seated()
                     && match status {
@@ -529,7 +540,11 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
                     |t| agent_of(&hub.store, t),
                 );
-                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on))
+                let mut row = row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on));
+                if !background.is_empty() {
+                    row["background"] = json!(background);
+                }
+                row
             })
             .collect(),
     )
@@ -911,6 +926,38 @@ mod tests {
         let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
         hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
         assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
+    }
+
+    #[test]
+    fn between_turns_a_task_shows_and_does_what_its_agent_runs_in_the_background() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b-bg", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-bg"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let workflow = crate::hub::BackgroundTask {
+            id: "w1".into(),
+            kind: crate::hub::BackgroundKind::Workflow,
+            name: "after-change".into(),
+            activity: None,
+            started_at: 5,
+        };
+        hub.set_runtime("thread-bg", |r| r.background = vec![workflow.clone()]);
+        let row = wire(&hub, &cfg)[0].clone();
+        assert_eq!(
+            row["background"],
+            json!([{"id": "w1", "kind": "workflow", "name": "after-change", "startedAt": 5}])
+        );
+        assert_eq!(row["activity"], "after-change", "no turn runs: the workflow is what it does");
+        hub.set_runtime("thread-bg", |r| r.background[0].activity = Some("Review: diff".into()));
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Review: diff");
+        // A turn's own activity comes first.
+        hub.set_runtime("thread-bg", |r| {
+            r.status = BotStatus::Working;
+            r.activity = "Thinking…".into();
+        });
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Thinking…");
     }
 
     #[test]

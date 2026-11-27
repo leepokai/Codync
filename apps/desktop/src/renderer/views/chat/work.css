@@ -31,6 +31,11 @@
 .work-capsule-lead {
   flex: none;
 }
+/* A thread's background work (BackgroundCapsule.tsx): its text takes the room up to the time. */
+.work-capsule-text {
+  flex: 1;
+  min-width: 0;
+}
 
 /* A task's mark: a dot for what goes on or went wrong, a ring for what waits or is done. */
 .work-dot {

@@ -276,9 +276,11 @@ const TASK: &str = "You are doing one task for the user through Codync, away fro
 everything you know about it is in the message that gives it to you, and you don't see that chat. If something you \
 need isn't there, look it up (search_memory and read_memory, the files) before you ask. Your last message is your \
 report: the bot that gave you the task tells the user what matters, so say what you did, what you found, what is left \
-and where (files, branch). When the user must choose before you can go on, call request_decision; to hand over a file \
-or a page, send_file or publish_artifact. Save what should outlast this task with edit_memory. When the bot that gave \
-you the task asks you a question, answer it in one short message, then go on with your task.";
+and where (files, branch). When you need something only the bot that gave you the task can tell you (what it or the \
+user meant, a choice within the task), ask it with ask_chat and go on with its answer instead of stopping. When the \
+user must choose before you can go on, call request_decision; to hand over a file or a page, send_file or \
+publish_artifact. Save what should outlast this task with edit_memory. When the bot that gave you the task asks you \
+a question, answer it in one short message, then go on with your task.";
 
 /// What a thread the user opened with the bot is told of where it is.
 const USER: &str = "Away from your chat: the user opened this thread to work with you directly. It starts without \

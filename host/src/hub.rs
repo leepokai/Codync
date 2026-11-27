@@ -58,6 +58,33 @@ pub struct Runtime {
     pub fast_mode: codync_agent::config::FastModeSupport,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
+    /// What a thread's agent runs apart from its turn, oldest first (`agent::bot::background_tasks`): its task waits
+    /// on it.
+    pub background: Vec<BackgroundTask>,
+}
+
+/// A piece of work a thread's agent reports running in the background: a command, a workflow, a monitor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTask {
+    /// The agent's id for it.
+    pub id: String,
+    pub kind: BackgroundKind,
+    /// What the agent calls it (a workflow's name, a command's description).
+    pub name: String,
+    /// What it does now, when the agent says (a workflow's phase and agent).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
+    pub started_at: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackgroundKind {
+    Shell,
+    Workflow,
+    Monitor,
+    Other,
 }
 
 /// The bot runs on one of its fallbacks: which, since when, and why it left the agent before.
@@ -368,6 +395,7 @@ impl Hub {
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
             || before.agent_step != after.agent_step
+            || before.background != after.background
         {
             self.emit_bot(id);
             // A group shows what its busy member is doing.
@@ -423,7 +451,7 @@ impl Hub {
     }
 
     pub(crate) fn update_keep_awake(&self) {
-        let busy = self.runtime.locked().values().any(|r| r.status == BotStatus::Working);
+        let busy = self.runtime.locked().values().any(|r| r.status == BotStatus::Working || !r.background.is_empty());
         self.keep_awake
             .locked()
             .set(busy || self.routines.keeps_awake() || crate::workflows::Workflows::keeps_awake(&self.store));

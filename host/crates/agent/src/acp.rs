@@ -17,6 +17,7 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
 pub mod auth;
+mod calls;
 mod capabilities;
 pub mod claude;
 pub mod codebuddy;
@@ -318,18 +319,23 @@ impl Acp {
             tokio::spawn(async move {
                 let read = async {
                     let mut lines = BufReader::new(stdout).lines();
+                    let mut calls = calls::Calls::default();
                     while let Ok(Some(line)) = lines.next_line().await {
-                        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+                        let Ok(mut msg) = serde_json::from_str::<Value>(&line) else {
                             tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
                             continue;
                         };
                         let method = msg["method"].as_str().map(str::to_owned);
                         match (method, msg.get("id").cloned()) {
                             (Some(method), Some(id)) if !id.is_null() => {
+                                if method == PERMISSION {
+                                    calls.permission(&mut msg["params"]);
+                                }
                                 let request = Request::new(id, method, msg["params"].clone(), requests_writer.clone());
                                 let _ = tx.send(Incoming::Request(request));
                             }
                             (Some(method), _) if method == "session/update" => {
+                                calls.update(&mut msg["params"]);
                                 let _ = tx.send(Incoming::Update(Update::parse(&msg["params"])));
                             }
                             (Some(method), _) => {

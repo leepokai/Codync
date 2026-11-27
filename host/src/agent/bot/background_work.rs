@@ -1,5 +1,5 @@
 //! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, whether
-//! it still runs Codync's MCP servers, and what a thread's turn left running that its task waits on (#634).
+//! it still runs Codync's MCP servers, and what a thread's turn left running detached that its task waits on (#634).
 
 use super::{Actor, Done};
 use codync_agent::acp::{Acp, StopReason};
@@ -148,34 +148,32 @@ impl Actor {
         }
     }
 
-    /// What a thread's turn that just ended normally (`done`) left running in the background, which its task waits on,
-    /// in words that fit "while … still runs": a subagent Claude's adapter launched this turn to run in the
-    /// background (`isAsync`), or something its agent runs detached since its task's round began
-    /// ([`left_detached`]). None for any other turn.
-    pub(super) async fn left_running(&self, done: &Done) -> Option<String> {
+    /// What a thread's turn that just ended normally (`done`) left running in the background, which its task waits
+    /// on: work its agent reports running ([`Capabilities::tasks`](codync_agent::acp::Capabilities),
+    /// `background_tasks`), or else something it runs detached since its task's round began ([`left_detached`]).
+    /// Claude's adapter holds a turn open until the subagents it started end, so those aren't guessed here. None for
+    /// any other turn.
+    pub(super) async fn left_running(&self, done: &Done) -> Option<Left> {
         let ended = done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::EndTurn);
         if !self.cfg.is_thread() || self.stop_requested || !ended {
             return None;
         }
-        let subagents = self
-            .tools
-            .values()
-            .filter_map(|id| self.hub.store.entry(id))
-            .filter(|e| e.data["subagent"]["background"] == true)
-            .count();
-        let mut left = Vec::new();
-        match subagents {
-            0 => {}
-            1 => left.push("a subagent launched in the background".to_owned()),
-            n => left.push(format!("{n} subagents launched in the background")),
+        let conn = self.conn.as_ref()?;
+        if conn.sessions.tasks {
+            return self.waits_on_background().await.then_some(Left::Reported);
         }
-        if let Some(conn) = &self.conn
-            && left_detached(&conn.acp, self.detached_before.as_deref().unwrap_or_default()).await
-        {
-            left.push("a command started in the background".to_owned());
-        }
-        (!left.is_empty()).then(|| left.join(" and "))
+        left_detached(&conn.acp, self.detached_before.as_deref().unwrap_or_default())
+            .await
+            .then(|| Left::Detached("a command started in the background".to_owned()))
     }
+}
+
+/// What a thread's turn left running that its task waits on ([`Actor::left_running`]).
+pub(super) enum Left {
+    /// Work its agent reports, which says itself when it ends ([`Outcome::Waiting`](crate::chat::work::Outcome)).
+    Reported,
+    /// Something it runs detached, in words that fit "while … still runs".
+    Detached(String),
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its

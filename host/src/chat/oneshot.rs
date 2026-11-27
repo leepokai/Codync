@@ -33,7 +33,15 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let mut conn = crate::agent::bot::start_first(candidates, &env, |candidate, mut env, _| async move {
         let mut command = [candidate.resolve(|_| {}).await?.acp()];
         crate::agent::own_memory::turn_off(&cfg.backend, workspace, &mut env, &mut command).await;
-        crate::agent::bot::start_agent(&cfg.backend, &command[0], workspace, &env, Duration::from_mins(1)).await
+        crate::agent::bot::start_agent(
+            &cfg.backend,
+            &command[0],
+            workspace,
+            &env,
+            Duration::from_mins(1),
+            crate::agent::bot::Background::Unreported,
+        )
+        .await
     })
     .await?;
     grants.held_by(&conn.acp);

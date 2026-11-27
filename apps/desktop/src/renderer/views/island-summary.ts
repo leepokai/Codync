@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import type { IslandBot, IslandPermission, IslandSummary } from '@shared/island'
-import { folderName, isGroup, isWorking, type Bot, type Entry } from '@shared/models'
+import { islandLastError, islandReply, islandTurnSteps, type IslandBot, type IslandPermission, type IslandSummary } from '@shared/island'
+import { folderName, isGroup, isWorking, type Bot } from '@shared/models'
 import { outsideStatus } from '@shared/work'
+import { messagePreview } from '../lib/message-preview'
 import { useModels } from '../lib/observable'
-import { refKey, type AppModel, type RosterItem } from '../store/app-model'
+import { parseRef, refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './chat/PermissionCard'
@@ -28,8 +29,13 @@ export function useIslandSummary(app: AppModel) {
       const summary = islandSummary(app)
       const json = JSON.stringify(summary)
       if (json === sent) return
-      sent = json
       window.codync.island.setSummary(summary)
+      sent = json
+      for (const { ref, completion } of summary.bots) {
+        if (!completion) continue
+        const bot = parseRef(ref)
+        if (bot) app.store(bot.computerId)?.consumeCompletion(bot.botId, completion.id)
+      }
     }, 150)
   })
 }
@@ -47,6 +53,10 @@ function islandSummary(app: AppModel): IslandSummary {
 
 function islandBot(store: BotStore, bot: Bot, ref: string, name: string): IslandBot {
   const entries = store.allEntries(bot.id)
+  const away = isWorking(bot) && Boolean(bot.workingChat && bot.workingChat !== bot.id)
+  const workingEntries = away && bot.workingChat ? store.allEntries(bot.workingChat) : entries
+  const lastErr = islandLastError(entries)
+  const completionId = store.completionFor(bot)
   return {
     ref,
     name,
@@ -55,18 +65,18 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     color: bot.avatarColor,
     status: outsideStatus(bot),
     chat: bot.status,
+    away,
+    completion: typeof completionId === 'string' ? islandReply(entries, messagePreview, completionId) : completionId,
+    reply: bot.completionReplyId === undefined ? islandReply(entries, messagePreview) : undefined,
+    legacyStreamRev: bot.completionReplyId === undefined ? store.replayedThrough : undefined,
     backend: store.backendName(bot.backend),
     folder: folderName(bot, trNow),
     detail: botDetail(bot),
-    steps: isWorking(bot)
-      ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || trNow('Use a tool'), kind: e.data.toolKind ?? 'other' }))
-      : [],
-    error: bot.status === 'error' ? (lastError(entries) ?? null) : null,
+    steps: islandTurnSteps(bot, entries, workingEntries, STEPS, trNow('Use a tool')),
+    error: bot.status === 'error' ? (lastErr?.text || null) : null,
+    errorId: lastErr?.id ?? null,
   }
 }
-
-/** The text of the conversation's last error notice. */
-const lastError = (entries: Entry[]) => entries.findLast((e) => e.kind === 'notice' && e.data.style === 'error')?.data.text
 
 /** A conversation's unanswered approval cards; in a group, the member that asks. */
 function pendingCards({ ref, bot, store }: RosterItem): IslandPermission[] {

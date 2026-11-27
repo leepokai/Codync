@@ -42,7 +42,9 @@ pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
 pub use tasks::{Setup, Source, Status, doing, lines, outside, waiting_threads, wire, working_threads};
-pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
+pub use thread::{
+    Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, upload_root, written,
+};
 pub use tools::{TOOLS, acting_as, call, chat_only, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo, is_worktree};

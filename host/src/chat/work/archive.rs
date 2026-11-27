@@ -80,6 +80,10 @@ pub(super) fn put(hub: &Hub, bot: &str, old: &[Task], left: &[Task]) -> Result<(
 /// `bot`'s task `id` back in its box from the archive, with its thread, for the user to write to it, try it again or
 /// remove it. Nothing when it is in the box.
 pub fn bring_back(hub: &Hub, bot: &str, id: &str) -> Result<()> {
+    bring_back_checking_thread(hub, bot, id, None)
+}
+
+pub(super) fn bring_back_checking_thread(hub: &Hub, bot: &str, id: &str, expected: Option<&str>) -> Result<()> {
     if tasks::load(&hub.store, bot).iter().any(|i| i.id == id) {
         return Ok(());
     }
@@ -91,6 +95,9 @@ pub fn bring_back(hub: &Hub, bot: &str, id: &str) -> Result<()> {
         }
         let Some(data) = hub.store.archived_task(bot, id)? else { return Ok(()) };
         let task: Task = serde_json::from_str(&data)?;
+        if expected.is_some() {
+            super::thread::write_target(&task, expected)?;
+        }
         if let Some(thread) = &task.thread {
             hub.store.unpark_thread(thread)?;
         }

@@ -59,6 +59,8 @@ ssh -N -L 19333:127.0.0.1:19222 your-server &
 CODYNC_TOKEN=$(ssh your-server 'cat ~/.codync/token') codync-host tui --url http://127.0.0.1:19333
 ```
 
+When you connect to an older host, the terminal can check earlier history for a reply saved during the turn before showing a completion notice.
+
 ## Use the desktop app over SSH
 
 The desktop app on macOS, Linux or Windows can run the server's bots alongside its own. Open the **Computers** page, and under **Over SSH** choose **Add SSH computer**. Fill in the host (an SSH alias or hostname) and, if your SSH config doesn't already set them, the user, port and key. Sign-in must work with a key or ssh-agent: nothing prompts for a password. On the first connection, compare the host key fingerprint with the server's, then choose **Trust and connect**.

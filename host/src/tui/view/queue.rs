@@ -89,6 +89,7 @@ mod tests {
             turn: 0,
             kind: Kind::User,
             data,
+            rev: None,
             created_at: 0,
         };
         let one = entry("1", serde_json::json!({"text": "first\nmore", "status": "queued"}));

@@ -84,11 +84,11 @@ impl App {
         g.error = None;
         if let Some(id) = &g.group_id {
             body["id"] = id.clone().into();
-            self.call("updateBot", body, After::Saved);
+            self.call("updateBot", body, After::Saved(self.mirror_epoch));
         } else {
             body["id"] = "".into();
             body["kind"] = "group".into();
-            self.call("createBot", body, After::Saved);
+            self.call("createBot", body, After::Saved(self.mirror_epoch));
         }
     }
 }

@@ -51,6 +51,7 @@ pub use older::OlderThreads;
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
+pub(super) use threads::ThreadNavigationBlock;
 pub use threads::{Fetched, ThreadEntries, ThreadSheet};
 pub use when::complete_zone;
 pub use work::{CutIn, DetailRow, DetailSection, WorkAct, giving_way};
@@ -96,11 +97,17 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
-    /// A thread's transcript (`threadEntries`), by thread id.
-    ThreadEntries(String),
-    /// `send` to a task's thread (the task's id; its thread may change meanwhile): its draft leaves the composer once
-    /// the host has the message.
-    ThreadSent(String),
+    ThreadEntries {
+        bot: String,
+        thread: String,
+        epoch: u64,
+        connection: u64,
+    },
+    ThreadSent {
+        request: uuid::Uuid,
+        epoch: u64,
+        connection: Option<u64>,
+    },
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
         search: String,

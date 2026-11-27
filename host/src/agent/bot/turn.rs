@@ -10,7 +10,7 @@ use crate::chat::team::no_reply;
 use crate::chat::work::{self, Failure, Outcome, Source};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{BotConfig, EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
@@ -183,6 +183,7 @@ impl Actor {
             }
             .into();
             r.started_at = Some(now_ms());
+            r.completion_reply_id = None;
             r.lane = Some(lane.clone());
             r.message = message;
         });
@@ -363,6 +364,7 @@ impl Actor {
         self.plan_entry = None;
         self.last_text = None;
         self.sent.clear();
+        self.completion_reply_id = None;
         self.reacted = Reacted::No;
         self.joined = false;
         self.unheard.clear();
@@ -376,6 +378,7 @@ impl Actor {
         if self.turn.is_none() {
             return false;
         }
+        let compacting = self.compacting.is_some();
         self.after_turn(done);
         self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
@@ -418,7 +421,9 @@ impl Actor {
                 // A bot request's answer belongs to the bot that sent it and the exchange notice.
                 if !delegated {
                     e.data["final"] = true.into();
-                    self.hub.set_entry(&id, &e.data);
+                    if let Some(saved) = self.hub.set_entry(&id, &e.data) {
+                        self.record_completion_reply(&saved);
+                    }
                 }
                 final_text = text;
             }
@@ -467,6 +472,7 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
+        let own_chat = !grouped && self.in_own_chat();
         if let Some(step) = self.active_workflow.clone() {
             let timed_out = self.routine_timed_out;
             let stopped_step = !timed_out && (stopped || self.stop_requested);
@@ -486,7 +492,7 @@ impl Actor {
                 self.set_session(Some(&slot), None);
             }
         }
-        if routine {
+        let routine_reported = if routine {
             let (status, detail) = if self.routine_timed_out {
                 (crate::routines::Status::Failed, Some(crate::routines::TIMED_OUT.into()))
             } else if stopped {
@@ -497,8 +503,14 @@ impl Actor {
                 (crate::routines::Status::Succeeded, None)
             };
             let text = (status == crate::routines::Status::Succeeded).then(|| final_text.clone()).flatten();
+            let reported = text.as_deref().is_some_and(|t| !crate::chat::group::ends_in_pass(t));
             self.finish_routine(status, detail, text);
-        }
+            reported
+        } else {
+            false
+        };
+        let completion_reply_id =
+            self.completion_reply_id.take().filter(|_| reply.is_ok() && !compacting && (own_chat || routine_reported));
         self.complete_request(reply, stopped);
         self.complete_group(if stopped || failed || stop_reason != "end_turn" {
             Err(anyhow!("turn did not complete ({stop_reason})"))
@@ -557,6 +569,7 @@ impl Actor {
             };
             r.activity = needs.unwrap_or_default();
             r.started_at = None;
+            r.completion_reply_id = completion_reply_id;
             r.lane = None;
             r.message = None;
             r.session = None;
@@ -572,6 +585,7 @@ impl Actor {
         if !self.stop_requested
             && !delegated
             && !grouped
+            && !compacting
             && host_turn.is_none_or(HostTurn::alerts)
             && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back || passed)
         {
@@ -587,6 +601,12 @@ impl Actor {
 }
 
 impl Actor {
+    pub(super) fn record_completion_reply(&mut self, entry: &Entry) {
+        if entry.bot_id == self.cfg.id && entry.data["final"] == true && entry.data["call"].is_null() {
+            self.completion_reply_id = Some(entry.id.clone());
+        }
+    }
+
     /// Says why the running turn ended early; `stopReason` tells scripts (`codync-host send`) without the words.
     fn stop_notice(&self, text: &str, reason: &str) {
         self.notice_data(json!({"text": text, "style": NoticeStyle::Info, "stopReason": reason}));

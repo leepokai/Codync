@@ -4,6 +4,8 @@ Each bot has one chat that keeps going. You send it work, it replies, and everyt
 
 The chat shows your messages, the bot's messages, approval cards, choice cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
 
+If you restore your computer's Codync database from a backup, the desktop app and terminal UI reload its bot list and chats when they reconnect. Drafts in those chats stay on your device.
+
 ## Choice cards
 
 When your bot needs you to pick a way forward, it can show a question with two to twelve numbered options. On **iPhone**, **Android** and **Desktop**, tap the option you want, or type your own answer in the last row, **Something else**. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options while the bot waits on the question (on a card left open, 1–9 jump to a bot as usual), or type your own answer in the message box. Your choice appears as your message and the bot continues its current work.
@@ -58,6 +60,8 @@ Use the **+** button at the bottom left of the message box.
 - **iPhone:** **Photos**, **Files**, or **Paste** when the clipboard holds an image. Photos are sent as JPEG.
 - **Desktop:** pick files, drop them on the box, or paste a copied image or file with Cmd+V (Ctrl+V on Windows and Linux).
 - **Terminal UI:** drag a file onto the terminal to paste its path. Backspace in an empty box removes the last file.
+
+On desktop, files picked for a new thread stay in its draft when you choose another bot or computer.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's own folder. The agent gets your message with the path of each file and reads them with its own tools.
 
@@ -160,6 +164,16 @@ A thread can add to the bot's [memory](/docs/memory) but can't change or remove 
 
 Tasks run on your computer and pick up again after the host restarts. The bot can look up what a task was asked and what it found for 30 days, so you can ask it about earlier work.
 
+After the host restores a backup, the terminal reloads the thread you have open and keeps your draft and its attachments. If the restored backup has no task for that thread, you can still edit locally. You can keep typing after clearing the last character or attachment. Sending is available when the task returns and takes messages. Press Esc to leave the composer and `i` to edit a draft again.
+
+If you close a thread with a draft or follow a line from it to the chat, press `d` to discard the draft and continue, or Esc to keep it. If a restore removes the line while the confirmation is open, the terminal shows **Draft kept**. Press Esc to return to the thread, then `i` to edit again.
+
+While a message is being sent, trying to close its thread or follow a line to the chat shows **Sending…** and keeps the thread open. If sending fails, the attachments return to the draft so you can retry or discard it.
+
+If a thread underneath is sending a message or has a draft, choosing a bot in **Go to** with Enter or a click keeps the picker open. Following a chat reference from the top thread also keeps it open. The footer shows **Sending…** or **Draft kept**. Press Esc to close **Go to**, or `q` to close the top thread. Esc on a picked reference clears the pick first. Back in the draft's thread, you can send or discard it.
+
+When Enter in **Go to** switches chats, any bot settings you were editing stay open. Press Ctrl+S to save them to the original bot.
+
 ### Old threads
 
 Threads are kept until you delete them. **Threads** lists the newest ones first; scroll to the end to load older ones, which open and take a message like any thread. In the terminal UI they are under **Recent** on a bot's Details page.
@@ -173,6 +187,12 @@ To clean up on its own, each computer has **Delete old threads** (in the desktop
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
 Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. The bot's [work](#work) keeps going: it has its own **Stop**, in the bot's **Details**. Only **Stop** in the desktop menu and stopping the bot from a [voice call](/docs/voice) stop it too. A task the bot added in the turn you stopped is dropped.
+
+Replies the bot sent before you pressed **Stop** stay in the conversation. A completion notice in the desktop notch island or terminal follows a successful turn with a new reply in the bot's own chat, including a routine's report. The island can show that reply while the next queued turn runs. When the notice expires, the working indicator returns if the next turn is still running.
+
+You can still see a completion notice for a bot that finishes as your connection comes back. Turns already marked complete when you reconnect stay quiet.
+
+The desktop island shows each completion once across hiding and showing a bot. If the next queued turn fails before the island updates, it shows the failure.
 
 ## Replying to a message
 

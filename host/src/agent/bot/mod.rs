@@ -142,6 +142,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         plan_entry: None,
         last_text: None,
         sent: Vec::new(),
+        completion_reply_id: None,
         reacted: Reacted::No,
         joined: false,
         unheard: Vec::new(),
@@ -360,6 +361,7 @@ struct Actor {
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
+    completion_reply_id: Option<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
     /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.

@@ -96,6 +96,8 @@ export interface Bot {
   status: BotStatus | string
   activity: string
   startedAt?: number | null
+  /** The successful turn's reply entry, null when empty, absent on older hosts. */
+  completionReplyId?: string | null
   workingChat?: string | null
   /** Its box (`work.ts`): the live and waiting tasks in dispatch order, then those ended in the last day; none from
    * a host before the box. */
@@ -191,6 +193,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     status: raw.status ?? 'idle',
     activity: raw.activity ?? '',
     startedAt: raw.startedAt ?? null,
+    completionReplyId: raw.completionReplyId,
     workingChat: raw.workingChat ?? null,
     work: normalizeWork(raw.work),
     maxThreads: normalizeMaxThreads(raw.maxThreads),

@@ -346,6 +346,7 @@ mod tests {
             turn: 1,
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
+            rev: None,
             created_at: 0,
         };
         app.overlays.push(Overlay::Fields(Box::new(fields(&e))));
@@ -438,6 +439,7 @@ mod tests {
             turn: 1,
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
+            rev: None,
             created_at: 0,
         };
         app.entries.entry("bot".into()).or_default().insert(1, e);
@@ -493,6 +495,7 @@ mod tests {
             turn: 1,
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
+            rev: None,
             created_at: 0,
         };
         app.entries.entry("bot".into()).or_default().insert(1, card);
@@ -548,6 +551,7 @@ mod tests {
             turn: 1,
             kind: Kind::Notice,
             data: json!({"connectionRequest":{"kind":"login","status":"pending"}}),
+            rev: None,
             created_at: 0,
         };
         let f = fields(&e);

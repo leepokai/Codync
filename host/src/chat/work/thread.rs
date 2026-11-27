@@ -12,7 +12,7 @@ use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// What a task keeps of the user's words for its next report at most.
@@ -51,16 +51,30 @@ pub(super) fn writable(task: &Task) -> Result<()> {
     Err(Refused::error("read_only", why))
 }
 
-/// The thread that takes the user's messages for `task`, or why it takes none.
-pub(super) fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+pub(super) fn write_target<'a>(task: &'a Task, expected: Option<&str>) -> Result<&'a str> {
     writable(task)?;
     let title = &task.title;
+    if expected.is_some_and(|expected| task.thread.as_deref() != Some(expected)) {
+        let why = format!("\"{title}\" changed threads: refresh the task before writing to it");
+        return Err(Refused::error("thread_changed", why));
+    }
     let Some(thread) = task.thread.as_deref() else {
         let why = format!("\"{title}\" hasn't started yet: there is nothing to write to");
         return Err(Refused::error("not_started", why));
     };
+    Ok(thread)
+}
+
+/// The thread that takes the user's messages for `task`, or why it takes none.
+pub(super) fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+    resolve_thread(store, task, None)
+}
+
+fn resolve_thread(store: &Store, task: &Task, expected: Option<&str>) -> Result<BotConfig> {
+    let thread = write_target(task, expected)?;
     let row = store.bot(thread)?.filter(|row| !row.deleted);
-    let gone = || Refused::error("gone", format!("\"{title}\" ended too long ago to write to: add new work instead"));
+    let gone =
+        || Refused::error("gone", format!("\"{}\" ended too long ago to write to: add new work instead", task.title));
     Ok(row.ok_or_else(gone)?.config)
 }
 
@@ -69,6 +83,14 @@ pub(super) fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
 pub fn thread(hub: &Hub, bot: &str, id: &str) -> Result<String> {
     let mut tasks = tasks::load(&hub.store, bot);
     Ok(thread_of(&hub.store, tasks::find(&mut tasks, id)?)?.id)
+}
+
+pub fn upload_root(hub: &Hub, bot: &str, id: &str, expected: Option<&str>) -> Result<PathBuf> {
+    super::archive::bring_back_checking_thread(hub, bot, id, expected)?;
+    let _g = hub.work.boxes.locked();
+    let mut tasks = tasks::load(&hub.store, bot);
+    let thread = resolve_thread(&hub.store, tasks::find(&mut tasks, id)?, expected)?;
+    Ok(crate::chat::uploads::root(&thread))
 }
 
 /// The user's messages that wait for their turn in `thread`.
@@ -153,16 +175,24 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
 /// actor started again, which resumes its session where the agent can. `nonce`: the client's, so a message sent
 /// twice is one. Answers `{entry, reopened, queued}`: the message as the thread's transcript holds it, whether it
 /// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
-pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
+pub fn message(
+    hub: &Arc<Hub>,
+    bot: &str,
+    id: &str,
+    expected: Option<&str>,
+    text: &str,
+    uploads: &[String],
+    nonce: &str,
+) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
-    // A thread that ended over a week ago is in the archive: it comes back to be written to.
-    super::archive::bring_back(hub, bot, id)?;
+    // Persist a restored task even if the message fails later.
+    super::archive::bring_back_checking_thread(hub, bot, id, expected)?;
     // Under the box's lock to the end: the task's end and the dispatcher's look at its thread come before all of
     // this or after it, so neither ends a thread a message is on its way to.
     let (entry, reopened, queued) = tasks::change(hub, bot, |tasks| {
         let task = tasks::find(tasks, id)?;
         let ended = task.status.ended();
-        let mut thread = thread_of(&hub.store, task)?;
+        let mut thread = resolve_thread(&hub.store, task, expected)?;
         if let Some(sent) = Some(nonce).filter(|n| !n.is_empty()).and_then(|n| hub.store.find_by_nonce(&thread.id, n)) {
             return Ok((sent, None, None));
         }
@@ -331,11 +361,11 @@ mod tests {
         let root = crate::chat::uploads::root(&thread);
         let upload = uuid::Uuid::new_v4().to_string();
         crate::chat::uploads::append(&root, &upload, "shot.png", 0, b"png", true).expect("uploaded");
-        let sent = message(&hub, "b1", "i1", "", std::slice::from_ref(&upload), "n1").expect("sent");
+        let sent = message(&hub, "b1", "i1", None, "", std::slice::from_ref(&upload), "n1").expect("sent");
         assert_eq!(sent["entry"]["botId"], "thread-1");
         assert_eq!(sent["entry"]["data"]["attachments"][0]["name"], "shot.png");
         let unknown = [uuid::Uuid::new_v4().to_string()];
-        assert!(message(&hub, "b1", "i1", "", &unknown, "n2").is_err(), "only the thread's own uploads");
+        assert!(message(&hub, "b1", "i1", None, "", &unknown, "n2").is_err(), "only the thread's own uploads");
     }
 
     #[test]

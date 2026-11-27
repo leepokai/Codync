@@ -62,7 +62,7 @@ impl App {
                 Queued::SendNow => ("steer", "Sending now…"),
                 Queued::Remove => ("unqueue", "Removed"),
             };
-            self.call(method, to, After::Nothing);
+            self.call(method, to, After::Queued(self.mirror_epoch));
             self.flash(done);
         }
     }

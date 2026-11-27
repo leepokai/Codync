@@ -7,6 +7,14 @@ use super::{After, App, Entry, Focus, Item, Msg, TraceMode, Width, copy, group};
 use crate::analytics::reported::Reported;
 
 impl App {
+    pub(super) fn go_to_bot(&mut self, id: &str) -> bool {
+        if self.keep_thread_overlays() {
+            return false;
+        }
+        self.select(id);
+        true
+    }
+
     /// `codync-host install` with this same binary, for when nothing is listening yet.
     pub(super) fn install_host(&mut self) {
         let Ok(exe) = std::env::current_exe() else { return };

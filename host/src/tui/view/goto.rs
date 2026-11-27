@@ -1,18 +1,28 @@
 //! The go-to palette: bots and actions.
 
+use std::borrow::Cow;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
 use super::super::app::{ACTIONS, Action, App, Click, FILTERS, GotoItem, Mark, palette_label};
 use super::super::l10n::tr;
+use super::super::manage::ThreadNavigationBlock;
 use super::super::md::truncate;
 use super::buffer::{centered, frame_box, hline, put, put_line, restyle, rput};
 use super::overlay::field_line;
 use super::roster::preview;
 use super::style::{avatar, glyph, theme};
 
-pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super::app::Goto, items: &[GotoItem]) {
+pub(super) fn goto(
+    buf: &mut Buffer,
+    area: Rect,
+    app: &mut App,
+    g: &super::super::app::Goto,
+    items: &[GotoItem],
+    block: Option<ThreadNavigationBlock>,
+) {
     let t = theme();
     let r = centered(area, 80, 24);
     let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Go to").as_ref(), t.text)));
@@ -104,7 +114,8 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
         put(buf, inner.x, list_top, inner.width, tr("Nothing matches").as_ref(), t.dim.patch(t.panel));
     }
     hline(buf, inner.x, inner.bottom() - 3, inner.width, t.line.patch(t.panel));
-    if let Some(GotoItem::Bot(id)) = items.get(g.cursor)
+    let picked = items.get(g.cursor);
+    if let Some(GotoItem::Bot(id)) = picked
         && let Some(b) = app.bots.get(id)
     {
         let meta = if b.group {
@@ -115,14 +126,13 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
         };
         put(buf, inner.x, inner.bottom() - 2, inner.width, &meta, t.secondary.patch(t.panel));
     }
-    put(
-        buf,
-        inner.x,
-        inner.bottom() - 1,
-        inner.width,
-        "↵ open   tab filter   ↑↓ move   esc close",
-        t.dim.patch(t.panel),
-    );
+    let keys = if let Some(block) = block.filter(|_| nbots > 0) {
+        let open = if matches!(picked, Some(GotoItem::Bot(_))) { "" } else { "↵ open · " };
+        Cow::Owned(format!("{open}{} · esc back · tab filter · ↑↓ move", block.label()))
+    } else {
+        Cow::Borrowed("↵ open   tab filter   ↑↓ move   esc close")
+    };
+    put(buf, inner.x, inner.bottom() - 1, inner.width, &keys, t.dim.patch(t.panel));
 }
 
 /// Starts an ACTIONS row: the section's title above the first one, the selection behind it.

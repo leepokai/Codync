@@ -119,6 +119,7 @@ fn exchange_entry(status: &str) -> Entry {
         seq: 1,
         turn: 1,
         kind: Kind::Notice,
+        rev: None,
         created_at: 0,
         data: serde_json::json!({
             "text": "Messaged b: Please review the secret plan\nCompleted.", "style": "info", "status": status,
@@ -224,6 +225,7 @@ fn a_reply_shows_the_message_it_answers() {
         seq: 2,
         turn: 2,
         kind: Kind::User,
+        rev: None,
         created_at: 0,
         data: serde_json::json!({"text": "why?", "replyTo": {"id": "e", "author": "a", "text": "## Plan\n- ready"}}),
     };
@@ -239,6 +241,7 @@ fn a_reply_shows_the_message_it_answers() {
         seq: 3,
         turn: 2,
         kind: Kind::Agent,
+        rev: None,
         created_at: 0,
         data: serde_json::json!({"text": "Because.", "final": true, "replyTo": {"id": "u", "author": "user", "text": "why?"}}),
     };

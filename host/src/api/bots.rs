@@ -45,6 +45,23 @@ fn attachment_ids(b: &Value) -> Vec<&str> {
     b["attachments"].as_array().into_iter().flatten().filter_map(Value::as_str).collect()
 }
 
+fn expected_thread_arg(b: &Value) -> Result<Option<&str>> {
+    let Some(value) = b.get("expectedThreadId") else { return Ok(None) };
+    let Some(expected) = value.as_str().filter(|id| !id.trim().is_empty()) else {
+        return Err(work::ThreadRefused::error(
+            "invalid_target",
+            "`expectedThreadId` must be a non-empty string".into(),
+        ));
+    };
+    if ["botId", "taskId"].iter().any(|key| b[*key].as_str().is_none_or(|id| id.trim().is_empty())) {
+        return Err(work::ThreadRefused::error(
+            "invalid_target",
+            "`expectedThreadId` requires `botId` and `taskId`".into(),
+        ));
+    }
+    Ok(Some(expected))
+}
+
 /// What the user does to a task of a bot's box.
 async fn steer_task(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
     let (hub, bot) = (hub.clone(), str_arg(b, "botId")?.to_owned());
@@ -306,22 +323,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {
             use base64::Engine as _;
+            let expected = expected_thread_arg(&b)?.map(str::to_owned);
             // Without a bot: a file a thread without one starts with, in the computer's box of them.
             let bot = match b["botId"].as_str() {
                 Some(bot) => bot.to_owned(),
                 None => work::plain::owner(hub).await?,
             };
-            // A file for an archived thread's message: the thread comes back first, as the message brings it.
-            if let Some(task) = b["taskId"].as_str() {
-                work::archive::bring_back(hub, &bot, task)?;
-            }
-            let root = uploads_root(hub, &bot, b["taskId"].as_str())?;
-            let (id, name) = (str_arg(&b, "uploadId")?.to_owned(), str_arg(&b, "name")?.to_owned());
-            let data =
-                base64::engine::general_purpose::STANDARD.decode(str_arg(&b, "data")?).context("invalid data")?;
-            let (offset, done) = (b["offset"].as_u64().unwrap_or(0), b["done"] == true);
+            let hub = hub.clone();
             let attachment = tokio::task::spawn_blocking(move || {
-                crate::chat::uploads::append(&root, &id, &name, offset, &data, done)
+                let root = match b["taskId"].as_str() {
+                    Some(task) => work::upload_root(&hub, &bot, task, expected.as_deref())?,
+                    None => uploads_root(&hub, &bot, None)?,
+                };
+                let (id, name) = (str_arg(&b, "uploadId")?, str_arg(&b, "name")?);
+                let data =
+                    base64::engine::general_purpose::STANDARD.decode(str_arg(&b, "data")?).context("invalid data")?;
+                let (offset, done) = (b["offset"].as_u64().unwrap_or(0), b["done"] == true);
+                crate::chat::uploads::append(&root, id, name, offset, &data, done)
             })
             .await??;
             json!({"attachment": attachment})
@@ -338,6 +356,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"data": base64::engine::general_purpose::STANDARD.encode(data), "size": size})
         }
         "send" => {
+            let expected = expected_thread_arg(&b)?;
             let bot = str_arg(&b, "botId")?;
             let text = b["text"].as_str().unwrap_or_default().trim();
             let uploads = attachment_ids(&b);
@@ -352,9 +371,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 }
                 let hub = hub.clone();
                 let (bot, task, text, nonce) = (bot.to_owned(), task.to_owned(), text.to_owned(), nonce.to_owned());
+                let expected = expected.map(str::to_owned);
                 let uploads: Vec<String> = uploads.into_iter().map(str::to_owned).collect();
-                let sent =
-                    tokio::task::spawn_blocking(move || work::message(&hub, &bot, &task, &text, &uploads, &nonce));
+                let sent = tokio::task::spawn_blocking(move || {
+                    work::message(&hub, &bot, &task, expected.as_deref(), &text, &uploads, &nonce)
+                });
                 return Ok(ControlFlow::Break(sent.await??));
             }
             if !nonce.is_empty()

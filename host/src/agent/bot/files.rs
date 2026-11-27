@@ -108,6 +108,7 @@ impl Actor {
         self.close_seg();
         let entry =
             self.add_for_user(EntryKind::Agent, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
+        self.record_completion_reply(&entry);
         self.files.summary = Some(text);
         self.set_activity("Working…");
         Ok(entry.id)
@@ -146,7 +147,9 @@ impl Actor {
     fn post_file(&mut self, snapshot: &Snapshot, quote: Option<Value>) -> Result<String> {
         let text = format!("{} ({} bytes)", snapshot.meta.name, snapshot.meta.size);
         let data = with_quote(json!({"text": text, "final": true, "files": [snapshot.meta]}), quote);
-        self.add_for_user(EntryKind::Agent, data).ok_or_else(|| anyhow!("couldn't save the file message"))?;
+        let saved =
+            self.add_for_user(EntryKind::Agent, data).ok_or_else(|| anyhow!("couldn't save the file message"))?;
+        self.record_completion_reply(&saved);
         Ok(text)
     }
 

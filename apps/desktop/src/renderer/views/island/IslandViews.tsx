@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import type { IslandBot, IslandPermission } from '@shared/island'
+import type { IslandBot, IslandNotice, IslandPermission } from '@shared/island'
 import { CharacterAvatar } from '../../components/Avatar'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -156,8 +156,9 @@ export function Approval({ model, card }: { model: IslandModel; card: IslandPerm
 }
 
 /** A bot that just finished (for a moment) or failed (until dismissed). */
-export function Notice({ model, bot, failed }: { model: IslandModel; bot: IslandBot; failed: boolean }) {
+export function Notice({ model, bot, notice }: { model: IslandModel; bot: IslandBot; notice: IslandNotice }) {
   const tr = useTr()
+  const failed = notice.kind === 'failed'
   const swap = useSwap(`${failed}:${bot.ref}`)
   return (
     <div className="island-with-minis">
@@ -169,11 +170,11 @@ export function Notice({ model, bot, failed }: { model: IslandModel; bot: Island
             {failed ? (
               <>
                 <div className="island-title">{tr('{name} stopped.').replaceAll('{name}', () => bot.name)}</div>
-                <div className="island-error">{bot.error ?? bot.detail}</div>
+                <div className="island-error">{notice.text || tr('Something went wrong')}</div>
               </>
-            ) : (
-              <div className="island-title truncate">{bot.detail}</div>
-            )}
+            ) : notice.text ? (
+              <div className="island-title truncate">{notice.text}</div>
+            ) : null}
             <div className="island-buttons start">
               <Button onClick={() => model.openBot(bot.ref)}>Open conversation</Button>
               <Button kind="secondary" onClick={() => model.dismissNotice()}>OK</Button>

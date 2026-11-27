@@ -83,6 +83,11 @@ Files in a message to a thread add only: `taskId` on `upload` and `readUpload`, 
 `taskId`, and `work[].talkFiles`. A host from before it sends no `talkFiles`, so a newer app shows no + (and takes no
 drop or paste) in a thread's box; an app from before it never attaches there. It raises no floor.
 
+Task writes can carry an optional `expectedThreadId` on `send` and `upload`. A host that supports it checks the
+task's thread before writing, including for archived tasks. Clients that omit it continue to write by task ID.
+Older hosts ignore the field and can write to the task's current thread even when the client supplied a different
+one. This addition raises no compatibility floor.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 

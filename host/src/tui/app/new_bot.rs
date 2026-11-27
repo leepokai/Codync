@@ -49,7 +49,7 @@ impl App {
         }
         n.saving = true;
         n.error = None;
-        self.call("createBot", n.body(), After::Saved);
+        self.call("createBot", n.body(), After::Saved(self.mirror_epoch));
     }
 }
 
@@ -112,11 +112,11 @@ mod tests {
         if let Some(Overlay::NewBot(n)) = app.overlays.last_mut() {
             n.saving = true;
         }
-        app.on_msg(Msg::Reply(After::Saved, Err("No agent".into())));
+        app.on_msg(Msg::Reply(After::Saved(app.mirror_epoch), Err("No agent".into())));
         let n = top(&mut app);
         assert_eq!((n.saving, n.error.as_deref()), (false, Some("No agent")));
         app.overlays.push(Overlay::NewBot(n));
-        app.on_msg(Msg::Reply(After::Saved, Ok(json!({"bot": {"id": "b", "name": "Rex"}}))));
+        app.on_msg(Msg::Reply(After::Saved(app.mirror_epoch), Ok(json!({"bot": {"id": "b", "name": "Rex"}}))));
         assert!(app.overlays.is_empty());
         assert_eq!(app.selected.as_deref(), Some("b"));
         assert!(app.typing);

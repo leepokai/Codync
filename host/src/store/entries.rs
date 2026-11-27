@@ -4,7 +4,7 @@ use super::model::{Entry, EntryKind, Lane, thread_ids};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::fmt::Write as _;
 
@@ -48,31 +48,57 @@ pub struct Expired {
     pub decisions: usize,
 }
 
+fn insert_entry(c: &Connection, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
+    let rev = next_rev(c)?;
+    let now = now_ms();
+    let id = uuid::Uuid::new_v4().to_string();
+    let added = c.execute(
+        &format!(
+            "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 {LIVE_CHAT}"
+        ),
+        params![id, lane.chat, rev, kind.as_str(), turn, data.to_string(), now],
+    )?;
+    ensure!(added == 1, "the chat was deleted");
+    Ok(Entry {
+        id,
+        seq: c.last_insert_rowid(),
+        bot_id: lane.chat.clone(),
+        rev,
+        kind: kind.as_str().to_owned(),
+        turn,
+        data: data.clone(),
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+fn entry_by_nonce(c: &Connection, bot_id: &str, nonce: &str) -> rusqlite::Result<Option<Entry>> {
+    c.query_row(
+        &format!(
+            "SELECT {ENTRY_COLS} FROM entries
+             WHERE bot_id = ?1 AND kind = 'user' AND json_extract(data, '$.clientNonce') = ?2
+             ORDER BY seq LIMIT 1"
+        ),
+        params![bot_id, nonce],
+        row_entry,
+    )
+    .optional()
+}
+
 impl Store {
     pub fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
+        insert_entry(&self.db.locked(), lane, kind, turn, data)
+    }
+
+    pub fn insert_user_entry(&self, lane: &Lane, turn: i64, data: &Value) -> Result<(Entry, bool)> {
         let c = self.db.locked();
-        let rev = next_rev(&c)?;
-        let now = now_ms();
-        let id = uuid::Uuid::new_v4().to_string();
-        let added = c.execute(
-            &format!(
-                "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 {LIVE_CHAT}"
-            ),
-            params![id, lane.chat, rev, kind.as_str(), turn, data.to_string(), now],
-        )?;
-        ensure!(added == 1, "the chat was deleted");
-        Ok(Entry {
-            id,
-            seq: c.last_insert_rowid(),
-            bot_id: lane.chat.clone(),
-            rev,
-            kind: kind.as_str().to_owned(),
-            turn,
-            data: data.clone(),
-            created_at: now,
-            updated_at: now,
-        })
+        if let Some(nonce) = data["clientNonce"].as_str().filter(|nonce| !nonce.is_empty())
+            && let Some(entry) = entry_by_nonce(&c, &lane.chat, nonce)?
+        {
+            return Ok((entry, false));
+        }
+        Ok((insert_entry(&c, lane, EntryKind::User, turn, data)?, true))
     }
 
     /// Deterministic IDs make routine transcript publication retryable after a crash.
@@ -161,15 +187,7 @@ impl Store {
     }
 
     pub fn find_by_nonce(&self, bot_id: &str, nonce: &str) -> Option<Entry> {
-        let c = self.db.locked();
-        let row = c.query_row(
-            &format!(
-                "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user' AND json_extract(data, '$.clientNonce') = ?2"
-            ),
-            params![bot_id, nonce],
-            row_entry,
-        );
-        logged("entry by nonce", row.optional()).flatten()
+        logged("entry by nonce", entry_by_nonce(&self.db.locked(), bot_id, nonce)).flatten()
     }
 
     /// What a voice call carried in `bot_id`'s chat (`chat::calls`), oldest first: its messages and final replies.

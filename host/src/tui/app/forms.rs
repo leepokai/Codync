@@ -319,7 +319,7 @@ impl App {
         body["id"] = f.bot_id.clone().into();
         f.saving = true;
         f.error = None;
-        self.call("updateBot", body, After::Saved);
+        self.call("updateBot", body, After::Saved(self.mirror_epoch));
     }
 
     /// Whether bot `id` runs on a fallback now.

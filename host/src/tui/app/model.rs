@@ -1,17 +1,26 @@
 //! What the host sends: transcript entries and the messages that carry them, and the states a bot shows (the bot
 //! itself is in `bot`).
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use serde_json::Value;
 
+use crate::LockExt;
 use crate::chat::decision;
 
 use super::super::manage::Reply;
 
 pub enum Msg {
-    Online(bool),
+    Online,
+    Disconnected {
+        since: i64,
+    },
     /// A new events connection asked for everything after `since`; its `hello` starts the catch-up.
     Connected {
         since: i64,
+        connection: u64,
+        send_receipts: SendReceipts,
     },
     FileDownload {
         id: String,
@@ -20,19 +29,154 @@ pub enum Msg {
     },
     Event(Value),
     Reply(After, Result<Value, String>),
+    CompletionHistory {
+        bot: String,
+        epoch: u64,
+        request: uuid::Uuid,
+        replied: bool,
+    },
     /// The stream is starting over from rev 0: drop what we have.
-    Rewind,
+    Rewind(SendReceipts),
+    /// Another replay from zero while holding the confirmed mirror.
+    ReplayStarted,
+    /// The recovery replay can confirm receipts, even before a live revision arrives.
+    ReplayComplete,
     /// A setup terminal's output or exit.
     Term(String, Value),
+}
+
+/// Connection and RPC revision evidence for this mirror.
+#[derive(Clone, Default)]
+pub struct SendReceipts(Arc<Mutex<SendReceiptState>>);
+
+#[derive(Default)]
+struct SendReceiptState {
+    connection: u64,
+    awaiting_hello: bool,
+    rewound: bool,
+    thread_rev: i64,
+    rows: HashMap<String, HashMap<i64, SendReceipt>>,
+}
+
+struct SendReceipt {
+    id: String,
+    rev: Option<i64>,
+}
+
+impl SendReceipts {
+    pub(in crate::tui) fn for_connection(connection: u64) -> Self {
+        Self(Arc::new(Mutex::new(SendReceiptState { connection, awaiting_hello: true, ..SendReceiptState::default() })))
+    }
+
+    pub(in crate::tui) fn begin_request(&self) -> (u64, i64) {
+        let mut state = self.0.locked();
+        state.connection += 1;
+        state.awaiting_hello = true;
+        let rev = state.rows.values().flat_map(HashMap::values).filter_map(|r| r.rev).max().unwrap_or_default();
+        (state.connection, rev.max(state.thread_rev))
+    }
+
+    pub(in crate::tui) fn invalidate_connection(&self) {
+        let mut state = self.0.locked();
+        state.connection += 1;
+        state.awaiting_hello = false;
+    }
+
+    pub(super) fn received_hello(&self, connection: u64) {
+        let mut state = self.0.locked();
+        if state.connection == connection {
+            state.awaiting_hello = false;
+        }
+    }
+
+    pub(in crate::tui) fn thread_read_connection(&self) -> Option<u64> {
+        let state = self.0.locked();
+        (!state.awaiting_hello && !state.rewound).then_some(state.connection)
+    }
+
+    /// The next request samples this revision under the same lock that accepts the rows.
+    pub(in crate::tui) fn accept_thread_rows(&self, connection: u64, rev: i64) -> bool {
+        let mut state = self.0.locked();
+        if state.connection != connection || state.awaiting_hello || state.rewound {
+            return false;
+        }
+        state.thread_rev = state.thread_rev.max(rev);
+        true
+    }
+
+    /// Marks the old mirror before the app drains its queued replies.
+    pub(in crate::tui) fn invalidate_mirror(&self) {
+        let mut state = self.0.locked();
+        state.connection += 1;
+        state.rewound = true;
+    }
+
+    pub(super) fn rewound(&self) -> bool {
+        self.0.locked().rewound
+    }
+
+    pub(super) fn is_current(&self, connection: u64) -> bool {
+        self.0.locked().connection == connection
+    }
+
+    pub(super) fn confirm(&self, connection: u64, row: Option<(&str, &Entry)>) -> bool {
+        let mut state = self.0.locked();
+        if state.connection != connection {
+            return false;
+        }
+        if let Some((bot, entry)) = row {
+            let receipt = SendReceipt { id: entry.id.clone(), rev: entry.rev };
+            state.rows.entry(bot.to_owned()).or_default().insert(entry.seq, receipt);
+        }
+        true
+    }
+
+    pub(super) fn observe(&self, bot: &str, entry: &Entry, held: Option<&Entry>) -> bool {
+        let mut state = self.0.locked();
+        let receipts = &mut state.rows;
+        let Some(rows) = receipts.get_mut(bot) else { return false };
+        let Some(receipt) = rows.get(&entry.seq) else { return false };
+        let replaced = receipt.id != entry.id;
+        let displaces_held = replaced && held.is_some_and(|row| row.id == receipt.id && row.rev == receipt.rev);
+        if replaced || receipt.rev <= entry.rev {
+            rows.remove(&entry.seq);
+        }
+        if rows.is_empty() {
+            receipts.remove(bot);
+        }
+        displaces_held
+    }
+
+    pub(super) fn retain(&self, bot: &str, mut keep: impl FnMut(&i64) -> bool) {
+        let mut state = self.0.locked();
+        let receipts = &mut state.rows;
+        if let Some(rows) = receipts.get_mut(bot) {
+            rows.retain(|seq, _| keep(seq));
+            if rows.is_empty() {
+                receipts.remove(bot);
+            }
+        }
+    }
 }
 
 /// What to do with a command's reply.
 #[derive(Clone)]
 pub enum After {
     Nothing,
+    Queued(u64),
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
-    Sent(String),
+    Sent {
+        key: String,
+        nonce: String,
+        epoch: u64,
+    },
+    CheckSendReceipt {
+        key: String,
+        request: uuid::Uuid,
+        epoch: u64,
+        connection: u64,
+    },
     Connection(String, super::super::connections::Step),
     Hello,
     /// `track`: fire and forget; analytics never surfaces an error.
@@ -41,7 +185,7 @@ pub enum After {
     AutoOrder,
     ThreadKeep,
     CredentialsReset,
-    History(String),
+    History(String, uuid::Uuid),
     Dirs(String),
     WorkspaceSelected(String),
     Pairing,
@@ -52,7 +196,7 @@ pub enum After {
     PairingDecided,
     Backends,
     Update,
-    Saved,
+    Saved(u64),
     Connectors,
     Skills,
     Installed,
@@ -112,6 +256,7 @@ pub enum Kind {
 pub struct Entry {
     pub id: String,
     pub seq: i64,
+    pub(in crate::tui) rev: Option<i64>,
     pub turn: i64,
     pub kind: Kind,
     pub data: Value,
@@ -136,6 +281,7 @@ impl Entry {
             Self {
                 id: v["id"].as_str()?.to_owned(),
                 seq: v["seq"].as_i64()?,
+                rev: v["rev"].as_i64(),
                 turn: v["turn"].as_i64().unwrap_or(0),
                 kind,
                 data: v["data"].clone(),
@@ -313,6 +459,7 @@ mod tests {
                 {"optionId": "r", "name": "Reject", "kind": "reject_once"},
                 {"optionId": "a", "name": "Allow", "kind": "allow_once"},
             ]}),
+            rev: None,
             created_at: 0,
         };
         assert!(e.pending());

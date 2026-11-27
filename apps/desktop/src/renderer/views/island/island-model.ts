@@ -1,6 +1,6 @@
 import {
-  FINISHED_MS, focusOf, inTurn, isActive, islandFrame, islandMode, islandRect, othersOf, stopsDictation, transitions,
-  type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
+  FINISHED_MS, focusOf, inTurn, isActive, islandFrame, islandMode, islandRect, nextTurnStates, othersOf, stopsDictation, transitions,
+  type BotTurnState, type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
 } from '@shared/island'
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Observable } from '../../lib/observable'
@@ -41,7 +41,7 @@ export class IslandModel extends Observable {
   private pinned = false
   private hovering = false
   private deferred = new Set<string>()
-  private statuses: Map<string, string> | null = null
+  private turnStates: Map<string, BotTurnState> | null = null
   private hoverTimer: ReturnType<typeof setTimeout> | undefined
   private noticeTimer: ReturnType<typeof setTimeout> | undefined
   private shape = { width: 0, height: 0 }
@@ -229,15 +229,18 @@ export class IslandModel extends Observable {
   }
 
   private apply(summary: IslandSummary) {
-    const changes = this.statuses ? transitions(this.statuses, summary.bots) : []
-    this.statuses = new Map(summary.bots.map((b) => [b.ref, b.chat]))
+    const changes = this.turnStates ? transitions(this.turnStates, summary.bots) : []
+    this.turnStates = nextTurnStates(this.turnStates, summary.bots)
     this.update(() => {
       this.summary = summary
       // Answered and expired cards leave the put-off set.
       for (const id of this.deferred) if (!summary.permissions.some((p) => p.entryId === id)) this.deferred.delete(id)
-      // A failed bot that works again no longer needs the notice.
-      const shown = this.notice ? summary.bots.find((b) => b.ref === this.notice?.ref) : undefined
-      if (shown && inTurn(shown.chat)) this.notice = null
+      const shown = this.noticeBot
+      if (this.notice?.kind === 'finished' && !shown) {
+        clearTimeout(this.noticeTimer)
+        this.notice = null
+      }
+      if (this.notice?.kind === 'failed' && shown && inTurn(shown.chat)) this.notice = null
       const next = changes.at(-1)
       if (next) this.showNotice(next)
     })

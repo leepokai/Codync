@@ -1,28 +1,26 @@
 import { useState, type ClipboardEvent, type DragEvent } from 'react'
 import type { PickedFile } from '@shared/ipc'
 import { useTr } from '../../lib/use-language'
+import { useModel } from '../../lib/observable'
 import { useStore } from '../../store/context'
-import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
+import { MAX_FILE_SIZE, type DraftFiles, type OutgoingFile } from '../../store/outgoing-files'
 import { pastedFiles, readPicked } from './composer-files'
 
-/** The files of boxes that keep theirs beyond the box (`keep`), by key; memory only. */
-const kept = new Map<string, OutgoingFile[]>()
+export interface ComposerFileDraft {
+  owner: DraftFiles
+  key: string
+}
 
-/**
- * The files a message box sends with its next message: picked (`pick`), dropped on the box (`drop`) or pasted
- * (`paste`). Nothing is taken while `enabled` is false. A file over 100 MB is left out and says so. With `keep`
- * they are kept by that key beyond the box, so the box mounted again (a new thread's, as its bot changes) has them.
- */
-export function useComposerFiles(enabled: boolean, keep?: string) {
+/** Picked, dropped or pasted files; an optional draft keeps them across composer mounts. */
+export function useComposerFiles(enabled: boolean, draft?: ComposerFileDraft) {
   const store = useStore()
   const tr = useTr()
-  const [files, setOwn] = useState<OutgoingFile[]>(() => (keep && kept.get(keep)) || [])
-  // Kept ones are changed outside React's updater, so a send that ends after the box is gone still clears them.
+  useModel(draft?.owner)
+  const [own, setOwn] = useState<OutgoingFile[]>([])
+  const files = draft ? draft.owner.get(draft.key) : own
   const setFiles = (next: (list: OutgoingFile[]) => OutgoingFile[]) => {
-    if (!keep) return setOwn(next)
-    const changed = next(kept.get(keep) ?? [])
-    kept.set(keep, changed)
-    setOwn(changed)
+    if (!draft) return setOwn(next)
+    draft.owner.update(draft.key, next)
   }
   const append = (incoming: PickedFile[]) => {
     if (!enabled) return
@@ -38,7 +36,7 @@ export function useComposerFiles(enabled: boolean, keep?: string) {
   }
   return {
     files,
-    clear: () => setFiles(() => []),
+    clear: () => setFiles((list) => list.filter((file) => !files.includes(file))),
     remove: (id: string) => setFiles((list) => list.filter((x) => x.id !== id)),
     pick: () => void window.codync.app.pickFiles().then(append),
     drop: {

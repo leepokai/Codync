@@ -342,7 +342,8 @@ impl Actor {
     /// Saves a message the agent sent the user this turn (`send_message`, a voice note) and counts it as the turn's
     /// reply, so what the agent writes as its reply stays in the trace.
     pub(super) fn record_sent(&mut self, saved: Option<Entry>, text: String) -> anyhow::Result<()> {
-        saved.ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        let saved = saved.ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        self.record_completion_reply(&saved);
         self.sent.push(text);
         self.last_text = None;
         Ok(())

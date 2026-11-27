@@ -47,6 +47,8 @@ pub struct Runtime {
     pub status: BotStatus,
     pub activity: String,
     pub started_at: Option<i64>,
+    /// The reply left by a successful completion in this bot's own chat.
+    pub completion_reply_id: Option<String>,
     /// Where the running turn talks: its own chat or a group.
     pub lane: Option<Lane>,
     /// The user's message that started the running turn, typed in the bot's own chat; `None` for a turn a routine,
@@ -385,6 +387,7 @@ impl Hub {
         };
         if before.status != after.status
             || before.activity != after.activity
+            || before.completion_reply_id != after.completion_reply_id
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
             || before.agent_step != after.agent_step
@@ -455,18 +458,8 @@ impl Hub {
     /// Persists and broadcasts a new transcript entry. A failed write is logged here
     /// (once) and yields `None`: the conversation goes on without that line.
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
-        let e = self.insert_entry(lane, kind, turn, data)?;
-        self.order_on_message(&e);
-        Some(e)
-    }
-
-    fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
-        let _g = self.emit_lock.locked();
-        match self.store.insert_entry(lane, kind, turn, data) {
-            Ok(e) => {
-                let _ = self.events.send(entry_event(&e));
-                Some(e)
-            }
+        match self.add_entry_with(|store| Ok((store.insert_entry(lane, kind, turn, data)?, true))) {
+            Ok((e, _)) => Some(e),
             Err(error) => {
                 tracing::error!(
                     error = format!("{error:#}"),
@@ -477,6 +470,10 @@ impl Hub {
                 None
             }
         }
+    }
+
+    pub fn add_user_entry(&self, lane: &Lane, turn: i64, data: &Value) -> Result<(Entry, bool)> {
+        self.add_entry_with(|store| store.insert_user_entry(lane, turn, data))
     }
 
     pub(crate) fn emit_workflow(&self, body: Value) {
@@ -492,9 +489,13 @@ impl Hub {
         turn: i64,
         data: &Value,
     ) -> Result<(Entry, bool)> {
+        self.add_entry_with(|store| store.insert_entry_once(id, lane, kind, turn, data))
+    }
+
+    fn add_entry_with(&self, insert: impl FnOnce(&Store) -> Result<(Entry, bool)>) -> Result<(Entry, bool)> {
         let (entry, added) = {
             let _guard = self.emit_lock.locked();
-            let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
+            let (entry, added) = insert(&self.store)?;
             if added {
                 let _ = self.events.send(entry_event(&entry));
             }

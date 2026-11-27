@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod completion_history;
 mod computer_name;
 mod credentials;
 mod editor;
@@ -40,7 +41,7 @@ pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group
 pub use find::{Find, match_ranges};
 pub use kofi::KofiSheet;
 pub(in crate::tui) use kofi::URL as KOFI_URL;
-pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use model::{After, Entry, Kind, Mark, Msg, SendReceipts, Status};
 pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
@@ -67,12 +68,45 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::manage::Shell;
 use super::net::Client;
 
-#[derive(Clone)]
+const TOAST_DURATION: Duration = Duration::from_secs(4);
+
+struct PendingHistory {
+    request: uuid::Uuid,
+    before_seq: i64,
+    updates: HashMap<i64, Entry>,
+}
+
+impl PendingHistory {
+    fn new(before_seq: i64) -> Self {
+        Self { request: uuid::Uuid::new_v4(), before_seq, updates: HashMap::new() }
+    }
+}
+
 struct PendingSend {
     text: String,
     files: Vec<std::path::PathBuf>,
     nonce: String,
-    busy: bool,
+    task: Option<tokio::task::AbortHandle>,
+    receipt: SendReceiptCheck,
+}
+
+impl PendingSend {
+    fn is_busy(&self) -> bool {
+        self.task.is_some() || matches!(self.receipt, SendReceiptCheck::Pending { request: Some(_), .. })
+    }
+}
+
+enum SendReceiptCheck {
+    Direct(u64),
+    Unverified,
+    Pending { id: String, seq: i64, request: Option<uuid::Uuid> },
+}
+
+#[derive(Default)]
+struct ReplayChat {
+    entries: BTreeMap<i64, Entry>,
+    snapshot: Option<(i64, Value)>,
+    verified_sends: HashSet<i64>,
 }
 
 /// Whose model list it is: the agent and its login profile (`None`: the default login).
@@ -122,6 +156,11 @@ pub struct App {
     /// Each artifact's newest title, for its cards.
     pub artifact_titles: super::manage::ArtifactTitles,
     sends: HashMap<String, PendingSend>,
+    pub(in crate::tui) send_receipts: SendReceipts,
+    send_receipt_connection: u64,
+    send_receipt_ready: bool,
+    replay_sends: Option<HashSet<(String, String)>>,
+    replay_chats: Option<HashMap<String, ReplayChat>>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
     pub trace_scroll: usize,
@@ -170,14 +209,21 @@ pub struct App {
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
-    history_busy: HashSet<String>,
+    pending_history: HashMap<String, PendingHistory>,
+    mirror_epoch: u64,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
     history_done: HashSet<String>,
     /// The `since` the current events connection requested.
     stream_since: i64,
-    /// Per bot, the lowest seq of its loaded main chat when this connection's catch-up began
-    /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
+    /// The replay cutoff from hosts that don't send a catch-up count.
+    replay_rev: i64,
+    catch_up_left: Option<u64>,
+    replayed_deletions: HashMap<String, i64>,
+    completions_before_live: HashSet<String>,
+    legacy_replies: HashMap<String, HashMap<i64, completion_history::ObservedReply>>,
+    completion_lookups: HashMap<String, completion_history::CompletionLookup>,
+    /// Each retained chat starts here, so rewrites of earlier rows wait for paging.
     floors: HashMap<String, i64>,
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
@@ -234,6 +280,11 @@ impl App {
             files: HashMap::new(),
             pasted: HashMap::new(),
             sends: HashMap::new(),
+            send_receipts: SendReceipts::default(),
+            send_receipt_connection: 0,
+            send_receipt_ready: false,
+            replay_sends: None,
+            replay_chats: None,
             chat_scroll: 0,
             trace_scroll: 0,
             trace: TraceMode::Off,
@@ -264,10 +315,17 @@ impl App {
             modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
-            history_busy: HashSet::new(),
+            pending_history: HashMap::new(),
+            mirror_epoch: 0,
             answering: HashMap::new(),
             history_done: HashSet::new(),
             stream_since: 0,
+            replay_rev: 0,
+            catch_up_left: None,
+            replayed_deletions: HashMap::new(),
+            completions_before_live: HashSet::new(),
+            legacy_replies: HashMap::new(),
+            completion_lookups: HashMap::new(),
             floors: HashMap::new(),
             hint: None,
             analytics: None,
@@ -288,13 +346,31 @@ impl App {
         self.client.spawn_call(method, body, after, self.tx.clone());
     }
 
+    pub(in crate::tui) fn mirror_epoch(&self) -> u64 {
+        self.mirror_epoch
+    }
+
+    pub(in crate::tui) fn accepts_mirror_reply(&self, epoch: u64) -> bool {
+        epoch == self.mirror_epoch && !self.send_receipts.rewound()
+    }
+
+    pub(in crate::tui) fn replaying_mirror(&self) -> bool {
+        self.replay_sends.is_some()
+    }
+
+    pub(in crate::tui) fn confirmed_thread_connection(&self) -> Option<u64> {
+        (self.send_receipt_ready && !self.replaying_mirror()).then_some(self.send_receipt_connection)
+    }
+
     /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.
-    pub(in crate::tui) fn send_message(&self, body: Value, files: Vec<std::path::PathBuf>, after: After) {
-        if files.is_empty() {
-            return self.call("send", body, after);
-        }
+    pub(in crate::tui) fn send_message(
+        &self,
+        body: Value,
+        files: Vec<std::path::PathBuf>,
+        after: After,
+    ) -> tokio::task::AbortHandle {
         let (_, body) = super::net::old_host::outgoing(&self.host_version, "send", body);
-        self.client.spawn_send_files(body, files, after, self.tx.clone());
+        self.client.spawn_send(body, files, after, self.tx.clone())
     }
 
     // ---------- derived ----------
@@ -403,6 +479,10 @@ impl App {
         self.selected.is_some() && (self.width != Width::Narrow || self.chat_page) && self.trace != TraceMode::Full
     }
 
+    fn watching_chat(&self, id: &str) -> bool {
+        self.selected.as_deref() == Some(id) && self.chat_visible() && self.term_focused
+    }
+
     pub fn animating(&self) -> bool {
         !self.toasts.is_empty()
             || self.hint.is_some()
@@ -460,7 +540,7 @@ impl App {
             let _ = out.flush();
         }
         self.toasts.retain(|t| t.text != text);
-        self.toasts.push(Toast { text, need, until: Instant::now() + Duration::from_secs(4) });
+        self.toasts.push(Toast { text, need, until: Instant::now() + TOAST_DURATION });
         if self.toasts.len() > 2 {
             self.toasts.remove(0);
         }
@@ -495,7 +575,7 @@ impl App {
 
     fn load_history(&mut self) {
         let Some(id) = self.selected.clone() else { return };
-        if self.history_busy.contains(&id) || self.history_done.contains(&id) {
+        if self.pending_history.contains_key(&id) || self.history_done.contains(&id) {
             return;
         }
         let oldest = self.oldest(&id).unwrap_or(i64::MAX);
@@ -503,8 +583,10 @@ impl App {
             self.history_done.insert(id);
             return;
         }
-        self.history_busy.insert(id.clone());
-        self.call("history", json!({"botId": id, "beforeSeq": oldest, "limit": 200}), After::History(id));
+        let pending = PendingHistory::new(oldest);
+        let request = pending.request;
+        self.pending_history.insert(id.clone(), pending);
+        self.call("history", json!({"botId": id, "beforeSeq": oldest, "limit": 200}), After::History(id, request));
     }
 }
 

@@ -61,12 +61,43 @@ const CARD_PAGES = 5
  */
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
-  readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.performWithMirrorUndo(op, undo))
   readonly devServers = new DevServerCommands((op) => this.perform(op), (op) => this.withLink(op))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
+
+  private checkMirror(epoch: number) {
+    if (epoch !== this.mirrorEpoch || this.retired) throw new Error(trNow('Try again'))
+  }
+
+  private performWithMirrorUndo(op: (client: HostClient) => Promise<unknown>, undo: () => void) {
+    const epoch = this.mirrorEpoch
+    return this.perform(async (client) => {
+      if (epoch !== this.mirrorEpoch) return
+      try {
+        await op(client)
+      } catch (error) {
+        if (epoch === this.mirrorEpoch) throw error
+      }
+    }, true, () => {
+      if (epoch === this.mirrorEpoch) undo()
+    })
+  }
+
+  protected override upsert(entry: Entry) {
+    const nonce = entry.data.clientNonce
+    if (nonce && this.hasPendingSend(entry)) this.outgoingFiles.delete(nonce)
+    super.upsert(entry)
+  }
+
+  protected override clearDeletedBot(id: string) {
+    for (const entry of this.entries.get(id) ?? []) {
+      if (entry.id.startsWith('local-') && entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
+    }
+    super.clearDeletedBot(id)
+  }
 
   /** The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`). */
   lastSentNonce: string | null = null
@@ -74,6 +105,7 @@ export class BotStore extends BotSync {
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
+    const epoch = this.mirrorEpoch
     this.lastSentNonce = nonce
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
     if (call) data.call = call
@@ -91,10 +123,12 @@ export class BotStore extends BotSync {
       try {
         // Safe to repeat: the computer skips a nonce it already has.
         const e = await this.withLink(async (client) => {
-          const pending = this.outgoingFiles.get(nonce)
-          const ids = pending ? await uploadFiles(client, botId, pending) : null
+          this.checkMirror(epoch)
+          const ids = files.length ? await uploadFiles(client, botId, files) : null
+          this.checkMirror(epoch)
           return client.send(botId, trimmed, nonce, ids, pasted, replyTo, call)
         }, true)
+        this.checkMirror(epoch)
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
@@ -102,6 +136,7 @@ export class BotStore extends BotSync {
         noteActiveDay()
         if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
       } catch (error) {
+        if (epoch !== this.mirrorEpoch || this.retired) return
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
       }
@@ -189,11 +224,17 @@ export class BotStore extends BotSync {
 
   /** A finished call's line, with the rest of its transcript; the chat then shows the call's messages behind it. */
   async endCall(botId: string, call: string, seconds: number, lines: CallLine[]) {
+    const epoch = this.mirrorEpoch
     try {
       // Safe to repeat: the computer ends a call once.
-      const { entry } = await this.withLink((c) => c.call<{ entry: Entry | null }>('endCall', { botId, callId: call, seconds, lines }), true)
+      const { entry } = await this.withLink((c) => {
+        this.checkMirror(epoch)
+        return c.call<{ entry: Entry | null }>('endCall', { botId, callId: call, seconds, lines })
+      }, true)
+      this.checkMirror(epoch)
       if (entry) this.upsert(entry)
     } catch (error) {
+      if (epoch !== this.mirrorEpoch || this.retired) return
       this.lastError = error instanceof Error ? error.message : String(error)
     }
   }
@@ -374,10 +415,17 @@ export class BotStore extends BotSync {
     next[i] = { ...next[i]!, data: { ...next[i]!.data, reactions } }
     this.entries.set(entry.botId, next)
     this.changed()
+    const epoch = this.mirrorEpoch
     this.perform(async (c) => {
-      const res = await c.call<{ entry: Entry }>('react', { entryId: entry.id, emoji })
-      this.upsert(res.entry)
-      this.changed()
+      if (epoch !== this.mirrorEpoch) return
+      try {
+        const res = await c.call<{ entry: Entry }>('react', { entryId: entry.id, emoji })
+        if (epoch !== this.mirrorEpoch) return
+        this.upsert(res.entry)
+        this.changed()
+      } catch (error) {
+        if (epoch === this.mirrorEpoch) throw error
+      }
     })
   }
 
@@ -429,7 +477,10 @@ export class BotStore extends BotSync {
       this.changed()
     }
     show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
-    this.perform((c) => c.call('unqueue', { botId: thread?.botId ?? entry.botId, taskId: thread?.taskId, entryId: entry.id }), true, () => show(entry))
+    this.performWithMirrorUndo(
+      (c) => c.call('unqueue', { botId: thread?.botId ?? entry.botId, taskId: thread?.taskId, entryId: entry.id }),
+      () => show(entry),
+    )
   }
 
   /**
@@ -559,7 +610,7 @@ export class BotStore extends BotSync {
       this.changed()
     }
     show(bot.id)
-    this.perform((c) => c.call('setLead', { botId: bot.id }), true, () => show(before))
+    this.performWithMirrorUndo((c) => c.call('setLead', { botId: bot.id }), () => show(before))
   }
 
   setHidden(bot: Bot, hidden: boolean) {
@@ -581,9 +632,8 @@ export class BotStore extends BotSync {
   }
 
   delete(bot: Bot) {
-    this.composerDrafts.removeBot(bot.id)
+    this.clearDeletedBot(bot.id)
     this.bots.delete(bot.id)
-    this.entries.delete(bot.id)
     this.onRosterChanged?.()
     this.changed()
     this.perform((c) => c.call('deleteBot', { botId: bot.id }), true)
@@ -592,8 +642,7 @@ export class BotStore extends BotSync {
   /** Creates a group chat (or opens the one these bots already share) and selects it. */
   async createGroup(name: string, description: string, members: string[]) {
     const draft: GroupDraft = { kind: 'group', name, description, members }
-    const res = await (await this.ready()).call<{ bot: Bot }>('createBot', draft)
-    const bot = this.putHostBot(normalizeBot(res.bot))
+    const bot = await this.saveHostBot('createBot', draft)
     this.selection = bot.id
     this.onRosterChanged?.()
     this.changed()
@@ -601,8 +650,7 @@ export class BotStore extends BotSync {
   }
 
   async updateGroup(draft: GroupDraft) {
-    const res = await (await this.ready()).call<{ bot: Bot }>('updateBot', draft)
-    this.putHostBot(normalizeBot(res.bot))
+    await this.saveHostBot('updateBot', draft)
     this.changed()
   }
 
@@ -671,14 +719,21 @@ export class BotStore extends BotSync {
   }
 
   async save(draft: BotDraft) {
-    const client = await this.ready()
-    const res = draft.id
-      ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null })
-      : await client.call<{ bot: Bot }>('createBot', draft)
-    const bot = this.putHostBot(normalizeBot(res.bot))
+    const bot = draft.id
+      ? await this.saveHostBot('updateBot', { ...draft, model: draft.model ?? null })
+      : await this.saveHostBot('createBot', draft)
     this.onRosterChanged?.()
     this.changed()
     return bot
+  }
+
+  private async saveHostBot(method: 'createBot' | 'updateBot', draft: BotDraft | GroupDraft) {
+    const epoch = this.mirrorEpoch
+    const client = await this.ready()
+    this.checkMirror(epoch)
+    const res = await client.call<{ bot: Bot }>(method, draft)
+    this.checkMirror(epoch)
+    return this.putHostBot(normalizeBot(res.bot))
   }
 
   /** Shows the agent list a call answered with. */
@@ -762,9 +817,11 @@ export class BotStore extends BotSync {
   async loadOlder(botId: string) {
     // Held while everything is fetched again, like `canLoadOlder`.
     if (!this.client || this.refetched || this.historyComplete.has(botId)) return
+    const entries = this.entries
     const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)
+      if (this.refetched || entries !== this.entries) return
       if (older.length < 100) this.historyComplete.add(botId)
       for (const e of older) this.upsert(e)
       this.changed()

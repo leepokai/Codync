@@ -30,10 +30,13 @@ red from 90 %, like the menu bar). A bot can be messaged from the island, and �
 | Nothing running | Opened with no bot working | "Nothing running right now." and Message a bot |
 | Approval | A permission card is pending | The command and the card's options, deny left and Allow once right (⌥N / ⌥Y from any app while it shows) |
 | Choice | A choice card (`request_decision`) is pending | The bot as needing you, with no options: choice cards are answered in the chat window |
-| Finished | A bot stops working | "*Bot* is done" with its last message, Open conversation / OK, for 5.2 s |
+| Finished | A bot successfully finishes a turn with a new reply in its own chat, including a routine's report | "*Bot* is done" with that reply, Open conversation / OK, for 5.2 s, even if the next queued turn has started |
 | Failed | A bot stops on an error | "*Bot* stopped." with the error in red, until OK |
 | Message a bot | The header's bubble, or the [voice input shortcut](voice-call.md#voice-input-shortcut) | The bot chip (click for the next bot) and a field with the mic (macOS); Enter sends, Esc closes. Until the shortcut is first used, a tip under the field says how to talk from any app |
 | Usage | The header's gauge or the usage meter | Claude and Codex limits side by side: each window's bar, percent and reset |
+
+The island shows each completion once across hiding and showing a bot. If the next queued turn
+fails before the island updates, it shows the failure.
 
 Opened by hover, the island folds 0.8 s after the pointer leaves; opened by a click or a tab,
 10 s after (a 2 pt line counts down). The message field stays until it sends, Esc or a click in
@@ -69,7 +72,8 @@ slide to their new places.
   sends bots and pending permission cards when they change; the island window renders them
   (`views/island/`, state in `IslandModel`, pure rules in `shared/island.ts`). Buttons travel back
   as `WindowCommand`s (`openBot`, `respondPermission`, `sendMessage`) to the chat window, which
-  calls the host. The island has no host connection of its own. It takes the keyboard when
+  calls the host. The island has no host connection of its own. For a live completion, the
+  host identifies the exact reply to show. The island takes the keyboard when
   the message field opens (`setFocusable`) and gives it back once the island has folded
   (giving it back takes the window off screen for a moment on macOS); ⌥Y / ⌥N are global
   shortcuts only while an approval shows.

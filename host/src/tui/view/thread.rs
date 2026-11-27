@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Entry, Kind, Source, WorkStatus, WorkTask, nested, tilde};
 use super::super::l10n::tr;
-use super::super::manage::{Fetched, ThreadSheet};
+use super::super::manage::{Fetched, ThreadNavigationBlock, ThreadSheet};
 use super::super::md::{self, truncate};
 use super::buffer::{centered, frame_box, hline, put, put_line, rput, u};
 use super::chat::{composer_lines, file_names};
@@ -44,21 +44,32 @@ fn read_only(task: &WorkTask) -> Option<Cow<'static, str>> {
 enum Keys {
     /// The composer's: the message waits behind a turn that runs.
     Typing,
+    EditingLocally,
     /// What the thread put in the chat is picked: `opens` an artifact, `saves` its file or artifact.
-    Picked { opens: bool, saves: bool },
+    Picked {
+        opens: bool,
+        saves: bool,
+    },
+    SendingReference,
+    BlockedReference(ThreadNavigationBlock),
     /// The page's, with `tab` when it has such entries.
-    Reading { lines: bool },
+    Reading {
+        lines: bool,
+    },
 }
 
 /// The transcript's keys, on its last line.
 fn thread_keys(live: bool, keys: Keys) -> String {
     let lines = match keys {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
+        Keys::EditingLocally => return " esc".into(),
         Keys::Picked { opens, saves } => {
             let open = if opens { "o opens · " } else { "" };
             let save = if saves { "f saves · " } else { "" };
             return format!(" {open}{save}↵ shows it in the chat · tab ⇧tab another · esc");
         }
+        Keys::SendingReference => return format!(" {} · esc clears pick", ThreadNavigationBlock::Sending.label()),
+        Keys::BlockedReference(block) => return format!(" {} · q back · esc clears pick", block.label()),
         Keys::Reading { lines } => lines,
     };
     let stop = live.then(|| tr("X stops"));
@@ -112,7 +123,13 @@ fn thread_composer(buf: &mut Buffer, inner: Rect, app: &App, s: &ThreadSheet, bo
 /// A thread's transcript: its task's title, how it stands and where it works, then its entries in the trace's rows
 /// and a line for what it put in the chat, the picked one marked. The bot's own task has a composer under them; a
 /// routine's run and another bot's request say why they have none.
-pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &ThreadSheet) {
+pub(super) fn thread_details(
+    buf: &mut Buffer,
+    area: Rect,
+    app: &App,
+    s: &ThreadSheet,
+    block: Option<ThreadNavigationBlock>,
+) {
     let t = theme();
     let r = centered(area, 100, area.height.saturating_sub(4));
     let inner = frame_box(buf, r, t.text, t.panel, None);
@@ -122,6 +139,7 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     let task = s.task(app);
     let live = task.is_some_and(|task| task.status.live());
     let talks = task.is_some_and(|task| task.talk);
+    let replaying = app.replaying_mirror();
     if let Some(task) = task {
         put(
             buf,
@@ -145,18 +163,25 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     }
     hline(buf, inner.x, inner.y + 2, inner.width, t.dim.patch(t.panel));
     let foot = inner.bottom() - 1;
-    let keys = if talks && s.typing {
+    let shared = app.shared(&s.bot, &s.thread);
+    let keys = if s.typing && (replaying || !talks) {
+        Keys::EditingLocally
+    } else if s.typing {
         Keys::Typing
-    } else if let Some(e) = app.shared(&s.bot, &s.thread).into_iter().find(|e| s.pick.as_ref() == Some(&e.id)) {
+    } else if s.pick.is_some() && s.send_in_flight() {
+        Keys::SendingReference
+    } else if let Some(block) = block.filter(|_| s.pick.is_some()) {
+        Keys::BlockedReference(block)
+    } else if let Some(e) = shared.iter().find(|e| s.pick.as_ref() == Some(&e.id)) {
         let opens = e.artifact().is_some();
         Keys::Picked { opens, saves: opens || e.data["files"].as_array().is_some_and(|f| !f.is_empty()) }
     } else {
-        Keys::Reading { lines: !app.shared(&s.bot, &s.thread).is_empty() }
+        Keys::Reading { lines: !shared.is_empty() }
     };
     put(buf, inner.x, foot, inner.width, &thread_keys(live, keys), t.dim.patch(t.panel));
     // Between the transcript and the keys: what waits in the thread over its composer, or why it has none.
     let mut bottom = foot;
-    if talks {
+    if s.can_edit(task) {
         bottom = thread_composer(buf, inner, app, s, foot);
     } else if let Some(why) = task.and_then(read_only) {
         bottom = foot - 1;
@@ -258,7 +283,7 @@ fn told(out: &mut Vec<Line<'static>>, e: &Entry, width: usize, full: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::{Msg, screen, test_app};
+    use crate::tui::app::{Msg, SendReceipts, screen, test_app};
     use serde_json::json;
 
     fn text(lines: &[Line<'_>]) -> Vec<String> {
@@ -371,7 +396,7 @@ mod tests {
         let area = Rect::new(0, 0, 100, 20);
         let heading = |task: &str| {
             let sheet = ThreadSheet::new("a".into(), task.into(), "thread".into());
-            let lines = screen(area, |buf| thread_details(buf, area, &app, &sheet));
+            let lines = screen(area, |buf| thread_details(buf, area, &app, &sheet, None));
             let standing = lines.iter().find(|line| line.contains("Working")).expect("how it stands");
             standing.trim().trim_matches('│').trim().to_owned()
         };
@@ -382,6 +407,12 @@ mod tests {
             far.starts_with("◷ Working · /private/tmp/x") && far.ends_with("x…/gitrepo"),
             "its last name stays: {far}"
         );
+    }
+
+    fn draw_details(app: &App, sheet: &ThreadSheet) -> Vec<String> {
+        let area = Rect::new(0, 0, 100, 24);
+        let lines = screen(area, |buf| thread_details(buf, area, app, sheet, None));
+        lines.iter().map(|line| line.trim().trim_matches('│').trim().to_owned()).collect()
     }
 
     #[tokio::test]
@@ -401,13 +432,8 @@ mod tests {
         };
         app.on_msg(Msg::Event(entry(1, json!({"text": "use tabs", "status": "sent"}))));
         app.on_msg(Msg::Event(entry(2, json!({"text": "and the tests", "status": "queued"}))));
-        let area = Rect::new(0, 0, 100, 24);
-        let draw = |app: &App, sheet: &ThreadSheet| {
-            let lines = screen(area, |buf| thread_details(buf, area, app, sheet));
-            lines.iter().map(|line| line.trim().trim_matches('│').trim().to_owned()).collect::<Vec<_>>()
-        };
         let mut own = ThreadSheet::new("a".into(), "i".into(), "thread-1".into());
-        let lines = draw(&app, &own);
+        let lines = draw_details(&app, &own);
         let at = |lines: &[String], text: &str| lines.iter().position(|line| line.contains(text));
         assert!(at(&lines, "◷ Working · ~/code/app").is_some(), "where it works: {lines:?}");
         assert!(at(&lines, "you").is_some_and(|row| lines[row].contains("use tabs")), "what was sent is a step");
@@ -422,28 +448,56 @@ mod tests {
 
         own.typing = true;
         own.draft.insert("one more");
-        let lines = draw(&app, &own);
+        let lines = draw_details(&app, &own);
         let composer = at(&lines, "› one more").expect("the draft");
         assert!(lines[composer - 1].ends_with("queued · esc · S sends now · D removes"), "{lines:?}");
         assert_eq!(lines[composer + 1], "↵ sends after this turn · esc");
 
         // Read-only threads: no composer, one quiet line saying why.
-        let run = draw(&app, &ThreadSheet::new("a".into(), "r".into(), "thread-2".into()));
+        let run = draw_details(&app, &ThreadSheet::new("a".into(), "r".into(), "thread-2".into()));
         assert!(
             at(&run, "Read only: a routine's run").is_some() && at(&run, "Message this thread").is_none(),
             "{run:?}"
         );
-        let asked = draw(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
+        let asked = draw_details(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
         assert!(at(&asked, "Read only: another bot's request").is_some(), "{asked:?}");
 
-        // What its agent runs in the background: one line over the composer, as a chat's capsule.
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
+        let rebuilding = draw_details(&app, &own);
+        let composer = at(&rebuilding, "› one more").expect("the draft stays visible during recovery");
+        assert_eq!(rebuilding[composer + 1], "esc");
+
+        bot(&mut app, &json!([]));
+        app.on_msg(Msg::ReplayComplete);
+        own.typing = false;
+        own.files.push("draft.txt".into());
+        let restored = draw_details(&app, &own);
+        assert!(at(&restored, "› one more").is_some() && at(&restored, "draft.txt").is_some());
+
+        own.typing = true;
+        own.draft.clear();
+        own.files.clear();
+        let empty = draw_details(&app, &own);
+        let composer = at(&empty, "Message this thread").expect("the empty editor stays visible while typing");
+        assert_eq!(empty[composer + 1], "esc");
+    }
+
+    #[tokio::test]
+    async fn background_work_appears_above_the_thread_composer_and_queue() {
+        let mut app = test_app();
         bot(
             &mut app,
             &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
                 "background": [{"id": "w", "kind": "workflow", "name": "probe", "activity": "Count: two",
                     "startedAt": 0}]}]),
         );
-        let lines = draw(&app, &ThreadSheet::new("a".into(), "i".into(), "thread-1".into()));
+        app.on_msg(Msg::Event(json!({"type": "threadEntry", "rev": 2, "thread": "thread-1", "entry": {
+            "id": "t2", "botId": "thread-1", "seq": 2, "rev": 2, "kind": "user", "turn": 2,
+            "data": {"text": "and the tests", "status": "queued"}
+        }})));
+        let sheet = ThreadSheet::new("a".into(), "i".into(), "thread-1".into());
+        let lines = draw_details(&app, &sheet);
+        let at = |lines: &[String], text: &str| lines.iter().position(|line| line.contains(text));
         let running = at(&lines, "Background · probe · Count: two").expect("the background line");
         assert!(lines[running + 1].starts_with("› and the tests"), "over what waits and the composer: {lines:?}");
         bot(
@@ -451,7 +505,7 @@ mod tests {
             &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
             "background": [{"id": "w", "name": "probe", "startedAt": 0}, {"id": "s", "name": "Sleep", "startedAt": 1}]}]),
         );
-        let lines = draw(&app, &ThreadSheet::new("a".into(), "i".into(), "thread-1".into()));
+        let lines = draw_details(&app, &sheet);
         assert!(at(&lines, "Background · probe, Sleep").is_some(), "several, by name: {lines:?}");
     }
 }

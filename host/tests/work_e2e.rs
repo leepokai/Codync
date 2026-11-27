@@ -1803,11 +1803,16 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
     );
 }
 
+fn thread_upload(bot: &str, task: &Value, name: &str) -> Value {
+    let upload = uuid::Uuid::new_v4().to_string();
+    json!({"botId": bot, "taskId": task["id"], "uploadId": upload, "name": name, "offset": 0,
+        "data": "aGk=", "done": true})
+}
+
 /// Uploads a small file for a message to the thread of `task`: its upload id.
 async fn upload_to_thread(host: &Host, bot: &str, task: &Value, name: &str) -> String {
-    let upload = uuid::Uuid::new_v4().to_string();
-    let chunk = json!({"botId": bot, "taskId": task["id"], "uploadId": upload, "name": name, "offset": 0,
-        "data": "aGk=", "done": true});
+    let chunk = thread_upload(bot, task, name);
+    let upload = chunk["uploadId"].as_str().unwrap().to_owned();
     host.call("upload", chunk).await;
     upload
 }
@@ -1859,6 +1864,226 @@ async fn files_sent_to_a_thread_are_its_own_and_go_with_it() {
     assert!(uploads.join(&upload).exists(), "{}", uploads.display());
     host.call("dropWork", json!({"botId": bot, "taskId": done["id"]})).await;
     wait("the thread's files to go with it", async || (!uploads.exists()).then_some(())).await;
+}
+
+async fn replaced_task(host: &Host, bot: &str) -> (Value, Value) {
+    host.reply(bot, "ADD Move|HOLD:old").await;
+    let old = task(host, bot, "Move", "working").await;
+    host.reply(bot, "STEER replace|Move|new brief").await;
+    let current = task(host, bot, "Move", "done").await;
+    assert_eq!(current["id"], old["id"]);
+    assert_ne!(current["thread"], old["thread"]);
+    (old, current)
+}
+
+#[tokio::test]
+async fn expected_task_thread_rejects_writes_to_a_replaced_thread() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let (old, current) = replaced_task(&host, &bot).await;
+
+    let stale = "message for the old thread";
+    let mut message = json!({"botId": bot, "taskId": old["id"], "expectedThreadId": old["thread"],
+        "text": stale, "clientNonce": "before-move"});
+    let (sent, answer) = host.post("send", &message).await;
+    if sent {
+        assert_eq!(answer["entry"]["botId"], current["thread"]);
+        thread_status(&host, &bot, &current, &answer["entry"]["id"], "sent").await;
+        result(&host, &bot, "Move", &format!("Thread {stale}:")).await;
+    }
+    let mut chunk = thread_upload(&bot, &old, "move.txt");
+    chunk["expectedThreadId"] = old["thread"].clone();
+    let upload = chunk["uploadId"].as_str().unwrap().to_owned();
+    let (uploaded, upload_answer) = host.post("upload", &chunk).await;
+    let read = json!({"botId": current["thread"], "uploadId": upload});
+    let (readable, _) = host.post("readUpload", &read).await;
+    let saved = transcript(&host, &bot, &current)
+        .await
+        .into_iter()
+        .filter(|e| e["data"]["clientNonce"] == "before-move")
+        .count();
+    let delivered = thread_prompts(&host, &bot).iter().filter(|p| p["text"].as_str().unwrap().contains(stale)).count();
+    let file = host.home.join("bots").join(current["thread"].as_str().unwrap()).join("uploads").join(&upload);
+    eprintln!(
+        "task {} moved {} -> {}: send={sent} saved={saved} delivered={delivered}; upload={uploaded} file={} readUpload={readable}",
+        old["id"],
+        old["thread"],
+        current["thread"],
+        file.exists()
+    );
+    assert!(!sent && !uploaded, "stale send: {answer}; stale upload: {upload_answer}");
+    assert_eq!(answer["error"], "\"Move\" changed threads: refresh the task before writing to it");
+    assert_eq!(upload_answer["error"], answer["error"]);
+    assert_eq!((saved, delivered, file.exists(), readable), (0, 0, false, false));
+
+    chunk["expectedThreadId"] = current["thread"].clone();
+    chunk["done"] = json!(false);
+    assert!(host.call("upload", chunk.clone()).await["attachment"].is_null());
+    chunk["offset"] = json!(2);
+    chunk["data"] = json!("IQ==");
+    chunk["done"] = json!(true);
+    assert_eq!(host.call("upload", chunk).await["attachment"]["id"], upload);
+    assert_eq!(host.call("readUpload", read).await["data"], "aGkh");
+
+    let matching = "message for the current thread";
+    message["text"] = json!(matching);
+    message["attachments"] = json!([upload]);
+    message["expectedThreadId"] = current["thread"].clone();
+    let written = host.call("send", message.clone()).await;
+    let again = host.call("send", message.clone()).await;
+    assert_eq!(written["entry"]["botId"], current["thread"]);
+    assert_eq!(again["entry"]["id"], written["entry"]["id"]);
+    assert!(again["reopened"].is_null() && again["queued"].is_null());
+    thread_status(&host, &bot, &current, &written["entry"]["id"], "sent").await;
+
+    message["expectedThreadId"] = old["thread"].clone();
+    assert_eq!(host.refused("send", message.clone()).await, answer["error"]);
+    message["clientNonce"] = json!("never-sent");
+    message["attachments"] = json!([uuid::Uuid::new_v4().to_string()]);
+    assert_eq!(host.refused("send", message).await, answer["error"]);
+
+    let legacy = "message without the field";
+    let legacy_upload = upload_to_thread(&host, &bot, &current, "legacy.txt").await;
+    let body = json!({"botId": bot, "taskId": current["id"], "text": legacy, "attachments": [legacy_upload]});
+    let legacy_sent = host.call("send", body).await;
+    thread_status(&host, &bot, &current, &legacy_sent["entry"]["id"], "sent").await;
+    result(&host, &bot, "Move", &format!("Thread {legacy}:")).await;
+    let entries = transcript(&host, &bot, &current).await;
+    assert_eq!(entries.iter().filter(|e| e["data"]["clientNonce"] == "before-move").count(), 1);
+    let prompts = thread_prompts(&host, &bot);
+    for text in [matching, legacy] {
+        let delivered = prompts.iter().filter(|p| p["text"].as_str().unwrap().contains(text)).count();
+        assert_eq!(delivered, 1, "{text}");
+        eprintln!("{text}: ACP deliveries={delivered}");
+    }
+}
+
+#[tokio::test]
+async fn expected_task_thread_requires_a_nonempty_id_and_a_task_request() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Quick|look around").await;
+    let done = task(&host, &bot, "Quick", "done").await;
+    let send = json!({"botId": bot, "taskId": done["id"], "text": "invalid target"});
+    let upload = thread_upload(&bot, &done, "invalid.txt");
+    for (method, body) in [("send", send), ("upload", upload)] {
+        for malformed in [Value::Null, json!(4), json!(false), json!([]), json!({}), json!(""), json!("  ")] {
+            let mut body = body.clone();
+            body["expectedThreadId"] = malformed;
+            assert_eq!(host.refused(method, body).await, "`expectedThreadId` must be a non-empty string");
+        }
+        for key in ["botId", "taskId"] {
+            let mut body = body.clone();
+            body["expectedThreadId"] = done["thread"].clone();
+            body.as_object_mut().unwrap().remove(key);
+            assert_eq!(host.refused(method, body.clone()).await, "`expectedThreadId` requires `botId` and `taskId`");
+            for invalid in [Value::Null, json!(4), json!(""), json!("  ")] {
+                body[key] = invalid;
+                assert_eq!(
+                    host.refused(method, body.clone()).await,
+                    "`expectedThreadId` requires `botId` and `taskId`"
+                );
+            }
+        }
+    }
+}
+
+async fn archive_on_restart(host: &mut Host, bot: &str) {
+    host.restart(|home| {
+        let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
+        let key = format!("work.{bot}");
+        let updated = db
+            .execute(
+                "UPDATE kv SET v = (SELECT json_group_array(json_set(value, '$.endedAt', (unixepoch() - 8 * 86400) * 1000))
+                 FROM json_each(v)) WHERE k = ?1",
+                [key],
+            )
+            .unwrap();
+        assert_eq!(updated, 1);
+    })
+    .await;
+}
+
+fn archive_rows(host: &Host, bot: &str, task: &Value) -> (bool, bool) {
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM thread_archive WHERE bot = ?1 AND task = ?2),
+                EXISTS(SELECT 1 FROM parked_threads WHERE bot = ?1 AND id = ?3)",
+        [bot, id(task), task["thread"].as_str().unwrap()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn expected_task_thread_checks_archived_writes_before_unparking() {
+    let mut host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let (old, current) = replaced_task(&host, &bot).await;
+    let upload = upload_to_thread(&host, &bot, &current, "parked.txt").await;
+    archive_on_restart(&mut host, &bot).await;
+    assert_eq!(archive_rows(&host, &bot, &current), (true, true));
+
+    let read = json!({"botId": current["thread"], "uploadId": upload});
+    assert_eq!(host.call("readUpload", read).await["data"], "aGk=");
+    let before = transcript(&host, &bot, &current).await;
+    let mut message = json!({"botId": bot, "taskId": current["id"], "expectedThreadId": old["thread"],
+        "text": "resume the archived thread", "attachments": [upload]});
+    let mut chunk = thread_upload(&bot, &current, "stale.txt");
+    chunk["expectedThreadId"] = old["thread"].clone();
+    let (sent, send_answer) = host.post("send", &message).await;
+    let (uploaded, upload_answer) = host.post("upload", &chunk).await;
+    let rows = archive_rows(&host, &bot, &current);
+    eprintln!("stale archived send={sent} upload={uploaded} archived={} parked={}", rows.0, rows.1);
+    assert!(!sent && !uploaded, "{send_answer}; {upload_answer}");
+    assert_eq!(send_answer["error"], "\"Move\" changed threads: refresh the task before writing to it");
+    assert_eq!(upload_answer["error"], send_answer["error"]);
+    assert_eq!(rows, (true, true));
+    assert_eq!(transcript(&host, &bot, &current).await, before);
+    let read = json!({"botId": current["thread"], "uploadId": chunk["uploadId"]});
+    assert!(!host.post("readUpload", &read).await.0);
+
+    message["expectedThreadId"] = current["thread"].clone();
+    let restored = host.call("send", message).await;
+    assert_eq!(restored["reopened"], true);
+    assert_eq!(restored["entry"]["botId"], current["thread"]);
+    let after = result(&host, &bot, "Move", "Thread resume the archived thread:").await;
+    assert_eq!(after["result"], "Thread resume the archived thread: same session");
+    assert_eq!(archive_rows(&host, &bot, &current), (false, false));
+    eprintln!("matching archived send: reopened same session");
+}
+
+#[tokio::test]
+async fn expected_task_thread_keeps_a_restored_task_when_a_message_file_is_missing() {
+    let mut host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Retry|quick").await;
+    let retry = task(&host, &bot, "Retry", "done").await;
+    host.reply(&bot, "ADD Upload|quick").await;
+    let upload = task(&host, &bot, "Upload", "done").await;
+    archive_on_restart(&mut host, &bot).await;
+    assert_eq!(archive_rows(&host, &bot, &retry), (true, true));
+    assert_eq!(archive_rows(&host, &bot, &upload), (true, true));
+
+    let mut send = json!({"botId": bot, "taskId": retry["id"], "expectedThreadId": retry["thread"],
+        "text": "try again", "attachments": [uuid::Uuid::new_v4().to_string()], "clientNonce": "restored"});
+    let error = host.refused("send", send.clone()).await;
+    assert!(error.starts_with("unknown upload"), "{error}");
+    assert_eq!(archive_rows(&host, &bot, &retry), (false, false));
+    assert!(transcript(&host, &bot, &retry).await.iter().all(|e| e["data"]["clientNonce"] != "restored"));
+    send["attachments"] = json!([]);
+    assert_eq!(host.call("send", send).await["reopened"], true);
+    result(&host, &bot, "Retry", "Thread try again:").await;
+
+    let mut chunk = thread_upload(&bot, &upload, "restored.txt");
+    chunk["expectedThreadId"] = upload["thread"].clone();
+    let saved = host.call("upload", chunk).await;
+    assert_eq!(archive_rows(&host, &bot, &upload), (false, false));
+    let read = json!({"botId": upload["thread"], "uploadId": saved["attachment"]["id"]});
+    assert_eq!(host.call("readUpload", read).await["data"], "aGk=");
+    eprintln!("matched archive: the failed send kept a task that reopened on retry and the uploaded file was readable");
 }
 
 #[tokio::test]
@@ -1951,6 +2176,11 @@ async fn a_routines_run_takes_no_message_and_a_message_never_answers_a_threads_c
     assert_eq!(run["talk"], false, "its result has an owner already");
     let refused = host.refused("send", json!({"botId": bot, "taskId": run["id"], "text": "hi"})).await;
     assert_eq!(refused, "\"Digest\" is a routine's run: it can be read and stopped, not written to");
+    let guarded = json!({"botId": bot, "taskId": run["id"], "expectedThreadId": run["thread"], "text": "hi"});
+    assert_eq!(host.refused("send", guarded).await, refused);
+    let mut upload = thread_upload(&bot, &run, "digest.txt");
+    upload["expectedThreadId"] = run["thread"].clone();
+    assert_eq!(host.refused("upload", upload).await, refused);
     release(&host, &bot, "digest");
 
     // A thread that waits on a card: the message waits behind it, and only a press answers the card.

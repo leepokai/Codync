@@ -10,6 +10,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../../store/app-model'
 import type { BotStore } from '../../store/bot-store'
+import { useApp } from '../../store/context'
 import type { OutgoingFile } from '../../store/outgoing-files'
 import { useRecentFolders } from '../../store/use-folder-picker'
 import { useAgentModels } from '../bots/agent-models'
@@ -66,6 +67,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
   placeholder?: string
 }) {
   const tr = useTr()
+  const { newThreadFiles } = useApp()
   const { store } = of
   const bot = of.bot?.plain ? null : of.bot
   const [setup, setSetup] = useState<ThreadSetup>({})
@@ -162,6 +164,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
   }
 
   const draftKey = bot ? `${bot.id}/thread/new` : `${of.ref.computerId}/thread/new`
+  const filesKey = base?.workflow ? JSON.stringify([store.computer.id, base.workflow]) : 'new-thread'
   return (
     <div className="chat-view thread-chat new-thread">
       <div className="conversation" ref={root}>
@@ -184,7 +187,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
           <div className="composer-fade" />
           {/* What it runs on, in the box's row as in a bot's chat: who it is with first (with one bot and no other way
               there is nothing to choose). */}
-          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, keepFiles: `thread/new/${base?.workflow ?? ''}`, send, controls: <>
+          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, draftFiles: { owner: newThreadFiles, key: filesKey }, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             {bot ? null : <Option title="Computer" items={computerItems} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? (setup.cwd === bot?.cwd ? tr('Own folder') : lastPathComponent(setup.cwd)) : ownFolder} />

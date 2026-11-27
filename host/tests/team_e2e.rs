@@ -269,3 +269,147 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
     assert_eq!(sent["entry"]["data"]["text"], "Continue");
     host.wait_finished().await;
 }
+
+#[tokio::test]
+async fn completion_identifies_the_sent_reply_and_is_empty_for_the_adjacent_request() {
+    if common::python_missing() {
+        return;
+    }
+    let host = common::host::Host::start().await;
+    let recipient = host.fixture_bot("Recipient", "team_agent.py", "").await;
+    host.works_in_chat(&recipient).await;
+    let sender = host.fixture_bot("Sender", "team_agent.py", "").await;
+    let mut events = host.events().await;
+
+    host.reply(&recipient, "REPORT").await;
+    common::eventually("the own-chat turn finished", Duration::from_secs(20), async || {
+        common::bot(&host.snapshot().await, &recipient)["status"] == "idle"
+    })
+    .await;
+    let snapshot = host.snapshot().await;
+    let sent = snapshot["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["data"]["text"] == "Second report for the user")
+        .unwrap();
+    assert_eq!(common::bot(&snapshot, &recipient)["completionReplyId"], sent["id"]);
+
+    host.call("send", json!({"botId": sender, "text": format!("DELEGATE {recipient} BLOCK")})).await;
+    let working = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut own_completed = false;
+        loop {
+            let event = events.recv().await.unwrap();
+            let bot = &event["bot"];
+            if bot["id"] != recipient {
+                continue;
+            }
+            if bot["status"] == "idle" && bot["completionReplyId"] == sent["id"] {
+                own_completed = true;
+            }
+            if own_completed && bot["status"] == "working" {
+                break bot.clone();
+            }
+        }
+    })
+    .await
+    .expect("live snapshots show own-chat completion followed by delegated work");
+    assert_eq!(working.get("completionReplyId"), Some(&Value::Null));
+
+    let reacted = host.call("react", json!({"entryId": sent["id"], "emoji": "👍"})).await;
+    assert_eq!(reacted["entry"]["id"], sent["id"]);
+    let cwd = PathBuf::from(working["cwd"].as_str().unwrap());
+    std::fs::write(cwd.join("release"), "").unwrap();
+    common::eventually("the request finished and its reply was relayed", Duration::from_secs(20), async || {
+        let snapshot = host.snapshot().await;
+        common::bot(&snapshot, &recipient)["status"] == "idle"
+            && snapshot["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["botId"] == sender && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Relayed:")))
+    })
+    .await;
+
+    let snapshot = host.snapshot().await;
+    let idle = common::bot(&snapshot, &recipient);
+    assert_eq!(idle["status"], "idle");
+    assert_eq!(idle["lastMessage"], "Second report for the user");
+    assert!(idle["lastAt"].as_i64().unwrap() >= working["startedAt"].as_i64().unwrap());
+    assert_eq!(idle.get("completionReplyId"), Some(&Value::Null));
+}
+
+#[tokio::test]
+async fn delegated_request_emits_no_stale_alert_or_final_reply_for_recipient() {
+    use futures::StreamExt as _;
+
+    let host = Host::start().await;
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
+    let make_bot = |name: &str, manage_team: bool| {
+        let cwd = host.home.join(name);
+        std::fs::create_dir_all(&cwd).unwrap();
+        let body = json!({
+            "name": name, "backend": "custom", "cwd": cwd, "permission": "auto", "notify": true,
+            "manageTeam": manage_team, "command": common::python_agent(&agent),
+        });
+        async { host.call("createBot", body).await["bot"]["id"].as_str().unwrap().to_owned() }
+    };
+    // manageTeam keeps bot-to-bot requests on Bot A's own actor (`!boxed`), where `status` flips working → idle.
+    let bot_a = make_bot("bot-a", true).await;
+    let bot_b = make_bot("bot-b", false).await;
+
+    // 1. User chats with Bot A so its own chat has an earlier reply "X".
+    host.call("send", json!({"botId": bot_a, "text": "hello first", "clientNonce": "x1"})).await;
+    let first_reply = host.wait_for(&bot_a, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    host.wait_finished().await;
+    let old_text = first_reply["data"]["text"].as_str().unwrap().to_owned();
+
+    // 2. Listen to live desktop events while Bot B delegates a `message_bot` turn to Bot A.
+    let (alert_tx, mut alert_rx) = tokio::sync::mpsc::unbounded_channel();
+    let stream_url = format!("{}/events?since=999999&client=desktop", host.base);
+    let token = host.token.clone();
+    let reader = tokio::spawn(async move {
+        let res = reqwest::Client::new().get(stream_url).bearer_auth(token).send().await.unwrap();
+        let mut body = res.bytes_stream();
+        let mut buf = String::new();
+        while let Some(Ok(chunk)) = body.next().await {
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(i) = buf.find('\n') {
+                let line: String = buf.drain(..=i).collect();
+                if let Some(data) = line.trim_end().strip_prefix("data:")
+                    && let Ok(v) = serde_json::from_str::<Value>(data.trim_start())
+                    && v["type"] == "alert"
+                {
+                    let _ = alert_tx.send(v["alert"].clone());
+                }
+            }
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    host.call("send", json!({"botId": bot_b, "text": format!("DELEGATE_REPORT {bot_a}"), "clientNonce": "d1"})).await;
+    host.wait_for(&bot_b, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Relayed:"))
+    })
+    .await;
+    host.wait_finished().await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    reader.abort();
+
+    let mut alerts = Vec::new();
+    while let Ok(a) = alert_rx.try_recv() {
+        alerts.push(a);
+    }
+    assert!(
+        alerts.iter().all(|a| a["botId"] != bot_a),
+        "recipient Bot A must not emit a done/stale alert for a delegated message_bot turn: {alerts:?}"
+    );
+    let history_a = host.call("history", json!({"botId": bot_a})).await;
+    assert_eq!(
+        finals(&history_a),
+        vec![old_text.as_str()],
+        "Bot A's own chat must keep only its prior reply so clients know no new own-chat reply landed"
+    );
+}

@@ -197,9 +197,9 @@ The user writes to the thread that works, or worked, one of the bot's **own** ta
 thread is a bot with an actor, so the message is a user entry in the thread's own transcript and goes through the
 chat's own queue: nothing here is a second copy of it.
 
-- **`send {botId, taskId, text, attachments?, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
-  task, never a thread: the task must be in that bot's box, and `send`, `steer` and `unqueue` refuse a thread's own id
-  as `botId` (`unknown bot`). Files go as in a chat: each is first sent with `upload {botId, taskId, …}`, which
+- **`send {botId, taskId, text, attachments?, clientNonce?, expectedThreadId?}`** → `{entry, reopened, queued}`. The
+  task must belong to the named bot. `send`, `steer` and `unqueue` refuse a thread's own id as `botId` (`unknown bot`).
+  Each file is first sent with `upload {botId, taskId, expectedThreadId?, …}`, which
   puts it in the thread's own uploads (`uploads::root` of the thread bot, under the host's data folder, never in a
   worktree, and deleted with the thread bot), and the thread's agent gets their paths. `readUpload` reads one back by
   the entry's `botId` (the thread's); the task's report and a session that picks the task up name the files after
@@ -207,6 +207,11 @@ chat's own queue: nothing here is a second copy of it.
   drops and pastes) only then. No quote or call (`a thread takes no quotes or calls`). `entry`
   is the message as the transcript holds it (`botId` is the thread's id); the same `clientNonce` again answers the
   same entry, with `reopened` and `queued` null.
+- **Writing to the thread shown by the client.** A client can pass the task's observed `thread` as
+  `expectedThreadId` on `send` and each `upload` chunk. It must be a non-empty string and requires
+  `botId` and `taskId`. The host refuses a mismatch before looking up a prior send by nonce, resolving its
+  files, or restoring an archived task. Each accepted upload chunk uses the root of the thread it checked.
+  Omitting the field targets the thread the task has when the host handles the write. Older hosts ignore the field.
 - **While the thread's turn runs** the entry is `status: queued`, as in a chat, and leaves as `threadEntry` events like
   the rest of the transcript. **`steer {botId, taskId, entryId}`** sends it now: into the running turn where the
   agent can (`_session/steering`), else the turn is stopped for it. **`unqueue {botId, taskId, entryId}`** takes it
@@ -744,7 +749,8 @@ only recalled, never listed.
   last read (desktop, iPhone, Android), without moving the next page's cursor.
 - **Opened and written to** as any thread: `threadEntries` and `readUpload` read a parked thread, and `send`,
   `upload` (with `taskId`), `retryWork` and `dropWork` on an archived task first bring it back into its box with its
-  thread bot (`archive::bring_back`, under the box's lock: the dispatcher never sees the thread without its task).
+  thread bot under the box's lock. If a task write supplies `expectedThreadId`, it must match the archived task's
+  thread before either record comes back.
 - **A deleted bot** takes its archive and parked threads with it.
 - Analytics: `setting_changed` (`thread_keep_days`, `days`), `threads_deleted` (`count`, `days`),
   `older_threads_listed` (`count`, `more`, `first`); a failed archive is a host error.

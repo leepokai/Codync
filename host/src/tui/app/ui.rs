@@ -1,5 +1,6 @@
 //! The screen's state: panes, overlays and their forms, and where clicks land.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -134,8 +135,25 @@ pub enum ConfirmAct {
         bot: String,
         task: String,
     },
+    DiscardThreadDraft {
+        entry: Option<String>,
+    },
     DeleteWorkflow(String),
     RejectWorkflowStep(String),
+}
+
+impl ConfirmAct {
+    pub(in crate::tui) fn confirmation_letter(&self) -> Option<char> {
+        matches!(self, Self::DiscardThreadDraft { .. }).then_some('d')
+    }
+
+    pub(super) fn confirms(&self, key: KeyEvent) -> bool {
+        if let Some(letter) = self.confirmation_letter() {
+            key.code == KeyCode::Char(letter) && key.kind == KeyEventKind::Press && key.modifiers.is_empty()
+        } else {
+            key.code == KeyCode::Enter
+        }
+    }
 }
 
 pub struct Confirm {
@@ -410,6 +428,7 @@ pub enum Overlay {
     Help(Editor),
     LeadAgent(usize),
     Confirm(Confirm),
+    ThreadDraftKept,
     NewBot(NewBot),
     Folder(FolderPicker),
     Form(Box<Form>),

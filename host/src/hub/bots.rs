@@ -24,7 +24,17 @@ impl Hub {
         crate::agent::workspace::prepare(cfg)
     }
 
-    pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
+    pub fn create_bot(self: &Arc<Self>, cfg: BotConfig) -> Result<Value> {
+        self.create_bot_if(cfg, |_| Ok(()))
+    }
+
+    /// As `create_bot`, but `check` runs on the live hub inside `emit_lock`, before the save: a caller that
+    /// waited on an approval card can refuse a write that is no longer allowed (e.g. a revoked connector).
+    pub fn create_bot_if(
+        self: &Arc<Self>,
+        mut cfg: BotConfig,
+        check: impl FnOnce(&Hub) -> Result<()>,
+    ) -> Result<Value> {
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
         cfg.position = self.new_bot_position()?;
@@ -42,6 +52,7 @@ impl Hub {
         }
         {
             let _g = self.emit_lock.locked();
+            check(self)?;
             self.settle_config(&mut cfg, None)?;
             self.store.save_bot(&cfg)?;
         }
@@ -57,10 +68,17 @@ impl Hub {
     }
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
+        self.update_bot_if(patch, |_| Ok(()))
+    }
+
+    /// As `update_bot`, but `check` runs on the live hub inside `emit_lock`, before the merge and save: a
+    /// caller that waited on an approval card can refuse a write that is no longer allowed.
+    pub fn update_bot_if(&self, patch: &Value, check: impl FnOnce(&Hub) -> Result<()>) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
+        // Read, check, merge and save under one lock: a section rename in between would otherwise be written back.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();
+            check(self)?;
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
             if cfg.is_group() {

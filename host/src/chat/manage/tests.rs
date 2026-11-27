@@ -205,6 +205,59 @@ async fn a_manager_passes_only_a_subset_of_their_skills_and_connectors() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A manager passes a connector subset on the card; the user revokes it before answering Allow. The
+/// write lock rechecks the manager's live setup, so the revoked connector can't be written back onto
+/// the delegate. Both create and update paths do this before the store write.
+#[tokio::test]
+async fn a_connector_revoked_while_the_card_waits_is_not_written_back() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-reach-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+
+    // create_bot: the card promises the manager's `github`; revoke it before Allow.
+    let mut commands = hub.attach_bot_for_test("lead");
+    let create_hub = hub.clone();
+    let create = tokio::spawn(async move {
+        call(&create_hub, "lead", "create_bot", &json!({"name": "Child", "agent": "claude", "connectors": ["github"]}))
+            .await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    hub.update_bot(&json!({"id": "lead", "connectors": []})).unwrap();
+    reply.send(true).unwrap();
+    let err = create.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("can only include an id you already have"), "{err}");
+    assert!(hub.store.bots().unwrap().iter().all(|b| b.config.name != "Child"), "a refused create leaves no bot");
+
+    // update_bot: restore the manager's connector so the call reaches the card, then revoke it
+    // while the card waits and check the write is refused.
+    hub.update_bot(&json!({"id": "lead", "connectors": ["github"]})).unwrap();
+    drop(commands);
+    let mut commands = hub.attach_bot_for_test("lead");
+    let update_hub = hub.clone();
+    let update = tokio::spawn(async move {
+        call(&update_hub, "lead", "update_bot", &json!({"botId": "dev", "connectors": ["github"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    hub.update_bot(&json!({"id": "lead", "connectors": []})).unwrap();
+    reply.send(true).unwrap();
+    let err = update.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("can only include an id you already have"), "{err}");
+    assert_eq!(hub.store.bot("dev").unwrap().unwrap().config.connectors, ["github".to_owned()]);
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields =

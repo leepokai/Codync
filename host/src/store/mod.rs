@@ -15,6 +15,7 @@ mod schema;
 mod workspaces;
 
 pub use archive::Archived;
+pub(crate) use archive::UnparkError;
 pub use devices::{Device, DeviceAccount, DeviceSource, Scope};
 pub use entries::INTERRUPTED;
 pub use model::{

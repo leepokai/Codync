@@ -469,6 +469,17 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
 /// Skills saved by a thread before #584 recorded the thread as `written_by` and were never turned on for its bot:
 /// turn each on for its bot first, then hand ownership over so an interrupted run retries cleanly.
 pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
+    #[cfg(test)]
+    if let Ok(read) = tests::PARKED_THREAD_READER.try_with(|read| *read) {
+        return adopt_thread_skills_with(store, |writer| read(store, writer));
+    }
+    adopt_thread_skills_with(store, |writer| store.parked_thread(writer))
+}
+
+fn adopt_thread_skills_with(
+    store: &crate::store::Store,
+    parked_thread: impl Fn(&str) -> Result<Option<crate::store::BotConfig>>,
+) -> Result<()> {
     let _guard = SKILLS_LOCK.locked();
     let mut all = skills(store);
     let mut by_owner: std::collections::BTreeMap<String, Vec<&mut Skill>> = std::collections::BTreeMap::new();
@@ -478,7 +489,15 @@ pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
         };
         let owner = match store.bot(writer)? {
             Some(row) => row.config.thread_of,
-            None => store.parked_thread(writer)?.and_then(|cfg| cfg.thread_of),
+            None => match parked_thread(writer) {
+                Ok(Some(cfg)) => cfg.thread_of,
+                Ok(None) => None,
+                Err(_) => {
+                    // Archive decode errors can contain text from the record.
+                    tracing::warn!("couldn't read a parked thread during skill adoption");
+                    continue;
+                }
+            },
         };
         if let Some(owner) = owner {
             by_owner.entry(owner).or_default().push(s);
@@ -524,6 +543,10 @@ pub fn skills_brief(store: &crate::store::Store, enabled: &[String]) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    tokio::task_local! {
+        pub(super) static PARKED_THREAD_READER: fn(&crate::store::Store, &str) -> Result<Option<crate::store::BotConfig>>;
+    }
 
     /// Serves `/declared` (a Content-Length over the limit), `/streamed` (chunks past the limit, no
     /// length) and anything else as a five-byte body.
@@ -675,6 +698,89 @@ mod tests {
         assert_eq!(after[0].written_by.as_deref(), Some("missing"));
         assert_eq!(after[1..], legacy[1..]);
         assert_eq!(store.bot("missing").unwrap().unwrap().config.skills, ["skill-missing"]);
+    }
+
+    #[tokio::test]
+    async fn startup_skips_an_unreadable_parked_thread_and_retries_its_skill_later() {
+        use crate::hub::Hub;
+        use crate::remote::identity::Identity;
+        use crate::store::{BotConfig, Store};
+        use std::sync::Arc;
+
+        const SKILL_DESCRIPTION: &str = "sample private skill instructions";
+        const ARCHIVE_PATH: &str = "/sample/private-archive";
+
+        #[derive(Clone, Default)]
+        struct Log(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.locked().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("codync-skill-adoption-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": &dir})).unwrap()
+        };
+        store.save_bot(&config("owner")).unwrap();
+        turn_on_installed_once(&store).unwrap();
+        let legacy = ["unreadable", "readable"].map(|id| {
+            let mut thread = config(&format!("thread-{id}"));
+            thread.thread_of = Some("owner".into());
+            store.save_bot(&thread).unwrap();
+            store.park_thread(&thread).unwrap();
+            Skill {
+                id: id.into(),
+                name: id.into(),
+                description: SKILL_DESCRIPTION.into(),
+                source: CUSTOM.into(),
+                written_by: Some(thread.id),
+            }
+        });
+        save(&store, "skills", &legacy).unwrap();
+
+        let hub =
+            Hub::new(store, "skill-adoption-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let log = Log::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt().with_ansi(false).with_writer(move || writer.clone()).finish();
+        let read = |store: &Store, writer: &str| {
+            if writer == "thread-unreadable" {
+                bail!("couldn't decode an archive at {ARCHIVE_PATH}: {SKILL_DESCRIPTION}");
+            }
+            store.parked_thread(writer)
+        };
+        let started =
+            PARKED_THREAD_READER.sync_scope(read, || tracing::subscriber::with_default(subscriber, || hub.start()));
+        assert!(started.is_ok(), "one parked thread read failure does not fail startup");
+        assert!(hub.has_actor("owner"));
+        let after = skills(&hub.store);
+        assert_eq!(after[0], legacy[0]);
+        assert_eq!(after[1].written_by.as_deref(), Some("owner"));
+        let enabled = || hub.store.bot("owner").unwrap().unwrap().config.skills;
+        assert_eq!(enabled(), ["readable"]);
+        let log = String::from_utf8(log.0.locked().clone()).unwrap();
+        assert!(
+            log.lines()
+                .any(|line| line.contains("WARN")
+                    && line.contains("couldn't read a parked thread during skill adoption"))
+        );
+        assert!(!log.contains(SKILL_DESCRIPTION) && !log.contains(ARCHIVE_PATH));
+
+        adopt_thread_skills(&hub.store).unwrap();
+        assert_eq!(enabled(), ["readable", "unreadable"]);
+        assert_eq!(skills(&hub.store)[0].written_by.as_deref(), Some("owner"));
+
+        hub.shutdown().await;
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

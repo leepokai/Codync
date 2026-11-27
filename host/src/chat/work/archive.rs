@@ -8,7 +8,7 @@ use super::tasks::{self, Task};
 use crate::analytics::errors::host_error;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
-use crate::store::{Archived, BotConfig, Store, now_ms};
+use crate::store::{Archived, BotConfig, Store, UnparkError, now_ms};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -142,9 +142,13 @@ pub(super) fn forget(hub: &Hub, bot: &str) {
 
 /// Parked thread `id` goes for good, as a thread bot does (`Hub::delete_bot`).
 fn delete_parked(hub: &Hub, id: &str) {
-    let deleted = hub.store.unpark_thread(id).and_then(|_| hub.delete_bot(id));
-    if let Err(error) = deleted {
-        tracing::warn!(thread = id, error = format!("{error:#}"), "couldn't remove an old thread");
+    finish_parked_deletion(hub, id, hub.store.unpark_thread(id).map(|_| ()));
+}
+
+fn finish_parked_deletion(hub: &Hub, id: &str, unparked: Result<(), UnparkError>) {
+    let deleted = unparked.map_err(UnparkError::category).and_then(|()| hub.delete_bot(id).map_err(|_| "delete"));
+    if let Err(category) = deleted {
+        tracing::warn!(thread = id, category, "couldn't remove an old thread");
     }
 }
 
@@ -158,32 +162,28 @@ pub fn prune(hub: &Hub) {
 /// The threads that last ended longer ago than the user keeps them go, with their transcripts and own folders;
 /// whether any went.
 fn delete_old(hub: &Hub) -> bool {
+    delete_old_with(hub, |data| serde_json::from_str(data))
+}
+
+fn delete_old_with(hub: &Hub, decode: impl Fn(&str) -> serde_json::Result<Task>) -> bool {
     let days = keep_days(&hub.store);
     if days == 0 {
         return false;
     }
     let before = now_ms() - i64::from(days) * DAY_MS;
-    let old = match hub.store.drop_archived_before(before) {
-        Ok(old) => old,
-        Err(error) => {
-            host_error!(hub, "couldn't delete old threads", error = format!("{error:#}"));
-            return false;
-        }
+    let Ok(expired) = hub.store.drop_archived_before(before, decode) else {
+        host_error!(hub, "couldn't delete old threads", category = "storage");
+        return false;
     };
-    if old.is_empty() {
+    super::plain::forget_folders(&expired.tasks);
+    super::worktree::leave(&expired.tasks);
+    for (id, unparked) in expired.threads {
+        finish_parked_deletion(hub, &id, unparked);
+    }
+    if expired.tasks.is_empty() {
         return false;
     }
-    let tasks: Vec<Task> = old.iter().filter_map(|a| read(&a.data)).collect();
-    super::plain::forget_folders(&tasks);
-    super::worktree::leave(&tasks);
-    let threads: BTreeSet<&str> = tasks.iter().filter_map(|t| t.thread.as_deref()).collect();
-    for thread in threads {
-        // A thread that worked a later task stays with it.
-        if !hub.store.thread_archived(thread).unwrap_or(true) && hub.store.bot(thread).ok().flatten().is_none() {
-            delete_parked(hub, thread);
-        }
-    }
-    let count = tasks.len();
+    let count = expired.tasks.len();
     tracing::info!(count, days, "deleted old threads");
     let properties = json!({"count": count, "days": days});
     analytics::capture(hub, Event::ThreadsDeleted, properties.as_object().cloned().unwrap_or_default());
@@ -378,6 +378,89 @@ mod tests {
         assert!(told().is_empty(), "nothing deleted, nothing said");
     }
 
+    #[tokio::test]
+    async fn prune_keeps_failed_threads_retryable_while_removing_the_others() {
+        use crate::LockExt;
+        use std::sync::Mutex;
+
+        const READ: &str = "thread-a-read";
+        const DECODE: &str = "thread-b-decode";
+        const CONFIG: &str = "synthetic private archive config";
+        const DETAIL: &str = "synthetic private unpark error";
+        const SKILL: &str = "synthetic private skill description";
+
+        #[derive(Clone, Default)]
+        struct Log(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.locked().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let hub = ended_thread(40);
+        let template = tasks::load(&hub.store, "b1").pop().expect("an ended task");
+        let cases = [("read-task", READ, "storage"), ("decode-task", DECODE, "decode")];
+        let mut skills = Vec::new();
+        for (task, thread, _) in cases {
+            let cfg = BotConfig { thread_of: Some("b1".into()), ..bot(thread, CONFIG, "/tmp/work") };
+            hub.store.save_bot(&cfg).expect("saved");
+            hub.store.set_session(thread, Some(task)).expect("a session");
+            hub.store.insert_entry(&Lane::main(thread), EntryKind::Agent, 1, &json!({"text": CONFIG})).expect("a step");
+            let task = Task { id: task.into(), thread: Some(thread.into()), ..template.clone() };
+            put(&hub, "b1", std::slice::from_ref(&task), &[]).expect("archived");
+            skills.push(
+                json!({"id": task.id, "name": task.id, "description": SKILL, "source": "custom", "writtenBy": thread}),
+            );
+        }
+        hub.store.kv_set("skills", &json!(skills).to_string()).expect("legacy skills");
+        let authors = crate::market::skills(&hub.store);
+        assert_eq!(
+            authors.iter().map(|skill| skill.written_by.as_deref()).collect::<Vec<_>>(),
+            [Some(READ), Some(DECODE)]
+        );
+        super::super::age(&hub, "b1");
+        hub.store.kv_set(KEEP_DAYS, "30").expect("expire old threads");
+        let archived = |task| hub.store.archived_task("b1", task).expect("archive read");
+        let originals = cases.map(|(task, _, _)| archived(task).expect("the archived task"));
+
+        let log = Log::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt().with_ansi(false).with_writer(move || writer.clone()).finish();
+        Store::with_unpark_failures(READ, DECODE, DETAIL, || {
+            tracing::subscriber::with_default(subscriber, || prune(&hub));
+        });
+
+        assert!(archived("t1").is_none());
+        assert!(hub.store.parked_thread(THREAD).expect("read").is_none());
+        assert!(hub.store.history(THREAD, i64::MAX, 10).expect("read").is_empty());
+        assert_eq!(crate::market::skills(&hub.store), authors);
+        let log = String::from_utf8(log.0.locked().clone()).expect("log");
+        assert!([CONFIG, DETAIL, SKILL].iter().all(|marker| !log.contains(marker)));
+        for ((task, thread, category), original) in cases.into_iter().zip(originals) {
+            assert!(log.lines().any(|line| line.contains("couldn't remove an old thread")
+                && line.contains(&format!("thread={thread:?}"))
+                && line.contains(&format!("category={category:?}"))));
+            assert_eq!(archived(task).as_deref(), Some(original.as_str()));
+            assert!(hub.store.bot(thread).expect("read").is_none());
+            assert!(hub.store.parked_thread(thread).expect("read").is_some());
+            assert_eq!(hub.store.history(thread, i64::MAX, 10).expect("read").len(), 1);
+            bring_back(&hub, "b1", task).expect("restore the archived thread after a transient failure");
+            let restored = hub.store.bot(thread).expect("read").expect("restored thread bot");
+            assert_eq!(restored.session_id.as_deref(), Some(task));
+        }
+        crate::market::adopt_thread_skills(&hub.store).expect("adopt the skills after recovery");
+        assert_eq!(
+            crate::market::skills(&hub.store).iter().map(|skill| skill.written_by.as_deref()).collect::<Vec<_>>(),
+            [Some("b1"), Some("b1")]
+        );
+    }
+
     #[test]
     fn a_thread_back_from_the_archive_goes_on_in_its_session() {
         let hub = ended_thread(10);
@@ -442,5 +525,96 @@ mod tests {
         assert!(hub.store.parked_thread(THREAD).expect("read").is_none());
         assert_eq!(hub.store.archived_before(None, i64::MAX, 10).expect("read").len(), 0);
         assert_eq!(hub.store.history(THREAD, i64::MAX, 10).expect("read").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn prune_keeps_threads_with_unreadable_tasks_until_they_can_be_read() {
+        use crate::LockExt;
+        use std::sync::Mutex;
+
+        const MIXED: &str = "thread-mixed";
+        const EXPIRED: &str = "thread-expired";
+        const BODY: &str = "synthetic private task body";
+        const DETAIL: &str = "synthetic private task decoder detail";
+
+        #[derive(Clone, Default)]
+        struct Log(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.locked().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let hub = ended_thread(40);
+        hub.store.set_session(THREAD, Some("original-session")).expect("a session");
+        let template = tasks::load(&hub.store, "b1").pop().expect("an ended task");
+        super::super::age(&hub, "b1");
+        for (thread, ids) in [(MIXED, &["mixed-good", "mixed-bad"][..]), (EXPIRED, &["expired-good"][..])] {
+            let cfg = BotConfig { thread_of: Some("b1".into()), ..bot(thread, "Mika", "/tmp/work") };
+            hub.store.save_bot(&cfg).expect("saved");
+            hub.store.set_session(thread, Some(thread)).expect("a session");
+            hub.store.insert_entry(&Lane::main(thread), EntryKind::Agent, 1, &json!({"text": BODY})).expect("a step");
+            let tasks = ids
+                .iter()
+                .map(|id| Task {
+                    id: (*id).into(),
+                    title: BODY.into(),
+                    thread: Some(thread.into()),
+                    ..template.clone()
+                })
+                .collect::<Vec<_>>();
+            put(&hub, "b1", &tasks, &[]).expect("archived");
+        }
+        let threadless = Task { id: "threadless-bad".into(), thread: None, ..template };
+        put(&hub, "b1", &[threadless], &[]).expect("archived without a thread");
+        hub.store.kv_set(KEEP_DAYS, "30").expect("expire old threads");
+        let archived = |task| hub.store.archived_task("b1", task).expect("archive read");
+        let kept = ["t1", "mixed-good", "mixed-bad", "threadless-bad"];
+        let originals = kept.map(|id| archived(id).expect("an archived task"));
+
+        let log = Log::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt().with_ansi(false).with_writer(move || writer.clone()).finish();
+        assert!(tracing::subscriber::with_default(subscriber, || {
+            delete_old_with(&hub, |data| {
+                let task: Task = serde_json::from_str(data)?;
+                if ["t1", "mixed-bad", "threadless-bad"].contains(&task.id.as_str()) {
+                    return Err(serde::de::Error::custom(DETAIL));
+                }
+                Ok(task)
+            })
+        }));
+
+        let log = String::from_utf8(log.0.locked().clone()).expect("log");
+        assert!(!log.contains(BODY) && !log.contains(DETAIL));
+        let warnings = log.lines().filter(|line| {
+            line.contains("couldn't read an expired archived task") && line.contains("category=\"decode\"")
+        });
+        assert_eq!(warnings.count(), 3);
+        assert_eq!(kept.map(archived), originals.map(Some));
+        let history = |id| hub.store.history(id, i64::MAX, 10).expect("transcript read");
+        for id in [THREAD, MIXED] {
+            assert!(hub.store.parked_thread(id).expect("valid configuration").is_some());
+            assert!(hub.store.bot(id).expect("bot read").is_none());
+            assert_eq!(history(id).len(), 1);
+        }
+        assert!(archived("expired-good").is_none());
+        assert!(hub.store.parked_thread(EXPIRED).expect("parked read").is_none());
+        assert!(history(EXPIRED).is_empty());
+
+        bring_back(&hub, "b1", "t1").expect("restore after a transient failure");
+        let restored = hub.store.bot(THREAD).expect("bot read").expect("restored thread");
+        assert_eq!(restored.session_id.as_deref(), Some("original-session"));
+        prune(&hub);
+        assert_eq!(kept.map(archived), [None, None, None, None]);
+        assert!(hub.store.parked_thread(MIXED).expect("parked read").is_none());
+        assert!(history(MIXED).is_empty());
+        assert_eq!(history(THREAD).len(), 1);
     }
 }

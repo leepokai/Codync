@@ -68,10 +68,10 @@ impl Routines {
         let set = agent_bot(hub, bot)
             .and_then(|_| own_chat(hub, caller))
             .and_then(|()| self.add_follow_up(&hub.store, bot, minutes, note, chain));
-        // A routine's run waits on its own task: only the chat's turns are told about the tasks reporting there.
+        // A run in a thread of its own waits on its own task: only the chat's turns hear of the tasks reporting there.
         let reporting = if caller == bot { crate::chat::work::reporting(&hub.store, bot) } else { Vec::new() };
         let properties = json!({"outcome": kept::outcome(&set, "set"), "minutes": minutes.clamp(0, MAX_MINUTES),
-            "chain": chain, "tasksUnderWay": !reporting.is_empty()});
+            "chain": chain, "tasksUnderWay": set.is_ok() && !reporting.is_empty()});
         analytics::capture(hub, Event::FollowUpSet, properties.as_object().cloned().unwrap_or_default());
         let follow_up = set?;
         notice(hub, bot, &format!("Follow-up in {}: {}", in_words(minutes), shown(&follow_up.note)));
@@ -253,8 +253,9 @@ fn tasks_hint(reporting: &[(String, String)]) -> Option<String> {
     let tasks: Vec<String> = reporting.iter().map(|(id, title)| format!("\"{title}\" ({id})")).collect();
     Some(format!(
         "Set. You have tasks under way: {}. Each one's report comes to you in this chat when it ends, and Codync's \
-         watchdog wakes you if one looks stuck. If this follow-up only waits for or checks on them, cancel it with \
-         cancel_follow_up; keep it if the user asked you to check back then, or it is about something outside Codync.",
+         watchdog wakes you if one loops, keeps failing or stalls between tool calls. If this follow-up only waits \
+         for or checks on them, cancel it with cancel_follow_up; keep it if the user asked you to check back then, or \
+         it is about something outside Codync.",
         tasks.join(", ")
     ))
 }
@@ -423,13 +424,16 @@ mod tests {
     #[test]
     fn a_follow_up_set_while_the_bots_own_tasks_are_under_way_names_them() {
         let (hub, _) = hub();
-        assert!(crate::chat::work::reporting(&hub.store, "bot").is_empty());
-        assert_eq!(tasks_hint(&[]), None, "nothing to wait on: no hint");
+        hub.store.save_bot(&crate::chat::calls::context::tests::bot("bot", "Mika", "/tmp")).expect("saved");
+        let routines = Routines::default();
+        let args = json!({"minutes": 5, "note": "Check the deploy"});
+        let hint = |caller: &str| routines.follow_up(&hub, "bot", caller, &args).expect("set").get("hint").cloned();
+        assert_eq!(hint("bot"), None, "nothing under way");
         crate::chat::work::put_working_for_test(&hub.store, "bot", "thread-1");
-        let reporting = crate::chat::work::reporting(&hub.store, "bot");
-        assert_eq!(reporting, [("i1".to_owned(), "Work".to_owned())]);
-        let hint = tasks_hint(&reporting).expect("a hint");
-        assert!(hint.contains("\"Work\" (i1)") && hint.contains("cancel_follow_up"), "{hint}");
+        let named = hint("bot").expect("a hint");
+        let named = named.as_str().unwrap_or_default();
+        assert!(named.contains("\"Work\" (i1)") && named.contains("cancel_follow_up"), "{named}");
+        assert_eq!(hint("thread-1"), None, "a run in a thread of its own");
     }
 
     #[test]

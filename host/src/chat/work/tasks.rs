@@ -720,6 +720,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_the_bots_own_tasks_still_to_come_report_to_its_chat() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let tasks = json!([
+            {"id": "a", "title": "Mine", "brief": "x", "status": "working", "order": 1, "createdAt": 1},
+            {"id": "b", "title": "Reported", "brief": "x", "status": "done", "order": 2, "createdAt": 1},
+            {"id": "c", "title": "Run", "brief": "x", "status": "waiting", "order": 3, "createdAt": 1,
+                "source": {"kind": "routine", "id": "r", "run": "1"}},
+        ]);
+        hub.store.kv_set(&key("b1"), &tasks.to_string()).expect("saved");
+        assert_eq!(reporting(&hub.store, "b1"), [("a".to_owned(), "Mine".to_owned())]);
+    }
+
+    #[test]
     fn a_task_works_in_its_folder_else_the_default_project_else_where_the_bot_lives() {
         let bot: BotConfig = serde_json::from_value(
             json!({"id": "b", "name": "B", "backend": "claude", "cwd": "/home", "projects": ["/p1", "/p2"]}),

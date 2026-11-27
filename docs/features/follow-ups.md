@@ -23,7 +23,8 @@ On the built-in `routines` MCP server every agent has:
   doesn't reliably know what time it is. The answer has the follow-up (`id`, `at`) and `atLocal`, the time on the
   computer's clock, for the bot to tell the user. Set from a turn of the bot's own chat while some of its own
   tasks are under way (`add_task`'s, waiting or working: `work::reporting`), it also has a `hint` naming them:
-  their reports come to the chat by themselves and the watchdog catches a stuck one, so a follow-up that only waits
+  their reports come to the chat by themselves and the watchdog wakes the bot on a task that loops, keeps failing or
+  stalls between tool calls, so a follow-up that only waits
   on them should be cancelled ([below](#not-for-the-bots-own-tasks)).
 - `cancel_follow_up {id}`. The user's own cancel, from the bot's Details, is the host method `cancelFollowUp`
   ([below](#in-details)).
@@ -38,13 +39,14 @@ isn't a read or an answer to the user): its later turn would act on the sender's
 
 The server's instructions tell the bot to set one when something in its own chat needs another look later and
 won't say when it changes (the user asked it to check back at a time, a build or deploy outside Codync, a reply
-someone owes), never for a task it started, never to say it will check back without setting one, and to use a
+someone owes), not for a task it started, never to say it will check back without setting one, and to use a
 routine for anything recurring.
 
 ### Not for the bot's own tasks
 
 A task the bot added reports back by itself: its report is a turn in the chat when its thread's turn ends
-([report](work.md#report)), and one that gets stuck wakes the bot ([watchdog](work.md#watchdog)). A follow-up to
+([report](work.md#report)), and one that loops, keeps failing or stalls between tool calls wakes the bot
+([watchdog](work.md#watchdog); a tool call that hangs isn't flagged). A follow-up to
 wait for it is polling: it comes at a guessed time, finds the task still working or already reported, and spends
 a turn on nothing. So every place that tells a bot about follow-ups says not to set one for its own task
 (`routines::BRIEF`, the server's instructions, `follow_up`'s description, `work::BRIEF`, `add_task`'s
@@ -52,8 +54,9 @@ description and answer), and keeps the exception: the user asked it to check bac
 
 The host doesn't refuse one: it can't tell a follow-up on a task from one the user asked for, or one on something
 outside Codync that a task started (a deploy, a CI run). It sets it, and its answer carries the `hint` above while
-the bot has tasks of its own under way, so the bot can cancel one it set only to wait. A routine's run setting one
-gets no hint: its own task is the run itself.
+the bot has tasks of its own under way, so the bot can cancel one it set only to wait. A routine's run in a thread
+of its own gets no hint (its own task is the run itself); one run as a turn of the bot's chat (a `computer` or team
+bot's) is told like any other turn there.
 
 The bot's own instructions say it too (`routines::BRIEF` in the snapshot, `chat/context.rs`), and name what not to
 use: the engine's own wake-ups, timers, loops, sleeps and cron. Without that line a model reaches for them first.
@@ -147,8 +150,8 @@ already read that listing every three seconds.
 
 ## Analytics
 
-`follow_up_set` (`outcome`, `minutes`, `chain`, `tasksUnderWay`: the bot had tasks of its own under way, so the answer
-had the hint), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`; the
+`follow_up_set` (`outcome`, `minutes`, `chain`, `tasksUnderWay`: it was set while the bot had tasks of its own under way,
+so the answer had the hint), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`; the
 user's comes from `api::dispatch` like every API call, so it also says which app), and
 `turn_finished` with `source: follow_up` for how the turn went:
 [analytics events](../reference/analytics-events.md).

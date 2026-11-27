@@ -869,7 +869,8 @@ aren't watched: their result has an owner other than the bot's chat. What it fla
 
 A thread that waits on the user (a card, a sign-in) is never flagged otherwise, nor is one between turns.
 
-This is what makes a follow-up on a task needless: the bot hears of a stuck one without asking.
+This is what makes a follow-up on a task needless: the bot hears of a stuck one without asking. A tool call that
+hangs (`pending` or `in_progress` for good) isn't flagged: the turn has a call running, so it is never quiet.
 
 **The wake-up.** On `looping`, `failing` or `quiet` the bot gets a host turn in its own chat (`Cmd::Watchdog`,
 `HostTurn::Watchdog`), queued behind the user's messages as a report is: `[Codync watchdog] Task "<title>" (<id>)

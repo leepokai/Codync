@@ -122,13 +122,19 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var seat: Bool?
     /// The agent a thread the user started runs on, where it isn't its bot's (always without a bot); nil for the bot's.
     public var agent: String?
+    /// The agent its thread runs on now, or ran on last (a backend id); nil before a thread took it, and from an older host.
+    public var runsOn: String?
+
+    /// The agent its thread runs on, or will: its own, else the one it was started on, else `bot`'s (none for the box
+    /// of threads without a bot).
+    public func agent(of bot: Bot) -> String? { runsOn ?? agent ?? (bot.plain ? nil : bot.backend) }
 
     /// Where its thread works on the computer: its folder, else its worktree's; nil when the host names neither.
     public var wherePath: String? { [folder, worktree?.path].compactMap(\.self).first { !$0.isEmpty } }
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil, runsOn: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -147,6 +153,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.folder = folder
         self.seat = seat
         self.agent = agent
+        self.runsOn = runsOn
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -172,6 +179,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
         seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
         agent = try? c.decodeIfPresent(String.self, forKey: .agent)
+        runsOn = (try? c.decodeIfPresent(String.self, forKey: .runsOn)).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.

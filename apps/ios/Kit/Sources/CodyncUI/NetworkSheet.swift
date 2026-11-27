@@ -50,7 +50,7 @@ public struct NetworkSheet: View {
                 if let sessions = store.network?.sessions, !sessions.isEmpty {
                     // In the host's order: running first, then the most recent.
                     let older = sessions.filter { $0.older == true }
-                    CardSection("Coding agents", footer: "Bots and other coding agents message these sessions at their address; each reads its mail itself.") {
+                    CardSection("Agents", footer: "Bots and other agents message these sessions at their address; each reads its mail itself.") {
                         ForEach(sessions.filter { $0.older != true }) { NetworkSessionRow(session: $0) }
                         if !older.isEmpty {
                             Disclosure(isExpanded: $showOlder) {

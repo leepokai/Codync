@@ -500,11 +500,11 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     let shown = shown(hub, cfg);
     // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::free_seats`).
     let mut lent = false;
-    // Where each thread works: a worktree's folder, or the bot's as it was when the thread began.
-    let folders: HashMap<String, String> = if shown.is_empty() {
+    // Each thread: where it works (a worktree's folder, or the bot's as it was when the thread began) and on what agent.
+    let threads: HashMap<String, BotConfig> = if shown.is_empty() {
         HashMap::new()
     } else {
-        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id, thread.cwd)).collect()
+        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id.clone(), thread)).collect()
     };
     Value::Array(
         shown
@@ -517,14 +517,26 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                         Status::NeedsYou => std::mem::replace(&mut lent, true),
                         _ => false,
                     };
-                let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
-                row(task, status, &activity, wait, seat, cwd)
+                let thread = task.thread.as_ref().and_then(|thread| threads.get(thread));
+                // A task waiting for its thread already knows the agent that thread will start on.
+                let runs_on = thread.map_or_else(
+                    || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
+                    |t| agent_of(&hub.store, t),
+                );
+                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on))
             })
             .collect(),
     )
 }
 
-/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot when it has one.
+/// The agent `thread` runs on now, else the one it ran on last (a backend id): the fallback it is on or ended on, else
+/// its own.
+pub(super) fn agent_of(store: &Store, thread: &BotConfig) -> String {
+    crate::agent::fallback::effective(thread, crate::agent::bot::kept_step(store, thread)).backend
+}
+
+/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot and `runs_on` the agent
+/// its thread runs on (or will), when known.
 pub(super) fn row(
     task: Task,
     status: Status,
@@ -532,6 +544,7 @@ pub(super) fn row(
     wait: Option<Wait>,
     seat: bool,
     cwd: Option<&String>,
+    runs_on: Option<String>,
 ) -> Value {
     let folder = folder_of(&task, cwd);
     let writable = task.source.own() && cwd.is_some();
@@ -548,6 +561,9 @@ pub(super) fn row(
     });
     if let Some(folder) = folder {
         row["folder"] = folder.clone().into();
+    }
+    if let Some(runs_on) = runs_on {
+        row["runsOn"] = runs_on.into();
     }
     if let Some(source) = task.source.wire() {
         row["source"] = source;
@@ -864,6 +880,31 @@ mod tests {
         task("stopped", json!({"endedAt": 10}));
         hub.set_runtime(&cfg.id, |r| r.status = BotStatus::Idle);
         assert_eq!(stands(), BotStatus::Idle);
+    }
+
+    #[test]
+    fn a_row_names_the_agent_its_thread_runs_on() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let mut cfg = crate::chat::calls::context::tests::bot("b-agent", "Mika", "/tmp");
+        let mut thread = crate::chat::calls::context::tests::bot("thread-a", "Mika", "/tmp");
+        thread.thread_of = Some(cfg.id.clone());
+        thread.backend = "claude".into();
+        thread.fallbacks = vec![crate::store::Fallback { backend: "codex".into(), ..Default::default() }];
+        hub.store.save_bot(&cfg).expect("saved");
+        hub.store.save_bot(&thread).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-a"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let runs_on = || wire(&hub, &cfg)[0]["runsOn"].clone();
+        assert_eq!(runs_on(), "claude", "its own agent");
+        // On its fallback, as the actor keeps it: still so once the thread's actor and its runtime are gone.
+        hub.store.kv_set("fallback.on.thread-a", &crate::agent::fallback::login(&thread, 1)).expect("saved");
+        assert_eq!(runs_on(), "codex", "the fallback it switched to");
+        // Waiting for a seat, without a thread yet: the agent its thread will start on, in Advisor mode the threads'.
+        cfg.thread_agent = Some(crate::store::Fallback { backend: "gemini".into(), ..Default::default() });
+        let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
     }
 
     #[test]

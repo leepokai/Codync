@@ -5,7 +5,7 @@ type View = { networks: { id: string; name: string; rules: unknown[] }[]; sessio
 
 // A coding agent's session registers on its first call (agentCall, as `codync-host mcp network` sends it).
 const whoami = (session: string, kind: string) => ({
-  agent: { kind, session, process: '1-e2e', cwd: '/work/api', hint: null },
+  agent: { kind, session, process: '1-e2e', cwd: '/work/api' },
   name: 'whoami',
   arguments: {},
 })
@@ -22,7 +22,7 @@ test("the Network page lists this computer's coding agents, and a rule can only 
 
     await openPage(page, 'Network')
     const dialog = appPage(page)
-    await expect(dialog.getByText('Coding agents', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Agents', { exact: true })).toBeVisible()
     const row = dialog.locator('.settings-row', { hasText: codex.address })
     await expect(row).toContainText('Checks its mail')
     if (process.env.SHOT) await dialog.screenshot({ path: process.env.SHOT })

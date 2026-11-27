@@ -33,13 +33,18 @@ pub fn keep_days(store: &Store) -> u32 {
 }
 
 /// The user's choice: 0 keeps threads for good, else a week to [`MOST_DAYS`] (a thread is in its box its first week).
-/// Apps connected now hear a `threadKeepDays` event, the others in their next `hello`; what is older goes now.
+/// What is older goes now; then apps connected hear a `threadKeepDays` event, the others in their next `hello`.
 pub fn set_keep_days(hub: &Arc<Hub>, days: u32) -> Result<()> {
     ensure!(days == 0 || (7..=MOST_DAYS).contains(&days), "keep threads for good (0) or 7 to {MOST_DAYS} days");
     if days == 0 { hub.store.kv_delete(KEEP_DAYS) } else { hub.store.kv_set(KEEP_DAYS, &days.to_string()) }?;
-    let _ = hub.events.send(json!({"type": "threadKeepDays", "days": days}));
-    prune(hub);
+    delete_old(hub);
+    announce(hub);
     Ok(())
+}
+
+/// The `threadKeepDays` event: apps list their older threads again, without the ones just deleted.
+fn announce(hub: &Hub) {
+    let _ = hub.events.send(json!({"type": "threadKeepDays", "days": keep_days(&hub.store)}));
 }
 
 /// `old`, tasks leaving `bot`'s box (`left`: what stays in it), go to the archive, and the thread bots no task in the
@@ -143,22 +148,30 @@ fn delete_parked(hub: &Hub, id: &str) {
     }
 }
 
-/// The threads that last ended longer ago than the user keeps them go, with their transcripts and own folders.
+/// The threads that last ended longer ago than the user keeps them go, and apps connected list theirs again.
 pub fn prune(hub: &Hub) {
+    if delete_old(hub) {
+        announce(hub);
+    }
+}
+
+/// The threads that last ended longer ago than the user keeps them go, with their transcripts and own folders;
+/// whether any went.
+fn delete_old(hub: &Hub) -> bool {
     let days = keep_days(&hub.store);
     if days == 0 {
-        return;
+        return false;
     }
     let before = now_ms() - i64::from(days) * DAY_MS;
     let old = match hub.store.drop_archived_before(before) {
         Ok(old) => old,
         Err(error) => {
             host_error!(hub, "couldn't delete old threads", error = format!("{error:#}"));
-            return;
+            return false;
         }
     };
     if old.is_empty() {
-        return;
+        return false;
     }
     let tasks: Vec<Task> = old.iter().filter_map(|a| read(&a.data)).collect();
     super::plain::forget_folders(&tasks);
@@ -174,6 +187,7 @@ pub fn prune(hub: &Hub) {
     tracing::info!(count, days, "deleted old threads");
     let properties = json!({"count": count, "days": days});
     analytics::capture(hub, Event::ThreadsDeleted, properties.as_object().cloned().unwrap_or_default());
+    true
 }
 
 /// `olderThreads`: the ended threads of `only` bot, or of every bot on the computer, that ended before `before` (none:
@@ -219,9 +233,10 @@ pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value
     let threads: Vec<Value> = found
         .into_iter()
         .map(|(bot, task)| {
-            let cwd = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id)).map(|c| c.cwd);
+            let thread = task.thread.as_deref().and_then(|id| thread(&hub.store, &bot, id));
+            let runs_on = thread.as_ref().map(|c| tasks::agent_of(&hub.store, c));
             let status = task.status;
-            let mut row = tasks::row(task, status, "", None, false, cwd.as_ref());
+            let mut row = tasks::row(task, status, "", None, false, thread.as_ref().map(|c| &c.cwd), runs_on);
             row["botId"] = bot.into();
             row
         })
@@ -303,8 +318,14 @@ mod tests {
         let page = older(&hub, None, None).expect("a page");
         let row = &page["threads"][0];
         assert_eq!(
-            (row["botId"].as_str(), row["id"].as_str(), row["talk"].as_bool(), row["folder"].as_str()),
-            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"))
+            (
+                row["botId"].as_str(),
+                row["id"].as_str(),
+                row["talk"].as_bool(),
+                row["folder"].as_str(),
+                row["runsOn"].is_string()
+            ),
+            (Some("b1"), Some("t1"), Some(true), Some("/tmp/work"), true)
         );
         assert_eq!(page["more"], false);
         let earlier = older(&hub, Some("b1"), row["endedAt"].as_i64()).expect("the next page");
@@ -340,6 +361,21 @@ mod tests {
         assert!(hub.store.parked_thread(THREAD).expect("read").is_none());
         set_keep_days(&hub, 0).expect("forever again");
         assert_eq!(keep_days(&hub.store), 0);
+    }
+
+    #[tokio::test]
+    async fn the_daily_look_tells_apps_when_it_deleted_threads() {
+        let hub = ended_thread(40);
+        super::super::age(&hub, "b1");
+        hub.store.kv_set(KEEP_DAYS, "30").expect("kept 30 days");
+        let mut events = hub.events.subscribe();
+        let mut told = || {
+            std::iter::from_fn(|| events.try_recv().ok()).filter(|e| e["type"] == "threadKeepDays").collect::<Vec<_>>()
+        };
+        prune(&hub);
+        assert_eq!(told(), [json!({"type": "threadKeepDays", "days": 30})]);
+        prune(&hub);
+        assert!(told().is_empty(), "nothing deleted, nothing said");
     }
 
     #[test]

@@ -23,6 +23,7 @@ struct WorkflowsTab: View {
                 if let store {
                     let link = app.pendingWorkflow?.computerId == store.computer.id ? app.pendingWorkflow : nil
                     WorkflowsView(opened: $opened, pendingWorkflowId: link?.workflowId, pendingRunId: link?.runId,
+                                  pendingStepId: link?.stepId,
                                   pendingToken: link?.workflowId == nil ? nil : link?.token, query: query)
                         .environment(store)
                         .id("\(store.computer.id)#\(app.workflowEpoch)")

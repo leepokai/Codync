@@ -191,7 +191,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveThreads(batch)
             batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
             batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
-            batch.filterIsInstance<MirrorEvent.ThreadKeepDays>().lastOrNull()?.let { showThreadKeepDays(it.days) }
+            batch.filterIsInstance<MirrorEvent.ThreadKeepDays>().lastOrNull()?.let { heardThreadKeepDays(it.days) }
             receiveWorkflows(batch)
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
@@ -244,7 +244,7 @@ private fun AppStore.noteHello(hello: JsonObject) {
     mutableState.update {
         val same = it.hello?.text("version") == hello.text("version")
         // Its older threads are read again from this hello's computer.
-        it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same }, olderThreads = null)
+        it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same }).droppingOlderThreads()
     }
     val offered = hello["workflows"]?.jsonPrimitive?.booleanOrNull == true
     if (!offered) {

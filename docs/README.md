@@ -24,6 +24,9 @@ Source review, a passing build, local integration tests and production acceptanc
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
+| Test on a real second computer (build and install Codync Dev on the Mac mini) | [Mac mini testing](guides/mac-mini-testing.md) |
+| Test codync-network locally (crate tests and two daemons, Mac and Lima VM) | [codync-network testing](guides/codync-network-testing.md) |
+| Triage issues and PRs against the roadmap | [Roadmap maintenance](guides/roadmap-maintenance.md) |
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
 | Change what bots on other computers may do here (codync-network rules) | [codync-network](features/codync-network.md#ceilings-auto-and-ask), [network request risks](reference/network-request-risks.md) |

@@ -2,7 +2,7 @@
 
 #![allow(clippy::needless_pass_by_value)]
 
-use super::model::Graph;
+use super::model::{Graph, StepStatus};
 use super::outline::{self, EditMode};
 use super::run;
 use super::store::{self, Saved};
@@ -244,6 +244,11 @@ impl Workflows {
         run::run_solo(hub, id, node, request)
     }
 
+    pub fn step(&self, hub: &Hub, step_id: &str) -> Result<Value> {
+        let _gate = self.gate.locked();
+        run::step_value(hub, step_id)
+    }
+
     pub fn stop_step(&self, hub: &Hub, step_id: &str) -> Result<Value> {
         let _gate = self.gate.locked();
         run::stop_one(hub, step_id)?;
@@ -329,35 +334,40 @@ pub fn start(hub: &Arc<Hub>) {
 
 fn decide_locked(hub: &Hub, step_id: &str, approved: bool) -> Result<Option<String>> {
     let now = now_ms();
-    let placed: Option<(Option<String>, String)> = hub.store.with_immediate(|tx| {
-        if approved {
-            tx.execute(
-                "UPDATE workflow_steps SET status = 'done', output = input, ended_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'approval'",
-                params![step_id, now],
-            )?;
-        }
-        Ok(tx
-            .query_row("SELECT run_id, workflow_id FROM workflow_steps WHERE id = ?1", [step_id], |r| {
-                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
+    let placed: Option<(Option<String>, String, Option<StepStatus>)> = hub.store.with_immediate(|tx| {
+        let Some((run_id, workflow, status)) = tx
+            .query_row("SELECT run_id, workflow_id, status FROM workflow_steps WHERE id = ?1", [step_id], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
             })
-            .optional()?)
-    })?;
-    let Some((run_id, workflow)) = placed else { bail!("This step was deleted") };
-    let Some(run_id) = run_id else {
-        if !approved {
-            hub.store.with_immediate(|tx| {
-                Ok(tx.execute(
-                    "UPDATE workflow_steps SET status = 'stopped', ended_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'approval'",
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let status = StepStatus::parse(&status);
+        if status == Some(StepStatus::Approval) {
+            if approved {
+                tx.execute(
+                    "UPDATE workflow_steps SET status = 'done', output = input, ended_at = ?2, updated_at = ?2 WHERE id = ?1",
                     params![step_id, now],
-                )?)
-            })?;
+                )?;
+            } else if run_id.is_none() {
+                tx.execute(
+                    "UPDATE workflow_steps SET status = 'stopped', ended_at = ?2, updated_at = ?2 WHERE id = ?1",
+                    params![step_id, now],
+                )?;
+            }
         }
-        hub.emit_workflow(json!({
-            "type": "workflow", "change": "step",
-            "workflowId": workflow, "runId": Value::Null, "stepId": step_id,
-        }));
-        return Ok(None);
-    };
+        Ok(Some((run_id, workflow, status)))
+    })?;
+    let Some((run_id, workflow, status)) = placed else { bail!("This step was deleted") };
+    // Only a step still waiting takes an answer: a late one (a second device, a stale card) changes nothing, except
+    // that approving an approved step moves its run on again, so an approval whose follow-up failed can be resent.
+    let waiting = status == Some(StepStatus::Approval);
+    if !waiting || run_id.is_none() {
+        run::emit_step(hub, &workflow, run_id.as_deref(), step_id);
+    }
+    let resent = approved && status == Some(StepStatus::Done);
+    let Some(run_id) = run_id.filter(|_| waiting || resent) else { return Ok(None) };
     if !approved {
         stop_locked(hub, &run_id)?;
         return Ok(None);
@@ -398,23 +408,25 @@ fn recover(hub: &Arc<Hub>) -> Result<()> {
             run::dispatch_pushes(hub, &effects);
             let started = effects.agents.clone();
             run::dispatch_agents(hub, &run::Effects { agents: started.clone(), pushes: Vec::new() });
-            scripts.extend(resume_open(hub, &run_id, &started)?);
+            scripts.extend(resume_open(hub, Some(&run_id), &started)?);
         }
+        scripts.extend(resume_open(hub, None, &[])?);
         scripts
     };
     for run_id in scripts {
         super::script_run::replay(hub, &run_id)?;
-        for again in resume_open(hub, &run_id, &[])? {
+        for again in resume_open(hub, Some(&run_id), &[])? {
             super::script_run::replay(hub, &again)?;
         }
     }
     Ok(())
 }
 
-fn resume_open(hub: &Hub, run_id: &str, started: &[(String, String)]) -> Result<Vec<String>> {
+/// `run_id` None: the steps run on their own ("Run this step"), outside any run.
+fn resume_open(hub: &Hub, run_id: Option<&str>, started: &[(String, String)]) -> Result<Vec<String>> {
     let open = hub.store.with_immediate(|tx| {
         let mut st = tx.prepare(
-            "SELECT id, COALESCE(bot_id, ''), started_at FROM workflow_steps WHERE run_id = ?1 AND kind = 'agent' AND status = 'running'",
+            "SELECT id, COALESCE(bot_id, ''), started_at FROM workflow_steps WHERE run_id IS ?1 AND kind = 'agent' AND status = 'running'",
         )?;
         let rows = st
             .query_map([run_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?)))?

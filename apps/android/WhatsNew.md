@@ -10,9 +10,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.55.0
 ### zh-Hant
 - 由其他 App 透過 MCP 開始的 thread（例如電腦上的 coding agent 或雲端助理），會在標題下方標示是哪個 App，例如「由 Cursor 啟動（MCP）」。這些 App 在電腦版的「電腦」裡的「MCP 存取」設定，核准一律留給你在 Codync 裡處理。
+- 手機也能看到哪些 App 可以透過 MCP 使用你的電腦：在「管理電腦」裡該電腦的「MCP 存取」可以看到每個 App 的等級和到期日，並直接撤銷，它的權杖會立刻失效。新增 App 和調整權限仍在電腦上進行。
 
 ### en-US
 - A thread another app started over MCP (a coding agent on your computer, or a cloud assistant) says which app under its title, for example "Started by Cursor (MCP)". You set what these apps may do under MCP access on the desktop's Computers page; approvals always stay with you in Codync.
+- See which apps may use your computer over MCP from your phone: MCP access under the computer in Manage computers lists each app with its level and expiry, and revokes one right away. Adding apps and changing what they may do stays on the computer.
 
 ## 2.54.0
 ### zh-Hant

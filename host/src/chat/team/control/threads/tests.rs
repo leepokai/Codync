@@ -312,4 +312,35 @@ async fn an_app_never_ends_or_reruns_the_owners_work_nor_goes_past_its_live_thre
     assert_eq!(refused(&hub, &full, "thread_steer", retry).await, Code::RateLimited);
     let send = json!({"botId": "b1", "taskId": "ended", "message": "again"});
     assert_eq!(refused(&hub, &full, "thread_send", send).await, Code::RateLimited);
+    // A retry of a message it sent already sends nothing, so the limit doesn't stop it: it gets that message back.
+    let nonce = calls::request_key(&full, "thread_send", "k1");
+    let first = hub
+        .add_entry(&Lane::main("thread-e"), EntryKind::User, 1, &json!({"text": "again", "clientNonce": nonce}))
+        .unwrap();
+    let retry = json!({"botId": "b1", "taskId": "ended", "message": "again", "clientRequestId": "k1"});
+    let replayed = call(&hub, &full, "thread_send", &retry).await.unwrap();
+    assert_eq!((&replayed["entryId"], &replayed["replayed"]), (&json!(first.id), &json!(true)));
+}
+
+#[tokio::test]
+async fn thread_wait_sees_progress_on_any_entry_not_only_the_newest() {
+    let hub = hub();
+    hub.store.save_bot(&bot_cfg("b1")).unwrap();
+    put_task(&hub, "b1", "mine", "thread-w", Some(("a", Level::Ask)), json!({}));
+    let a = app("a", Level::Ask, &[Scope::Threads]);
+    let lane = Lane::main("thread-w");
+    let earlier = hub.add_entry(&lane, EntryKind::Tool, 1, &json!({"title": "npm test", "status": "running"})).unwrap();
+    hub.add_entry(&lane, EntryKind::Tool, 1, &json!({"title": "cargo test", "status": "running"})).unwrap();
+    let wait = json!({"botId": "b1", "taskId": "mine", "timeoutSecs": 0});
+    let before = call(&hub, &a, "thread_wait", &wait).await.unwrap()["cursor"].clone();
+    // The earlier of two tools running together moves on; the newest entry stays as it was.
+    hub.edit_entry(&earlier.id, |e| {
+        e.data["status"] = "done".into();
+        Ok(true)
+    })
+    .unwrap();
+    let after = call(&hub, &a, "thread_wait", &wait).await.unwrap()["cursor"].clone();
+    assert_ne!(before, after, "the cursor changes with any entry");
+    let since = json!({"botId": "b1", "taskId": "mine", "timeoutSecs": 0, "cursor": before});
+    assert_eq!(call(&hub, &a, "thread_wait", &since).await.unwrap()["timedOut"], false, "it answers at once");
 }

@@ -146,7 +146,8 @@ struct ComputersView: View {
 }
 
 /// A computer this iPhone can use, as the rows of its card: its connection and whether it's in the account,
-/// then Extensions, Voice chat (its keys live on the computer), Screen, whether it sends push alerts here,
+/// then Extensions, Voice chat (its keys live on the computer), Screen, Network, MCP access (list and revoke),
+/// how long it keeps threads, whether it sends push alerts here,
 /// how it's reached, the Codync it runs (and its update) and, for a stale pairing, Remove.
 private struct ComputerRows: View {
     let store: BotStore
@@ -164,6 +165,7 @@ private struct ComputerRows: View {
     @State private var newName = ""
     @State private var voiceSettings = false
     @State private var networkSheet = false
+    @State private var mcpSheet = false
 
     var body: some View {
         summary
@@ -179,6 +181,11 @@ private struct ComputerRows: View {
             if showsNetwork {
                 Button { networkSheet = true } label: { RowLabel("Network", image: .codyncNetwork, chevron: true) }
                     .buttonStyle(.plain)
+            }
+            if store.hello?.mcpAccess == true {
+                Button { mcpSheet = true } label: { RowLabel("MCP access", systemImage: "key", chevron: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("computer.mcpAccess")
             }
             if store.hello?.threadKeepDays != nil { ThreadKeepRow(store: store) }
         }
@@ -254,6 +261,7 @@ private struct ComputerRows: View {
         }
         .codyncSheet(isPresented: $voiceSettings) { VoiceChatSettingsView().environment(store) }
         .codyncSheet(isPresented: $networkSheet) { NetworkSheet().environment(store) }
+        .codyncSheet(isPresented: $mcpSheet) { McpAccessSheet().environment(store) }
         .codyncOverlay(isPresented: $coloring) { close in
             ZStack {
                 Color.black.opacity(0.35).ignoresSafeArea().onTapGesture(perform: close)

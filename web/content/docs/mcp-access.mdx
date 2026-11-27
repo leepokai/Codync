@@ -23,9 +23,9 @@ Open **Computers**, then **MCP access** under the computer. There you set:
 - **Sessions on this computer:** coding agents on this computer that use Codync's MCP server without a token. Ask at first. Any program you run can act as one, so keep it low.
 - **Cloud assistants:** ChatGPT, Claude or another assistant through your Codync account. Read only at first.
 
-To give an app its own access, press **+** and name it. Codync shows its token once: copy it into the app's MCP settings. It starts at Ask on all your bots for 30 days. You can change the level, renew it for another 30 days (at most 90), or revoke it, which stops the token at once.
+To give an app its own access, press **+** and name it. Codync shows its token once: copy it into the app's MCP settings. It starts at Ask on all your bots for 30 days, for threads only. You can change the level, let it run routines and workflows too (with Full access), renew it for another 30 days (at most 90), or revoke it, which stops the token at once.
 
-The **terminal UI** has the same list under **MCP access** in its actions: `←` and `→` change a level, `n` adds an app, `r` renews it and `x` twice revokes it.
+The **terminal UI** has the same list under **MCP access** in its actions: `←` and `→` change a level, `s` lets an app run routines and workflows or stops it, `n` adds an app, `r` renews it and `x` twice revokes it.
 
 ## Connect a coding agent
 
@@ -43,7 +43,7 @@ A thread an app started names the app under its title, for example **Started by 
 
 ## Current limits
 
-- **Apps are managed on the computer**, in the desktop app or the terminal UI. Phones don't show the list yet.
+- **Apps are added and changed on the computer**, in the desktop app or the terminal UI. On the iPhone and Android, **Manage computers** shows each computer's apps under **MCP access**, where you can revoke one.
 - **At most 8 threads** of one app run at once, and an app can make 60 calls a minute.
 - **A cloud assistant waits at most 8 seconds** for a thread at a time, and asks again.
 - **A computer needs Codync 2.55.0 or later.** On an older one the section isn't there, and a cloud assistant is told to update Codync.

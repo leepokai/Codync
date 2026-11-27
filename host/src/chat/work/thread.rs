@@ -183,12 +183,13 @@ pub(super) fn send(
     // this or after it, so neither ends a thread a message is on its way to.
     let (entry, reopened, queued) = tasks::change(hub, bot, |tasks| {
         let task = tasks::find(tasks, id)?;
-        check(task, &owner)?;
-        let ended = task.status.ended();
         let mut thread = thread_of(&hub.store, task)?;
+        // A message sent already is answered as it was, before `check`: it sends nothing, so no limit applies.
         if let Some(sent) = Some(nonce).filter(|n| !n.is_empty()).and_then(|n| hub.store.find_by_nonce(&thread.id, n)) {
             return Ok((sent, None, None));
         }
+        check(task, &owner)?;
+        let ended = task.status.ended();
         // Its thread may be on a task that followed it by now: the message is for that session all the same.
         let reopened = ended && tasks::of_thread(tasks, &thread.id).is_none();
         if reopened {

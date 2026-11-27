@@ -2529,7 +2529,11 @@
   "esc closes": "esc ferme",
   "x again revokes it: its token stops working right away · any other key keeps it": "x à nouveau la révoque : son jeton cesse aussitôt de fonctionner · toute autre touche la garde",
   "y copies · enter done": "y copie · enter terminé",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ niveau · n nouvelle app · r renouveler 30 jours · x révoquer · esc ferme",
+  "←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes": "←/→ niveau · s routines et workflows · n nouvelle app · r renouveler 30 jours · x révoquer · esc ferme",
   "MCP access: apps that drive this computer…": "Accès MCP : les apps qui pilotent cet ordinateur…",
-  "Copied: it isn't shown again": "Copié : il ne sera plus affiché"
+  "Copied: it isn't shown again": "Copié : il ne sera plus affiché",
+  "routines and workflows": "routines et workflows",
+  "Threads only": "Fils uniquement",
+  "Threads, routines and workflows": "Fils, routines et workflows",
+  "No apps yet. They're added on the computer.": "Aucune app pour l’instant. Elles s’ajoutent sur l’ordinateur."
 }

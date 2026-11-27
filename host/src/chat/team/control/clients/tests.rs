@@ -32,6 +32,23 @@ fn a_token_is_shown_once_kept_only_as_a_hash_and_works_on_its_own() {
 }
 
 #[test]
+fn the_settings_switch_lets_an_app_run_routines_and_workflows_and_keeps_its_other_scopes() {
+    let hub = hub();
+    let (client, _) = create(&hub, grant(json!({"label": "Editor", "scopes": ["threads", "allThreads"]}))).unwrap();
+    assert_eq!(client["runs"], false);
+    let id = client["id"].as_str().unwrap();
+    let on = update(&hub.store, id, grant(json!({"runs": true}))).unwrap();
+    assert_eq!(
+        (&on["runs"], &on["scopes"]),
+        (&json!(true), &json!(["threads", "allThreads", "routines", "workflows"]))
+    );
+    let again = update(&hub.store, id, grant(json!({"runs": true}))).unwrap();
+    assert_eq!(again["scopes"], on["scopes"], "on twice is on once");
+    let off = update(&hub.store, id, grant(json!({"runs": false}))).unwrap();
+    assert_eq!((&off["runs"], &off["scopes"]), (&json!(false), &json!(["threads", "allThreads"])));
+}
+
+#[test]
 fn a_revoked_or_expired_app_is_refused() {
     let hub = hub();
     let (client, token) = create(&hub, grant(json!({"label": "A"}))).unwrap();

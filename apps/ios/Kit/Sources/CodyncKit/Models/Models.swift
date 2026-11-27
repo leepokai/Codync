@@ -385,6 +385,8 @@ public struct Hello: Codable, Sendable {
     /// How many days after a thread last finished the computer deletes it, 0 never (`setThreadKeepDays`). Missing on
     /// older hosts, which don't list older threads (`olderThreads`) either.
     public var threadKeepDays: Int?
+    /// The apps given MCP access can be listed and revoked here (`mcpClients`, `mcpClientRevoke`). Missing on older hosts.
+    public var mcpAccess: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

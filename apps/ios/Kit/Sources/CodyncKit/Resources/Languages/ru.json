@@ -2529,7 +2529,11 @@
   "esc closes": "esc закрыть",
   "x again revokes it: its token stops working right away · any other key keeps it": "x ещё раз отзывает доступ: токен сразу перестаёт работать · любая другая клавиша оставляет",
   "y copies · enter done": "y копировать · enter готово",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ уровень · n новое приложение · r продлить на 30 дней · x отозвать · esc закрыть",
+  "←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes": "←/→ уровень · s рутины и workflow · n новое приложение · r продлить на 30 дней · x отозвать · esc закрыть",
   "MCP access: apps that drive this computer…": "Доступ MCP: приложения, которые управляют этим компьютером…",
-  "Copied: it isn't shown again": "Скопировано: больше не покажется"
+  "Copied: it isn't shown again": "Скопировано: больше не покажется",
+  "routines and workflows": "рутины и workflow",
+  "Threads only": "Только треды",
+  "Threads, routines and workflows": "Треды, рутины и workflow",
+  "No apps yet. They're added on the computer.": "Приложений пока нет. Они добавляются на компьютере."
 }

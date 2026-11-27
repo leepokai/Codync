@@ -9,6 +9,12 @@ export const mcpLevels: { id: McpLevel; label: string }[] = [
   { id: 'full', label: 'Full access' },
 ]
 
+/** What an app may run besides threads: the host's `runs` switch (routines and workflows, which also take Full access). */
+export const mcpRuns: { id: 'threads' | 'runs'; label: string }[] = [
+  { id: 'threads', label: 'Threads only' },
+  { id: 'runs', label: 'Threads, routines and workflows' },
+]
+
 export interface McpClient {
   id: string
   label: string
@@ -16,6 +22,8 @@ export interface McpClient {
   scopes: string[]
   bots: string[]
   plainThreads: boolean
+  /** It may run routines and workflows (with Full access); false from a host before the switch. */
+  runs: boolean
   createdAt: number
   expiresAt: number
   lastUsedAt: number | null
@@ -42,7 +50,7 @@ export function readMcpAccess(raw: unknown): McpAccess {
     if (typeof x.id !== 'string' || typeof x.label !== 'string') return []
     return [{
       id: x.id, label: x.label, access: level(x.access, 'readOnly'), scopes: x.scopes ?? [], bots: x.bots ?? [],
-      plainThreads: x.plainThreads === true, createdAt: x.createdAt ?? 0, expiresAt: x.expiresAt ?? 0,
+      plainThreads: x.plainThreads === true, runs: x.runs === true, createdAt: x.createdAt ?? 0, expiresAt: x.expiresAt ?? 0,
       lastUsedAt: x.lastUsedAt ?? null, revokedAt: x.revokedAt ?? null,
     }]
   })

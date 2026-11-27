@@ -1,6 +1,7 @@
 //! The MCP access sheet: the outside apps that may drive this computer's threads, and the computer's own levels
 //! (`mcpClients`; docs/features/mcp-access.md). ←/→ changes the selected row's level, n gives a new app access (its
-//! token shown once, y copies the command with it), r renews an app, x revokes it after a second x.
+//! token shown once, y copies the command with it), s lets the selected app run routines and workflows (with Full
+//! access) or stops it, r renews an app, x revokes it after a second x.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
@@ -151,6 +152,12 @@ impl App {
                                 self.call("setMcpAccess", json!({ *own: level }), changed);
                             }
                             _ => {}
+                        }
+                    }
+                    KeyCode::Char('s') => {
+                        if let Some(app) = app {
+                            let runs = app["runs"] != true;
+                            self.call("mcpClientUpdate", json!({"id": app["id"], "runs": runs}), changed);
                         }
                     }
                     KeyCode::Char('r') => {

@@ -3,7 +3,7 @@ import { CardSection, ChoicePicker, IconButton, ValueRow } from '../../component
 import { Dialog, DialogField } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { activeClients, clientDetail, mcpLevels, readMcpAccess, type McpAccess, type McpClient, type McpLevel } from '../../lib/mcp-access'
+import { activeClients, clientDetail, mcpLevels, mcpRuns, readMcpAccess, type McpAccess, type McpClient, type McpLevel } from '../../lib/mcp-access'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
@@ -44,6 +44,7 @@ export function McpAccessSection({ store }: { store: BotStore }) {
 
   if (!access) return null
   const levelOptions = mcpLevels.map((l) => ({ id: l.id, label: tr(l.label) }))
+  const runsOptions = mcpRuns.map((r) => ({ id: r.id, label: tr(r.label) }))
   const clients = activeClients(access)
   const create = () => {
     const label = (naming ?? '').trim()
@@ -74,6 +75,7 @@ export function McpAccessSection({ store }: { store: BotStore }) {
                 <span>{client.label}</span>
                 <Text size="caption" tone="tertiary">{clientDetail(client, tr)}</Text>
               </VStack>
+              <ChoicePicker selection={client.runs ? 'runs' : 'threads'} options={runsOptions} onChange={(r) => void run('mcpClientUpdate', { id: client.id, runs: r === 'runs' })} />
               <ChoicePicker selection={client.access} options={levelOptions} onChange={(level: McpLevel) => void run('mcpClientUpdate', { id: client.id, access: level })} />
               <IconButton title="Renew for 30 days" icon="arrow.clockwise" onClick={() => void run('mcpClientUpdate', { id: client.id, renew: true })} />
               <IconButton title="Revoke access" icon="xmark.circle" onClick={() => setConfirmRevoke(client)} />

@@ -27,8 +27,11 @@ at most 90, and can be renewed or revoked. Revoked or expired tokens are refused
 Any program the user runs can act as a session on this computer, which is why its level is a setting of its own.
 
 Managing apps (`mcpClientCreate`, `mcpClientUpdate`, `setMcpAccess`) is local only: the desktop app's Computers page
-(**MCP access**) and the terminal UI (`MCP access` in the actions). Phones may call `mcpClients` and
-`mcpClientRevoke`, so they can list apps and revoke one; the iPhone and Android apps don't show that list yet.
+(**MCP access**) and the terminal UI (`MCP access` in the actions). Each app's row there also has a switch for its
+`routines` and `workflows` scopes (`mcpClientUpdate` `runs`, keeping its other scopes; `s` in the terminal UI), so an app
+at Full can be let run them. Phones may only call `mcpClients` and `mcpClientRevoke`: the iPhone and Android apps show
+the list (each app's level and expiry) under **MCP access** in the computer's card in Computer management, with Revoke,
+when the host's `hello` says `mcpAccess`.
 
 ## Levels
 
@@ -96,6 +99,5 @@ in `control/schema.rs`. The cloud's copy is in `cloud/src/routes/assistant.ts`.
 
 - An HTTP `/mcp` endpoint on the host for apps that can't run a stdio server.
 - A pairing-code flow to hand an app its token without copying it.
-- The read-only app list and revoke on the iPhone and Android apps (the host already allows both).
 - `thread_steer` and `thread_interrupt` check the thread's level before taking the box's lock. `thread_send` checks
   it under the lock.

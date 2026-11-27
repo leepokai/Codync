@@ -64,8 +64,14 @@ impl Client {
         let mut v = serde_json::to_value(self).unwrap_or_default();
         if let Some(o) = v.as_object_mut() {
             o.remove("tokenHash");
+            o.insert("runs".into(), self.runs().into());
         }
         v
+    }
+
+    /// It may run routines and workflows (with Full access): the switch the settings show beside its level.
+    pub fn runs(&self) -> bool {
+        RUNS.iter().all(|s| self.scopes.contains(s))
     }
 }
 
@@ -191,7 +197,12 @@ pub struct Grant {
     pub days: Option<i64>,
     /// It works for [`DEFAULT_DAYS`] from now.
     pub renew: bool,
+    /// Adds (true) or takes away (false) the routines and workflows scopes, keeping the others.
+    pub runs: Option<bool>,
 }
+
+/// The scopes the settings' one switch gives or takes: running the owner's routines and workflows.
+const RUNS: [Scope; 2] = [Scope::Routines, Scope::Workflows];
 
 impl Grant {
     fn apply(self, store: &Store, client: &mut Client, now: i64) -> Result<()> {
@@ -206,6 +217,12 @@ impl Grant {
         if let Some(mut scopes) = self.scopes {
             scopes.dedup();
             client.scopes = scopes;
+        }
+        if let Some(runs) = self.runs {
+            client.scopes.retain(|s| !RUNS.contains(s));
+            if runs {
+                client.scopes.extend(RUNS);
+            }
         }
         if let Some(bots) = self.bots {
             let known = |id: &String| id == "*" || store.bot(id).ok().flatten().is_some_and(|r| !r.deleted);

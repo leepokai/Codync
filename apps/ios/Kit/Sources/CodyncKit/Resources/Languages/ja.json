@@ -2529,7 +2529,11 @@
   "esc closes": "esc 閉じる",
   "x again revokes it: its token stops working right away · any other key keeps it": "もう一度 x で取り消し：トークンはすぐに無効になります · 他のキーで残す",
   "y copies · enter done": "y コピー · enter 完了",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ レベル · n 新しいアプリ · r 30 日延長 · x 取り消し · esc 閉じる",
+  "←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes": "←/→ レベル · s ルーチンとワークフロー · n 新しいアプリ · r 30 日延長 · x 取り消し · esc 閉じる",
   "MCP access: apps that drive this computer…": "MCP アクセス：このコンピューターを操作するアプリ…",
-  "Copied: it isn't shown again": "コピーしました：もう表示されません"
+  "Copied: it isn't shown again": "コピーしました：もう表示されません",
+  "routines and workflows": "ルーチンとワークフロー",
+  "Threads only": "スレッドのみ",
+  "Threads, routines and workflows": "スレッド、ルーチン、ワークフロー",
+  "No apps yet. They're added on the computer.": "アプリはまだありません。アプリはコンピュータで追加します。"
 }

@@ -2529,7 +2529,11 @@
   "esc closes": "esc 닫기",
   "x again revokes it: its token stops working right away · any other key keeps it": "x를 한 번 더 누르면 취소: 토큰이 즉시 작동을 멈춥니다 · 다른 키는 유지",
   "y copies · enter done": "y 복사 · enter 완료",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 수준 · n 새 앱 · r 30일 연장 · x 취소 · esc 닫기",
+  "←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes": "←/→ 수준 · s 루틴과 워크플로 · n 새 앱 · r 30일 연장 · x 취소 · esc 닫기",
   "MCP access: apps that drive this computer…": "MCP 액세스: 이 컴퓨터를 조작하는 앱…",
-  "Copied: it isn't shown again": "복사됨: 다시 표시되지 않습니다"
+  "Copied: it isn't shown again": "복사됨: 다시 표시되지 않습니다",
+  "routines and workflows": "루틴과 워크플로",
+  "Threads only": "스레드만",
+  "Threads, routines and workflows": "스레드, 루틴, 워크플로",
+  "No apps yet. They're added on the computer.": "아직 앱이 없습니다. 앱은 컴퓨터에서 추가합니다."
 }

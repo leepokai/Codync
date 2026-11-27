@@ -357,14 +357,34 @@ fn card(e: &Entry) -> Value {
     }
 }
 
+/// The thread's newest entries a cursor covers: any of them changing (a tool's progress, a card answered) changes it.
+const CURSOR_ENTRIES: i64 = 500;
+
 /// Where `task` of `bot` stands now, with a cursor that changes whenever any of it does.
 fn state(hub: &Hub, bot: &str, task: &str) -> Option<(Target, String, Vec<Value>, String)> {
     let target = external::target(hub, bot, task)?;
     let activity = target.thread.as_deref().map(|t| hub.runtime(t).activity).unwrap_or_default();
     let needs = needs(hub, bot, target.thread.as_deref());
-    let last = target.thread.as_deref().and_then(|t| hub.store.history(t, i64::MAX, 1).ok()?.pop()).map(|e| e.rev);
-    let cursor = format!("{}:{}:{}:{}", json!(target.status), last.unwrap_or(0), needs.len(), activity.len());
+    let entries =
+        target.thread.as_deref().and_then(|t| hub.store.history(t, i64::MAX, CURSOR_ENTRIES).ok()).unwrap_or_default();
+    let cursor = cursor_of(target.status, &entries, &needs, &activity);
     Some((target, activity, needs, cursor))
+}
+
+/// A digest of every part of a thread's state an app waits on: its status, each entry's revision, what waits on the
+/// user and the whole activity line.
+fn cursor_of(status: work::Status, entries: &[Entry], needs: &[Value], activity: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(json!(status).to_string());
+    for e in entries {
+        h.update(format!("|{}:{}", e.id, e.rev));
+    }
+    for n in needs {
+        h.update(format!("|{}", n["requestId"]));
+    }
+    h.update(format!("|{activity}"));
+    crate::chat::files::digest_hex(&h.finalize()[..12])
 }
 
 pub async fn wait(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {

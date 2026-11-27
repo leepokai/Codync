@@ -23,7 +23,7 @@ fn level_name(level: &str) -> String {
 
 pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
     let t = theme();
-    let r = centered(area, 84, area.height.saturating_sub(4).min(26));
+    let r = centered(area, 94, area.height.saturating_sub(4).min(26));
     let inner = frame_box(buf, r, t.text, t.panel, Some((tr("MCP access").as_ref(), t.text)));
     if inner.height < 8 {
         return;
@@ -76,17 +76,20 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
             if apps.is_empty() {
                 put(buf, body.x, y, body.width, &tr("No apps yet. Press n to give one access."), t.dim.patch(t.panel));
             }
-            for (i, app) in apps.iter().enumerate() {
-                if y >= body.bottom() {
-                    break;
-                }
+            // The rows left for apps: the selected one stays in view as the cursor moves past the last.
+            let room = usize::from(body.bottom().saturating_sub(y + u16::from(s.error.is_some())));
+            let first = first_shown(s.cursor.checked_sub(MCP_OWN.len()), room);
+            for (i, app) in apps.iter().enumerate().skip(first).take(room) {
                 let sel = s.cursor == i + MCP_OWN.len();
                 let left = mcp_days_left(app["expiresAt"].as_i64().unwrap_or_default(), crate::store::now_ms());
                 let until = left.map_or_else(
                     || tr("Expired").into_owned(),
                     |days| fill(&tr("Expires in {count} days"), &[("count", &days.to_string())]),
                 );
-                let name = format!("{} · {until}", app["label"].as_str().unwrap_or_default());
+                let mut name = format!("{} · {until}", app["label"].as_str().unwrap_or_default());
+                if app["runs"] == true {
+                    name = format!("{name} · {}", tr("routines and workflows"));
+                }
                 row(buf, body, y, &name, &level_name(app["access"].as_str().unwrap_or_default()), sel);
                 y += 1;
             }
@@ -96,11 +99,16 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
             if matches!(s.step, McpStep::Revoke(_)) {
                 tr("x again revokes it: its token stops working right away · any other key keeps it")
             } else {
-                tr("←/→ level · n new app · r renew 30 days · x revoke · esc closes")
+                tr("←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes")
             }
         }
     };
     keys_line(buf, inner, &keys);
+}
+
+/// The first of `rows` apps shown so that the `selected` one (none: a row above the apps) is in view.
+fn first_shown(selected: Option<usize>, rows: usize) -> usize {
+    selected.map_or(0, |i| (i + 1).saturating_sub(rows.max(1)))
 }
 
 fn keys_line(buf: &mut Buffer, inner: Rect, keys: &str) {
@@ -116,4 +124,18 @@ fn row(buf: &mut Buffer, body: Rect, y: u16, label: &str, level: &str, sel: bool
     }
     let x = rput(buf, body.right(), y, &format!("‹ {level} ›"), t.text.patch(base));
     put(buf, body.x, y, x.saturating_sub(body.x + 1), label, t.text.patch(base));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_list_scrolls_to_keep_the_selected_app_in_view() {
+        assert_eq!(first_shown(None, 5), 0, "a computer level is selected: the list starts at its top");
+        assert_eq!(first_shown(Some(4), 5), 0);
+        assert_eq!(first_shown(Some(5), 5), 1, "one past the last row scrolls by one");
+        assert_eq!(first_shown(Some(49), 5), 45);
+        assert_eq!(first_shown(Some(3), 0), 3, "with no room it still shows the selected one");
+    }
 }

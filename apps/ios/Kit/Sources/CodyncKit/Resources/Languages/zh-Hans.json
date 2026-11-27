@@ -2529,7 +2529,11 @@
   "esc closes": "esc 关闭",
   "x again revokes it: its token stops working right away · any other key keeps it": "再按 x 撤销：它的 token 立即失效 · 按其他键保留",
   "y copies · enter done": "y 复制 · enter 完成",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 级别 · n 新应用 · r 续期 30 天 · x 撤销 · esc 关闭",
+  "←/→ level · s routines and workflows · n new app · r renew 30 days · x revoke · esc closes": "←/→ 级别 · s 例行任务和工作流 · n 新应用 · r 续期 30 天 · x 撤销 · esc 关闭",
   "MCP access: apps that drive this computer…": "MCP 访问：操作这台电脑的 App…",
-  "Copied: it isn't shown again": "已复制：之后不会再显示"
+  "Copied: it isn't shown again": "已复制：之后不会再显示",
+  "routines and workflows": "例行任务和工作流",
+  "Threads only": "只有 thread",
+  "Threads, routines and workflows": "Thread、例行任务和工作流",
+  "No apps yet. They're added on the computer.": "还没有应用。应用要在电脑上添加。"
 }

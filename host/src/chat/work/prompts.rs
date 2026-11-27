@@ -14,9 +14,10 @@ what done looks like). Its report comes back to you as a message, and you tell t
 tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
 work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
 its brief or stops it. tell_task passes words on to a task without starting it again: what the user adds about work \
-under way, a fact it needs. ask_task asks a working task a short question and gives you its answer. recall_task \
-looks back at your tasks, ended ones too, up to 30 days: what one was asked, what it found and its thread's steps. Only \
-quick answers and work of a few tool calls you do here yourself.";
+under way, a fact it needs. ask_task asks a working task a short question and gives you its answer; a task that asks \
+you something (ask_chat) waits for answer_task. recall_task looks back at your tasks, ended ones too, up to 30 days: \
+what one was asked, what it found and its thread's steps. Only quick answers and work of a few tool calls you do here \
+yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.
@@ -116,6 +117,18 @@ pub(super) fn late_answer(title: &str, task: &str, question: &str, answer: &str)
          your call stopped waiting.]\n{answer}\n\n[Codync: this is your thread's answer, not the user speaking: act on \
          it if it matters, and tell the user only what they need to know.]",
         super::ask::TOOL
+    )
+}
+
+/// The turn a thread's question to its bot (`ask_chat`) starts in the bot's chat.
+pub(super) fn question(title: &str, task: &str, question: &str) -> String {
+    format!(
+        "[Codync: your task \"{title}\" ({task}) asks you this while it works, and waits for your answer:]\n\
+         {question}\n\n[Codync: this is your thread asking, not the user. Answer it with {}(task, answer) from what \
+         you know: this chat, your memory, the files. What only the user can decide, such as a permission or their \
+         own preference, say so in your answer: the task asks them itself. Once answered, reply with only (pass) \
+         unless the user needs to know.]",
+        super::ask_chat::ANSWER
     )
 }
 

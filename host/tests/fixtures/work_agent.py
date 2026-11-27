@@ -6,13 +6,16 @@ In the chat: `ADD title|brief[|hold][|after=<title>][|folder=<path>][|place=<her
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
-`NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
+`NEST` tries what a thread may not, `CHATQ:<question>;` asks its chat (`ask_chat`, its result logged to `ask_chat.jsonl`), `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `DETACH:<name>` starts a command in a
 session of its own (its pid in `detached.pid`) that writes `detached-done` once `release-<name>` is there, and ends its
 turn while that command still runs, `SUBAGENT` launches a subagent in the background the way Claude's adapter reports
 one and ends its turn: asked by the host to wait for what it left running, it waits for `detached-done` (or for nothing,
 for the subagent) and reports, or ends at once again with `AGAIN` in its brief. `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+A thread's question (`ask_chat`) the chat answers with `answer_task` (`Chat: <the question>`) and `(pass)`;
+`QUIET` in it: it doesn't answer; `DECIDE`: it tries `request_decision` first (logged to `chat_decision.jsonl`)
+and answers that only the user can decide.
 The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
@@ -176,6 +179,11 @@ def work(text, session):
              "saw the chat" if "[The chat you come from, so far]" in text else "no chat"]
     if "set aside" in rest:
         notes.append("again")
+    asked = re.search(r"CHATQ:([^;]+);", brief)
+    if asked:
+        result = chat_tool("ask_chat", {"question": asked.group(1)})
+        log("ask_chat.jsonl", result)
+        notes.append(said(result, "Chat said: ")[:120])
     if "ASK" in brief:
         notes.append(ask())
     if "SHARE" in brief:
@@ -267,6 +275,19 @@ def answer_asked(session, question):
         send({"method": "session/update", "params": {"sessionId": session, "update": update}})
 
 
+def chat_answer(text):
+    """The chat's turn on its thread's question (`ask_chat`): answers it with `answer_task`, then passes."""
+    task, question = re.search(r"\(([^)]+)\) asks you this while it works[^\n]*\n([^\n]*)", text).groups()
+    if "QUIET" in question:
+        return "(pass)"
+    answer = "Chat: " + question
+    if "DECIDE" in question:
+        log("chat_decision.jsonl", chat_tool("request_decision", {"question": "Deploy?", "options": ["Yes", "No"]}))
+        answer = "Only the user can decide that: ask them"
+    log("answer_task.jsonl", chat_tool("answer_task", {"task": task, "answer": answer}))
+    return "(pass)"
+
+
 def waited():
     """The host asked it to wait for what it left running: it does and reports, or (`AGAIN`) ends at once again."""
     if left.get("again"):
@@ -287,6 +308,8 @@ def answer(text, session):
         return "Late: " + re.search(r"after your call stopped waiting\.\]\n([^\n]*)", text).group(1)
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
+    if "asks you this while it works" in text:
+        return chat_answer(text)
     if "[Codync: your task" in text:
         return relayed(text)
     if "[Codync: your chat passed this on" in text:

@@ -19,7 +19,7 @@ Design: [the event box](../plans/event-box.md), [bots, projects and threads](../
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
-`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
+`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `ask.rs`: `ask_task`; `ask_chat.rs`: `ask_chat` and `answer_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
 `prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for its session, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
@@ -132,6 +132,16 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   (counted in `task_asked`) for a task that waits (`tell_task` it) or ended (its report came), a thread the user
   started, a routine's run, another bot's request, and while a question to the same task still waits for its answer;
   refused too in a thread and under a ceiling, as `add_task` is (those not counted there).
+- `answer_task {task, answer}` (`work/ask_chat.rs`) answers a thread's `ask_chat {question}`, the thread's own tool
+  (listed only for threads, not chat-only): the question starts a turn in the bot's chat (`Cmd::TaskAnswer`) that
+  tells it to answer from what it knows, then `(pass)`. That turn is host-started, so it can't call
+  `request_decision`: what only the user can decide, the chat says so in its answer and the thread asks them on its
+  own card ([below](#asking-and-sharing-from-a-thread)), which makes the task `needsYou`; while it only waits for the
+  chat the task stays `working`. The thread's call waits 270 seconds (`ask_chat::WAIT`, under Codex's 300 s tool
+  timeout, as `request_decision`'s; the MCP request 20 seconds more) and returns `{answered: true, answer}`, else
+  `{answered: false, note}`: it goes on and says what it assumed. A later `answer_task` is passed on as `tell_task`'s
+  `now`. Only for the bot's own tasks, one question at a time a thread; it goes when its task ends or is set aside.
+  Counted in `chat_asked`.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 - `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
@@ -141,9 +151,9 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
   cut at 280 bytes. Read only: allowed under a ceiling.
 
-Refused in a thread: these six and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these seven and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
-says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
+says to put what it needs in its report. `ask_chat`, `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
 rules instead ([other sources](#other-sources)).
 
@@ -270,7 +280,7 @@ task came from (`chat::context::render_thread`, by the task's `Source`):
 Every thread is also told it runs inside Codync, its folder (the bot's, a project, or a worktree Codync made), how
 dev servers work, the bot's skills and the compaction keep-list. None hears the chat's own paragraphs (Messages,
 Other conversations, `routines::BRIEF` outside a run or request, `work::BRIEF`). A thread's `chat` server lists only
-what a thread may call: `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
+what a thread may call: `ask_chat`, `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
 message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`, `work::chat_only`;
 a call to one is still refused, and counted as `thread_tool_refused`). Its instructions are kept with its bot's
 sessions (`context::resolve` keys by `BotConfig::owner`), and a profile update is announced only to a thread that was
@@ -917,7 +927,7 @@ known after its earlier task is gone (`known`) (`worktree.rs`), how a bot stands
 (`dispatch.rs`), the watchdog's signals (looping, failing, quiet, a card overdue), its hourly hold and its reasons,
 only the bot's own tasks watched, a wake-up dropped once its task moved on and its analytics (`watch.rs`), the host
 watchdog's verdict, a computer that slept and the mark reported once (`watchdog.rs`), `recall_task` by id, query and
-latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the archive
+latest, its pages of steps and 30 days (`recall.rs`), `ask_chat` refused outside a handed-out task and while a question waits, its answer to the waiting call or passed on later, and its end after the wait or with its task (`ask_chat.rs`), a task ended over a week ago leaving the box for the archive
 at host start (`mod.rs`), the archive, parked threads coming back in their session, `threadKeepDays`, paging and an
 older host's past tasks (`archive.rs`, `store/archive.rs`), the terminal's Delete old threads choices and older pages
 (`tui/app/thread_keep.rs`, `tui/manage/older.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however

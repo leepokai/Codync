@@ -13,12 +13,14 @@
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
 //! [`tools`] the bot's tools ([`recall`] the one that looks back, [`ask`] the one that asks a thread and waits for its
-//! answer), [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside another in one
-//! repository ([`fill`] what a new one is given), [`plain`] threads without a bot, [`watch`] the watchdog that wakes
-//! the bot for a thread that looks stuck, [`archive`] the threads that ended over a week ago.
+//! answer, [`ask_chat`] a thread's question to its bot), [`prompts`] the words, [`worktree`] the git worktree of a
+//! thread that works beside another in one repository ([`fill`] what a new one is given), [`plain`] threads without a
+//! bot, [`watch`] the watchdog that wakes the bot for a thread that looks stuck, [`archive`] the threads that ended
+//! over a week ago.
 
 pub mod archive;
 pub mod ask;
+pub mod ask_chat;
 mod dispatch;
 mod fill;
 pub mod plain;
@@ -170,6 +172,8 @@ pub struct Work {
     /// Thread → the question of its bot's it hasn't answered (`ask`). Gone with the host process: an answer that
     /// comes after a restart is the thread's report's.
     asks: Mutex<HashMap<String, ask::Pending>>,
+    /// Thread → its question to its bot that waits for the answer (`ask_chat`).
+    questions: Mutex<HashMap<String, ask_chat::Waiting>>,
 }
 
 impl Work {
@@ -528,6 +532,7 @@ fn deliver(hub: &Hub, bot: &str, task: &Task) {
 fn ended(hub: &Hub, bot: &str, task: &Task) {
     if let Some(thread) = &task.thread {
         ask::forget(hub, thread);
+        ask_chat::forget(hub, thread);
     }
     let thread = task.thread.as_deref().and_then(|thread| hub.store.bot(thread).ok().flatten());
     let agent = thread.as_ref().map(|thread| thread.config.backend.as_str());

@@ -2236,3 +2236,118 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     wait("its versions", async || own.join(".git").exists().then_some(())).await;
     assert!(done["worktree"].is_null());
 }
+
+/// What a thread's `ask_chat` calls got back, oldest first.
+fn chat_asked(host: &Host, bot: &str) -> Vec<Value> {
+    let results = host.log(bot, "ask_chat.jsonl").into_iter();
+    results.map(|r| serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap_or(r)).collect()
+}
+
+/// Whether the chat got the turn with its thread's question.
+fn asked_in_chat(host: &Host, bot: &str) -> bool {
+    let prompts = logged(&host.workspace(bot), "prompts.jsonl");
+    prompts.iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("asks you this while it works")))
+}
+
+#[tokio::test]
+async fn a_thread_asks_its_chat_and_goes_on_with_the_answer() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "hello").await;
+    host.reply(&bot, "ADD Deploy|CHATQ:which branch?;").await;
+
+    // The chat's turn answers it with answer_task, and the thread goes on with the answer to its report.
+    let report = relayed_for(&host, &bot, "Deploy").await;
+    assert!(report.contains(r#"Chat said: {"answered":true,"answer":"Chat: which branch?"}"#), "{report}");
+    let answered = host.log(&bot, "answer_task.jsonl");
+    assert!(answered[0]["content"][0]["text"].as_str().unwrap().contains(r#""status":"answered""#), "{answered:?}");
+    let prompts = logged(&host.workspace(&bot), "prompts.jsonl");
+    let question = prompts.iter().find(|p| p["text"].as_str().unwrap().contains("asks you this while it works"));
+    let question = question.expect("the chat's turn")["text"].as_str().unwrap().to_owned();
+    assert!(question.contains("\"Deploy\"") && question.contains("which branch?"), "{question}");
+    // Its turn passes: the chat shows only its replies to the user and the report's.
+    let finals: Vec<String> = history(&host, &bot)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
+        .map(|e| e["data"]["text"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    let said = ["reply: hello", "Added: ", "Relayed: "];
+    assert!(finals.iter().all(|t| said.iter().any(|s| t.starts_with(s))), "(pass) says nothing: {finals:?}");
+    task(&host, &bot, "Deploy", "done").await;
+
+    // Refused: from the chat itself, from a thread the user started, and answer_task from a thread.
+    let ask = |id: &Value| json!({"botId": id, "name": "ask_chat", "arguments": {"question": "which?"}});
+    let refused = host.refused("chatCall", ask(&json!(bot))).await;
+    assert!(refused.contains("ask_chat is for a task your chat handed out"), "{refused}");
+    host.call("startThread", json!({"botId": bot, "text": "Mine HOLD:mine"})).await;
+    let mine = task(&host, &bot, "Mine HOLD:mine", "working").await;
+    let refused = host.refused("chatCall", ask(&mine["thread"])).await;
+    assert!(refused.contains("ask_chat is for a task your chat handed out"), "{refused}");
+    let answer =
+        json!({"botId": mine["thread"], "name": "answer_task", "arguments": {"task": mine["id"], "answer": "x"}});
+    let refused = host.refused("chatCall", answer).await;
+    assert!(refused.contains("answer_task isn't available in a thread"), "{refused}");
+    release(&host, &bot, "mine");
+}
+
+#[tokio::test]
+async fn a_question_its_chat_leaves_unanswered_goes_with_its_stopped_task() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Wait|CHATQ:QUIET which branch?;").await;
+    wait("the chat's turn on the question", async || asked_in_chat(&host, &bot).then_some(())).await;
+    wait("the chat to be idle", async || common::steer::idle(&host, &bot).await.then_some(())).await;
+    // It only waits for its chat: the task is still working.
+    task(&host, &bot, "Wait", "working").await;
+    host.reply(&bot, "STEER stop|Wait").await;
+    let got = wait("the thread's call to hear it", async || chat_asked(&host, &bot).pop()).await;
+    assert_eq!(got["answered"], false, "{got}");
+}
+
+#[tokio::test]
+async fn what_only_the_user_can_decide_the_thread_asks_them_and_its_task_needs_them() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Ship|CHATQ:DECIDE may I deploy?; then ASK").await;
+    let card = wait("the thread's choice card", async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.rfind(|e| e["data"]["status"] == "pending")
+    })
+    .await;
+    let waits = task(&host, &bot, "Ship", "needsYou").await;
+    assert_eq!(card["data"]["task"], waits["id"], "the thread's own card");
+    // The chat's host-started turn can't put a card in front of the user.
+    let tried = host.log(&bot, "chat_decision.jsonl");
+    eprintln!("the chat's request_decision: {tried:?}");
+    host.call("respondDecision", json!({"entryId": card["id"], "option": "B"})).await;
+    let report = relayed_for(&host, &bot, "Ship").await;
+    assert!(report.contains("Only the user can decide that"), "{report}");
+    assert!(report.contains(r#"Asked: {"choice":"B"}"#), "{report}");
+}
+
+/// Real time: the call gives up after `ask_chat::WAIT` (270 s), and an answer after that is passed on to the thread.
+#[tokio::test]
+#[ignore = "waits out ask_chat's 270 seconds"]
+async fn an_answer_after_the_wait_is_passed_on_to_the_thread() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Late|CHATQ:QUIET which branch?; HOLD:late").await;
+    let started = Instant::now();
+    let got = common::eventually("the call to give up", Duration::from_mins(5), async || {
+        chat_asked(&host, &bot).pop().is_some()
+    });
+    got.await;
+    let got = chat_asked(&host, &bot).pop().unwrap();
+    assert_eq!(got["answered"], false, "{got}");
+    assert!(started.elapsed() >= Duration::from_secs(265), "{:?}", started.elapsed());
+    let late = task(&host, &bot, "Late", "working").await;
+    let args = json!({"task": late["id"], "answer": "Prod after all."});
+    let told = host.call("chatCall", json!({"botId": bot, "name": "answer_task", "arguments": args})).await;
+    eprintln!("late answer_task: {told}");
+    assert!(told.to_string().contains("It stopped waiting for your answer"), "{told}");
+    release(&host, &bot, "late");
+    task(&host, &bot, "Late", "done").await;
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    assert!(heard.iter().any(|p| p["text"].as_str().unwrap().contains("Prod after all.")), "the thread heard it");
+}

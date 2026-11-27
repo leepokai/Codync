@@ -120,6 +120,8 @@ pub enum Event {
     WorkTold,
     /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
     TaskAsked,
+    /// A thread's `ask_chat` finished (`outcome`): its bot answered in time, not, or the question was refused.
+    ChatAsked,
     /// Filling a new worktree failed at one file or folder (`stage`: `include`, `link`); the thread starts anyway.
     WorktreeFillFailed,
     /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
@@ -320,6 +322,7 @@ impl Event {
             Self::WorkHeld => "work_held",
             Self::WorkTold => "work_told",
             Self::TaskAsked => "task_asked",
+            Self::ChatAsked => "chat_asked",
             Self::WorktreeFillFailed => "worktree_fill_failed",
             Self::WorkRecalled => "work_recalled",
             Self::ThreadsDeleted => "threads_deleted",

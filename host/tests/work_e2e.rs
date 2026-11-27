@@ -5,6 +5,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
+#[path = "work_e2e/startup_skills.rs"]
+mod startup_skills;
 
 use common::host::Host;
 use serde_json::{Value, json};

@@ -466,8 +466,7 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
     store.kv_set(DONE, "1")
 }
 
-/// Skills saved by a thread before #584 recorded the thread as `written_by` and were never turned on for its bot:
-/// turn each on for its bot first, then hand ownership over so an interrupted run retries cleanly.
+/// Turns on each skill saved by an old thread and gives its bot ownership in the same commit.
 pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
     #[cfg(test)]
     if let Ok(read) = tests::PARKED_THREAD_READER.try_with(|read| *read) {
@@ -481,15 +480,15 @@ fn adopt_thread_skills_with(
     parked_thread: impl Fn(&str) -> Result<Option<crate::store::BotConfig>>,
 ) -> Result<()> {
     let _guard = SKILLS_LOCK.locked();
-    let mut all = skills(store);
-    let mut by_owner: std::collections::BTreeMap<String, Vec<&mut Skill>> = std::collections::BTreeMap::new();
-    for s in &mut all {
-        let Some(writer) = s.written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
+    let Some(raw) = store.kv_read("skills")? else { return Ok(()) };
+    let mut all: Vec<Skill> = serde_json::from_str(&raw)?;
+    for index in 0..all.len() {
+        let Some(writer) = all[index].written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
             continue;
         };
-        let owner = match store.bot(writer)? {
-            Some(row) => row.config.thread_of,
-            None => match parked_thread(writer) {
+        let owner = match store.bot(writer) {
+            Ok(Some(row)) => row.config.thread_of,
+            Ok(None) => match parked_thread(writer) {
                 Ok(Some(cfg)) => cfg.thread_of,
                 Ok(None) => None,
                 Err(_) => {
@@ -498,32 +497,22 @@ fn adopt_thread_skills_with(
                     continue;
                 }
             },
-        };
-        if let Some(owner) = owner {
-            by_owner.entry(owner).or_default().push(s);
-        }
-    }
-    let mut changed = false;
-    for (bot, pending) in by_owner {
-        let Some(row) = store.bot(&bot)? else { continue };
-        let mut cfg = row.config;
-        if row.deleted || cfg.is_group() || cfg.is_thread() {
-            continue;
-        }
-        let enabled = cfg.skills.len();
-        for s in pending {
-            if !cfg.skills.contains(&s.id) {
-                cfg.skills.push(s.id.clone());
+            Err(_) => {
+                tracing::warn!("couldn't read an active thread during skill adoption");
+                continue;
             }
-            s.written_by = Some(bot.clone());
+        };
+        let Some(owner) = owner else { continue };
+        let previous = all[index].written_by.replace(owner.clone());
+        let saved = serde_json::to_string(&all)
+            .map_err(anyhow::Error::from)
+            .and_then(|list| store.adopt_thread_skill(&owner, &all[index].id, &list));
+        match saved {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(_) => tracing::warn!("couldn't commit a thread skill adoption"),
         }
-        if cfg.skills.len() != enabled {
-            store.save_bot(&cfg)?;
-        }
-        changed = true;
-    }
-    if changed {
-        save(store, "skills", &all)?;
+        all[index].written_by = previous;
     }
     Ok(())
 }

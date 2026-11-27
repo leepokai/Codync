@@ -2,10 +2,10 @@
 
 use super::entries::NOT_REMOVED;
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text, thread_ids};
-use super::{Store, logged, next_rev};
+use super::{Store, logged, next_rev, write_kv};
 use crate::LockExt;
 use anyhow::Result;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 /// Raw `bots` row before the config JSON is parsed.
@@ -29,6 +29,17 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
      ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
+
+fn read_bot(c: &Connection, id: &str) -> Result<Option<BotRow>> {
+    let row = c.query_row(&format!("SELECT {BOT_COLS} FROM bots WHERE id = ?1"), [id], row_bot).optional()?;
+    Ok(row.and_then(parse_bot))
+}
+
+fn write_bot(c: &Connection, cfg: &BotConfig) -> Result<i64> {
+    let rev = next_rev(c)?;
+    c.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
+    Ok(rev)
+}
 
 /// A chat's badge (`Store::badge`): what it counts, and how many of those are cards waiting on the user, which
 /// turn it amber.
@@ -73,16 +84,28 @@ impl Store {
     }
 
     pub fn bot(&self, id: &str) -> Result<Option<BotRow>> {
-        let c = self.db.locked();
-        let row = c.query_row(&format!("SELECT {BOT_COLS} FROM bots WHERE id = ?1"), [id], row_bot).optional()?;
-        Ok(row.and_then(parse_bot))
+        read_bot(&self.db.locked(), id)
     }
 
     pub fn save_bot(&self, cfg: &BotConfig) -> Result<i64> {
-        let c = self.db.locked();
-        let rev = next_rev(&c)?;
-        c.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
-        Ok(rev)
+        write_bot(&self.db.locked(), cfg)
+    }
+
+    /// Turns on one legacy skill and saves its new owner together if the parent can adopt it.
+    pub(crate) fn adopt_thread_skill(&self, parent: &str, skill: &str, skills: &str) -> Result<bool> {
+        self.with_immediate(|tx| {
+            let Some(row) = read_bot(tx, parent)? else { return Ok(false) };
+            let mut cfg = row.config;
+            if row.deleted || cfg.is_group() || cfg.is_thread() {
+                return Ok(false);
+            }
+            if !cfg.skills.iter().any(|id| id == skill) {
+                cfg.skills.push(skill.to_owned());
+                write_bot(tx, &cfg)?;
+            }
+            write_kv(tx, "skills", skills)?;
+            Ok(true)
+        })
     }
 
     /// Saves several bots in one transaction, each with its own rev: all of them or, on an error, none.
@@ -217,6 +240,42 @@ mod tests {
     use super::*;
     use crate::store::model::{BotKind, EntryKind, Lane, Permission};
     use crate::store::tests::temp_store;
+
+    #[test]
+    fn a_failed_skill_adoption_leaves_the_parent_and_its_revision_untouched() {
+        for trigger in [
+            "CREATE TEMP TRIGGER reject_skill BEFORE UPDATE OF config ON bots
+             BEGIN SELECT RAISE(ABORT, 'fixture parent write failure'); END;",
+            "CREATE TEMP TRIGGER reject_skill BEFORE INSERT ON kv WHEN NEW.k = 'skills'
+             BEGIN SELECT RAISE(ABORT, 'fixture skills write failure'); END;",
+        ] {
+            let s = Store::open(std::path::Path::new(":memory:")).unwrap();
+            let cfg: BotConfig = serde_json::from_value(serde_json::json!({
+                "id": "parent", "name": "Parent", "backend": "fixture", "cwd": "/tmp"
+            }))
+            .unwrap();
+            let rev = s.save_bot(&cfg).unwrap();
+            let old = r#"[{"id":"legacy","name":"Legacy","writtenBy":"thread-legacy"}]"#;
+            let adopted = r#"[{"id":"legacy","name":"Legacy","writtenBy":"parent"}]"#;
+            s.kv_set("skills", old).unwrap();
+            s.db.locked().execute_batch(trigger).unwrap();
+
+            assert!(s.adopt_thread_skill("parent", "legacy", adopted).is_err());
+            let parent = s.bot("parent").unwrap().unwrap();
+            assert!(parent.config.skills.is_empty());
+            assert_eq!(parent.rev, rev);
+            assert_eq!(s.current_rev(), rev);
+            assert_eq!(s.kv_get("skills").as_deref(), Some(old));
+
+            s.db.locked().execute_batch("DROP TRIGGER reject_skill").unwrap();
+            assert!(s.adopt_thread_skill("parent", "legacy", adopted).unwrap());
+            let parent = s.bot("parent").unwrap().unwrap();
+            assert_eq!(parent.config.skills, ["legacy"]);
+            assert_eq!(parent.rev, rev + 1);
+            assert_eq!(s.current_rev(), rev + 1);
+            assert_eq!(s.kv_get("skills").as_deref(), Some(adopted));
+        }
+    }
 
     #[test]
     fn rev_sync_and_unread() {

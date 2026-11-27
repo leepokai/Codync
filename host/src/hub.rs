@@ -238,7 +238,9 @@ impl Hub {
         projects::migrate(self);
         self.routines.restore(&self.store)?;
         crate::market::turn_on_installed_once(&self.store)?;
-        crate::market::adopt_thread_skills(&self.store)?;
+        if crate::market::adopt_thread_skills(&self.store).is_err() {
+            tracing::warn!("couldn't read the skills list during startup adoption");
+        }
         for row in self.store.bots()? {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;

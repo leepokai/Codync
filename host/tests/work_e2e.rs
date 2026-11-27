@@ -229,6 +229,121 @@ async fn a_task_starts_from_its_brief_alone_and_its_report_comes_back_as_a_turn(
     assert_eq!(gone, "unknown thread", "a thread no task names goes with its transcript");
 }
 
+/// The thread's final messages, oldest first.
+#[cfg(unix)]
+async fn finals(host: &Host, bot: &str, thread: &Value) -> Vec<String> {
+    let details = host.call("threadEntries", json!({"botId": bot, "threadId": thread})).await;
+    let entries = details["entries"].as_array().cloned().unwrap_or_default();
+    let finals = entries.iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true);
+    finals.map(|e| e["data"]["text"].as_str().unwrap_or_default().to_owned()).collect()
+}
+
+/// #634: a thread that ends its turn while something it started in the background still runs (a review, a CI run it
+/// watches) hasn't finished its task: its progress line isn't the report, and the work it waits on isn't cut off. The
+/// host asks it once to wait for that, and its next turn's end is the task's.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_task_whose_thread_ends_its_turn_while_its_background_work_runs_is_not_over() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Review|DETACH:review").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let thread = working["thread"].clone();
+    let pid_file = host.workspace(&bot).join("detached.pid");
+    let pid = wait("the background command", async || std::fs::read_to_string(&pid_file).ok()).await;
+    let progress = "Report Review: briefed; no chat; started the review, waiting for it to finish";
+    wait("the thread's turn to end", async || {
+        finals(&host, &bot, &thread).await.contains(&progress.into()).then_some(())
+    })
+    .await;
+    // The box looks again as soon as the turn ends; give it time to.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let now = work(&host, &bot).await.into_iter().find(|i| i["title"] == "Review").unwrap();
+    let alive = std::process::Command::new("/bin/kill").args(["-0", pid.trim()]).status().unwrap().success();
+    release(&host, &bot, "review");
+    assert_eq!(now["status"], "working", "its background work still runs, so the task isn't over: {now}");
+    assert_ne!(now["result"], progress, "a progress line isn't its report");
+    assert!(alive, "the work it waits on isn't cut off with its agent");
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: it finished, all green", "its report came once the work had: {done}");
+    assert!(host.workspace(&bot).join("detached-done").exists());
+    let asked = host.log(&bot, "prompts.jsonl").into_iter().filter(|p| {
+        p["text"].as_str().unwrap_or_default().contains("[Codync: you ended your turn while a command started")
+    });
+    assert_eq!(asked.count(), 1, "asked once to wait");
+}
+
+/// #634: a Claude subagent launched in the background holds its task the same way, and the thread waits for it in the
+/// same agent process and session, which nothing closes or stops meanwhile (that would end the subagent).
+#[tokio::test]
+async fn a_background_subagent_holds_its_task_in_the_same_session() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Review|SUBAGENT").await;
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: it finished, all green", "{done}");
+    let prompts = host.log(&bot, "prompts.jsonl");
+    let turns: Vec<&Value> = prompts
+        .iter()
+        .filter(|p| {
+            let text = p["text"].as_str().unwrap_or_default();
+            text.contains("[Task]") || text.contains("[Codync: you ended your turn while a subagent")
+        })
+        .collect();
+    assert_eq!(turns.len(), 2, "its task's turn and the one that waits: {prompts:?}");
+    assert_eq!((&turns[0]["session"], &turns[0]["pid"]), (&turns[1]["session"], &turns[1]["pid"]), "same session");
+    let closed = host.log(&bot, "closed.jsonl");
+    let between = closed.iter().any(|c| c["session"] == turns[0]["session"] && c["prompts"].as_u64() < Some(2));
+    assert!(!between, "nothing closed its session before the turn that waits: {closed:?}");
+}
+
+/// #634: a thread that ends its turn again while its background work still runs, after it was asked to wait, has
+/// stopped early: its task fails saying what still ran, never done with a progress line.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_thread_that_ends_again_while_its_background_work_runs_stopped_early() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Review|DETACH:review AGAIN").await;
+    let failed = task(&host, &bot, "Review", "failed").await;
+    release(&host, &bot, "review");
+    let why = "it ended its turn while a command started in the background still ran. Its last message:\n\n\
+               Still waiting for it";
+    assert_eq!(failed["result"], why, "what it said stays with why: {failed}");
+}
+
+/// #634: a message the user wrote to the thread while its turn ran takes the next turn first, with the work it left
+/// running still its task's: that turn's end asks it to wait, once, and the task ends with the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_message_to_a_thread_that_left_work_running_goes_first_and_the_task_still_waits_for_it() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Review|DETACH:review HOLD:slow").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let sent = tell(&host, &bot, &working, "also the tests").await;
+    assert_eq!(sent["queued"], true, "{sent}");
+    release(&host, &bot, "slow");
+    let asked = "[Codync: you ended your turn while a command started";
+    let prompts = wait("the host to ask it to wait", async || {
+        let prompts = host.log(&bot, "prompts.jsonl");
+        prompts.iter().any(|p| p["text"].as_str().unwrap_or_default().contains(asked)).then_some(prompts)
+    })
+    .await;
+    let now = work(&host, &bot).await.into_iter().find(|i| i["title"] == "Review").unwrap();
+    release(&host, &bot, "review");
+    assert_eq!(now["status"], "working", "{now}");
+    let at = |what: &str| prompts.iter().position(|p| p["text"].as_str().unwrap_or_default().contains(what)).unwrap();
+    assert!(at("in this task's thread") < at(asked), "the user's message first: {prompts:?}");
+    let pid = |what: &str| &prompts[at(what)]["pid"];
+    assert!(pid("[Task]") == pid(asked) && pid("in this task's thread") == pid(asked), "one agent: {prompts:?}");
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: it finished, all green", "{done}");
+    let asked =
+        host.log(&bot, "prompts.jsonl").into_iter().filter(|p| p["text"].as_str().unwrap_or_default().contains(asked));
+    assert_eq!(asked.count(), 1, "asked once to wait");
+}
+
 #[tokio::test]
 async fn a_thread_hears_nothing_of_the_chat_it_was_handed_out_in() {
     let host = Host::start().await;

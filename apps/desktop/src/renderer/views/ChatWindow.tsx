@@ -49,7 +49,7 @@ import { WorkflowList, type WorkflowPlace } from './workflows/WorkflowList'
 import { computerSymbol } from './ComputerBadge'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
-import { extensionsTarget } from './extensions-target'
+import { extensionsTarget, railExtensionsOf } from './extensions-target'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -328,7 +328,7 @@ function ChatSplitView() {
   const go = (next: AppPage) => {
     // The rail's Extensions follows what is selected now: a computer asked for earlier (a heading, a deep link)
     // must not keep the page on that computer after the user picked another bot.
-    if (next === 'extensions') setExtensionsOf(null)
+    setExtensionsOf((asked) => railExtensionsOf(asked, next))
     if (next !== page) setPage(next)
     else if (listed) setListHidden(!listHidden)
   }

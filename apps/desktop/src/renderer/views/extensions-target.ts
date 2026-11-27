@@ -12,3 +12,8 @@ export function extensionsTarget(
 ): string | null {
   return asked || selected || local || firstOnline || null
 }
+
+/** The computer the rail leaves Extensions asking for: clicking its entry hands the page back to the selection. */
+export function railExtensionsOf(asked: string | null, nextPage: string): string | null {
+  return nextPage === 'extensions' ? null : asked
+}

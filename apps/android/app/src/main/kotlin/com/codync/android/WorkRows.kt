@@ -31,6 +31,7 @@ import com.codync.android.core.LinkState
 import com.codync.android.core.SourceKind
 import com.codync.android.core.WorkAction
 import com.codync.android.core.WorkTask
+import com.codync.android.core.WhereKind
 import com.codync.android.core.WhereLine
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.whereLine
@@ -200,12 +201,15 @@ internal fun AppStore.runWork(action: WorkAction, task: WorkTask, bot: Bot, ask:
  * Where a task's thread works ([whereLine]), on its row and in its thread's header: the folder or the branch symbol, then
  * [text] (the folder or the branch unless said), cut in the middle when it doesn't fit.
  */
-@Composable internal fun WhereLabel(where: WhereLine, modifier: Modifier = Modifier, text: String = where.text) {
+@Composable internal fun WhereLabel(where: WhereLine, modifier: Modifier = Modifier, text: String = whereText(where)) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Symbol(where.kind.symbol, size = 12.dp, tint = Palette.tertiary)
         Text(text, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
     }
 }
+
+/** What a where line says: its folder or branch, or "Own folder" in the user's language. */
+@Composable internal fun whereText(where: WhereLine) = if (where.kind == WhereKind.Own) tr(where.text) else where.text
 
 /** How long a thread has had a task (iOS `WorkElapsed`): counting while it works, fixed once it ended. */
 @Composable internal fun WorkElapsed(task: WorkTask) {

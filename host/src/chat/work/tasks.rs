@@ -582,6 +582,10 @@ pub(super) fn row(
     });
     if let Some(folder) = folder {
         row["folder"] = folder.clone().into();
+        // The folder Codync made for a thread without a bot: clients name it "Own folder" and list such threads together.
+        if super::plain::is_own_folder(folder) {
+            row["ownFolder"] = true.into();
+        }
     }
     if let Some(runs_on) = runs_on {
         row["runsOn"] = runs_on.into();
@@ -759,6 +763,16 @@ mod tests {
             (kind("/p2"), kind("/home"), kind("/tmp")),
             (FolderKind::Project, FolderKind::Home, FolderKind::Other)
         );
+    }
+
+    #[test]
+    fn a_row_says_when_its_thread_works_in_a_folder_codync_made_for_it() {
+        let task = || Task::waiting("t", "b", None, None, 0);
+        let own = super::super::plain::own_folder(&uuid::Uuid::new_v4().to_string()).expect("an own folder");
+        let own = own.to_string_lossy().into_owned();
+        let row = |cwd: &String| row(task(), Status::Done, "", None, false, Some(cwd), None);
+        assert_eq!((row(&own)["folder"].as_str(), row(&own)["ownFolder"].as_bool()), (Some(own.as_str()), Some(true)));
+        assert!(row(&"/p/app".to_owned()).get("ownFolder").is_none(), "a folder the user picked is named as it is");
     }
 
     #[test]

@@ -54,6 +54,8 @@ export interface WorkTask {
   worktree: { branch: string; path: string } | null
   /** The folder its thread works in (the worktree's, for one in a worktree); null until a thread took it. */
   folder: string | null
+  /** `folder` is the one Codync made for a thread without a bot, shown as "Own folder"; false from an older host. */
+  ownFolder: boolean
   /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
   /** The agent a thread the user started runs on, where it isn't its bot's (always without a bot). */
@@ -128,6 +130,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           worktree: t.worktree?.branch ? { branch: t.worktree.branch, path: t.worktree.path ?? '' } : null,
           source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
           folder: t.folder || null,
+          ownFolder: t.ownFolder === true,
           talk: t.talk ?? false,
           agent: typeof t.agent === 'string' ? t.agent : null,
           talkFiles: t.talkFiles ?? false,
@@ -198,6 +201,10 @@ export interface ThreadRowOf<T> {
   task: WorkTask
 }
 
+/** The one Threads group of every thread that works in a folder Codync made for it (`ownFolder`): titled "Own folder",
+ * a phrase the view looks up. */
+export const OWN_FOLDER_GROUP = 'folder:own'
+
 /** One group of the Threads page: a folder a thread works in outside its bot's own, a routine's runs, a bot, or a
  * computer. */
 export interface ThreadGroup<T> {
@@ -236,6 +243,7 @@ export function threadSections<T extends { bot: { work: WorkTask[]; name: string
       : grouping === 'computer' ? { key: `computer:${computerOf(of)}`, kind: 'computer', title: computerOf(of) }
       : grouping === 'none' ? null
       : task.source?.kind === 'routine' ? { key: `routine:${keyOf(of)}:${task.source.id ?? task.title}`, kind: 'routine', title: task.title }
+      : task.ownFolder ? { key: OWN_FOLDER_GROUP, kind: 'folder', title: 'Own folder' }
       : path && !task.worktree && path !== of.bot.cwd ? { key: `folder:${path}`, kind: 'folder', title: path.split(/[\\/]/).filter(Boolean).pop() ?? path }
       : null
     if (!group) recent.push(row)
@@ -482,16 +490,17 @@ export function readOnlyReason(task: Pick<WorkTask, 'talk' | 'source'>): string 
   }
 }
 
-/** Where a task's thread works, in one quiet line. */
+/** Where a task's thread works, in one quiet line; `own`'s text is a phrase to look up. */
 export interface WhereLine {
-  kind: 'folder' | 'branch'
+  kind: 'folder' | 'branch' | 'own'
   text: string
 }
 
-/** The branch when the task has a worktree of its own, else its folder with the home folder as `~`. Null for a task
- * no thread has taken. */
-export function whereLine(task: Pick<WorkTask, 'folder' | 'worktree'>, home: string): WhereLine | null {
+/** The branch when the task has a worktree of its own, else its folder with the home folder as `~` ("Own folder" for
+ * the one Codync made for it). Null for a task no thread has taken. */
+export function whereLine(task: Pick<WorkTask, 'folder' | 'worktree' | 'ownFolder'>, home: string): WhereLine | null {
   if (task.worktree) return { kind: 'branch', text: task.worktree.branch }
+  if (task.folder && task.ownFolder) return { kind: 'own', text: 'Own folder' }
   return task.folder ? { kind: 'folder', text: homeRelative(task.folder, home) } : null
 }
 

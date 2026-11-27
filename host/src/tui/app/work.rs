@@ -55,7 +55,7 @@ pub struct WorkTask {
     /// The branch of the git worktree its thread works in, while there is one.
     pub branch: Option<String>,
     /// Where its thread works; none before a thread took it, and from a host that doesn't say.
-    pub folder: Option<String>,
+    pub folder: Option<Folder>,
     /// The user may write to its thread: the bot's own work, whose thread is still there.
     pub talk: bool,
     /// Its thread takes files too; a host from before them doesn't say, and the terminal types a dropped path there.
@@ -81,6 +81,14 @@ fn background(v: &Value) -> Option<(String, i64)> {
     Some((text, first["startedAt"].as_i64().unwrap_or_default()))
 }
 
+/// Where a task's thread works.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Folder {
+    /// The folder Codync made for a thread without a bot (`ownFolder`): shown as "Own folder", not its id.
+    Own,
+    Path(String),
+}
+
 impl WorkTask {
     /// A task with an id and a status this terminal knows; any other is left out.
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -102,7 +110,10 @@ impl WorkTask {
                 _ => None,
             },
             branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
-            folder: v["folder"].as_str().filter(|f| !f.is_empty()).map(str::to_owned),
+            folder: v["folder"]
+                .as_str()
+                .filter(|f| !f.is_empty())
+                .map(|f| if v["ownFolder"] == true { Folder::Own } else { Folder::Path(f.to_owned()) }),
             talk: v["talk"] == true,
             talk_files: v["talkFiles"] == true,
             seat: v["seat"].as_bool(),

@@ -58,6 +58,9 @@ private func entry(_ id: String, seq: Int64, kind: String = "agent", data: Strin
         #expect(task(folder: "/w/a/app", worktree: tree).whereLine(home: home) == WhereLine(kind: .branch, text: "codync/fix-login", path: "/w/a/app"))
         #expect(task(worktree: tree).whereLine(home: home) == WhereLine(kind: .branch, text: "codync/fix-login", path: "/w/a"))
         #expect(task(worktree: .init(branch: "main")).whereLine(home: home)?.path == nil)
+        // The folder Codync made for a thread without a bot: named so, its path still the one to copy.
+        let own = WorkTask(id: "o", title: "Alone", status: .working, folder: "/Users/kai/.codync/threads/1", ownFolder: true)
+        #expect(own.whereLine(home: home) == WhereLine(kind: .folder, text: "Own folder", path: "/Users/kai/.codync/threads/1"))
         #expect(WhereLine.Kind.folder.symbol == "folder" && WhereLine.Kind.branch.symbol == "arrow.triangle.branch")
     }
 

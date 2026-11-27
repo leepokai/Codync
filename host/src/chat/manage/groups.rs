@@ -50,21 +50,27 @@ pub(crate) async fn create_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
     crate::hub::validate(&cfg)?;
     // Same members reopen an existing group (`Hub::create_bot`) and ignore the requested name and
     // topic. The card has to describe the group that write will return, not a new one.
-    let (title, lines) = if let Some(existing) = crate::chat::group::with_members(&hub.store, &cfg.members)? {
-        let have = group_bot(hub, &existing)?;
+    let reuse = crate::chat::group::with_members(&hub.store, &cfg.members)?;
+    let (title, lines) = if let Some(existing) = &reuse {
+        let have = group_bot(hub, existing)?;
         (format!("Open group {}", have.name), group_card(&have.name, &have.description, &have.members, hub))
     } else {
         (format!("Create group {name}"), group_card(name, &cfg.description, &cfg.members, hub))
     };
     approve(hub, source, title, lines, deadline).await?;
+    // A member can be deleted while the card waits. `valid_members` would silently drop it and create
+    // a group short of what the card shown; refuse instead.
+    group_members(hub, "", &cfg.members)?;
     let created = {
         let hub = hub.clone();
         tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??
     };
     let id = created["id"].as_str().context("the new group has no id")?;
-    // Same members reopen an existing group: report the name it actually has, not the requested one.
+    // Same members reopen an existing group: the name and the notice are the group's, not the request's.
     let created_name = created["name"].as_str().unwrap_or(name);
-    notice(hub, &source.id, &format!("Created group {created_name}"));
+    let opened = reuse.as_deref() == Some(id);
+    let verb = if opened { "Opened" } else { "Created" };
+    notice(hub, &source.id, &format!("{verb} group {created_name}"));
     Ok(json!({"group": group_detail(hub, id)?}))
 }
 
@@ -115,11 +121,11 @@ pub(crate) async fn update_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
         // Cross-machine ids and bots that vanished since the last read are refused, not silently dropped.
         let wanted: BTreeSet<&str> = members.iter().map(String::as_str).collect();
         let existing: BTreeSet<&str> = target.members.iter().map(String::as_str).collect();
-        if wanted == existing {
-            bail!("nothing to change in the group's members");
+        // The same members is not an error: a name or topic change can still go through.
+        if wanted != existing {
+            patch.insert("members".into(), json!(members));
+            changed.push("members");
         }
-        patch.insert("members".into(), json!(members));
-        changed.push("members");
     }
     if changed.is_empty() {
         bail!("nothing to change");
@@ -143,9 +149,14 @@ pub(crate) async fn update_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
     patch.insert("id".into(), id.clone().into());
     let patch = Value::Object(patch);
     let writing = hub.clone();
+    let checking = hub.clone();
     let saved_name = target.name.clone();
     let saved_topic = target.description.clone();
     let saved_members = target.members.clone();
+    let wanted_members = patch
+        .get("members")
+        .and_then(Value::as_array)
+        .map(|ids| ids.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<String>>());
     tokio::task::spawn_blocking(move || {
         writing.update_bot_if(&patch, move |row| {
             let same = row.config.name == saved_name
@@ -153,6 +164,11 @@ pub(crate) async fn update_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
                 && row.config.members == saved_members;
             if !same {
                 bail!("the group changed while your card was up; look at its members again and retry");
+            }
+            // A member added on the card may have been deleted while it waited: refuse rather than
+            // let `valid_members` silently drop it and write a group short of what was shown.
+            if let Some(ids) = &wanted_members {
+                group_members(&checking, &row.config.id, ids)?;
             }
             Ok(())
         })

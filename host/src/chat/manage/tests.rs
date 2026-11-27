@@ -237,7 +237,7 @@ async fn a_manager_lists_creates_and_changes_local_groups() {
         [
             json!("Created group Crew"),
             json!("Created group Plain"),
-            json!("Created group Plain"),
+            json!("Opened group Plain"),
             json!("Updated Crew: name, members"),
             json!("Updated Squad: members")
         ]
@@ -363,6 +363,89 @@ async fn reopening_a_group_asks_about_the_group_that_will_be_returned() {
     assert_eq!(got["group"]["id"], id);
     assert_eq!(got["group"]["name"], "Plain");
     assert_eq!(got["group"]["topic"], "Keep");
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Same member list with a name/topic change is a real change, not "nothing to change".
+#[tokio::test]
+async fn the_same_members_still_allow_a_name_or_topic_change() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-same-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "topic": "Old", "members": ["lead", "dev"]}))
+        .await
+        .unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    let changed = call(
+        &hub,
+        "lead",
+        "update_group",
+        &json!({"groupId": gid, "members": ["lead", "dev"], "name": "Squad", "topic": "New"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(changed["group"]["name"], "Squad");
+    assert_eq!(changed["group"]["topic"], "New");
+    assert_eq!(changed["group"]["members"].as_array().unwrap().len(), 2);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A member deleted while the create card waits must refuse the create, not silently make a short group.
+#[tokio::test]
+async fn a_member_deleted_before_create_allow_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-create-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let mut commands = hub.attach_bot_for_test("lead");
+    let create_hub = hub.clone();
+    let task = tokio::spawn(async move {
+        call(&create_hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    hub.store.delete_bot("dev").unwrap();
+    reply.send(true).unwrap();
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("unknown or unavailable bot dev"), "{err}");
+    assert!(group_list(&hub).unwrap().is_empty(), "no short group was created");
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A member deleted while the update card waits must refuse the add, not silently drop that member.
+#[tokio::test]
+async fn a_member_deleted_before_update_allow_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-update-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let mut commands = hub.attach_bot_for_test("lead");
+    let update_hub = hub.clone();
+    let update_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&update_hub, "lead", "update_group", &json!({"groupId": update_gid, "addMembers": ["lead"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { reply, .. } = cmd {
+            break reply;
+        }
+    };
+    // `lead` is the caller and a member of no group here; delete it while the card waits.
+    hub.store.delete_bot("lead").unwrap();
+    reply.send(true).unwrap();
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("unknown or unavailable bot lead"), "{err}");
+    let members = hub.store.bot(&gid).unwrap().unwrap().config.members;
+    assert_eq!(members, ["dev".to_owned()], "no member was silently dropped or added");
     drop(commands);
     std::fs::remove_dir_all(&dir).unwrap();
 }

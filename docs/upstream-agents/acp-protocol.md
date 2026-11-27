@@ -3,6 +3,12 @@
 Not one agent's bug: the protocol leaves these open, and the host covers them for every agent. Rules:
 [README](README.md).
 
+- No way to tell that work a turn started still runs once the turn ended (a background shell, a CI watch): a thread
+  whose turn ends normally while something its agent runs detached (a session of its own, not listening) is asked
+  once to wait for it, and fails on the next such end ([work](../features/work.md#background-work-left-running),
+  #634; `host/src/agent/bot/background_work.rs`). What runs in the agent's own session isn't seen. Claude's adapter
+  reports its background work through its `asyncTasks` extension instead
+  ([claude-agent-acp](claude-agent-acp.md#background-work)), so a Claude thread isn't checked this way.
 - No structured MCP server and tool name on a tool call: `host/src/agent/bot/tool_entry.rs` parses titles (`mcp__x__y`, `mcp.x.y`).
 - Every adapter names its error category differently (`errorKind`, `category`, `codexErrorInfo`): `host/crates/agent/src/acp.rs`.
 - Agents that ignore `session/cancel` are killed after 15 s; a hung `session/new`, `session/load` or `session/resume` after 3 min;

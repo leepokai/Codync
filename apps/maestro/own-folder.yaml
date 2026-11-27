@@ -70,6 +70,9 @@ onFlowComplete:
     file: own-folder.js
     env:
       DEFAULT_IS: ${ADD_DIR}
+# Cancel closes the picker without adding anything.
+- tapOn: "Add project"
+- tapOn: "Cancel"
 - tapOn: "Remove project"
 # Without a project in a git repository there is no worktree to make.
 - tapOn: "Remove project"

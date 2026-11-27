@@ -2148,6 +2148,7 @@
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "Также в этом выпуске",
   "Watch the full video": "Смотреть видео целиком",
+  "Background": "Фон",
   "Work": "Работа",
   "Worktree per thread": "Отдельный worktree для каждого thread",
   "Threads that work at once in this repository each get their own branch.": "Threads, одновременно работающие в этом репозитории, получают каждый свою ветку.",

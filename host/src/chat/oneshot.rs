@@ -14,12 +14,38 @@ use std::time::Duration;
 const TIMEOUT: Duration = Duration::from_mins(3);
 const DELETE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Whether the throwaway agent may use tools. A side question (`chat::side`) must not, and only Claude's adapter
+/// can be opened with none: a harness that can't is refused rather than run with its own tools.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Tools {
+    On,
+    Off,
+}
+
+/// The harness has no way to open a session without tools (`Tools::Off`).
+#[derive(Debug)]
+pub struct ToolsCannotBeOff;
+
+impl std::fmt::Display for ToolsCannotBeOff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("this agent can't run without tools")
+    }
+}
+
+impl std::error::Error for ToolsCannotBeOff {}
+
 /// Runs one prompt on a throwaway agent of the bot's harness and returns its reply.
 /// Claude gets a real system prompt, no tools, no settings and no saved session; an agent with ACP
 /// `systemPrompt` gets the instructions there, other harnesses inline. None of them may remember the job: an agent
 /// that saves sessions and offers `session/delete` gets the job's deleted (Codex archives it), or it would show in
 /// the user's own history (#346).
 pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str) -> Result<String> {
+    one_shot_with(hub, cfg, system, user, Tools::On).await
+}
+
+/// [`one_shot`], with `tools` saying whether the agent may use any: [`Tools::Off`] fails on a harness that can't
+/// open a session without them, before that session is created.
+pub async fn one_shot_with(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str, tools: Tools) -> Result<String> {
     let cwd = crate::service::data_dir().join("background");
     tokio::fs::create_dir_all(&cwd).await?;
     let cwd = cwd.to_string_lossy().into_owned();
@@ -46,6 +72,11 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     .await?;
     grants.held_by(&conn.acp);
     let acp = conn.acp.clone();
+    // A harness without a way to turn tools off never gets the session: the job would run with its own tools.
+    if tools == Tools::Off && conn.adapter() != Adapter::Claude {
+        acp.kill().await;
+        return Err(anyhow::Error::new(ToolsCannotBeOff));
+    }
     let mut opened = None;
     let result = async {
         let mut params = json!({"cwd": cwd, "mcpServers": []});

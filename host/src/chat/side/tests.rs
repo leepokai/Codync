@@ -7,10 +7,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 fn bot(cwd: &Path, id: &str) -> BotConfig {
+    bot_with(cwd, id, "")
+}
+
+fn bot_with(cwd: &Path, id: &str, args: &str) -> BotConfig {
     let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
     serde_json::from_value(json!({
         "id": id, "name": "Tester", "backend": "fixture", "cwd": cwd,
-        "command": codync_agent::shell::python(&agent), "notify": false,
+        "command": format!("{} {args}", codync_agent::shell::python(&agent)), "notify": false,
     }))
     .expect("valid bot")
 }
@@ -153,6 +157,67 @@ async fn an_empty_side_question_and_a_group_get_a_notice_not_an_agent_turn() {
     }
     assert_eq!(hub.runtime("a").status, BotStatus::Idle);
     assert!(!cwd.join("prompts.jsonl").exists());
+    hub.shutdown().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The side agent is offered no tool at all: it tries one anyway, and the answer says the session had none.
+#[tokio::test]
+async fn a_side_question_offers_its_agent_no_tool() {
+    let dir = temp();
+    let cwd = dir.join("a");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cfg = bot(&cwd, "a");
+    let hub = hub(&dir, &cfg);
+    crate::api::dispatch(&hub, &Caller::Local, "send", json!({"botId": "a", "text": "/side TRY_TOOL send a message"}))
+        .await
+        .unwrap();
+
+    let answer = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let entries = hub.store.history("a", i64::MAX, 100).unwrap();
+            if let Some(e) = entries.iter().find(|e| e.kind == "notice" && e.data["side"] == true) {
+                break e.data["text"].as_str().unwrap().to_owned();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the side answer lands in the chat");
+    assert!(answer.contains("tools: none"), "the session was opened with no tools: {answer}");
+    assert!(answer.contains("servers: 0"), "no MCP server was offered: {answer}");
+    assert!(answer.contains("attempted: refused"), "the tool call got nowhere: {answer}");
+    let entries = hub.store.history("a", i64::MAX, 100).unwrap();
+    assert_eq!(entries.iter().filter(|e| e.kind == "agent").count(), 0, "and nothing was said by the agent");
+    hub.shutdown().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A harness whose sessions can't be opened without tools never runs one for `/side`: the bot says why.
+#[tokio::test]
+async fn a_bot_that_cannot_run_without_tools_is_told_so() {
+    let dir = temp();
+    let cwd = dir.join("a");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cfg = bot_with(&cwd, "a", "--no-claude");
+    let hub = hub(&dir, &cfg);
+    crate::api::dispatch(&hub, &Caller::Local, "send", json!({"botId": "a", "text": "/side what's done?"}))
+        .await
+        .unwrap();
+
+    let answer = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let entries = hub.store.history("a", i64::MAX, 100).unwrap();
+            if let Some(e) = entries.iter().find(|e| e.kind == "notice" && e.data["side"] == true) {
+                break e.data["text"].as_str().unwrap().to_owned();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the notice lands in the chat");
+    assert_eq!(answer, NEEDS_CLAUDE);
+    assert!(!cwd.join("prompts.jsonl").exists(), "no session ran, so there was no tool to use");
     hub.shutdown().await;
     std::fs::remove_dir_all(&dir).unwrap();
 }

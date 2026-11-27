@@ -4,7 +4,9 @@
 //! shouldn't wait in that queue or talk the bot into a new turn. `/side` takes the chat's recent messages as a
 //! snapshot and asks a throwaway agent of the bot's harness (see [`crate::chat::oneshot`]) — its own session, no
 //! tools, nothing kept: the answer lands in the chat as a notice, and the bot's own turn, session and memory never
-//! see it. The same text without the command is an ordinary message, and a group has no single bot to ask.
+//! see it. Only a Claude Code bot can run this way — its session can be opened with no tools at all — so a bot on
+//! another harness says so instead of answering with tools it can't put down. The same text without the command is
+//! an ordinary message, and a group has no single bot to ask.
 
 use crate::agent::bot::NoticeStyle;
 use crate::hub::Hub;
@@ -69,8 +71,13 @@ pub fn prompt(snapshot: &str, question: &str) -> String {
 /// Asks the throwaway agent `question` about the chat's snapshot and returns its answer.
 pub async fn ask(hub: &Arc<Hub>, cfg: &BotConfig, question: &str) -> Result<String> {
     let snapshot = snapshot(&hub.store, &cfg.id, SNAPSHOT_LINES)?;
-    crate::chat::oneshot::one_shot(hub, cfg, SYSTEM, &prompt(&snapshot, question)).await
+    let tools = crate::chat::oneshot::Tools::Off;
+    crate::chat::oneshot::one_shot_with(hub, cfg, SYSTEM, &prompt(&snapshot, question), tools).await
 }
+
+/// What the user is told when the bot's harness can't open a session without tools.
+pub const NEEDS_CLAUDE: &str =
+    "Side questions need a bot on Claude Code: it is the only agent Codync can open without tools.";
 
 /// Answers `question` in the background, as a notice in `cfg`'s chat: the bot's own turn never sees it.
 pub fn start(hub: &Arc<Hub>, cfg: &BotConfig, question: &str) {
@@ -81,6 +88,9 @@ pub fn start(hub: &Arc<Hub>, cfg: &BotConfig, question: &str) {
         let (text, style) = match ask(&hub, &cfg, &question).await {
             Ok(answer) if !answer.trim().is_empty() => (answer.trim().to_owned(), NoticeStyle::Info),
             Ok(_) => ("The side question got no answer.".to_owned(), NoticeStyle::Error),
+            Err(error) if error.downcast_ref::<crate::chat::oneshot::ToolsCannotBeOff>().is_some() => {
+                (NEEDS_CLAUDE.to_owned(), NoticeStyle::Info)
+            }
             Err(error) => {
                 tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "side question failed");
                 (format!("The side question failed: {error:#}"), NoticeStyle::Error)

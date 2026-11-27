@@ -904,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.54.0"
+version = "2.55.0"
 dependencies = [
  "anyhow",
  "axum",

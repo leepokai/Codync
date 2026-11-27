@@ -306,10 +306,10 @@ and lose the work it waited on (#634). The task prompt says not to (`prompts::ta
 rely on it: as a thread's turn ends with `end_turn`, the actor looks for background work it can see
 (`Actor::left_running`):
 
-- **a subagent launched to run in the background** in that turn: Claude's adapter says so on its `Agent` call
-  (`Subagent.background`, from `isAsync` / `run_in_background`);
-- else **a program the agent started detached**, in a session of its own (`background_work::left_running`, the same
-  look as the idle stop's, but only what is seen counts: a listing that fails is no signal).
+- **a program the agent started detached**, in a session of its own (`background_work::left_running`, the same
+  look as the idle stop's, but only what is seen counts: a listing that fails is no signal);
+- else **a subagent launched to run in the background** in that turn: Claude's adapter says so on its `Agent` call
+  (`Subagent.background`, from `isAsync` / `run_in_background`).
 
 Seen, the turn ends as `Outcome::LeftRunning` and the task stays open: once per task (`told_to_wait`, cleared when
 a new thread takes it up again: a cut-in, a restart, Try again), the host saves a `from: host` message to the thread

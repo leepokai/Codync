@@ -2171,6 +2171,22 @@ async fn a_thread_that_ends_after_launching_a_background_subagent_is_told_to_wai
     assert!(waited_in_the_same_agent(&host, &bot, "Review"), "the subagent runs in the agent: it isn't stopped");
 }
 
+/// #634: a program still running counts above a subagent launched in the same turn, which never tells whether it
+/// ended: told to wait, a thread that ends again with both stops early.
+#[tokio::test]
+#[cfg_attr(windows, ignore = "Windows can't tell a program left running from the agent's own (docs/features/work.md)")]
+async fn a_program_left_running_beside_a_subagent_still_stops_its_task_early() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Watch CI|Run the checks BACKGROUND:ci SUBAGENT:review STUBBORN").await;
+    let told = wait("the thread to be told to wait", async || told_to_wait(&host, &bot).pop()).await;
+    assert!(told.contains("a program"), "{told}");
+    let failed = task(&host, &bot, "Watch CI", "failed").await;
+    assert!(failed["result"].as_str().unwrap().contains("a program it started"), "{failed}");
+    release(&host, &bot, "ci");
+    release(&host, &bot, "review");
+}
+
 /// #634: a message the user wrote to a thread that ends its turn with a program still running is the thread's next
 /// turn, as always, and the session that holds that program stays for it: it is told to wait after that turn.
 #[tokio::test]

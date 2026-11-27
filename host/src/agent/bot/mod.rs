@@ -446,18 +446,18 @@ impl Actor {
     }
 
     /// What a thread's turn that ended (`done`) as its agent meant it to left running in the background, as far as the
-    /// host can see: a subagent it launched to run there, else a program it started detached.
+    /// host can see: a program it started detached, which surely still runs, else a subagent it launched to run there.
     async fn left_running(&self, done: &Done) -> Option<crate::chat::work::Left> {
         use crate::chat::work::Left;
         let ended = matches!(done, Ok(v) if acp::StopReason::of(v) == acp::StopReason::EndTurn);
         if !self.cfg.is_thread() || !ended || self.stop_requested || self.turn.is_none() {
             return None;
         }
-        if self.background_subagent {
-            return Some(Left::Subagent);
-        }
-        let conn = self.conn.as_ref()?;
-        background_work::left_running(&conn.acp).await.then_some(Left::Program)
+        let program = match &self.conn {
+            Some(conn) => background_work::left_running(&conn.acp).await,
+            None => false,
+        };
+        if program { Some(Left::Program) } else { self.background_subagent.then_some(Left::Subagent) }
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.

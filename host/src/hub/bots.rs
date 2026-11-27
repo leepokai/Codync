@@ -93,6 +93,18 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        self.delete_bot_if(id, |_| Ok(()))
+    }
+
+    /// Deletes `id`, running `check` on its live config inside the same `emit_lock` that `make_lead` holds while
+    /// setting a bot's lead flag. The check runs before any cleanup and again immediately before the store delete,
+    /// still under the lock: a lead pick can't land in between. A refused check changes nothing.
+    pub fn delete_bot_if(&self, id: &str, check: impl Fn(&BotConfig) -> Result<()>) -> Result<()> {
+        {
+            let _g = self.emit_lock.locked();
+            let row = self.store.bot(id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            check(&row.config)?;
+        }
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in crate::chat::work::of(&self.store, id) {
             self.delete_bot(&thread.id)?;
@@ -108,6 +120,10 @@ impl Hub {
         self.dev_servers.forget_bot(&self.store, id);
         {
             let _g = self.emit_lock.locked();
+            // Last guard under the same lock `make_lead` uses: re-read the live config and refuse a
+            // bot that became lead after the first check, so no pick can land in between.
+            let row = self.store.bot(id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            check(&row.config)?;
             let rev = self.store.delete_bot(id)?;
             // No client ever listed a thread bot, so none hears it go.
             if !crate::store::is_thread_id(id) {

@@ -292,15 +292,19 @@ async fn delete(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let name = target.name.clone();
     let detail = format!("Name: {name}\nThis deletes the bot, its routines, threads and files. It can't be undone.");
     approve_destructive(hub, source, format!("Delete bot {name}"), detail, deadline).await?;
-    // The bot may have gone while the card waited; the store is the authority when we delete.
-    let target = agent_bot(hub, &id)?;
-    if target.lead {
-        bail!("the current lead can't be deleted by a bot: the user deletes it in settings");
-    }
-    let name = target.name;
+    // The bot may have gone while the card waited, or become lead. The check and the store delete share
+    // `emit_lock` with `make_lead`, so a lead pick can't slip in between them.
     let deleting = hub.clone();
-    let id = id.clone();
-    tokio::task::spawn_blocking(move || deleting.delete_bot(&id)).await??;
+    let delete_id = id.clone();
+    tokio::task::spawn_blocking(move || {
+        deleting.delete_bot_if(&delete_id, |cfg| {
+            if cfg.lead {
+                bail!("the current lead can't be deleted by a bot: the user deletes it in settings");
+            }
+            Ok(())
+        })
+    })
+    .await??;
     notice(hub, &source.id, &format!("Deleted {name}"));
     Ok(json!({"deleted": true}))
 }

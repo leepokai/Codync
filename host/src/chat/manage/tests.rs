@@ -190,6 +190,38 @@ async fn delete_bot_stays_under_a_network_ceiling() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The user can pick the target as lead while a manager's delete card is up. Allowing the card then
+/// must not delete the new lead: `delete_bot_if` rechecks lead under the same `emit_lock` `make_lead`
+/// uses, right before the store delete.
+#[tokio::test]
+async fn a_target_made_lead_while_the_card_waits_is_not_deleted() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-lead-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    // Stand in for the manager's actor: the approval card command arrives here instead of driving a real turn.
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let task = tokio::spawn(async move { call(&call_hub, "lead", "delete_bot", &json!({"botId": "dev"})).await });
+
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Delete bot dev"), "{title}");
+            break reply;
+        }
+    };
+    // The user makes the deletion target the lead while the card is still unanswered.
+    crate::chat::lead::set(&hub, "dev").unwrap();
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.lead);
+    reply.send(true).unwrap();
+
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("current lead can't be deleted"), "{err}");
+    let row = hub.store.bot("dev").unwrap().unwrap();
+    assert!(!row.deleted && row.config.lead, "the new lead is still here");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();

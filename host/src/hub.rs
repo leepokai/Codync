@@ -188,6 +188,17 @@ impl Hub {
         self.deleting.locked().contains(id)
     }
 
+    /// Marks/unmarks `id` for the deterministic lead-refusal test, without racing a real delete.
+    #[cfg(test)]
+    pub(crate) fn mark_deleting_for_test(&self, id: &str, on: bool) {
+        let mut deleting = self.deleting.locked();
+        if on {
+            deleting.insert(id.to_owned());
+        } else {
+            deleting.remove(id);
+        }
+    }
+
     pub fn busy(&self) -> bool {
         self.runtime.locked().values().any(|r| matches!(r.status, BotStatus::Working | BotStatus::NeedsInput))
             || self.terms.busy()

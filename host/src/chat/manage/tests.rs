@@ -317,14 +317,35 @@ async fn a_lead_pick_during_the_cleanup_window_is_refused() {
     });
     entered_rx.recv().await.unwrap();
 
+    // Whoever wins `emit_lock` after the signal, the lead pick can never succeed: it either sees the
+    // delete mark and is refused, or the delete has already finished and the bot is gone. Assert the
+    // invariant, not which error string the race produced.
     let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
-    assert!(err.contains("being deleted"), "{err}");
+    assert!(err.contains("being deleted") || err.contains("unknown bot"), "the lead pick was refused: {err}");
     assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead, "no half-promoted lead in the store");
 
     task.await.unwrap().unwrap();
     let row = hub.store.bot("dev").unwrap().unwrap();
     assert!(row.deleted && !row.config.lead, "the delete still completed cleanly");
     assert!(!hub.is_deleting("dev"), "the mark is cleared after the delete");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Deterministic check of the guard itself: a marked bot is refused as lead, and is selectable again
+/// once the mark clears. No delete thread, so no race over which error the pick gets.
+#[tokio::test]
+async fn a_marked_bot_cannot_be_made_lead_then_can_again() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-lead-mark-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.mark_deleting_for_test("dev", true);
+    let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
+    assert!(err.contains("being deleted"), "{err}");
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead);
+
+    hub.mark_deleting_for_test("dev", false);
+    crate::chat::lead::set(&hub, "dev").unwrap();
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.lead, "pickable once the mark clears");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

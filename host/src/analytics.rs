@@ -388,3 +388,27 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+/// How a `/side` question ended (`chat::side`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SideOutcome {
+    /// The throwaway agent answered.
+    Answered,
+    /// The bot's harness can't open a session without tools.
+    Unsupported,
+    /// The agent failed or ran out of time.
+    Failed,
+}
+
+/// A `/side` question started: the agent that will answer it, never the question.
+pub fn side_asked(hub: &Hub, agent: &str) {
+    let p = json!({"agent": agent});
+    capture(hub, Event::SideAsked, p.as_object().cloned().unwrap_or_default());
+}
+
+/// A `/side` question ended. `ms` is how long the throwaway agent took.
+pub fn side_answered(hub: &Hub, agent: &str, outcome: SideOutcome, ms: u64) {
+    let p = json!({"agent": agent, "outcome": outcome, "ms": ms});
+    capture(hub, Event::SideAnswered, p.as_object().cloned().unwrap_or_default());
+}

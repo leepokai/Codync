@@ -236,7 +236,9 @@ fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
 
 /// The chat's last `count` messages as the voice reads them: who wrote each, and its text shortened for speech.
 pub(super) fn said(hub: &Hub, cfg: &BotConfig, count: i64, chars: usize) -> Vec<(String, String)> {
-    let messages = hub.store.messages_after(&Lane::main(&cfg.id), 0, count).unwrap_or_default();
+    let mut messages = hub.store.messages_after(&Lane::main(&cfg.id), 0, count).unwrap_or_default();
+    // A `/side` question is not part of the conversation a call continues (`chat::side`).
+    messages.retain(|e| e.data["side"] != true);
     messages
         .iter()
         .map(|e| {

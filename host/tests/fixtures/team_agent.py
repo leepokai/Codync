@@ -18,6 +18,7 @@ cancel = threading.Event()
 permission = threading.Event()
 permission_reply = None
 servers = []
+session_params = {}
 
 
 def send(value):
@@ -72,8 +73,7 @@ def prompt(request):
     if text.split("\n\n")[-1].startswith("Question: TRY_TOOL"):
         # A side question whose agent tries a tool anyway: says what the session offered it and whether the call
         # got anywhere. `chat/side` must answer with no tool at all.
-        params = json.loads(pathlib.Path("session-params.json").read_text())
-        options = params.get("_meta", {}).get("claudeCode", {}).get("options", {})
+        options = session_params.get("_meta", {}).get("claudeCode", {}).get("options", {})
         offered = options.get("tools")
         attempted = "refused"
         try:
@@ -81,7 +81,7 @@ def prompt(request):
             attempted = "reached"
         except Exception:
             pass
-        reply = f"tools: {'none' if offered == [] else offered} servers: {len(params.get('mcpServers') or [])} attempted: {attempted}"
+        reply = f"tools: {'none' if offered == [] else offered} servers: {len(session_params.get('mcpServers') or [])} attempted: {attempted}"
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
@@ -266,10 +266,10 @@ for line in sys.stdin:
         send({"id": request["id"], "result": {"agentCapabilities": caps}})
     elif method in ("session/new", "session/load"):
         servers = request["params"]["mcpServers"]
+        session_params = request["params"]
         with open("sessions.jsonl", "a") as log:
             log.write(json.dumps(request) + "\n")
         pathlib.Path("servers.json").write_text(json.dumps(request["params"]["mcpServers"]))
-        pathlib.Path("session-params.json").write_text(json.dumps(request["params"]))
         # modes.json in the bot's folder: the session modes this agent lists (none without it).
         listed = pathlib.Path("modes.json")
         modes = json.loads(listed.read_text()) if listed.exists() else {}

@@ -43,6 +43,10 @@ pub enum Event {
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
     AgentCommandSent,
+    /// A `/side` question ran off to the side (`chat::side`).
+    SideAsked,
+    /// A `/side` question ended: the throwaway agent answered, the harness can't run without tools, or it failed.
+    SideAnswered,
     /// A bot's new Codex session was put in Codex's own Codync section, or wasn't (`agent::bot::codex_section`).
     CodexSessionFiled,
     QueuedMessageRemoved,
@@ -282,6 +286,8 @@ impl Event {
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
+            Self::SideAsked => "side_asked",
+            Self::SideAnswered => "side_answered",
             Self::CodexSessionFiled => "codex_session_filed",
             Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",

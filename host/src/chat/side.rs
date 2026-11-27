@@ -84,18 +84,32 @@ pub fn start(hub: &Arc<Hub>, cfg: &BotConfig, question: &str) {
     let hub = hub.clone();
     let cfg = cfg.clone();
     let question = question.to_owned();
+    crate::analytics::side_asked(&hub, &cfg.backend);
     tokio::spawn(async move {
-        let (text, style) = match ask(&hub, &cfg, &question).await {
-            Ok(answer) if !answer.trim().is_empty() => (answer.trim().to_owned(), NoticeStyle::Info),
-            Ok(_) => ("The side question got no answer.".to_owned(), NoticeStyle::Error),
+        let started = std::time::Instant::now();
+        let (text, style, outcome) = match ask(&hub, &cfg, &question).await {
+            Ok(answer) if !answer.trim().is_empty() => {
+                (answer.trim().to_owned(), NoticeStyle::Info, crate::analytics::SideOutcome::Answered)
+            }
+            Ok(_) => (
+                "The side question got no answer.".to_owned(),
+                NoticeStyle::Error,
+                crate::analytics::SideOutcome::Failed,
+            ),
             Err(error) if error.downcast_ref::<crate::chat::oneshot::ToolsCannotBeOff>().is_some() => {
-                (NEEDS_CLAUDE.to_owned(), NoticeStyle::Info)
+                (NEEDS_CLAUDE.to_owned(), NoticeStyle::Info, crate::analytics::SideOutcome::Unsupported)
             }
             Err(error) => {
                 tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "side question failed");
-                (format!("The side question failed: {error:#}"), NoticeStyle::Error)
+                (
+                    format!("The side question failed: {error:#}"),
+                    NoticeStyle::Error,
+                    crate::analytics::SideOutcome::Failed,
+                )
             }
         };
+        let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        crate::analytics::side_answered(&hub, &cfg.backend, outcome, ms);
         // The bot (or its chat) may be gone by the time the answer lands.
         if hub.store.bot(&cfg.id).ok().flatten().is_none_or(|r| r.deleted) {
             return;

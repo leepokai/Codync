@@ -7,7 +7,7 @@ import { fastModeDetail, fastModeShown, fastModeState, groupFastMode, type FastM
 import { runningAgent } from '../../../shared/fallbacks.ts'
 import type { Bot } from '../../../shared/models.ts'
 
-export type SlashAction = { kind: 'fast' } | { kind: 'skill'; id: string } | { kind: 'agent'; agent: string }
+export type SlashAction = { kind: 'fast' } | { kind: 'side' } | { kind: 'skill'; id: string } | { kind: 'agent'; agent: string }
 
 export interface SlashCommand {
   /** What follows the `/`. */
@@ -27,7 +27,10 @@ export function slashQuery(draft: string): string | null {
 /** The bot's built-in commands; a group's Fast mode is its members' (`groupFastMode`). */
 function builtIn(bot: Bot, members: Bot[]): SlashCommand[] {
   const fast = bot.kind === 'group' ? groupFastMode(members) : ownFastMode(bot)
-  return fast ? [{ name: 'fast', icon: 'bolt', title: 'Fast mode', detail: fast.detail, warning: fast.state === 'refused', action: { kind: 'fast' } }] : []
+  const fastCommand = fast ? [{ name: 'fast', icon: 'bolt', title: 'Fast mode', detail: fast.detail, warning: fast.state === 'refused', action: { kind: 'fast' as const } }] : []
+  // `/side` is a host command: one read-only question from the chat so far. Only a bot's own chat, never a group.
+  const sideCommand = bot.kind === 'group' ? [] : [{ name: 'side', icon: 'question', title: 'Side question', detail: 'Ask one question about the chat so far, without tools or a new turn (Claude Code bots)', warning: false, action: { kind: 'side' as const } }]
+  return [...fastCommand, ...sideCommand]
 }
 
 /** A bot's own Fast mode, while it shows it. */
@@ -67,5 +70,5 @@ export function builtInCommand(bot: Bot | null, draft: string, members: Bot[] = 
  * is already typed out, which sends.
  */
 export function returnRuns(picked: SlashCommand, draft: string): boolean {
-  return picked.action.kind === 'fast' || draft !== `/${picked.name}`
+  return picked.action.kind === 'fast' || picked.action.kind === 'side' || draft !== `/${picked.name}`
 }

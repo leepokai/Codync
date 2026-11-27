@@ -285,7 +285,8 @@ impl Actor {
     fn main_messages(&self, after: i64) -> Option<Vec<Entry>> {
         let current = self.relay.attempt.as_ref().map(|a| a.entries.as_slice()).unwrap_or_default();
         let mut entries = self.hub.store.messages_after(&Lane::main(&self.base.id), after, READ).ok()?;
-        entries.retain(|e| !current.contains(&e.id));
+        // A `/side` question and its answer are read-only asides (`chat::side`): never carried into a new session.
+        entries.retain(|e| !current.contains(&e.id) && e.data["side"] != true);
         Some(entries)
     }
 

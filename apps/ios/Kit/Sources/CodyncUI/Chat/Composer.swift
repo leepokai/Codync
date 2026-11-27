@@ -402,6 +402,8 @@ struct Composer: View {
         case .fast:
             model.toggleFastMode(bot)
             draft = ""
+        case .side:
+            draft = "/side "
         case .skill(let id), .agent(let id, _):
             draft = "/\(id) "
         }

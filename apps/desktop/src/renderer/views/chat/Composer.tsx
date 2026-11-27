@@ -144,6 +144,9 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
         }
         setDraft('')
         break
+      case 'side':
+        setDraft('/side ')
+        break
       case 'skill':
         setDraft(`/${command.action.id} `)
         break

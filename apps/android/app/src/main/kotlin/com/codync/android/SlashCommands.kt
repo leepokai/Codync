@@ -13,9 +13,9 @@ import com.codync.android.core.runningAgent
  * commands ([agent]: the agent that lists it, whose logo marks the row).
  */
 internal data class SlashCommand(val name: String, val icon: String, val title: String, val detail: String, val warning: Boolean,
-    val skill: String? = null, val agent: String? = null) {
+    val skill: String? = null, val agent: String? = null, val side: Boolean = false) {
     /** Picking it fills in `/<name> ` rather than running it. */
-    val fills: Boolean get() = skill != null || agent != null
+    val fills: Boolean get() = skill != null || agent != null || side
 }
 
 /**
@@ -65,7 +65,12 @@ internal object SlashCommands {
             if (!bot.fastModeShown) return emptyList()
             bot.fastModeDetail to bot.fastModeState
         }
-        return listOf(SlashCommand("fast", "bolt", "Fast mode", detail, state == FastModeState.Refused))
+        val fastCommand = SlashCommand("fast", "bolt", "Fast mode", detail, state == FastModeState.Refused)
+        if (bot.kind == "group") return listOf(fastCommand)
+        // A host command: one read-only question from the chat so far; a group has no single chat to ask about.
+        val side = SlashCommand("side", "questionmark.circle", "Side question",
+            "Ask one question about the chat so far, without tools or a new turn (Claude Code bots)", false, side = true)
+        return listOf(fastCommand, side)
     }
 }
 

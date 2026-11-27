@@ -19,7 +19,7 @@ pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, data: Value) -> Result<Entry> {
 /// that was never saved differs from one that was saved and not taken.
 pub fn save(hub: &Hub, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
     // `/side` is answered by a throwaway agent, not a turn of the bot's own: it isn't queued behind one.
-    if !cfg.is_group() && data["text"].as_str().and_then(crate::chat::side::parse).is_some() {
+    if data["text"].as_str().and_then(crate::chat::side::parse).is_some() {
         data["side"] = true.into();
     }
     // A group has no agent of its own to queue behind: its message is simply sent.

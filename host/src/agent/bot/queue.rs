@@ -559,7 +559,7 @@ impl Actor {
     /// the tasks a bot added in the turn may start.
     pub(super) fn turn_over(&mut self, outcome: Outcome) {
         if self.cfg.is_thread() {
-            work::finished(&self.hub, &self.cfg, outcome);
+            self.task_goes_on = work::finished(&self.hub, &self.cfg, outcome);
         } else {
             work::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
         }

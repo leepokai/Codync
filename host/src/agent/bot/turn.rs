@@ -176,6 +176,7 @@ impl Actor {
         self.sent.clear();
         self.reacted = Reacted::No;
         self.joined = false;
+        self.background_subagent = false;
         self.unheard.clear();
         self.files.summary = None;
         self.files.cancel();
@@ -496,6 +497,7 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
+        let left_running = self.left_running.take();
         let goes_on = self.end_task(|| {
             if stopped {
                 Outcome::Stopped
@@ -503,6 +505,8 @@ impl Actor {
                 Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
             } else if stop_reason != "end_turn" {
                 Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+            } else if let Some(left) = left_running {
+                Outcome::LeftRunning(left, final_text.clone())
             } else {
                 Outcome::Done(final_text.clone())
             }

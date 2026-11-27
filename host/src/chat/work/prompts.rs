@@ -51,6 +51,21 @@ pub(super) fn task_prompt(task: &Task, first: bool) -> String {
     )
 }
 
+/// What a thread that ended its turn while `what` it started in the background still ran is told, once.
+pub(super) fn wait(what: &str) -> String {
+    format!(
+        "[Codync: you ended your turn while {what} you started in the background is still running, so your task \
+         isn't done. Wait for it to finish (check on it, don't start it again), then end with your report: what you \
+         did and found. If you end your turn again while it runs, this task ends as stopped early.]"
+    )
+}
+
+/// Why a thread's task stopped early: it ended its turn again while `what` still ran; `said`, its last message.
+pub(super) fn stopped_early(what: &str, said: &str) -> String {
+    let why = format!("it stopped early: {what} it started in the background was still running");
+    if said.is_empty() { why } else { format!("{why}. Its last message: {said}") }
+}
+
 /// The prompt of the turn the watchdog starts in the bot's chat for `task`, which looks stuck (`evidence`: what
 /// shows it).
 pub(super) fn stuck(task: &Task, evidence: &str) -> String {

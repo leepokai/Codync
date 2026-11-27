@@ -294,8 +294,32 @@ or that the worktree had none and was removed, and ends with what the user wrote
 [thread](#talking-to-a-thread) meanwhile.
 
 A task that doesn't finish reports why, the same way: its thread's agent couldn't start (`it could not start: …`),
-failed mid-turn, or ended short of `end_turn`. Every way a thread's turn ends goes through `Actor::turn_over`, so no
-task is left working with nothing behind it.
+failed mid-turn, ended short of `end_turn`, or stopped early with its background work still running (below). Every
+way a thread's turn ends goes through `Actor::turn_over`, so no task is left working with nothing behind it.
+
+### Background work at a turn's end
+
+A thread's turn end is its task's end, and right after it the thread's agent is stopped with everything it started
+(`Acp::kill`), so a thread that ends its turn while it still waits on something it started in the background (a
+subagent, a background shell, `gh run watch`, a remote build) would end its task with a progress line as its report
+and lose the work it waited on (#634). The task prompt says not to (`prompts::task_prompt`), and the host doesn't
+rely on it: as a thread's turn ends with `end_turn`, the actor looks for background work it can see
+(`Actor::left_running`):
+
+- **a subagent launched to run in the background** in that turn: Claude's adapter says so on its `Agent` call
+  (`Subagent.background`, from `isAsync` / `run_in_background`);
+- else **a program the agent started detached**, in a session of its own (`background_work::left_running`, the same
+  look as the idle stop's, but only what is seen counts: a listing that fails is no signal).
+
+Seen, the turn ends as `Outcome::LeftRunning` and the task stays open: once per task (`told_to_wait`), the host saves
+a `from: host` message to the thread telling it to wait for that work and then report (`prompts::wait`), and the
+thread's agent and session stay as they are for that turn (`Actor::task_goes_on`: no `release_spent`). Its next turn
+end is the task's end as usual. A thread that ends its turn again while its background work still runs ends its task
+as **stopped early**: `failed`, `failure: stopped_early`, with why and its last message as the report
+(`it stopped early: a program it started in the background was still running. Its last message: …`), never as
+finished. Only what the host sees decides it, never the report's wording. `work_told_to_wait` (`left`, `agent`,
+`source`) says each time a thread was told to wait; `work_finished`'s `error: stopped_early` each task that stopped
+early.
 
 ## Approvals
 
@@ -839,6 +863,14 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
   on.
 - A Live Activity or ongoing notification updated by a push shows the status only; the counts line needs the app
   (the relay passes no more than the status and a date).
+- Background work the host can't see doesn't keep a task open: a subagent or shell a harness runs inside the agent's
+  own process or session (Codex, OpenCode and other agents that send no `Subagent.background`), a background shell
+  that stays in the agent's session, and anything on Windows, where the agent's job can't tell a program left
+  running from its own processes (`background_work::left_running` is false there). A thread that leaves a program
+  running on purpose (a server from its shell rather than `start_dev_server`) is told to wait once and then stops
+  early. Claude's adapter (claude-agent-acp 0.113, for a client without its `backgroundSubagents` capability, as
+  Codync is) holds a turn open until the subagents it launched in the background end, so for Claude the extra turn
+  is where the thread reads their results and writes its report.
 - What a thread's agent runs inside its own process (a harness's background agents and shells in the agent's session)
   ends when the thread does: its process and that session's processes are stopped (`Acp::kill`). A program it
   detached into a session of its own (a server from its shell) isn't reached and keeps running; one left listening

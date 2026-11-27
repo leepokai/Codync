@@ -229,6 +229,10 @@ pub(super) struct Task {
     /// A host restart already sent it back to waiting once: the next one fails it.
     #[serde(default)]
     pub restarted: bool,
+    /// Its thread ended a turn while its background work still ran and was told to wait for it: the next such end
+    /// ends it as stopped early.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub told_to_wait: bool,
     #[serde(default)]
     pub hops: u8,
     pub created_at: i64,
@@ -339,6 +343,7 @@ impl Task {
             thread: None,
             cut_in: false,
             restarted: false,
+            told_to_wait: false,
             hops,
             created_at: now_ms(),
             started_at: None,

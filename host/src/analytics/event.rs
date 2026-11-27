@@ -113,6 +113,9 @@ pub enum Event {
     BotProjectsMigrated,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
+    /// A task's thread ended its turn while work it started in the background still ran (`left`: `subagent` or
+    /// `program`), so it is told once to wait for it (`agent`, `source`).
+    WorkToldToWait,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
     /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
@@ -314,6 +317,7 @@ impl Event {
             Self::BotProjectRemoved => "bot_project_removed",
             Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkToldToWait => "work_told_to_wait",
             Self::WorkTold => "work_told",
             Self::TaskAsked => "task_asked",
             Self::WorktreeFillFailed => "worktree_fill_failed",

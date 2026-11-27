@@ -88,10 +88,10 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// `task`'s thread is closed for the task to start again (it gave way, or got a new brief): what the user wrote to
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
-    // What its chat passed on is with the task already (`tell`).
+    // What its chat passed on is with the task already (`tell`), and what the host told it isn't the user's.
     // ponytail: a waiting message's files stay behind (only their names go); move them to the new thread if users
     // miss them.
-    for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
+    for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true && e.data["from"] != "host") {
         note(&mut task.notes, &carried(&entry.data));
     }
 }

@@ -102,6 +102,28 @@ pub enum Outcome {
     /// The host couldn't give the task to its thread, so no agent was ever asked; why, in words for its bot.
     Undispatched(String),
     Stopped,
+    /// It ended its turn while work it started in the background still ran (what, and its last message).
+    LeftRunning(Left, Option<String>),
+}
+
+/// Work a thread started in the background that the host sees still running as its turn ends.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Left {
+    /// A subagent launched to run in the background (Claude's adapter says so).
+    Subagent,
+    /// A program it started detached, in a session of its own (a background shell, `gh run watch`).
+    Program,
+}
+
+impl Left {
+    /// What it is, for the thread and its bot.
+    fn what(self) -> &'static str {
+        match self {
+            Self::Subagent => "a subagent",
+            Self::Program => "a program",
+        }
+    }
 }
 
 impl Outcome {
@@ -136,6 +158,8 @@ pub enum Failure {
     NoReport,
     /// A routine run went past its time limit.
     TimedOut,
+    /// It ended its turn again while its background work still ran, after being told once to wait for it.
+    StoppedEarly,
 }
 
 /// State of the boxes that lives only while the host runs.
@@ -328,22 +352,71 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 /// Thread `cfg`'s turn ended: its task says how, its result goes where its source reads it (the bot's own work: a
 /// report, as a turn in the chat), and the dispatcher decides what the thread does next. A task the user stopped
 /// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the task isn't
-/// over: that turn's end is its end.
-pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
-    let Some(bot) = cfg.thread_of.as_deref() else { return };
+/// over: that turn's end is its end. A turn that ended while its background work still ran is followed, once, by one
+/// that tells the thread to wait for it ([`wait`]). True: the task goes on in a turn the host started for it.
+pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
+    let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
     let ended = tasks::change(hub, bot, |tasks| {
-        Ok(if thread::unheard(&hub.store, &cfg.id) { None } else { end_claimed(tasks, &cfg.id, outcome) })
+        if thread::unheard(&hub.store, &cfg.id) {
+            return Ok(Ended::Open);
+        }
+        if let Outcome::LeftRunning(left, _) = outcome
+            && let Some(told) = wait(hub, cfg, tasks, left)
+        {
+            return Ok(Ended::Waits(told, left));
+        }
+        Ok(end_claimed(tasks, &cfg.id, outcome).map_or(Ended::Open, |over| Ended::Over(Box::new(over))))
     });
     match ended {
-        Ok(Some(over)) => close(hub, bot, over, next),
-        Ok(None) => next(hub),
+        Ok(Ended::Over(over)) => close(hub, bot, *over, next),
+        Ok(Ended::Waits(told, left)) => {
+            told_to_wait(hub, cfg, left);
+            if let Err(error) = crate::chat::messages::hand_on(hub, cfg, &told) {
+                host_error!(hub, "couldn't tell a thread to wait", thread = %cfg.id, error = format!("{error:#}"));
+            }
+            next(hub);
+            return true;
+        }
+        Ok(Ended::Open) => next(hub),
         Err(error) => {
             host_error!(hub, "couldn't save a task's end", thread = %cfg.id, error = format!("{error:#}"));
             next(hub);
         }
     }
+    false
+}
+
+/// What a thread's turn end did to its task ([`finished`]).
+enum Ended {
+    Over(Box<Over>),
+    /// Its thread was told to wait for its background work: this message, saved, goes to it next.
+    Waits(Entry, Left),
+    /// It goes on: a message waits for the thread, or it has no task left.
+    Open,
+}
+
+/// Thread `cfg`'s task, not yet told to wait for its background work: it is, in a message saved to its thread, which
+/// the caller hands on. None: it was told already (or has no task), or the message couldn't be saved; it ends.
+fn wait(hub: &Arc<Hub>, cfg: &BotConfig, tasks: &mut [Task], left: Left) -> Option<Entry> {
+    let task = tasks.iter_mut().find(|i| i.status == Status::Working && i.thread.as_deref() == Some(&cfg.id))?;
+    if task.told_to_wait {
+        return None;
+    }
+    let told = crate::chat::messages::save(hub, cfg, json!({"text": prompts::wait(left.what()), "from": "host"}));
+    let told = told.inspect_err(|error| {
+        tracing::warn!(thread = %cfg.id, error = format!("{error:#}"), "couldn't tell a thread to wait");
+    });
+    task.told_to_wait = told.is_ok();
+    told.ok()
+}
+
+/// `work_told_to_wait`: thread `cfg` ended its turn while `left` still ran, and is told to wait for it.
+fn told_to_wait(hub: &Hub, cfg: &BotConfig, left: Left) {
+    let source = task_of(&hub.store, cfg).map(|task| task.source.kind());
+    let properties = json!({"left": left, "agent": cfg.backend, "source": source});
+    analytics::capture(hub, Event::WorkToldToWait, properties.as_object().cloned().unwrap_or_default());
 }
 
 /// A task that just ended, with its worktree when that is to be looked over before its report says where the
@@ -405,6 +478,11 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             (Status::Failed, Some(Err(why)), Some(Failure::Start))
         }
         Outcome::Stopped => (Status::Stopped, None, None),
+        // Told to wait for it once already: not finished, whatever its last message says.
+        Outcome::LeftRunning(left, text) => {
+            let why = prompts::stopped_early(left.what(), text.as_deref().map(str::trim).unwrap_or_default());
+            (Status::Failed, Some(Err(codync_agent::acp::truncate(&why, MAX_REPORT))), Some(Failure::StoppedEarly))
+        }
     };
     task.status = status;
     task.ended_at = Some(now_ms());
@@ -680,6 +758,24 @@ mod tests {
         assert_eq!((told["error"].as_str(), told.get("agent")), (Some("start"), None), "no thread, no agent");
         let unstarted = Task { started_at: None, ..never };
         assert_eq!(finished_properties(&unstarted, None).get("waitedMs"), None, "it never started");
+    }
+
+    /// #634: a thread told once to wait for its background work that ends again while it runs stops early, with why
+    /// and its last message, never as finished.
+    #[test]
+    fn a_task_that_ends_again_while_its_background_work_runs_stopped_early() {
+        let mut tasks = [working("a", "t1"), working("b", "t2")];
+        let said = Some(" Running the review, waiting for it. ".to_owned());
+        let early = end(&mut tasks, "t1", Outcome::LeftRunning(Left::Program, said)).expect("ended");
+        assert_eq!((early.status, early.failure), (Status::Failed, Some(Failure::StoppedEarly)));
+        let why = "it stopped early: a program it started in the background was still running. Its last message: \
+                   Running the review, waiting for it.";
+        assert_eq!(early.report.expect("a report").outcome, Err(why.to_owned()));
+        let silent = end(&mut tasks, "t2", Outcome::LeftRunning(Left::Subagent, None)).expect("ended");
+        let why = "it stopped early: a subagent it started in the background was still running";
+        assert_eq!(silent.result.as_deref(), Some(why));
+        assert_eq!(json!(Failure::StoppedEarly), "stopped_early");
+        assert_eq!(json!(Left::Subagent), "subagent", "work_told_to_wait's `left`");
     }
 
     #[test]

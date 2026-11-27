@@ -2121,3 +2121,68 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     wait("its versions", async || own.join(".git").exists().then_some(())).await;
     assert!(done["worktree"].is_null());
 }
+
+/// The prompts that told a thread of `bot`'s its background work still runs.
+fn told_to_wait(host: &Host, bot: &str) -> Vec<String> {
+    let prompts = host.log(bot, "prompts.jsonl").into_iter().filter_map(|p| p["text"].as_str().map(str::to_owned));
+    prompts.filter(|text| text.contains("[Codync: you ended your turn while")).collect()
+}
+
+/// Whether the turn that told `bot`'s thread to wait ran in the agent process its task's turn ran in: what runs in
+/// the background there is still there.
+fn waited_in_the_same_agent(host: &Host, bot: &str, title: &str) -> bool {
+    let prompts = host.log(bot, "prompts.jsonl");
+    let pid = |text: &str| {
+        prompts.iter().find(|p| p["text"].as_str().is_some_and(|t| t.contains(text))).map(|p| p["pid"].clone())
+    };
+    pid(&format!("[Task] \"{title}\"")).is_some_and(|task| pid("[Codync: you ended your turn while") == Some(task))
+}
+
+/// #634: a thread that ends its turn while a program it started in the background still runs keeps its task and is
+/// told once to wait for it; its report is what it says once the program is done.
+#[tokio::test]
+#[cfg_attr(windows, ignore = "Windows can't tell a program left running from the agent's own (docs/features/work.md)")]
+async fn a_thread_that_ends_while_its_program_runs_waits_for_it_and_reports_after() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Watch CI|Run the checks BACKGROUND:ci").await;
+    let told = wait("the thread to be told to wait", async || told_to_wait(&host, &bot).pop()).await;
+    assert!(told.contains("a program"), "{told}");
+    task(&host, &bot, "Watch CI", "working").await;
+    release(&host, &bot, "ci");
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Waited");
+    assert_eq!(task(&host, &bot, "Watch CI", "done").await["result"], "Waited");
+    assert_eq!(told_to_wait(&host, &bot).len(), 1, "told once");
+    assert!(waited_in_the_same_agent(&host, &bot, "Watch CI"));
+}
+
+/// #634: Claude's adapter says a subagent was launched in the background; the thread is told to wait for it too.
+#[tokio::test]
+async fn a_thread_that_ends_after_launching_a_background_subagent_is_told_to_wait_for_it() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Review|Review the change SUBAGENT").await;
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Waited");
+    assert_eq!(task(&host, &bot, "Review", "done").await["result"], "Waited");
+    let told = told_to_wait(&host, &bot);
+    assert!(told.len() == 1 && told[0].contains("a subagent you started in the background"), "{told:?}");
+    assert!(waited_in_the_same_agent(&host, &bot, "Review"), "the subagent runs in the agent: it isn't stopped");
+}
+
+/// #634: a thread that ends again while its background work still runs, after being told to wait, ends its task as
+/// stopped early, with why and its last message: never as finished.
+#[tokio::test]
+#[cfg_attr(windows, ignore = "Windows can't tell a program left running from the agent's own (docs/features/work.md)")]
+async fn a_thread_that_ends_again_while_its_program_runs_stops_early_and_says_why() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Watch CI|Run the checks BACKGROUND:ci STUBBORN").await;
+    let failed = task(&host, &bot, "Watch CI", "failed").await;
+    let result = failed["result"].as_str().unwrap();
+    assert!(result.contains("stopped early") && result.contains("a program it started"), "{result}");
+    assert!(result.ends_with("Still waiting"), "its last message: {result}");
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("did not finish: it stopped early"), "{relayed}");
+    assert_eq!(told_to_wait(&host, &bot).len(), 1, "told once, not again and again");
+    release(&host, &bot, "ci");
+}

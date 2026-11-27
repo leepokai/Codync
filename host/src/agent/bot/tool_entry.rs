@@ -57,6 +57,11 @@ pub(super) fn merge_subagent(data: &mut Value, parent: Option<String>, subagent:
     }
 }
 
+/// Whether a call's update says it launched a subagent to run in the background.
+pub(super) fn launched_background(subagent: Option<&Subagent>) -> bool {
+    subagent.is_some_and(|s| s.background == Some(true))
+}
+
 /// Changed-region summary: trims the common prefix/suffix and reports the middle.
 fn diff_summary(path: &str, old: &str, new: &str) -> Value {
     let a: Vec<&str> = old.lines().collect();

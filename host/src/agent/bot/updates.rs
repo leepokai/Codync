@@ -1,7 +1,7 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
 use super::fast_mode::Listing;
-use super::tool_entry::{activity, mark_bookkeeping, merge_subagent, merge_tool_content};
+use super::tool_entry::{activity, launched_background, mark_bookkeeping, merge_subagent, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::elicitation::Declined;
 use crate::hub::BotStatus;
@@ -108,6 +108,7 @@ impl Actor {
                     "locations": call.locations.unwrap_or_default(),
                 });
                 merge_tool_content(&mut data, call.content.as_deref());
+                self.background_subagent |= launched_background(call.subagent.as_ref());
                 merge_subagent(&mut data, call.parent, call.subagent);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
@@ -130,6 +131,7 @@ impl Actor {
                     e.data["locations"] = locations;
                 }
                 merge_tool_content(&mut e.data, call.content.as_deref());
+                self.background_subagent |= launched_background(call.subagent.as_ref());
                 merge_subagent(&mut e.data, call.parent, call.subagent);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);

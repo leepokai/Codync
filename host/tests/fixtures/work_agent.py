@@ -9,6 +9,10 @@ choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the t
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+`BACKGROUND:<name>` leaves a program running detached, in a session of its own, until `release-<name>` is in its
+folder, and `SUBAGENT` launches a background subagent the way Claude's adapter reports one: either way the turn ends
+at once. Told its background work still runs, it waits for those programs to end and reports `Waited`, or with
+`STUBBORN` in its brief ends again at once (`Still waiting`).
 The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
@@ -68,6 +72,10 @@ permission = threading.Event()
 servers = []
 forked = set()
 count = 0
+# The programs its tasks left running in the background, and whether the last task's brief was `STUBBORN`.
+background = []
+stubborn = False
+WAIT = "[Codync: you ended your turn while"
 
 
 def send(value):
@@ -161,6 +169,7 @@ def elsewhere(kind, text):
 
 def work(text, session):
     """A thread's turn on its task."""
+    global stubborn
     lead, rest = text.split("[Task]", 1)[1].split("\n\n", 1)
     title = lead.split('"')[1]
     brief = rest.split("\n\n[", 1)[0]
@@ -191,6 +200,17 @@ def work(text, session):
             "sessionUpdate": "tool_call", "toolCallId": "command", "title": LONG_COMMAND, "kind": "execute",
             "status": "in_progress",
         }}})
+    if "BACKGROUND" in brief:
+        for name in re.findall(r"BACKGROUND:(\w+)", brief):
+            program = f"import pathlib, time\nwhile not pathlib.Path('release-{name}').exists(): time.sleep(0.05)"
+            background.append(subprocess.Popen([sys.executable, "-c", program], start_new_session=True))
+        notes.append("left running")
+    if "SUBAGENT" in brief:
+        meta = {"claudeCode": {"toolName": "Agent", "toolResponse": {"isAsync": True, "status": "async_launched"}}}
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "agent", "title": "Review", "status": "completed", "_meta": meta}}})
+        notes.append("launched a subagent")
+    stubborn = "STUBBORN" in brief
     if "PERMISSION" in brief:
         later = re.search(r"PERMISSION:(\w+)", brief)
         if later:
@@ -248,6 +268,12 @@ def answer(text, session):
         return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
     if "answered the question you asked it" in text:
         return "Late: " + re.search(r"after your call stopped waiting\.\]\n([^\n]*)", text).group(1)
+    if WAIT in text:
+        if stubborn:
+            return "Still waiting"
+        while any(program.poll() is None for program in background) and not cancel.wait(0.01):
+            pass
+        return "Waited"
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
@@ -313,7 +339,7 @@ def answer(text, session):
 def prompt(request):
     session = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
-    log("prompts.jsonl", {"session": session, "text": text})
+    log("prompts.jsonl", {"session": session, "text": text, "pid": os.getpid()})
     if pathlib.Path("signedout").exists():
         send({"id": request["id"], "error": SIGNED_OUT})
         return

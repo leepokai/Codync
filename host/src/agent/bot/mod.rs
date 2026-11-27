@@ -140,6 +140,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         sent: Vec::new(),
         reacted: Reacted::No,
         joined: false,
+        background_subagent: false,
+        left_running: None,
+        task_goes_on: false,
         unheard: Vec::new(),
         files: files::FileShares::default(),
         perms: HashMap::new(),
@@ -355,6 +358,12 @@ struct Actor {
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
     joined: bool,
+    /// This turn launched a subagent to run in the background (Claude's adapter says so).
+    background_subagent: bool,
+    /// A thread's turn that just ended left this running in the background (`chat::work::finished`).
+    left_running: Option<crate::chat::work::Left>,
+    /// The thread's task goes on in a turn the host started for it, so its agent and session stay as they are.
+    task_goes_on: bool,
     /// Messages that joined this turn (`steer`) with nothing from the agent since: a turn its agent then cancels on its
     /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
     // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
@@ -420,7 +429,12 @@ impl Actor {
         }
         let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
         let failed = done.as_ref().is_err_and(acp::may_end_session);
+        self.left_running = self.left_running(&done).await;
         self.finish_turn(&done);
+        if std::mem::take(&mut self.task_goes_on) {
+            // What runs in the background, in the agent or the session, is what the next turn waits for.
+            return self.next_in_queue(done_tx).await;
+        }
         match session {
             // A thread's session is spent like a run's; a task that follows reopens it.
             Some(sid) if routine || self.cfg.is_thread() => self.release_spent(&sid).await,
@@ -429,6 +443,21 @@ impl Actor {
         }
         self.stop_spent().await;
         self.next_in_queue(done_tx).await;
+    }
+
+    /// What a thread's turn that ended (`done`) as its agent meant it to left running in the background, as far as the
+    /// host can see: a subagent it launched to run there, else a program it started detached.
+    async fn left_running(&self, done: &Done) -> Option<crate::chat::work::Left> {
+        use crate::chat::work::Left;
+        let ended = matches!(done, Ok(v) if acp::StopReason::of(v) == acp::StopReason::EndTurn);
+        if !self.cfg.is_thread() || !ended || self.stop_requested || self.turn.is_none() {
+            return None;
+        }
+        if self.background_subagent {
+            return Some(Left::Subagent);
+        }
+        let conn = self.conn.as_ref()?;
+        background_work::left_running(&conn.acp).await.then_some(Left::Program)
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.

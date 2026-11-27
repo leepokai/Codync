@@ -65,14 +65,30 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
-    let Some(leader) = leader else { return true };
-    let Some(host) = host_program() else { return true };
+    seen_detached(leader).await.unwrap_or(true)
+}
+
+/// Whether a thread's agent, as its turn ends, still runs something it started detached (a background shell,
+/// `gh run watch`), so its task isn't done (`chat::work::finished`). Only what is seen counts: unsure is no.
+/// Windows can't tell it from the agent's own processes ([`runs_something_else`]), so never there.
+#[cfg(unix)]
+pub(super) async fn left_running(acp: &Acp) -> bool {
+    seen_detached(acp.pid()).await == Some(true)
+}
+
+#[cfg(windows)]
+#[allow(clippy::unused_async, reason = "the Unix one awaits")]
+pub(super) async fn left_running(_acp: &Acp) -> bool {
+    false
+}
+
+/// [`detached_descendant`] of the agent `leader` leads, None when it can't be looked at.
+#[cfg(unix)]
+async fn seen_detached(leader: Option<u32>) -> Option<bool> {
+    let host = host_program()?;
     let listed = process::list_processes().await;
-    let Ok(processes) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes"))
-    else {
-        return true;
-    };
-    detached_descendant(&processes, leader, &host, process::session)
+    let processes = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")).ok()?;
+    Some(detached_descendant(&processes, leader?, &host, process::session))
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its

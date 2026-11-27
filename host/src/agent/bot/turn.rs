@@ -527,12 +527,15 @@ impl Actor {
             self.set_inflight(false);
         }
         // The message reached the agent: the context update it carried is now known to it.
-        if let (Ok(_), Some((snapshot, identity))) = (&done, self.announce.take())
+        let context_delivered = done.is_ok() && !stopped;
+        if let Some((snapshot, identity)) = self.announce.take()
+            && context_delivered
             && let Err(error) = context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, identity)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
         }
-        if let (Ok(_), Some(sent)) = (&done, self.first_prompt.take())
+        if let Some(sent) = self.first_prompt.take()
+            && context_delivered
             && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");

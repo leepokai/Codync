@@ -2534,6 +2534,37 @@ async fn a_first_message_agent_retries_compacted_instructions_after_a_failed_pro
 }
 
 #[tokio::test]
+async fn a_first_message_task_retries_its_opening_after_a_cancelled_prompt() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    let title = "Try again";
+    host.reply(&bot, "ADD Try again|RETURN_CANCELLED").await;
+    let initial = wait("the initial task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let stopped = stopped_task_prompt(&host, &bot, title, session, false).await;
+
+    let retry = "deliver the opening";
+    let quiet = "continue without the opening";
+    assert_eq!(tell(&host, &bot, &stopped, retry).await["reopened"], true);
+    let done = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+    assert_eq!(tell(&host, &bot, &done, quiet).await["reopened"], true);
+    result(&host, &bot, title, &format!("Thread {quiet}:")).await;
+
+    let prompts = thread_prompts(&host, &bot);
+    let [retried, after]: &[Value; 2] = prompts.as_slice().try_into().unwrap();
+    let texts = [&initial, retried, after].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let counts = texts.map(|text| text.matches("<bot-profile>").count());
+    eprintln!("FirstMessage task {session}: opening counts {counts:?}");
+    assert_eq!(counts, [1, 1, 0]);
+    let opening = texts[0].split_once("</bot-profile>").unwrap().0;
+    assert!(opening.contains("away from the chat where it was handed out"));
+    assert_eq!(texts[1].split_once("</bot-profile>").unwrap().0, opening);
+}
+
+#[tokio::test]
 async fn a_standard_task_retries_its_session_after_a_resume_bookkeeping_error() {
     retry_task_after_resume_bookkeeping_error(ResumeClose::Unsupported).await;
 }
@@ -2926,12 +2957,41 @@ async fn a_standard_acp_task_retries_the_skill_update_after_a_failed_prompt() {
     compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::RetryPrompt).await;
 }
 
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_after_a_cancelled_prompt() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::CancelledPrompt).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_when_its_agent_finishes_after_stop() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::StoppedPrompt).await;
+}
+
+async fn stopped_task_prompt(host: &Host, bot: &str, title: &str, session: &str, stop_requested: bool) -> Value {
+    let stopped = task(host, bot, title, "stopped").await;
+    wait("a cancelled turn in the task transcript", async || {
+        transcript(host, bot, &stopped)
+            .await
+            .into_iter()
+            .find(|e| e["data"]["stopReason"] == "cancelled" && e["data"]["text"] == "Stopped.")
+    })
+    .await;
+    assert!(stopped["result"].is_null(), "{stopped}");
+    let outcomes = host.log(bot, "prompt_outcomes.jsonl");
+    let reason = if stop_requested { "end_turn" } else { "cancelled" };
+    assert_eq!(outcomes, [json!({"session": session, "stopReason": reason, "cancelReceived": stop_requested})]);
+    eprintln!("Stopped task {session}: ACP {reason}, session/cancel received: {stop_requested}");
+    stopped
+}
+
 enum CompactedSkill {
     Enabled,
     Disabled,
     Legacy,
     FailedReopen,
     RetryPrompt,
+    CancelledPrompt,
+    StoppedPrompt,
 }
 
 async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
@@ -2981,10 +3041,17 @@ async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
     };
     let gate = host.workspace(&bot).join(format!("hold-load-{session}"));
     std::fs::write(&gate, "").unwrap();
-    let enabled = matches!(skill, CompactedSkill::Enabled | CompactedSkill::RetryPrompt);
+    let retry_status = match skill {
+        CompactedSkill::RetryPrompt => Some("failed"),
+        CompactedSkill::CancelledPrompt | CompactedSkill::StoppedPrompt => Some("stopped"),
+        _ => None,
+    };
+    let enabled = matches!(skill, CompactedSkill::Enabled) || retry_status.is_some();
     let first_message = match skill {
         CompactedSkill::Enabled => "finish with B HOLD:delivery",
         CompactedSkill::RetryPrompt => "finish with B HOLD:delivery FAIL_SKILL_PROMPT",
+        CompactedSkill::CancelledPrompt => "finish with B HOLD:delivery RETURN_CANCELLED",
+        CompactedSkill::StoppedPrompt => "finish with B HOLD:delivery END_AFTER_CANCEL",
         _ => "finish without B",
     };
     assert_eq!(tell(&host, &bot, &done, first_message).await["reopened"], true);
@@ -3026,7 +3093,11 @@ async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
     let early_announcement = if enabled {
         wait("the held prompt after reopen", async || thread_prompts(&host, &bot).into_iter().next()).await;
         let announced = snapshot()["announced"]["skills_brief"].clone();
-        release(&host, &bot, "delivery");
+        if matches!(skill, CompactedSkill::StoppedPrompt) {
+            host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+        } else {
+            release(&host, &bot, "delivery");
+        }
         Some(announced)
     } else {
         None
@@ -3046,14 +3117,21 @@ async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
         assert_eq!(prompt["session"], session);
         prompt["text"].as_str().unwrap().to_owned()
     };
-    let (mut notice, mut load_count) = if matches!(skill, CompactedSkill::RetryPrompt) {
-        let failed = task(&host, &bot, "Ship it", "failed").await;
+    let mut interrupted_announcement = None;
+    let (mut notice, mut load_count) = if let Some(status) = retry_status {
+        let interrupted = if status == "stopped" {
+            stopped_task_prompt(&host, &bot, "Ship it", session, matches!(skill, CompactedSkill::StoppedPrompt)).await
+        } else {
+            task(&host, &bot, "Ship it", status).await
+        };
         ended(&load["pid"]).await;
         let prompts = thread_prompts(&host, &bot);
         assert_eq!(prompts[0]["session"], session);
-        assert!(prompts[0]["text"].as_str().unwrap().contains("- B: Release steps."));
-        assert_eq!(snapshot()["announced"]["skills_brief"], "");
-        assert_eq!(tell(&host, &bot, &failed, "retry with B").await["reopened"], true);
+        let text = prompts[0]["text"].as_str().unwrap();
+        assert_eq!(text.matches("<skills_update>").count(), 1);
+        assert!(text.contains("- B: Release steps."), "{text}");
+        interrupted_announcement = Some(snapshot()["announced"]["skills_brief"].clone());
+        assert_eq!(tell(&host, &bot, &interrupted, "retry with B").await["reopened"], true);
         (finished("retry with B", 2).await, 3)
     } else {
         (finished(first_message, 1).await, 2)
@@ -3089,6 +3167,13 @@ async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
          legacy {}, announced before prompt reply {early_announcement:?}",
         matches!(skill, CompactedSkill::Legacy),
     );
+    if let Some(announced) = interrupted_announcement {
+        eprintln!(
+            "{session}: update counts [1, {}, {}], announced after interruption {announced}",
+            updates[0], updates[1]
+        );
+        assert_eq!(announced, "", "the interrupted prompt must leave the skill update pending");
+    }
     assert_eq!(updates, [1, 0], "confirm the current skills once after reopening");
     assert!(has_list, "{notice}");
     if enabled {

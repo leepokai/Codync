@@ -366,8 +366,18 @@ def prompt(request):
     if (STANDARD or REPORT_COMPACTION) and "FAIL_SKILL_PROMPT" in text:
         send({"id": request["id"], "error": {"code": -32603, "message": "Fixture rejected the prompt"}})
         return
-    if cancel.is_set():
-        send({"id": request["id"], "result": {"stopReason": "cancelled"}})
+    task_prompt = "[Task]" in text or "in this task's thread" in text
+    returns_cancelled = task_prompt and "RETURN_CANCELLED" in text
+    ends_after_cancel = task_prompt and "END_AFTER_CANCEL" in text
+    if ends_after_cancel and not cancel.wait(10):
+        send({"id": request["id"], "error": {"code": -32603, "message": "Fixture did not receive session/cancel"}})
+        return
+    cancel_received = cancel.is_set()
+    stop_reason = "cancelled" if returns_cancelled or (cancel_received and not ends_after_cancel) else "end_turn"
+    if returns_cancelled or ends_after_cancel:
+        log("prompt_outcomes.jsonl", {"session": session, "stopReason": stop_reason, "cancelReceived": cancel_received})
+    if stop_reason == "cancelled":
+        send({"id": request["id"], "result": {"stopReason": stop_reason}})
         return
     failure = {"thread-signedout": SIGNED_OUT, "thread-limit": LIMIT}
     failed = [error for name, error in failure.items() if "[Task]" in text and pathlib.Path(name).exists()]
@@ -380,7 +390,7 @@ def prompt(request):
         return
     send({"method": "session/update", "params": {"sessionId": session, "update": {
         "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}}}})
-    send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+    send({"id": request["id"], "result": {"stopReason": stop_reason}})
 
 
 def finish_held_reopen(request_id, session, gate):

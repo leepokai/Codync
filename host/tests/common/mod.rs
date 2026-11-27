@@ -239,3 +239,28 @@ pub fn folder(home: &Path, name: &str) -> std::path::PathBuf {
 pub fn bot<'a>(sync: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {
     sync["bots"].as_array().and_then(|bots| bots.iter().find(|b| b["id"] == id)).expect("the bot is in the snapshot")
 }
+
+/// Delete `path` and everything in it, retrying briefly on Windows while an agent may still
+/// hold the folder open.
+#[allow(dead_code, reason = "only the routine-folder tests delete a folder the agent may still hold")]
+pub fn remove_dir_all_when_free(path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        let mut result = std::fs::remove_dir_all(path);
+        for _ in 0..7 {
+            match result {
+                Err(ref err) if err.raw_os_error() == Some(32) => {
+                    std::thread::sleep(Duration::from_millis(200));
+                    result = std::fs::remove_dir_all(path);
+                }
+                _ => break,
+            }
+        }
+        result
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_dir_all(path)
+    }
+}

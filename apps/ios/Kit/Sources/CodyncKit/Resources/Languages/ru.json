@@ -2524,11 +2524,12 @@
   "It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.": "Он больше не будет показан. Любой, у кого он есть, может действовать как это приложение: не храните его в чатах и репозиториях.",
   "Its token stops working right away.": "Его токен сразу перестаёт работать.",
   "Started by {name} (MCP)": "Запущено {name} (MCP)",
-  "No apps yet. They're added on the computer.": "Приложений пока нет. Их добавляют на компьютере.",
   "No apps yet. Press n to give one access.": "Приложений пока нет. Нажмите n, чтобы дать доступ.",
   "enter creates · esc back": "enter создать · esc назад",
   "esc closes": "esc закрыть",
   "x again revokes it: its token stops working right away · any other key keeps it": "x ещё раз отзывает доступ: токен сразу перестаёт работать · любая другая клавиша оставляет",
   "y copies · enter done": "y копировать · enter готово",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ уровень · n новое приложение · r продлить на 30 дней · x отозвать · esc закрыть"
+  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ уровень · n новое приложение · r продлить на 30 дней · x отозвать · esc закрыть",
+  "MCP access: apps that drive this computer…": "Доступ MCP: приложения, которые управляют этим компьютером…",
+  "Copied: it isn't shown again": "Скопировано: больше не покажется"
 }

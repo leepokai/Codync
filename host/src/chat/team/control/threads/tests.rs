@@ -16,6 +16,7 @@ fn app(id: &str, level: Level, scopes: &[Scope]) -> Principal {
         folders: Vec::new(),
         plain_threads: true,
         via: None,
+        session: None,
     }
 }
 
@@ -212,4 +213,103 @@ async fn an_app_acts_only_on_threads_within_its_level_and_never_approves() {
         call(&hub, &auto, "thread_wait", &json!({"botId": "b1", "taskId": "mine", "timeoutSecs": 0})).await.unwrap();
     assert_eq!(waited["needsYou"][0]["kind"], "permission");
     assert_eq!(waited["timedOut"], true);
+}
+
+/// An ended (`done`, at `ended`) or waiting task of `bot`'s, started by `client` (none: the user).
+fn put_row(hub: &Hub, bot: &str, id: &str, client: Option<&str>, ended: Option<i64>) {
+    let status = if ended.is_some() { "done" } else { "waiting" };
+    let mut task = json!({"id": id, "title": id, "brief": "x", "status": status, "order": 1, "createdAt": 1,
+        "startedAt": 1, "endedAt": ended, "source": {"kind": "user"}});
+    if let Some(client) = client {
+        task["startedBy"] = json!({"client": client, "label": format!("App {client}"), "level": "ask"});
+    }
+    let key = format!("work.{bot}");
+    let mut all: Vec<Value> = hub.store.kv_get(&key).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default();
+    all.push(task);
+    hub.store.kv_set(&key, &json!(all).to_string()).unwrap();
+}
+
+/// Every page of `thread_list` for `p` from the first, its task ids in order.
+async fn every_page(hub: &Arc<Hub>, p: &Principal, args: Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut args = args;
+    loop {
+        let page = call(hub, p, "thread_list", &args).await.unwrap();
+        ids.extend(page["threads"].as_array().unwrap().iter().map(|t| t["taskId"].as_str().unwrap().to_owned()));
+        let Some(next) = page["next"].as_str() else { return ids };
+        args["cursor"] = next.into();
+    }
+}
+
+#[tokio::test]
+async fn thread_list_pages_through_every_thread_the_app_sees_live_ones_first() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+    let hub = hub();
+    let now = crate::store::now_ms();
+    for id in ["b1", "b2"] {
+        hub.store.save_bot(&bot_cfg(id)).unwrap();
+    }
+    // b1: 20 of the app's threads ended within the day; b2: 3 of its threads that wait.
+    for n in 0..20 {
+        put_row(&hub, "b1", &format!("recent-{n}"), Some("a"), Some(now - 1000 - n));
+    }
+    for n in 0..3 {
+        put_row(&hub, "b2", &format!("live-{n}"), Some("a"), None);
+    }
+    // Older than a day: 35 of the user's, then 5 of the app's behind them.
+    for n in 0..35 {
+        put_row(&hub, "b1", &format!("users-{n}"), None, Some(now - 2 * DAY - n));
+    }
+    for n in 0..5 {
+        put_row(&hub, "b1", &format!("old-{n}"), Some("a"), Some(now - 3 * DAY - n));
+    }
+    let a = app("a", Level::Ask, &[Scope::Threads]);
+    let first = call(&hub, &a, "thread_list", &json!({"limit": 20})).await.unwrap();
+    let shown: Vec<&str> = first["threads"].as_array().unwrap().iter().map(|t| t["taskId"].as_str().unwrap()).collect();
+    assert_eq!(shown.len(), 20);
+    assert!(shown[..3].iter().all(|t| t.starts_with("live-")), "live ones first, never cut: {shown:?}");
+    let ids = every_page(&hub, &a, json!({"limit": 20})).await;
+    let mut unique = ids.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!((ids.len(), unique.len()), (28, 28), "each once, the user's never: {ids:?}");
+    assert!(ids.iter().filter(|t| t.starts_with("old-")).count() == 5, "past the pages of the user's: {ids:?}");
+    // One box, a page larger than the archive's, and a page of live ones only: still every one.
+    assert_eq!(every_page(&hub, &a, json!({"limit": 50, "botId": "b1"})).await.len(), 25);
+    let live_only = call(&hub, &a, "thread_list", &json!({"limit": 2})).await.unwrap();
+    assert_eq!(live_only["threads"].as_array().unwrap().len(), 3);
+    assert!(live_only["next"].is_string(), "it leads on to the ended ones");
+}
+
+#[tokio::test]
+async fn an_app_never_ends_or_reruns_the_owners_work_nor_goes_past_its_live_threads() {
+    let hub = hub();
+    clients::set_levels(&hub.store, &json!({"max": "full"})).unwrap();
+    hub.store.save_bot(&bot_cfg("b1")).unwrap();
+    let full = app("a", Level::Full, &[Scope::Threads, Scope::AllThreads]);
+    // A routine's run that stopped.
+    let mut run = json!({"id": "run", "title": "run", "brief": "x", "status": "stopped", "order": 1, "createdAt": 1,
+        "endedAt": 5, "source": {"kind": "routine", "id": "r", "run": "x"}});
+    run["setup"] = json!({});
+    hub.store.kv_set("work.b1", &json!([run]).to_string()).unwrap();
+    for how in ["retry", "stop", "drop"] {
+        let args = json!({"botId": "b1", "taskId": "run", "how": how});
+        assert_eq!(refused(&hub, &full, "thread_steer", args).await, Code::CapabilityDenied, "{how}");
+    }
+    let now = json!({"botId": "b1", "taskId": "run", "how": "now"});
+    assert_eq!(refused(&hub, &full, "thread_steer", now).await, Code::InvalidRequest, "no other work gives way");
+    // Its own thread that ended, while as many of its threads as it may have are going: neither a retry nor a
+    // message reopens it.
+    put_task(&hub, "b1", "ended", "thread-e", Some(("a", Level::Ask)), json!({}));
+    let mut all: Vec<Value> = serde_json::from_str(&hub.store.kv_get("work.b1").unwrap()).unwrap();
+    let task = all.iter_mut().find(|t| t["id"] == "ended").unwrap();
+    (task["status"], task["endedAt"]) = (json!("stopped"), json!(5));
+    hub.store.kv_set("work.b1", &json!(all).to_string()).unwrap();
+    for n in 0..MAX_LIVE {
+        put_task(&hub, "b1", &format!("live-{n}"), &format!("thread-{n}"), Some(("a", Level::Ask)), json!({}));
+    }
+    let retry = json!({"botId": "b1", "taskId": "ended", "how": "retry"});
+    assert_eq!(refused(&hub, &full, "thread_steer", retry).await, Code::RateLimited);
+    let send = json!({"botId": "b1", "taskId": "ended", "message": "again"});
+    assert_eq!(refused(&hub, &full, "thread_send", send).await, Code::RateLimited);
 }

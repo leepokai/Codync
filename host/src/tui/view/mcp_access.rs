@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use super::super::l10n::{fill, tr};
-use super::super::manage::{McpSheet, McpStep, mcp_command};
+use super::super::manage::{MCP_OWN, McpSheet, McpStep, mcp_days_left};
 use super::buffer::{centered, frame_box, hline, put, restyle, rput};
 use super::network::wrapped;
 use super::overlay::field_line;
@@ -20,16 +20,6 @@ fn level_name(level: &str) -> String {
     })
     .into_owned()
 }
-
-const OWN_ROWS: [(&str, &str, &str); 3] = [
-    ("max", "Most an app may do", "An app given more acts as if given this."),
-    ("local", "Sessions on this computer", "Coding agents here without a token. Any program of yours can act as one."),
-    (
-        "cloud",
-        "Cloud assistants",
-        "ChatGPT or Claude through your Codync account. Codync's cloud can read these calls.",
-    ),
-];
 
 pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
     let t = theme();
@@ -55,7 +45,7 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
             field_line(buf, body, y + 1, name, &tr("Name"), true);
             tr("enter creates · esc back")
         }
-        McpStep::Token(token) => {
+        McpStep::Token(command) => {
             put(buf, body.x, y, body.width, &tr("Copy its token now"), t.bold.patch(t.panel));
             y += 1;
             wrapped(
@@ -66,7 +56,7 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
                 t.secondary,
             );
             y += 1;
-            wrapped(buf, body, &mut y, &mcp_command(token), t.text);
+            wrapped(buf, body, &mut y, command, t.text);
             tr("y copies · enter done")
         }
         McpStep::List | McpStep::Revoke(_) => {
@@ -75,7 +65,7 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
                 put(buf, body.x, y, body.width, &text, t.secondary.patch(t.panel));
                 return keys_line(buf, inner, &tr("esc closes"));
             };
-            for (i, (key, label, detail)) in OWN_ROWS.iter().enumerate() {
+            for (i, (key, label, detail)) in MCP_OWN.iter().enumerate() {
                 let sel = s.cursor == i;
                 row(buf, body, y, &tr(label), &level_name(data["levels"][key].as_str().unwrap_or_default()), sel);
                 put(buf, body.x + 2, y + 1, body.width - 2, &tr(detail), t.dim.patch(t.panel));
@@ -90,13 +80,13 @@ pub(super) fn mcp_access(buf: &mut Buffer, area: Rect, s: &McpSheet) {
                 if y >= body.bottom() {
                     break;
                 }
-                let sel = s.cursor == i + OWN_ROWS.len();
-                let days = (app["expiresAt"].as_i64().unwrap_or_default() - crate::store::now_ms()).max(0) / 86_400_000;
-                let name = format!(
-                    "{} · {}",
-                    app["label"].as_str().unwrap_or_default(),
-                    fill(&tr("Expires in {count} days"), &[("count", &days.to_string())])
+                let sel = s.cursor == i + MCP_OWN.len();
+                let left = mcp_days_left(app["expiresAt"].as_i64().unwrap_or_default(), crate::store::now_ms());
+                let until = left.map_or_else(
+                    || tr("Expired").into_owned(),
+                    |days| fill(&tr("Expires in {count} days"), &[("count", &days.to_string())]),
                 );
+                let name = format!("{} · {until}", app["label"].as_str().unwrap_or_default());
                 row(buf, body, y, &name, &level_name(app["access"].as_str().unwrap_or_default()), sel);
                 y += 1;
             }

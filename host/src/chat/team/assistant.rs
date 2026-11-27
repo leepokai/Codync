@@ -143,8 +143,9 @@ pub async fn local_call(
     let result = if super::control::has(tool) {
         let mut principal = super::control::clients::local(&hub.store, token)?;
         if token.is_none() {
-            // A thread it starts says which session: its Network address.
+            // A thread it starts says which session: its Network address; and its request ids are its own.
             principal.label.clone_from(&asker.handle);
+            principal.session = Some(key.clone());
         }
         super::control::call(hub, &principal, tool, args).await?
     } else {

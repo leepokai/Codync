@@ -2524,11 +2524,12 @@
   "It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.": "二度と表示されません。持っている人は誰でもこのアプリになりすませます。チャットやリポジトリに置かないでください。",
   "Its token stops working right away.": "トークンはすぐに無効になります。",
   "Started by {name} (MCP)": "{name} が開始（MCP）",
-  "No apps yet. They're added on the computer.": "まだアプリはありません。コンピュータで追加します。",
   "No apps yet. Press n to give one access.": "まだアプリはありません。n でアクセスを許可します。",
   "enter creates · esc back": "enter 作成 · esc 戻る",
   "esc closes": "esc 閉じる",
   "x again revokes it: its token stops working right away · any other key keeps it": "もう一度 x で取り消し：トークンはすぐに無効になります · 他のキーで残す",
   "y copies · enter done": "y コピー · enter 完了",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ レベル · n 新しいアプリ · r 30 日延長 · x 取り消し · esc 閉じる"
+  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ レベル · n 新しいアプリ · r 30 日延長 · x 取り消し · esc 閉じる",
+  "MCP access: apps that drive this computer…": "MCP アクセス：このコンピューターを操作するアプリ…",
+  "Copied: it isn't shown again": "コピーしました：もう表示されません"
 }

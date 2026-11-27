@@ -151,31 +151,26 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
 /// twice is one. Answers `{entry, reopened, queued}`: the message as the thread's transcript holds it, whether it
 /// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
 pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
-    send(hub, bot, id, text, uploads, nonce, None, |_, _| Ok(()))
+    send(hub, bot, id, text, nonce, Author::User { uploads }, |_, _| Ok(()))
 }
 
-/// [`message`] from the outside app `by` (`external`), with no files: `check` sees the task and its bot under the
-/// box's lock before anything is written.
-pub(super) fn message_as(
+/// Who writes a message to a task's thread.
+#[derive(Clone, Copy)]
+pub(super) enum Author<'a> {
+    /// The user, with the files they uploaded to it.
+    User { uploads: &'a [String] },
+    /// An outside app (`external`), with no files: its words are marked as its own.
+    App(&'a super::external::StartedBy),
+}
+
+/// [`message`] from `author`; `check` sees the task and its bot under the box's lock before anything is written.
+pub(super) fn send(
     hub: &Arc<Hub>,
     bot: &str,
     id: &str,
     text: &str,
-    by: Option<&super::external::StartedBy>,
-    check: impl FnOnce(&Task, &BotConfig) -> Result<()>,
-) -> Result<Value> {
-    send(hub, bot, id, text, &[], "", by, check)
-}
-
-#[expect(clippy::too_many_arguments, reason = "message and message_as, one body")]
-fn send(
-    hub: &Arc<Hub>,
-    bot: &str,
-    id: &str,
-    text: &str,
-    uploads: &[String],
     nonce: &str,
-    by: Option<&super::external::StartedBy>,
+    author: Author,
     check: impl FnOnce(&Task, &BotConfig) -> Result<()>,
 ) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
@@ -196,10 +191,14 @@ fn send(
         if reopened {
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
+        let uploads = match author {
+            Author::User { uploads } => uploads,
+            Author::App(_) => &[],
+        };
         let root = crate::chat::uploads::root(&thread);
         let attachments = crate::chat::uploads::resolve_all(&root, uploads)?;
         let mut data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
-        if let Some(by) = by {
+        if let Author::App(by) = author {
             by.mark(&mut data, text);
         }
         let (entry, queued) = post_to(hub, &thread, data)?;

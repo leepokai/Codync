@@ -3,7 +3,7 @@ import { CardSection, ChoicePicker, IconButton, ValueRow } from '../../component
 import { Dialog, DialogField } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { activeClients, clientDetail, mcpCommand, mcpLevels, readMcpAccess, type McpAccess, type McpClient, type McpLevel } from '../../lib/mcp-access'
+import { activeClients, clientDetail, mcpLevels, readMcpAccess, type McpAccess, type McpClient, type McpLevel } from '../../lib/mcp-access'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
@@ -16,7 +16,8 @@ export function McpAccessSection({ store }: { store: BotStore }) {
   // `null` while loading or on a host from before MCP access, which shows nothing.
   const [access, setAccess] = useState<McpAccess | null>(null)
   const [naming, setNaming] = useState<string | null>(null)
-  const [token, setToken] = useState<string | null>(null)
+  // The command with a new app's token, shown this once.
+  const [command, setCommand] = useState<string | null>(null)
   const [confirmRevoke, setConfirmRevoke] = useState<McpClient | null>(null)
   const online = store.connection.kind === 'online'
 
@@ -33,8 +34,8 @@ export function McpAccessSection({ store }: { store: BotStore }) {
 
   const run = async (method: string, body: Record<string, unknown>) => {
     try {
-      const answer = await (await store.ready()).call<{ token?: string }>(method, body)
-      if (answer?.token) setToken(answer.token)
+      const answer = await (await store.ready()).call<{ command?: string }>(method, body)
+      if (answer?.command) setCommand(answer.command)
     } catch (e) {
       store.setError(errorText(e))
     }
@@ -46,7 +47,8 @@ export function McpAccessSection({ store }: { store: BotStore }) {
   const clients = activeClients(access)
   const create = () => {
     const label = (naming ?? '').trim()
-    if (label) void run('mcpClientCreate', { label, access: 'ask', bots: ['*'], plainThreads: true, scopes: ['threads'] })
+    // What a new app may do is the host's default.
+    if (label) void run('mcpClientCreate', { label })
   }
 
   return (
@@ -73,7 +75,7 @@ export function McpAccessSection({ store }: { store: BotStore }) {
                 <Text size="caption" tone="tertiary">{clientDetail(client, tr)}</Text>
               </VStack>
               <ChoicePicker selection={client.access} options={levelOptions} onChange={(level: McpLevel) => void run('mcpClientUpdate', { id: client.id, access: level })} />
-              <IconButton title="Renew for 30 days" icon="arrow.clockwise" onClick={() => void run('mcpClientUpdate', { id: client.id, days: 30 })} />
+              <IconButton title="Renew for 30 days" icon="arrow.clockwise" onClick={() => void run('mcpClientUpdate', { id: client.id, renew: true })} />
               <IconButton title="Revoke access" icon="xmark.circle" onClick={() => setConfirmRevoke(client)} />
             </HStack>
           )),
@@ -89,14 +91,14 @@ export function McpAccessSection({ store }: { store: BotStore }) {
         <DialogField value={naming ?? ''} onChange={setNaming} onSubmit={() => { create(); setNaming(null) }} placeholder={tr('Name')} label={tr('Name')} />
       </Dialog>
       <Dialog
-        open={token !== null}
+        open={command !== null}
         title={tr('Copy its token now')}
         message={tr("It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.")}
-        actions={token ? [{ title: 'Copy', action: () => void navigator.clipboard.writeText(mcpCommand(token)) }] : []}
+        actions={command ? [{ title: 'Copy', action: () => void navigator.clipboard.writeText(command) }] : []}
         cancel="Done"
-        onClose={() => setToken(null)}
+        onClose={() => setCommand(null)}
       >
-        <Text as="div" size="caption" mono className="settings-token">{token ? mcpCommand(token) : ''}</Text>
+        <Text as="div" size="caption" mono className="settings-token">{command ?? ''}</Text>
       </Dialog>
       <Dialog
         open={confirmRevoke !== null}

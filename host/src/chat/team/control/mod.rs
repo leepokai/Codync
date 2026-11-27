@@ -5,6 +5,8 @@
 //! ever approves a request.
 
 pub mod access;
+pub mod calls;
+mod capabilities;
 pub mod clients;
 mod runs;
 mod schema;
@@ -13,7 +15,8 @@ mod threads;
 pub use access::Level;
 
 use crate::hub::Hub;
-use access::{Code, Refusal};
+use crate::store::BotConfig;
+use access::{Admitted, Code, Refusal};
 use anyhow::Result;
 use clients::Principal;
 use serde_json::{Value, json};
@@ -22,7 +25,46 @@ use std::sync::Arc;
 /// What lives while the host runs: each principal's calls of the last minute.
 #[derive(Default)]
 pub struct Control {
-    calls: clients::Calls,
+    calls: calls::Calls,
+}
+
+/// One admitted call.
+pub struct Caller<'a> {
+    pub principal: &'a Principal,
+    /// Made only by `access::admit`: no handler runs for a call that didn't pass it.
+    pub admitted: &'a Admitted,
+}
+
+impl Caller<'_> {
+    /// The level it acts under.
+    pub fn ceiling(&self) -> Level {
+        self.admitted.ceiling
+    }
+}
+
+fn invalid(why: impl Into<String>) -> anyhow::Error {
+    Refusal::err(Code::InvalidRequest, why)
+}
+
+fn denied(why: impl Into<String>) -> anyhow::Error {
+    Refusal::err(Code::CapabilityDenied, why)
+}
+
+/// The call's `field`, which it must have, as text.
+fn text<'a>(args: &'a Value, field: &str) -> Result<&'a str> {
+    args[field].as_str().filter(|t| !t.trim().is_empty()).ok_or_else(|| invalid(format!("`{field}` is required")))
+}
+
+/// The bots `p` may use ([`Principal::uses`]).
+fn reachable(hub: &Hub, p: &Principal) -> Vec<BotConfig> {
+    let rows = hub.store.bots().unwrap_or_default().into_iter().filter(|r| !r.deleted).map(|r| r.config);
+    rows.filter(|c| p.uses(c)).collect()
+}
+
+/// The bot `id` names, if `p` may use it.
+fn usable(hub: &Hub, p: &Principal, id: &str) -> Option<BotConfig> {
+    let cfg = hub.store.bot(id).ok().flatten().filter(|r| !r.deleted)?.config;
+    p.uses(&cfg).then_some(cfg)
 }
 
 pub fn tools() -> Vec<Value> {
@@ -47,7 +89,7 @@ pub async fn call(hub: &Arc<Hub>, principal: &Principal, tool: &str, args: &Valu
     let at = crate::store::now_ms();
     let record =
         json!({"client": principal.id, "via": principal.via, "tool": tool, "outcome": word, "code": code, "at": at});
-    clients::record(&hub.store, &record);
+    calls::record(&hub.store, &record);
     let properties = json!({"tool": tool, "class": class, "outcome": word, "code": code, "cloud": principal.cloud});
     crate::analytics::capture(
         hub,
@@ -59,12 +101,12 @@ pub async fn call(hub: &Arc<Hub>, principal: &Principal, tool: &str, args: &Valu
 
 async fn admitted(hub: &Arc<Hub>, principal: &Principal, tool: &str, args: &Value) -> Result<Value> {
     hub.control.calls.take(&principal.id)?;
-    let limit = clients::level_arg(args, "accessLimit")?;
+    let limit = calls::level_arg(args, "accessLimit")?;
     let ceiling = access::ceiling(principal.approved, clients::max_access(&hub.store), limit);
     let admitted = access::admit(tool, args, ceiling, &principal.scopes)?;
-    let me = threads::Caller { principal, admitted: &admitted };
+    let me = Caller { principal, admitted: &admitted };
     match tool {
-        "worker_capabilities" => threads::capabilities(hub, &me, args).await,
+        "worker_capabilities" => capabilities::capabilities(hub, &me, args).await,
         "thread_list" => threads::list(hub, &me, args).await,
         "thread_launch" => threads::launch(hub, &me, args).await,
         "thread_send" => threads::send(hub, &me, args).await,

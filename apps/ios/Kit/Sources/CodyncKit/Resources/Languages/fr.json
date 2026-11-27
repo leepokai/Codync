@@ -2524,11 +2524,12 @@
   "It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.": "Il ne sera plus affiché. Quiconque l'a peut agir comme cette app : gardez-le hors des discussions et des dépôts.",
   "Its token stops working right away.": "Son jeton cesse de fonctionner tout de suite.",
   "Started by {name} (MCP)": "Lancé par {name} (MCP)",
-  "No apps yet. They're added on the computer.": "Aucune app pour l'instant. On les ajoute sur l'ordinateur.",
   "No apps yet. Press n to give one access.": "Aucune app pour l'instant. Appuyez sur n pour donner l'accès à une app.",
   "enter creates · esc back": "enter crée · esc retour",
   "esc closes": "esc ferme",
   "x again revokes it: its token stops working right away · any other key keeps it": "x à nouveau la révoque : son jeton cesse aussitôt de fonctionner · toute autre touche la garde",
   "y copies · enter done": "y copie · enter terminé",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ niveau · n nouvelle app · r renouveler 30 jours · x révoquer · esc ferme"
+  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ niveau · n nouvelle app · r renouveler 30 jours · x révoquer · esc ferme",
+  "MCP access: apps that drive this computer…": "Accès MCP : les apps qui pilotent cet ordinateur…",
+  "Copied: it isn't shown again": "Copié : il ne sera plus affiché"
 }

@@ -1,42 +1,33 @@
 //! The outside apps the user lets drive this computer's work over MCP: each one's grant (kv `mcp.clients`), with its
 //! token kept only as a hash, the computer's own levels (the maximum, a session on it without a token, the cloud
-//! assistant), what each app did lately (`mcp.audit`) and the launches a retry must not repeat (`mcp.request.*`).
+//! assistant). What each call leaves behind (the audit, replays, the rate) is [`super::calls`]'s.
 //! Every app is its own principal: its token works on the `codync` MCP tools alone, never on another host method
 //! (the API takes only the computer's own token).
 
 use super::access::{Code, Level, Refusal, Scope};
+use super::calls::{audit, recent};
 use crate::LockExt;
 use crate::hub::Hub;
-use crate::store::{Store, now_ms};
+use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 const KV: &str = "mcp.clients";
-const AUDIT: &str = "mcp.audit";
-const REQUESTS: &str = "mcp.request.";
 const MAX_KV: &str = "mcp.maxAccess";
 const LOCAL_KV: &str = "mcp.localAccess";
 const CLOUD_KV: &str = "mcp.cloudAccess";
 /// What every app's token starts with, so a leaked one is recognized for what it is.
 pub const TOKEN_PREFIX: &str = "cdy_mcp_";
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+pub(super) const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+/// How long a new app's access lasts, and a renewal.
 pub const DEFAULT_DAYS: i64 = 30;
 pub const MAX_DAYS: i64 = 90;
 const MAX_CLIENTS: usize = 50;
 const MAX_LABEL: usize = 60;
-/// Calls an app may make a minute.
-pub const CALLS_PER_MINUTE: usize = 60;
-/// Calls the audit keeps, newest last, and how many a listing shows per app.
-const AUDIT_KEPT: usize = 500;
-const AUDIT_SHOWN: usize = 20;
-/// How long a launch's `clientRequestId` replays it.
-const REQUEST_KEPT_MS: i64 = 7 * DAY_MS;
 
 /// The id a session on this computer without a token acts under, and the cloud assistant's.
 pub const LOCAL: &str = "local";
@@ -95,12 +86,20 @@ pub struct Principal {
     pub plain_threads: bool,
     /// The cloud assistant app a call came through, as the cloud names it (its OAuth client), for the record.
     pub via: Option<String>,
+    /// The session on this computer a call without a token came from: its `clientRequestId`s are its own.
+    pub session: Option<String>,
 }
 
 impl Principal {
-    pub fn reaches(&self, bot: &crate::store::BotConfig) -> bool {
+    pub fn reaches(&self, bot: &BotConfig) -> bool {
         (!self.cloud || bot.reachable_by_assistants)
             && self.bots.as_ref().is_none_or(|ids| ids.iter().any(|id| id == "*" || *id == bot.id))
+    }
+
+    /// Whether `bot` is one of the bots it may use (start threads on, run routines of): a bot of the user's list it
+    /// reaches, never the box of threads without a bot, a thread or a group.
+    pub fn uses(&self, bot: &BotConfig) -> bool {
+        !bot.plain && !bot.hidden && !bot.is_thread() && !bot.is_group() && self.reaches(bot)
     }
 
     pub fn may(&self, scope: Scope) -> bool {
@@ -190,6 +189,8 @@ pub struct Grant {
     pub plain_threads: Option<bool>,
     /// Days from now it stops working.
     pub days: Option<i64>,
+    /// It works for [`DEFAULT_DAYS`] from now.
+    pub renew: bool,
 }
 
 impl Grant {
@@ -217,7 +218,7 @@ impl Grant {
         if let Some(plain) = self.plain_threads {
             client.plain_threads = plain;
         }
-        if let Some(days) = self.days {
+        if let Some(days) = self.days.or(self.renew.then_some(DEFAULT_DAYS)) {
             ensure!((1..=MAX_DAYS).contains(&days), "it lasts 1 to {MAX_DAYS} days");
             client.expires_at = now + days * DAY_MS;
         }
@@ -239,7 +240,13 @@ pub fn allowed_folder(folder: &str) -> Result<String> {
     Ok(real.to_string_lossy().into_owned())
 }
 
-/// `mcpClientCreate`: a new app, and its token, which is shown this once and never kept.
+/// What a coding agent runs to reach this computer as the app: its token in the environment, never in its arguments.
+pub fn command(token: &str) -> String {
+    format!("CODYNC_MCP_TOKEN={token} codync-host mcp network")
+}
+
+/// `mcpClientCreate`: a new app, and its token, which is shown this once and never kept. What the grant leaves out
+/// is what every client gives a new app: Ask, threads on every bot and without one, for [`DEFAULT_DAYS`].
 pub fn create(hub: &Hub, grant: Grant) -> Result<(Value, String)> {
     let now = now_ms();
     let mut client = Client {
@@ -247,9 +254,9 @@ pub fn create(hub: &Hub, grant: Grant) -> Result<(Value, String)> {
         label: String::new(),
         access: Level::Ask,
         scopes: vec![Scope::Threads],
-        bots: Vec::new(),
+        bots: vec!["*".into()],
         folders: Vec::new(),
-        plain_threads: false,
+        plain_threads: true,
         created_at: now,
         expires_at: now + DEFAULT_DAYS * DAY_MS,
         last_used_at: None,
@@ -332,6 +339,7 @@ pub fn local(store: &Store, token: Option<&str>) -> Result<Principal> {
             folders: Vec::new(),
             plain_threads: true,
             via: None,
+            session: None,
         });
     };
     let c = by_token(store, token)?;
@@ -345,6 +353,7 @@ pub fn local(store: &Store, token: Option<&str>) -> Result<Principal> {
         folders: c.folders.into_iter().map(PathBuf::from).collect(),
         plain_threads: c.plain_threads,
         via: None,
+        session: None,
     })
 }
 
@@ -360,103 +369,7 @@ pub fn cloud(store: &Store) -> Principal {
         folders: Vec::new(),
         plain_threads: true,
         via: None,
-    }
-}
-
-// MARK: audit
-
-fn audit(store: &Store) -> Vec<Value> {
-    store.kv_get(AUDIT).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
-}
-
-fn recent(audit: &[Value], client: &str) -> Value {
-    Value::Array(audit.iter().rev().filter(|c| c["client"] == client).take(AUDIT_SHOWN).cloned().collect())
-}
-
-/// Keeps `call` in the audit, the oldest going past [`AUDIT_KEPT`].
-pub fn record(store: &Store, call: &Value) {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _g = LOCK.locked();
-    let mut all = audit(store);
-    all.push(call.clone());
-    let over = all.len().saturating_sub(AUDIT_KEPT);
-    all.drain(..over);
-    if let Err(error) = serde_json::to_string(&all).map_err(anyhow::Error::from).and_then(|v| store.kv_set(AUDIT, &v)) {
-        tracing::warn!(error = format!("{error:#}"), "couldn't keep an MCP call in the audit");
-    }
-}
-
-// MARK: launches a retry repeats
-
-/// What a launch named `key` by `principal` became, once a launch made it (`clientRequestId`).
-fn request_key(principal: &str, key: &str) -> String {
-    let id = Sha256::digest(json!([principal, key]).to_string().as_bytes());
-    format!("{REQUESTS}{}", crate::chat::files::digest_hex(&id))
-}
-
-/// Runs `launch` once per `key` of `principal`: a retry gets what the first launch made (`replayed`), never a
-/// second one. Held across the launch, so two retries at once make one.
-pub fn once(
-    store: &Store,
-    principal: &str,
-    key: Option<&str>,
-    launch: impl FnOnce() -> Result<Value>,
-) -> Result<(Value, bool)> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let Some(key) = key.filter(|k| !k.is_empty()) else { return Ok((launch()?, false)) };
-    ensure!(key.len() <= 200, "clientRequestId is at most 200 characters");
-    let _g = LOCK.locked();
-    let k = request_key(principal, key);
-    if let Some(done) = store.kv_get(&k).and_then(|v| serde_json::from_str::<Value>(&v).ok()) {
-        return Ok((done["made"].clone(), true));
-    }
-    let made = launch()?;
-    let now = now_ms();
-    store.kv_set(&k, &json!({"made": made, "at": now}).to_string())?;
-    // ponytail: scans every kept launch on each new one; an index by time if apps launch thousands a week.
-    for old in store.kv_prefix(REQUESTS) {
-        let at = store.kv_get(&old).and_then(|v| serde_json::from_str::<Value>(&v).ok()).and_then(|v| v["at"].as_i64());
-        if at.is_none_or(|at| now - at > REQUEST_KEPT_MS) {
-            let _ = store.kv_delete(&old);
-        }
-    }
-    Ok((made, false))
-}
-
-// MARK: rate limit
-
-/// Each principal's calls in the last minute.
-#[derive(Default)]
-pub struct Calls(Mutex<HashMap<String, VecDeque<Instant>>>);
-
-impl Calls {
-    /// Counts a call of `principal`'s, refusing it past [`CALLS_PER_MINUTE`].
-    pub fn take(&self, principal: &str) -> Result<()> {
-        let now = Instant::now();
-        let mut all = self.0.locked();
-        let calls = all.entry(principal.to_owned()).or_default();
-        while calls.front().is_some_and(|at| now.duration_since(*at) > Duration::from_mins(1)) {
-            calls.pop_front();
-        }
-        if calls.len() >= CALLS_PER_MINUTE {
-            return Err(Refusal::err(
-                Code::RateLimited,
-                format!("at most {CALLS_PER_MINUTE} calls a minute: wait a little, then try again"),
-            ));
-        }
-        calls.push_back(now);
-        Ok(())
-    }
-}
-
-/// Refuses a name that isn't one of the levels.
-pub fn level_arg(args: &Value, field: &str) -> Result<Option<Level>> {
-    match args[field].as_str() {
-        None => Ok(None),
-        Some(word) => match Level::parse(word) {
-            Some(level) => Ok(Some(level)),
-            None => Err(Refusal::err(Code::InvalidRequest, format!("{field}: readOnly, ask, auto or full"))),
-        },
+        session: None,
     }
 }
 

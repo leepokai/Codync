@@ -75,8 +75,8 @@ in `control/schema.rs`. The cloud's copy is in `cloud/src/routes/assistant.ts`.
 
 ## What the user sees
 
-- Threads say **Started by <app> (MCP)** under their title (desktop, iPhone, Android). The terminal UI shows the
-  app list and levels but no thread label. The wire field is `startedBy: {label, client, level}`, absent on the
+- Threads say **Started by <app> (MCP)** under their title (desktop, iPhone, Android) and in the terminal UI's
+  thread details. The wire field is `startedBy: {label, client, level}`, absent on the
   user's own threads.
 - The MCP access section lists the computer's three levels and the apps, each with its level, days left, renew and
   revoke. A host before MCP access answers `unknown method`, and the section hides itself.

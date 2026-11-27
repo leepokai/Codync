@@ -1,7 +1,7 @@
 //! Outside apps driving threads over MCP (docs/features/mcp-access.md), against a real host and its local API
 //! `agentCall` (what `codync-host mcp network --token` calls), with a scripted ACP agent: an app given every bot
 //! starts a thread, waits on it, reads it, writes to it and stops another; a retry with the same request id starts
-//! nothing more; a narrowed call can't write; a revoked token stops at once.
+//! or sends nothing more; a narrowed call can't write; a revoked token stops at once.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -33,12 +33,13 @@ async fn task(host: &Host, bot: &str, id: &str, check: impl Fn(&Value) -> bool) 
     }
 }
 
-/// Gives an app access as the desktop app and the terminal UI do (every bot, threads without one too) at `access`.
+/// Gives an app access as the desktop app and the terminal UI do (the host's defaults: every bot, threads without
+/// one too) at `access`.
 async fn app(host: &Host, label: &str, access: &str) -> (String, Value) {
-    let grant = json!({"label": label, "access": access, "bots": ["*"], "plainThreads": true, "scopes": ["threads"]});
-    let made = host.call("mcpClientCreate", grant).await;
+    let made = host.call("mcpClientCreate", json!({"label": label, "access": access})).await;
     let token = made["token"].as_str().unwrap().to_owned();
     assert!(token.starts_with("cdy_mcp_"), "{made}");
+    assert_eq!(made["command"], format!("CODYNC_MCP_TOKEN={token} codync-host mcp network"));
     (token, made["client"].clone())
 }
 
@@ -79,19 +80,23 @@ async fn an_app_at_ask_starts_follows_and_writes_to_a_thread_that_runs_no_freer_
     let result = row["result"].as_str().unwrap();
     assert!(result.starts_with("mode ") && !result.starts_with("mode agent-full-access"), "{result}");
 
-    // A message to it is the app's, framed as such for the agent; the same request id sends nothing more.
-    tool("thread_send", with(&thread, json!({"message": "and the docs", "clientRequestId": "s1"}))).await;
-    tool("thread_send", with(&thread, json!({"message": "and the docs", "clientRequestId": "s1"}))).await;
+    // A message to it is the app's, framed as such for the agent; the same request id sends nothing more (the
+    // launch's id is another tool's: it sends).
+    let send = with(&thread, json!({"message": "and the docs", "clientRequestId": "r1"}));
+    let first = tool("thread_send", send.clone()).await;
+    let second = tool("thread_send", send).await;
+    assert!(first["replayed"] == false && first["entryId"].is_string(), "{first}");
+    assert_eq!((&second["replayed"], &second["entryId"]), (&json!(true), &first["entryId"]), "{second}");
     let again =
         task(&host, &bot, &id, |t| t["status"] == "done" && t["result"].as_str().unwrap().contains("the docs")).await;
     let result = again["result"].as_str().unwrap();
     assert!(result.contains("a message from Editor, an outside app"), "{result}");
     let steps = tool("thread_read", with(&thread, json!({"view": "steps", "limit": 100}))).await;
-    let sent = steps.to_string().matches("and the docs").count();
-    assert!(sent >= 1, "{steps}");
+    let written = steps.to_string().matches("and the docs").count();
+    assert!(written >= 1, "{steps}");
     tokio::time::sleep(Duration::from_millis(300)).await;
     let after = tool("thread_read", with(&thread, json!({"view": "steps", "limit": 100}))).await;
-    assert_eq!(after.to_string().matches("and the docs").count(), sent, "sent once");
+    assert_eq!(after.to_string().matches("and the docs").count(), written, "sent once");
 
     // A call narrowed to reading can't write; nor can it ask for more than Ask.
     let narrowed = json!({"message": "x", "botId": bot, "accessLimit": "readOnly"});

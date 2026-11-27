@@ -64,6 +64,8 @@ pub struct WorkTask {
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); none from an
     /// older host, where every live task takes one ([`Self::takes_seat`]).
     pub seat: Option<bool>,
+    /// The outside app that started it over MCP, by the name the user gave it.
+    pub started_by: Option<String>,
 }
 
 impl WorkTask {
@@ -91,6 +93,7 @@ impl WorkTask {
             talk: v["talk"] == true,
             talk_files: v["talkFiles"] == true,
             seat: v["seat"].as_bool(),
+            started_by: v["startedBy"]["label"].as_str().filter(|l| !l.is_empty()).map(str::to_owned),
         })
     }
 

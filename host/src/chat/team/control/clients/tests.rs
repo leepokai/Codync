@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use crate::chat::calls::context::tests::{bot, hub};
+use crate::chat::team::control::calls::record;
 
 fn grant(v: Value) -> Grant {
     serde_json::from_value(v).unwrap()
@@ -20,6 +21,12 @@ fn a_token_is_shown_once_kept_only_as_a_hash_and_works_on_its_own() {
         ("Laptop agent", Level::Auto, &[Scope::Threads][..])
     );
     assert!(load(&hub.store)[0].last_used_at.is_some(), "its use is noted");
+    assert_eq!(
+        (&client["bots"], &client["plainThreads"], &client["scopes"]),
+        (&json!(["*"]), &json!(true), &json!(["threads"])),
+        "what every client gives a new app"
+    );
+    assert_eq!(command("cdy_mcp_x"), "CODYNC_MCP_TOKEN=cdy_mcp_x codync-host mcp network");
     let wrong = local(&hub.store, Some("cdy_mcp_nope")).unwrap_err();
     assert_eq!(wrong.downcast_ref::<Refusal>().unwrap().code, Code::Revoked);
 }
@@ -30,6 +37,8 @@ fn a_revoked_or_expired_app_is_refused() {
     let (client, token) = create(&hub, grant(json!({"label": "A"}))).unwrap();
     let id = client["id"].as_str().unwrap();
     update(&hub.store, id, grant(json!({"days": 1}))).unwrap();
+    let renewed = update(&hub.store, id, grant(json!({"renew": true}))).unwrap();
+    assert!(renewed["expiresAt"].as_i64().unwrap() > now_ms() + (DEFAULT_DAYS - 1) * DAY_MS, "renewed for 30 days");
     change(&hub.store, |all| {
         all[0].expires_at = now_ms() - 1;
         Ok(())
@@ -71,36 +80,6 @@ fn a_folder_an_app_may_use_is_real_and_never_codyncs_own() {
         std::os::unix::fs::symlink(&data, &link).unwrap();
         assert!(allowed_folder(link.to_str().unwrap()).is_err(), "a link into Codync's data is followed");
     }
-}
-
-#[test]
-fn a_launch_a_retry_names_again_is_made_once() {
-    let hub = hub();
-    let mut made = 0;
-    let mut launch = || {
-        made += 1;
-        Ok(json!({"taskId": format!("t{made}")}))
-    };
-    let (first, replayed) = once(&hub.store, "app", Some("k1"), &mut launch).unwrap();
-    assert!(!replayed);
-    let (again, replayed) = once(&hub.store, "app", Some("k1"), &mut launch).unwrap();
-    assert!(replayed && again == first, "the same thread, from what the store kept (a restart keeps it too)");
-    let (other, _) = once(&hub.store, "another app", Some("k1"), &mut launch).unwrap();
-    assert_ne!(other, first, "each app's ids are its own");
-    let (_, replayed) = once(&hub.store, "app", None, &mut launch).unwrap();
-    assert!(!replayed);
-    assert_eq!(made, 3);
-}
-
-#[test]
-fn calls_are_limited_per_app() {
-    let calls = Calls::default();
-    for _ in 0..CALLS_PER_MINUTE {
-        calls.take("a").unwrap();
-    }
-    let refused = calls.take("a").unwrap_err();
-    assert_eq!(refused.downcast_ref::<Refusal>().unwrap().code, Code::RateLimited);
-    assert!(calls.take("b").is_ok(), "another app's calls count apart");
 }
 
 #[test]

@@ -44,7 +44,7 @@ pub use gear::{Gear, GearRow};
 pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
-pub use mcp_access::{McpReply, McpSheet, McpStep, command as mcp_command};
+pub use mcp_access::{McpReply, McpSheet, McpStep, OWN as MCP_OWN, days_left as mcp_days_left};
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
 pub use network_rules::{RuleField, RuleForm, label, level_detail, level_name};

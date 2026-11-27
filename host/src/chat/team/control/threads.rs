@@ -1,8 +1,9 @@
 //! The thread tools: what an outside app sees of this computer's threads, and starts, writes to, waits on, reads and
 //! steers. A thread is named by its bot and task (`{botId, taskId}`); one the caller may not see is `not_found`.
 
-use super::access::{Admitted, Code, Level, Refusal, Scope, within};
+use super::access::{ACT_DIRECTLY, Code, Level, Refusal, Scope, within};
 use super::clients::{self, Principal};
+use super::{Caller, calls, denied, invalid, reachable, text, usable};
 use crate::agent::bot::Cmd;
 use crate::chat::work::{self, external, external::StartedBy, external::Target};
 use crate::hub::Hub;
@@ -18,40 +19,16 @@ pub const MAX_LIVE: usize = 8;
 /// How long `thread_wait` waits at most: on this computer, and through the cloud, which gives a call 10 seconds.
 const WAIT_LOCAL_SECS: u64 = crate::chat::team::mailbox::WAIT_MAX_SECS;
 const WAIT_CLOUD_SECS: u64 = 8;
-const MAX_MESSAGE: usize = 32_000;
+pub const MAX_MESSAGE: usize = 32_000;
 const PAGE: usize = 20;
-
-/// One admitted call.
-pub struct Caller<'a> {
-    pub principal: &'a Principal,
-    /// Made only by `access::admit`: no handler runs for a call that didn't pass it.
-    pub admitted: &'a Admitted,
-}
-
-impl Caller<'_> {
-    /// The level it acts under.
-    pub fn ceiling(&self) -> Level {
-        self.admitted.ceiling
-    }
-}
-
-fn invalid(why: impl Into<String>) -> anyhow::Error {
-    Refusal::err(Code::InvalidRequest, why)
-}
+/// Archive pages one `thread_list` call looks through for threads the caller sees.
+const SCAN_PAGES: usize = 10;
 
 fn not_found() -> anyhow::Error {
     Refusal::err(Code::NotFound, "no such thread you may see")
 }
 
-fn denied(why: impl Into<String>) -> anyhow::Error {
-    Refusal::err(Code::CapabilityDenied, why)
-}
-
-fn text<'a>(args: &'a Value, field: &str) -> Result<&'a str> {
-    args[field].as_str().filter(|t| !t.trim().is_empty()).ok_or_else(|| invalid(format!("`{field}` is required")))
-}
-
-/// A bot whose threads `p` may reach: a live bot, or the computer's box of threads without one.
+/// A box of threads: a live bot's, or the computer's box of threads without one (who sees which is [`sees`]).
 fn bot_of(hub: &Hub, bot: &str) -> Option<BotConfig> {
     let cfg = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted)?.config;
     (!cfg.is_thread() && !cfg.is_group()).then_some(cfg)
@@ -88,63 +65,20 @@ fn by(me: &Caller, level: Level) -> StartedBy {
     StartedBy { client: me.principal.id.clone(), label: me.principal.label.clone(), level }
 }
 
-/// The bots `p` may reach, by id and name.
-fn reachable(hub: &Hub, p: &Principal) -> Vec<BotConfig> {
-    let rows = hub.store.bots().unwrap_or_default().into_iter().filter(|r| !r.deleted).map(|r| r.config);
-    rows.filter(|c| !c.plain && !c.hidden && !c.is_thread() && !c.is_group() && p.reaches(c)).collect()
+/// How long `thread_wait` waits for `p` at most.
+pub fn wait_secs(p: &Principal) -> u64 {
+    if p.cloud { WAIT_CLOUD_SECS } else { WAIT_LOCAL_SECS }
 }
 
-pub async fn capabilities(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
-    let p = me.principal;
-    let mut agents: Vec<Value> = codync_agent::backends::list()
-        .into_iter()
-        .filter(|a| a["installed"] == true)
-        .map(|a| json!({"id": a["id"], "name": a["name"], "installed": a["installed"], "signedIn": a["signedIn"]}))
-        .collect();
-    crate::agent::login_profiles::annotate(&hub.store, &mut agents);
-    for agent in &mut agents {
-        // Only what picking a login needs.
-        let profiles: Vec<Value> = agent["loginProfiles"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|p| json!({"id": p["id"], "name": p["name"]}))
-            .collect();
-        *agent = json!({"id": agent["id"], "name": agent["name"], "installed": agent["installed"],
-            "signedIn": agent["signedIn"], "loginProfiles": profiles});
+/// Refuses another thread to app `client` while [`MAX_LIVE`] of its own are going. Under [`calls::gate`].
+fn room(hub: &Hub, client: &str) -> Result<()> {
+    if external::live(&hub.store, client) >= MAX_LIVE {
+        return Err(Refusal::err(
+            Code::RateLimited,
+            format!("{MAX_LIVE} of this app's threads are still going: wait for one to end, or stop one"),
+        ));
     }
-    let bots: Vec<Value> = reachable(hub, p)
-        .iter()
-        .map(|c| json!({"botId": c.id, "name": c.name, "agent": c.backend, "folder": c.cwd, "projects": c.projects}))
-        .collect();
-    let mut out = json!({
-        "you": {
-            "name": p.label, "level": me.ceiling(), "approved": p.approved,
-            "computerMaximum": clients::max_access(&hub.store), "scopes": p.scopes,
-            "threadsWithoutABot": p.plain_threads, "folders": p.folders,
-        },
-        "bots": bots,
-        "agents": agents,
-        "approvals": {
-            "ask": "every request is an approval card on the user's devices (needs level ask)",
-            "auto": "the agent's own auto mode; what it asks for is a card (needs level auto)",
-            "full": "requests approved by themselves, in the agent mode you pick (needs level full)",
-        },
-        "approvalsAnsweredHere": false,
-        "limits": {
-            "callsPerMinute": clients::CALLS_PER_MINUTE, "liveThreads": MAX_LIVE, "messageBytes": MAX_MESSAGE,
-            "waitSecs": if p.cloud { WAIT_CLOUD_SECS } else { WAIT_LOCAL_SECS },
-        },
-    });
-    if let Some(agent) = args["agent"].as_str().filter(|a| !a.is_empty()) {
-        if p.cloud {
-            out["models"] = Value::Null;
-            out["note"] = "Model lists aren't fetched over the cloud: leave model out for the agent's default.".into();
-        } else {
-            out["models"] = crate::agent::auth::models(&hub.store, agent, None).await?["models"].clone();
-        }
-    }
-    Ok(out)
+    Ok(())
 }
 
 /// A thread row as an app reads it.
@@ -166,7 +100,8 @@ pub async fn list(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value
 fn list_now(hub: &Arc<Hub>, p: &Principal, args: &Value) -> Result<Value> {
     let limit = usize::try_from(args["limit"].as_u64().unwrap_or(PAGE as u64)).unwrap_or(PAGE).clamp(1, 50);
     let status = args["status"].as_str();
-    let mut boxes: Vec<BotConfig> = if let Some(bot) = args["botId"].as_str() {
+    let only = args["botId"].as_str();
+    let mut boxes: Vec<BotConfig> = if let Some(bot) = only {
         bot_of(hub, bot).into_iter().collect()
     } else {
         let mut all = reachable(hub, p);
@@ -174,37 +109,85 @@ fn list_now(hub: &Arc<Hub>, p: &Principal, args: &Value) -> Result<Value> {
         all
     };
     boxes.retain(|cfg| if cfg.plain { p.plain_threads } else { p.reaches(cfg) });
-    let wanted = |cfg: &BotConfig, row: &Value| {
-        sees(p, cfg, external::client_of(row)) && status.is_none_or(|s| row["status"] == s)
+    let seen = |row: &Value| {
+        let cfg = boxes.iter().find(|cfg| row["botId"] == cfg.id.as_str())?;
+        let wanted = sees(p, cfg, external::client_of(row)) && status.is_none_or(|s| row["status"] == s);
+        wanted.then(|| shown(cfg, row))
     };
-    let mut rows: Vec<Value> = Vec::new();
-    match args["cursor"].as_str() {
-        // Older ended ones, from the archive's pages.
+    let (rows, next) = match args["cursor"].as_str() {
+        None => {
+            let rows = boxes.iter().flat_map(|cfg| {
+                external::rows(hub, cfg).into_iter().map(|mut row| {
+                    row["botId"] = cfg.id.clone().into();
+                    row
+                })
+            });
+            first_page(rows.filter_map(|row| seen(&row)).collect(), limit)
+        }
         Some(cursor) => {
             let before = cursor.parse::<i64>().map_err(|_| invalid("cursor is next from thread_list"))?;
-            for cfg in &boxes {
-                let older = work::archive::older(hub, Some(&cfg.id), Some(before))?;
-                let page = older["threads"].as_array().cloned().unwrap_or_default();
-                rows.extend(page.iter().filter(|row| wanted(cfg, row)).map(|row| shown(cfg, row)));
-            }
-            rows.sort_by_key(|r| std::cmp::Reverse(r["endedAt"].as_i64()));
+            older_page(hub, only, before, limit, seen)?
         }
-        None => {
-            for cfg in &boxes {
-                rows.extend(external::rows(hub, cfg).iter().filter(|row| wanted(cfg, row)).map(|row| shown(cfg, row)));
-            }
-        }
-    }
-    let more = rows.len() > limit;
-    rows.truncate(limit);
-    // The next page starts before the oldest end shown; the first page also leads to the ones it didn't carry.
-    let oldest = rows.iter().filter_map(|r| r["endedAt"].as_i64()).min();
-    let next = match (args["cursor"].is_null(), more) {
-        (_, true) => oldest,
-        (true, false) => Some(oldest.unwrap_or_else(crate::store::now_ms)),
-        (false, false) => None,
     };
     Ok(json!({"threads": rows, "next": next.map(|n| n.to_string())}))
+}
+
+/// Keeps the first `keep` of `rows` (newest end first) and every other that ended with the last of them, so a page
+/// never splits the ones that ended at once. Where the next page starts, when some went.
+fn cut(rows: &mut Vec<Value>, keep: usize) -> Option<i64> {
+    if rows.len() <= keep {
+        return None;
+    }
+    let edge = rows.get(keep.checked_sub(1)?)?["endedAt"].as_i64()?;
+    rows.retain(|r| r["endedAt"].as_i64() >= Some(edge));
+    Some(edge)
+}
+
+/// The first page: every live thread, then the latest ended ones up to `limit`. It always leads on, to the ones it
+/// left out and the archive.
+fn first_page(rows: Vec<Value>, limit: usize) -> (Vec<Value>, Option<i64>) {
+    let (mut live, mut ended): (Vec<Value>, Vec<Value>) = rows.into_iter().partition(|r| r["endedAt"].is_null());
+    live.sort_by_key(|r| std::cmp::Reverse(r["startedAt"].as_i64()));
+    ended.sort_by_key(|r| std::cmp::Reverse(r["endedAt"].as_i64()));
+    let keep = limit.saturating_sub(live.len());
+    if keep == 0 {
+        ended.clear();
+    }
+    let next = cut(&mut ended, keep)
+        .or_else(|| ended.last().and_then(|r| r["endedAt"].as_i64()))
+        .unwrap_or_else(crate::store::now_ms);
+    live.extend(ended);
+    (live, Some(next))
+}
+
+/// Ended threads before `before` the caller sees (`seen`), from the archive's pages, until `limit` of them or
+/// [`SCAN_PAGES`] pages; where the next page starts, while more may come.
+fn older_page(
+    hub: &Hub,
+    only: Option<&str>,
+    mut before: i64,
+    limit: usize,
+    seen: impl Fn(&Value) -> Option<Value>,
+) -> Result<(Vec<Value>, Option<i64>)> {
+    let mut rows = Vec::new();
+    for _ in 0..SCAN_PAGES {
+        let (page, more) = work::archive::older_page(hub, only, before)?;
+        rows.extend(page.iter().filter_map(&seen));
+        let edge = page.last().and_then(|r| r["endedAt"].as_i64());
+        match edge {
+            Some(edge) if more => before = edge,
+            _ => {
+                let next = cut(&mut rows, limit);
+                return Ok((rows, next));
+            }
+        }
+        if rows.len() >= limit {
+            break;
+        }
+    }
+    // More may come past what was looked at: from there, or from the last row shown.
+    let next = cut(&mut rows, limit).unwrap_or(before);
+    Ok((rows, Some(next)))
 }
 
 /// What `folder` resolves to for a launch on `cfg` (`None`: a thread without a bot), if the caller may work there:
@@ -229,12 +212,18 @@ fn folder(hub: &Hub, p: &Principal, cfg: Option<&BotConfig>, folder: &str) -> Re
     Ok(real)
 }
 
-pub async fn launch(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
-    let p = me.principal;
-    let message = text(args, "message")?.to_owned();
+/// The call's `message`, within [`MAX_MESSAGE`].
+fn message(args: &Value) -> Result<String> {
+    let message = text(args, "message")?;
     if message.len() > MAX_MESSAGE {
         return Err(invalid(format!("a message of at most {MAX_MESSAGE} bytes")));
     }
+    Ok(message.to_owned())
+}
+
+/// What a launch asks for, before where it works: the level it runs at, and its setup (no folder yet), refused when
+/// it asks for more than a caller under `ceiling` may.
+fn setup_of(ceiling: Level, args: &Value) -> Result<(Level, work::Setup)> {
     let approval = match args["approval"].as_str() {
         None => Level::Ask,
         Some(word) => match Level::parse(word) {
@@ -242,32 +231,22 @@ pub async fn launch(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Val
             _ => return Err(invalid("approval: ask, auto or full")),
         },
     };
-    within(approval, me.ceiling(), "A thread with that approval")?;
+    within(approval, ceiling, "A thread with that approval")?;
     let mode = args["mode"].as_str().filter(|m| !m.is_empty()).map(str::to_owned);
     let options: std::collections::BTreeMap<String, String> = match &args["modelOptions"] {
         Value::Null => std::collections::BTreeMap::default(),
         v => serde_json::from_value(v.clone()).map_err(|_| invalid("modelOptions: names and values, as text"))?,
     };
     // The agent's own mode, and model settings that may set it, are what only Full may pick.
-    if (mode.is_some() || !options.is_empty()) && (approval < Level::Full || me.ceiling() < Level::Full) {
+    if (mode.is_some() || !options.is_empty()) && approval < Level::Full {
         return Err(Refusal::err(
             Code::ModeEscalationDenied,
             format!(
-                "mode and modelOptions can set how freely the agent works: only approval full may pick them. {}",
-                super::access::ACT_DIRECTLY
+                "mode and modelOptions can set how freely the agent works: only approval full may pick them. \
+                 {ACT_DIRECTLY}"
             ),
         ));
     }
-    let cfg = match args["botId"].as_str() {
-        Some(bot) => {
-            let cfg = bot_of(hub, bot).filter(|c| !c.plain && p.reaches(c)).ok_or_else(not_found)?;
-            Some(cfg)
-        }
-        None if !p.plain_threads => return Err(denied("this app may only start threads on bots")),
-        None if args["agent"].as_str().is_none() => return Err(invalid("a thread without a bot names its agent")),
-        None => None,
-    };
-    let cwd = args["folder"].as_str().map(|f| folder(hub, p, cfg.as_ref(), f)).transpose()?;
     let place = match args["place"].as_str() {
         None => None,
         Some(word) => Some(serde_json::from_value(json!(word)).map_err(|_| invalid("place: here or worktree"))?),
@@ -277,31 +256,37 @@ pub async fn launch(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Val
     let setup = work::Setup {
         backend: args["agent"].as_str().map(str::to_owned),
         login_profile: args["loginProfile"].as_str().map(str::to_owned),
-        cwd,
+        cwd: None,
         model,
         approval: Some(work::Approval { permission: approval.permission(), mode }),
         workflow: None,
         place,
     };
+    Ok((approval, setup))
+}
+
+pub async fn launch(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
+    let p = me.principal;
+    let message = message(args)?;
+    let (approval, mut setup) = setup_of(me.ceiling(), args)?;
+    let cfg = match args["botId"].as_str() {
+        Some(bot) => Some(usable(hub, p, bot).ok_or_else(not_found)?),
+        None if !p.plain_threads => return Err(denied("this app may only start threads on bots")),
+        None if setup.backend.is_none() => return Err(invalid("a thread without a bot names its agent")),
+        None => None,
+    };
+    setup.cwd = args["folder"].as_str().map(|f| folder(hub, p, cfg.as_ref(), f)).transpose()?;
     let bot = match &cfg {
         Some(cfg) => cfg.id.clone(),
         None => work::plain::owner(hub).await?,
     };
-    let (hub2, client, key) = (hub.clone(), p.id.clone(), args["clientRequestId"].as_str().map(str::to_owned));
     let (started, owner) = (by(me, approval), bot.clone());
-    let (launched, replayed) = tokio::task::spawn_blocking(move || {
-        clients::once(&hub2.store, &client, key.as_deref(), || {
-            if external::live(&hub2.store, &client) >= MAX_LIVE {
-                return Err(Refusal::err(
-                    Code::RateLimited,
-                    format!("{MAX_LIVE} of this app's threads are still going: wait for one to end, or stop one"),
-                ));
-            }
-            let task = external::launch(&hub2, &owner, &message, setup, &started)?;
-            Ok(json!({"botId": owner, "taskId": task}))
-        })
+    let (launched, replayed) = calls::once_blocking(hub, me, "thread_launch", args, move |hub| {
+        room(hub, &started.client)?;
+        let task = external::launch(hub, &owner, &message, setup, &started)?;
+        Ok(json!({"botId": owner, "taskId": task}))
     })
-    .await??;
+    .await?;
     let properties = json!({"agent": args["agent"].as_str().or(cfg.as_ref().map(|c| c.backend.as_str())),
         "plain": cfg.is_none(), "folder": args["folder"].is_string(), "approval": approval, "replayed": replayed,
         "cloud": p.cloud});
@@ -317,25 +302,33 @@ pub async fn launch(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Val
 
 pub async fn send(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
     let (cfg, task, _) = resolve_to_act(hub, me, args)?;
-    let message = text(args, "message")?.to_owned();
-    if message.len() > MAX_MESSAGE {
-        return Err(invalid(format!("a message of at most {MAX_MESSAGE} bytes")));
-    }
+    let message = message(args)?;
     let steer = match args["mode"].as_str() {
         None | Some("queue" | "auto") => false,
         Some("steer") => true,
         Some(_) => return Err(invalid("mode: queue or steer")),
     };
-    let (hub2, started, ceiling) = (hub.clone(), by(me, me.ceiling()), me.ceiling());
-    let (client, key) = (me.principal.id.clone(), args["clientRequestId"].as_str().map(str::to_owned));
-    let bot = cfg.id.clone();
-    let (sent, replayed) = tokio::task::spawn_blocking(move || {
-        clients::once(&hub2.store, &client, key.as_deref(), || {
-            // Again under the box's lock: the thread's level can't change between the check and the message.
-            external::message(&hub2, &bot, &task, &message, &started, |t| within(t.level, ceiling, "That thread"))
+    // A retry with the same `clientRequestId` is the same message (the thread's own nonce), never a second one.
+    let key = args["clientRequestId"].as_str().filter(|k| !k.is_empty());
+    if key.is_some_and(|k| k.len() > 200) {
+        return Err(invalid("clientRequestId is at most 200 characters"));
+    }
+    let nonce = key.map(|k| calls::request_key(me.principal, "thread_send", k)).unwrap_or_default();
+    let (hub2, started, ceiling, bot) = (hub.clone(), by(me, me.ceiling()), me.ceiling(), cfg.id.clone());
+    let sent = tokio::task::spawn_blocking(move || {
+        let _g = calls::gate();
+        // Again under the box's lock: the thread's level can't change between the check and the message, and one it
+        // reopens counts among the app's.
+        external::message(&hub2, &bot, &task, &message, &nonce, &started, |t| {
+            within(t.level, ceiling, "That thread")?;
+            if t.status.ended() && t.started_by.as_ref().is_some_and(|b| b.client == started.client) {
+                room(&hub2, &started.client)?;
+            }
+            Ok(())
         })
     })
     .await??;
+    let replayed = key.is_some() && sent["reopened"].is_null();
     if steer && !replayed && sent["queued"] == true {
         let thread = external::target(hub, &cfg.id, args["taskId"].as_str().unwrap_or_default()).and_then(|t| t.thread);
         if let (Some(thread), Some(entry)) = (thread, sent["entry"]["id"].as_str()) {
@@ -376,7 +369,7 @@ fn state(hub: &Hub, bot: &str, task: &str) -> Option<(Target, String, Vec<Value>
 
 pub async fn wait(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
     let (cfg, task, _) = resolve(hub, me.principal, args)?;
-    let most = if me.principal.cloud { WAIT_CLOUD_SECS } else { WAIT_LOCAL_SECS };
+    let most = wait_secs(me.principal);
     let wait = Duration::from_secs(args["timeoutSecs"].as_u64().unwrap_or(most).min(most));
     let deadline = tokio::time::Instant::now() + wait;
     let since = args["cursor"].as_str().map(str::to_owned);
@@ -441,17 +434,26 @@ pub fn read(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
 pub async fn steer(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
     // ponytail: the level is checked just before the box's lock, not under it; a thread's setup changing in between
     // only matters for a write (thread_send checks under the lock).
-    let (cfg, task, _) = resolve_to_act(hub, me, args)?;
+    let (cfg, task, target) = resolve_to_act(hub, me, args)?;
     let how = text(args, "how")?.to_owned();
+    // A routine's run or another bot's request is the owner's work: ending it or running it again is theirs to do.
+    if matches!(how.as_str(), "stop" | "retry" | "drop") && !target.own {
+        return Err(denied(format!("that thread is a routine's run or another bot's request. {ACT_DIRECTLY}")));
+    }
+    let mine = target.started_by.filter(|b| b.client == me.principal.id).map(|b| b.client);
     let (hub2, bot) = (hub.clone(), cfg.id.clone());
     tokio::task::spawn_blocking(move || match how.as_str() {
+        // To the front only: an app never makes other work give way.
         "first" => work::first(&hub2, &bot, &task),
-        "now" => work::cut_in(&hub2, &bot, &task, None),
         // One task only: never every one of the box.
         "stop" => work::stop(&hub2, &bot, Some(&task)),
-        "retry" => work::retry(&hub2, &bot, &task),
+        "retry" => {
+            let _g = calls::gate();
+            mine.as_deref().map_or(Ok(()), |client| room(&hub2, client))?;
+            work::retry(&hub2, &bot, &task)
+        }
         "drop" => work::drop_task(&hub2, &bot, &task),
-        _ => Err(invalid("how: first, now, stop, retry or drop")),
+        _ => Err(invalid("how: first, stop, retry or drop")),
     })
     .await??;
     let status = external::target(hub, &cfg.id, args["taskId"].as_str().unwrap_or_default()).map(|t| t.status);
@@ -483,8 +485,7 @@ pub async fn pending(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Va
             let found = named()?;
             if !crate::chat::decision::is_card(found) {
                 return Err(denied(format!(
-                    "that is an approval request: the user answers it on their devices. {}",
-                    super::access::ACT_DIRECTLY
+                    "that is an approval request: the user answers it on their devices. {ACT_DIRECTLY}"
                 )));
             }
             let option = text(args, "option")?;

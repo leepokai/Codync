@@ -45,6 +45,8 @@ pub struct Target {
     pub result: Option<String>,
     pub started_at: Option<i64>,
     pub ended_at: Option<i64>,
+    /// The bot's own work or the user's (`Source::own`), not a routine's run or another bot's request.
+    pub own: bool,
 }
 
 /// `bot`'s task `id`, in its box or the archive.
@@ -75,6 +77,7 @@ fn target_of(hub: &Hub, cfg: &BotConfig, task: &Task) -> Target {
         result: task.result.clone(),
         started_at: task.started_at,
         ended_at: task.ended_at,
+        own: task.source.own(),
     }
 }
 
@@ -89,18 +92,19 @@ pub fn launch(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup, by: &StartedB
     super::sources::add_thread_by(hub, bot, text, &[], setup, Some(by))
 }
 
-/// App `by` writes `text` to the thread of `bot`'s task `id`; `check` sees the task under the box's lock first, so
-/// nothing changes it between the check and the message.
+/// App `by` writes `text` to the thread of `bot`'s task `id` (`nonce`: a message sent twice is one); `check` sees the
+/// task under the box's lock first, so nothing changes it between the check and the message.
 pub fn message(
     hub: &Arc<Hub>,
     bot: &str,
     id: &str,
     text: &str,
+    nonce: &str,
     by: &StartedBy,
     check: impl FnOnce(&Target) -> Result<()>,
 ) -> Result<Value> {
     let looked = |task: &Task, cfg: &BotConfig| check(&target_of(hub, cfg, task));
-    super::thread::message_as(hub, bot, id, text, Some(by), looked)
+    super::thread::send(hub, bot, id, text, nonce, super::thread::Author::App(by), looked)
 }
 
 /// The bot `id`'s box rows an app may be shown: the bot's `work` rows (live, and ended in the last day).

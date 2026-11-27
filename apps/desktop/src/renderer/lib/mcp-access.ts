@@ -68,8 +68,3 @@ export function clientDetail(client: McpClient, tr: (text: string) => string, no
   if (left === 0) return tr('Expired')
   return tr('Expires in {count} days').replace('{count}', String(left))
 }
-
-/** The command a coding agent adds to reach this computer as the app (its token in the environment, never the args). */
-export function mcpCommand(token: string): string {
-  return `CODYNC_MCP_TOKEN=${token} codync-host mcp network`
-}

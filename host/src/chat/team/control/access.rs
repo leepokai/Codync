@@ -26,6 +26,9 @@ pub enum Level {
 }
 
 impl Level {
+    /// Every level, least first.
+    pub const ALL: [Self; 4] = [Self::ReadOnly, Self::Ask, Self::Auto, Self::Full];
+
     pub fn word(self) -> &'static str {
         match self {
             Self::ReadOnly => "readOnly",
@@ -90,22 +93,29 @@ impl Class {
     }
 }
 
-/// The class of every tool on the `codync` server; `None` for a name it doesn't have. A tool that isn't here can't be
-/// called (the test below checks every listed tool is).
-pub fn class(tool: &str, args: &Value) -> Option<Class> {
+/// The class of every tool on the `codync` server and the scope it needs; `None` for a name it doesn't have. A tool
+/// that isn't here can't be called (the test below checks every listed tool is).
+pub fn declared(tool: &str, args: &Value) -> Option<(Class, Option<Scope>)> {
+    use {Class as C, Scope as S};
     Some(match tool {
-        "list_bots" | "message_bot" | "read_replies" | "whoami" | "set_name" | "check_inbox" => Class::Messages,
-        "worker_capabilities" | "thread_list" | "thread_wait" | "thread_read" | "routine_list" | "workflow_list" => {
-            Class::Reads
-        }
+        "list_bots" | "message_bot" | "read_replies" | "whoami" | "set_name" | "check_inbox" => (C::Messages, None),
+        "worker_capabilities" => (C::Reads, None),
         // Listing and reading what waits on the user only reads; answering a choice writes to the thread.
-        "thread_pending" if args["action"] == "answer" => Class::WritesThreads,
-        "thread_pending" => Class::Reads,
-        "thread_launch" => Class::StartsThreads,
-        "thread_send" | "thread_steer" | "thread_interrupt" => Class::WritesThreads,
-        "routine_run" | "workflow_run" => Class::WritesOwnerWork,
+        "thread_pending" if args["action"] == "answer" => (C::WritesThreads, Some(S::Threads)),
+        "thread_list" | "thread_wait" | "thread_read" | "thread_pending" => (C::Reads, Some(S::Threads)),
+        "thread_launch" => (C::StartsThreads, Some(S::Threads)),
+        "thread_send" | "thread_steer" | "thread_interrupt" => (C::WritesThreads, Some(S::Threads)),
+        "routine_list" => (C::Reads, Some(S::Routines)),
+        "routine_run" => (C::WritesOwnerWork, Some(S::Routines)),
+        "workflow_list" => (C::Reads, Some(S::Workflows)),
+        "workflow_run" => (C::WritesOwnerWork, Some(S::Workflows)),
         _ => return None,
     })
+}
+
+/// A tool's class ([`declared`]).
+pub fn class(tool: &str, args: &Value) -> Option<Class> {
+    declared(tool, args).map(|(class, _)| class)
 }
 
 /// What a caller may reach besides its level.
@@ -174,7 +184,8 @@ pub fn ceiling(approved: Level, max: Level, limit: Option<Level>) -> Level {
 /// Lets `tool` through for a caller acting under `ceiling` with `scopes`, or says why not. What each handler checks
 /// further (the thread's own level, a requested level, the bots and folders it may reach) is its own.
 pub fn admit(tool: &str, args: &Value, ceiling: Level, scopes: &[Scope]) -> anyhow::Result<Admitted> {
-    let class = class(tool, args).ok_or_else(|| Refusal::err(Code::NotFound, format!("unknown tool: {tool}")))?;
+    let (class, needs) =
+        declared(tool, args).ok_or_else(|| Refusal::err(Code::NotFound, format!("unknown tool: {tool}")))?;
     let denied = |why: String| Err(Refusal::err(Code::CapabilityDenied, why));
     if ceiling == Level::ReadOnly && !matches!(class, Class::Messages | Class::Reads) {
         return denied(format!("{tool} changes things, and this app may only read here. {ACT_DIRECTLY}"));
@@ -185,12 +196,6 @@ pub fn admit(tool: &str, args: &Value, ceiling: Level, scopes: &[Scope]) -> anyh
              {ACT_DIRECTLY}"
         ));
     }
-    let needs = match tool {
-        t if t.starts_with("routine_") => Some(Scope::Routines),
-        t if t.starts_with("workflow_") => Some(Scope::Workflows),
-        t if t.starts_with("thread_") => Some(Scope::Threads),
-        _ => None,
-    };
     if let Some(scope) = needs.filter(|s| !scopes.contains(s)) {
         return denied(format!("this app wasn't given {} access here", json!(scope).as_str().unwrap_or_default()));
     }

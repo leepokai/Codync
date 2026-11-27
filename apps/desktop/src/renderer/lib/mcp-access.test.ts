@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { activeClients, clientDetail, daysLeft, mcpCommand, readMcpAccess } from './mcp-access.ts'
+import { activeClients, clientDetail, daysLeft, readMcpAccess } from './mcp-access.ts'
 
 test('reads the apps a computer lets in, leaving out what it cannot read and the revoked ones', () => {
   const now = Date.UTC(2026, 10, 27)
@@ -21,5 +21,4 @@ test('reads the apps a computer lets in, leaving out what it cannot read and the
   assert.equal(clientDetail(access.clients[0]!, tr, now), 'Expires in 3 days')
   assert.equal(clientDetail(access.clients[2]!, tr, now), 'Expired')
   assert.deepEqual(readMcpAccess(undefined).clients, [], 'an older host has none')
-  assert.equal(mcpCommand('cdy_mcp_x'), 'CODYNC_MCP_TOKEN=cdy_mcp_x codync-host mcp network')
 })

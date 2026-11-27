@@ -1,5 +1,5 @@
 //! What the worker tools take, as the `codync` server lists them (`assistant::tools`). The cloud connector describes
-//! the same tools for hosted assistants (`cloud/src/routes/assistant.ts`).
+//! the same tools for hosted assistants (`cloud/src/routes/assistant-tools.ts`).
 
 use serde_json::{Value, json};
 
@@ -92,9 +92,9 @@ pub fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "thread_steer",
-            "description": "Steer a thread you may act on: first (to the front of what waits), now (start it now, beside the others), stop (end it), retry (try a failed or stopped one again) or drop (take one that waits, or ended, away).",
+            "description": "Steer a thread you may act on: first (to the front of what waits), stop (end it), retry (try a failed or stopped one again) or drop (take one that waits, or ended, away). A routine's run or another bot's request is only ever moved first.",
             "inputSchema": {"type": "object", "properties": with(with(thread_ref(), json!({
-                "how": {"type": "string", "enum": ["first", "now", "stop", "retry", "drop"]},
+                "how": {"type": "string", "enum": ["first", "stop", "retry", "drop"]},
             })), limit.clone()), "required": ["botId", "taskId", "how"]},
             "annotations": writes,
         }),
@@ -147,4 +147,27 @@ pub fn tools() -> Vec<Value> {
             "annotations": writes,
         }),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    /// The cloud connector's copy of these tools (`cloud/src/routes/assistant-tools.ts`) names the same ones.
+    #[test]
+    fn the_cloud_connector_lists_the_same_worker_tools() {
+        let cloud = include_str!("../../../../../cloud/src/routes/assistant-tools.ts");
+        let named: BTreeSet<&str> = cloud
+            .split("name: \"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .filter(|name| *name != "list_computers")
+            .collect();
+        let here: BTreeSet<String> =
+            super::tools().iter().filter_map(|t| t["name"].as_str().map(str::to_owned)).collect();
+        let workers: BTreeSet<String> =
+            named.iter().filter(|n| super::super::has(n)).map(|n| (*n).to_owned()).collect();
+        assert_eq!(workers, here);
+        assert!(named.iter().all(|n| super::super::access::class(n, &serde_json::Value::Null).is_some()), "{named:?}");
+    }
 }

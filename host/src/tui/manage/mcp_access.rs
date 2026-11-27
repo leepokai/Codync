@@ -1,16 +1,23 @@
 //! The MCP access sheet: the outside apps that may drive this computer's threads, and the computer's own levels
 //! (`mcpClients`; docs/features/mcp-access.md). ←/→ changes the selected row's level, n gives a new app access (its
-//! token shown once, y copies it), r renews an app for 30 days, x revokes it after a second x.
+//! token shown once, y copies the command with it), r renews an app, x revokes it after a second x.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Editor, Overlay, copy};
+use crate::chat::team::control::Level;
 
-/// The levels, least first, as the host spells them.
-pub const LEVELS: [&str; 4] = ["readOnly", "ask", "auto", "full"];
-/// The computer's own levels, in the order the sheet lists them before the apps.
-pub const OWN: [&str; 3] = ["max", "local", "cloud"];
+/// The computer's own levels, in the order the sheet lists them before the apps: the host's key, its name, what it is.
+pub const OWN: [(&str, &str, &str); 3] = [
+    ("max", "Most an app may do", "An app given more acts as if given this."),
+    ("local", "Sessions on this computer", "Coding agents here without a token. Any program of yours can act as one."),
+    (
+        "cloud",
+        "Cloud assistants",
+        "ChatGPT or Claude through your Codync account. Codync's cloud can read these calls.",
+    ),
+];
 
 #[derive(Default)]
 pub enum McpStep {
@@ -18,7 +25,7 @@ pub enum McpStep {
     List,
     /// Naming a new app.
     Name(Editor),
-    /// A new app's token, shown this once.
+    /// The command with a new app's token, shown this once.
     Token(String),
     /// Asked once to revoke this app.
     Revoke(String),
@@ -52,16 +59,18 @@ impl McpSheet {
     }
 }
 
-/// What a coding agent runs to reach this computer as the app: its token in the environment, never in its arguments.
-pub fn command(token: &str) -> String {
-    format!("CODYNC_MCP_TOKEN={token} codync-host mcp network")
+/// The level after (`+1`) or before (`-1`) `now` (as the host spells it), staying within the ladder.
+pub fn step_level(now: &str, by: i8) -> Level {
+    let at = Level::parse(now).and_then(|l| Level::ALL.iter().position(|x| *x == l)).unwrap_or(0);
+    let next = if by > 0 { (at + 1).min(Level::ALL.len() - 1) } else { at.saturating_sub(1) };
+    Level::ALL[next]
 }
 
-/// The level after (`+1`) or before (`-1`) `now`, staying within the ladder.
-pub fn step_level(now: &str, by: i8) -> &'static str {
-    let at = LEVELS.iter().position(|l| *l == now).unwrap_or(0);
-    let next = if by > 0 { (at + 1).min(LEVELS.len() - 1) } else { at.saturating_sub(1) };
-    LEVELS[next]
+/// Whole days an app's access has left, rounded up as the desktop app does; none once it expired.
+pub fn days_left(expires_at: i64, now: i64) -> Option<i64> {
+    let day = 86_400_000;
+    let left = expires_at - now;
+    (left > 0).then(|| (left + day - 1) / day)
 }
 
 impl App {
@@ -82,7 +91,7 @@ impl App {
                 s.cursor = s.cursor.min(s.rows().saturating_sub(1));
             }
             (McpReply::Created, Ok(v)) => {
-                s.step = McpStep::Token(v["token"].as_str().unwrap_or_default().to_owned());
+                s.step = McpStep::Token(v["command"].as_str().unwrap_or_default().to_owned());
                 self.call("mcpClients", json!({}), After::Mcp(McpReply::View));
             }
             (McpReply::Changed, Ok(_)) => self.call("mcpClients", json!({}), After::Mcp(McpReply::View)),
@@ -95,9 +104,8 @@ impl App {
             McpStep::Name(mut name) => match k.code {
                 KeyCode::Esc => McpStep::List,
                 KeyCode::Enter if !name.text.trim().is_empty() => {
-                    let body = json!({"label": name.text.trim(), "access": "ask", "bots": ["*"], "plainThreads": true,
-                        "scopes": ["threads"]});
-                    self.call("mcpClientCreate", body, After::Mcp(McpReply::Created));
+                    // What a new app may do is the host's default.
+                    self.call("mcpClientCreate", json!({"label": name.text.trim()}), After::Mcp(McpReply::Created));
                     McpStep::List
                 }
                 _ => {
@@ -105,14 +113,14 @@ impl App {
                     McpStep::Name(name)
                 }
             },
-            McpStep::Token(token) => match k.code {
+            McpStep::Token(command) => match k.code {
                 KeyCode::Char('y') => {
-                    copy(&command(&token));
+                    copy(&command);
                     self.flash("Copied: it isn't shown again");
-                    McpStep::Token(token)
+                    McpStep::Token(command)
                 }
                 KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => McpStep::List,
-                _ => McpStep::Token(token),
+                _ => McpStep::Token(command),
             },
             McpStep::Revoke(id) => {
                 if k.code == KeyCode::Char('x') {
@@ -132,7 +140,7 @@ impl App {
                     }
                     KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') => {
                         let by = if matches!(k.code, KeyCode::Right | KeyCode::Char('l')) { 1 } else { -1 };
-                        match (app, OWN.get(s.cursor)) {
+                        match (app, OWN.get(s.cursor).map(|(key, ..)| key)) {
                             (Some(app), _) => {
                                 let level = step_level(app["access"].as_str().unwrap_or_default(), by);
                                 self.call("mcpClientUpdate", json!({"id": app["id"], "access": level}), changed);
@@ -147,7 +155,7 @@ impl App {
                     }
                     KeyCode::Char('r') => {
                         if let Some(app) = app {
-                            self.call("mcpClientUpdate", json!({"id": app["id"], "days": 30}), changed);
+                            self.call("mcpClientUpdate", json!({"id": app["id"], "renew": true}), changed);
                         }
                     }
                     KeyCode::Char('x') => {
@@ -172,11 +180,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_level_steps_along_the_ladder_and_stops_at_its_ends() {
-        assert_eq!(step_level("ask", 1), "auto");
-        assert_eq!(step_level("full", 1), "full");
-        assert_eq!(step_level("readOnly", -1), "readOnly");
-        assert_eq!(step_level("unknown", 1), "ask", "an unknown level starts from the least");
+    fn a_level_steps_along_the_ladder_and_stops_at_its_ends_and_days_round_up() {
+        assert_eq!(step_level("ask", 1), Level::Auto);
+        assert_eq!(step_level("full", 1), Level::Full);
+        assert_eq!(step_level("readOnly", -1), Level::ReadOnly);
+        assert_eq!(step_level("unknown", 1), Level::Ask, "an unknown level starts from the least");
+        let day = 86_400_000;
+        assert_eq!(
+            (days_left(10 + day / 2, 10), days_left(10 + 3 * day, 10), days_left(10, 10)),
+            (Some(1), Some(3), None)
+        );
         let sheet = McpSheet {
             data: Some(json!({"clients": [{"id": "a", "revokedAt": null}, {"id": "b", "revokedAt": 5}]})),
             ..McpSheet::default()

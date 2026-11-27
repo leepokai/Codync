@@ -17,7 +17,7 @@ pub(super) fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<ControlFlow
         // The token is in this answer only: it is never kept, logged or shown again.
         "mcpClientCreate" => {
             let (client, token) = clients::create(hub, grant(&b)?)?;
-            json!({"client": client, "token": token})
+            json!({"client": client, "command": clients::command(&token), "token": token})
         }
         "mcpClientUpdate" => json!({"client": clients::update(&hub.store, str_arg(&b, "id")?, grant(&b)?)?}),
         "mcpClientRevoke" => {

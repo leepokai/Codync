@@ -2524,11 +2524,12 @@
   "It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.": "다시 표시되지 않습니다. 토큰을 가진 누구나 이 앱을 사칭할 수 있으니 채팅이나 저장소에 두지 마세요.",
   "Its token stops working right away.": "토큰이 즉시 작동을 멈춥니다.",
   "Started by {name} (MCP)": "{name}이(가) 시작함(MCP)",
-  "No apps yet. They're added on the computer.": "아직 앱이 없습니다. 컴퓨터에서 추가합니다.",
   "No apps yet. Press n to give one access.": "아직 앱이 없습니다. n을 눌러 앱에 접근 권한을 주세요.",
   "enter creates · esc back": "enter 만들기 · esc 뒤로",
   "esc closes": "esc 닫기",
   "x again revokes it: its token stops working right away · any other key keeps it": "x를 한 번 더 누르면 취소: 토큰이 즉시 작동을 멈춥니다 · 다른 키는 유지",
   "y copies · enter done": "y 복사 · enter 완료",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 수준 · n 새 앱 · r 30일 연장 · x 취소 · esc 닫기"
+  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 수준 · n 새 앱 · r 30일 연장 · x 취소 · esc 닫기",
+  "MCP access: apps that drive this computer…": "MCP 액세스: 이 컴퓨터를 조작하는 앱…",
+  "Copied: it isn't shown again": "복사됨: 다시 표시되지 않습니다"
 }

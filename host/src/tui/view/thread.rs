@@ -8,7 +8,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
 use super::buffer::{centered, frame_box, hline, put, put_line, rput, u};
@@ -129,6 +129,9 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
         let style = if live { style } else { t.dim };
         let x = put(buf, inner.x, inner.y + 1, 1, if live { glyph } else { "·" }, style.patch(t.panel)) + 1;
         let mut line = standing(task);
+        if let Some(app) = &task.started_by {
+            line = format!("{line} · {}", fill(&tr("Started by {name} (MCP)"), &[("name", app)]));
+        }
         let room = inner.right().saturating_sub(x);
         if let Some(place) = place(app, task, usize::from(room).saturating_sub(md::width(&line) + 3)) {
             line = format!("{line} · {place}");
@@ -320,13 +323,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_transcript_heading_names_the_branch_of_its_worktree() {
+    async fn the_transcript_heading_names_the_branch_of_its_worktree_and_the_app_that_started_it() {
         let mut app = test_app();
         bot(
             &mut app,
             &json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1",
                 "worktree": {"branch": "codync/fix-login", "path": "/w/a/i"}},
             {"id": "j", "title": "Docs", "status": "working", "thread": "thread-2"},
+            {"id": "m", "title": "Build", "status": "working", "thread": "thread-4",
+                "startedBy": {"label": "Editor", "client": "c", "level": "ask"}},
             {"id": "k", "title": "Far", "status": "working", "thread": "thread-3",
                 "folder": format!("/private/tmp/{}/gitrepo", "x".repeat(120))}]),
         );
@@ -339,6 +344,7 @@ mod tests {
         };
         assert_eq!(heading("i"), "◷ Working · ⎇ codync/fix-login");
         assert_eq!(heading("j"), "◷ Working", "a host that names no folder");
+        assert_eq!(heading("m"), "◷ Working · Started by Editor (MCP)", "the outside app that started it");
         let far = heading("k");
         assert!(
             far.starts_with("◷ Working · /private/tmp/x") && far.ends_with("x…/gitrepo"),

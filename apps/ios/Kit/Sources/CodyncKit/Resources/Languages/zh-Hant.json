@@ -2524,11 +2524,12 @@
   "It isn't shown again. Anyone with it can act as this app: keep it out of chats and repositories.": "之後不會再顯示。拿到它的人都能冒充這個 App：別貼到聊天或程式庫裡。",
   "Its token stops working right away.": "它的權杖會立即失效。",
   "Started by {name} (MCP)": "由 {name} 啟動（MCP）",
-  "No apps yet. They're added on the computer.": "還沒有 App。要在電腦上新增。",
   "No apps yet. Press n to give one access.": "還沒有 App。按 n 讓一個 App 存取。",
   "enter creates · esc back": "enter 建立 · esc 返回",
   "esc closes": "esc 關閉",
   "x again revokes it: its token stops working right away · any other key keeps it": "再按 x 撤銷：它的 token 立刻失效 · 按其他鍵保留",
   "y copies · enter done": "y 複製 · enter 完成",
-  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 等級 · n 新增 App · r 延長 30 天 · x 撤銷 · esc 關閉"
+  "←/→ level · n new app · r renew 30 days · x revoke · esc closes": "←/→ 等級 · n 新增 App · r 延長 30 天 · x 撤銷 · esc 關閉",
+  "MCP access: apps that drive this computer…": "MCP 存取：操作這台電腦的 App…",
+  "Copied: it isn't shown again": "已複製：之後不會再顯示"
 }

@@ -100,14 +100,17 @@ impl Hub {
     /// setting a bot's lead flag. The check runs before any cleanup and again immediately before the store delete,
     /// still under the lock: a lead pick can't land in between. A refused check changes nothing.
     pub fn delete_bot_if(&self, id: &str, check: impl Fn(&BotConfig) -> Result<()>) -> Result<()> {
+        // List the threads before the first check: a check that clears a finished thread then becomes the
+        // same situation as a concurrent cleanup between the listing and the recursion below.
+        let threads = crate::chat::work::of(&self.store, id);
         {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             check(&row.config)?;
         }
         // Its threads go first: they are the bot's own work. Its box goes below.
-        for thread in crate::chat::work::of(&self.store, id) {
-            self.delete_bot(&thread.id)?;
+        for thread in threads {
+            self.delete_owned_thread(&thread.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
         crate::workflows::clear_bot(self, id);
@@ -149,5 +152,18 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+
+    /// Clears a child thread while its owner is being deleted. A finished thread can be cleaned up
+    /// by `dispatch` between the owner listing its threads and here: it is already gone, so skip it
+    /// instead of letting `unknown bot` abort the rest of the owner's cleanup.
+    fn delete_owned_thread(&self, id: &str) -> Result<()> {
+        if self.store.bot(id)?.is_none_or(|row| row.deleted) {
+            return Ok(());
+        }
+        match self.delete_bot(id) {
+            Err(error) if error.to_string() == "unknown bot" => Ok(()),
+            other => other,
+        }
     }
 }

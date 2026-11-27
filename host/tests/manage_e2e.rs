@@ -219,12 +219,22 @@ async fn a_manager_deletes_one_bot_only_after_the_user_allows_it() {
             .to_owned();
 
     let denied = manage(&host, &lead, "delete_bot", &json!({"botId": kept}), "deny", |detail| {
-        assert_eq!(detail, "Name: Kept\nThis deletes the bot, its routines, threads and files. It can't be undone.");
+        assert_eq!(
+            detail,
+            format!(
+                "Id: {kept}\nName: Kept\nThis deletes the bot, its routines, threads and files. It can't be undone."
+            )
+        );
     })
     .await;
     assert!(denied.starts_with("Refused: ") && denied.contains("didn't allow"), "{denied}");
     let allowed = manage(&host, &lead, "delete_bot", &json!({"botId": victim}), "allow", |detail| {
-        assert_eq!(detail, "Name: Victim\nThis deletes the bot, its routines, threads and files. It can't be undone.");
+        assert_eq!(
+            detail,
+            format!(
+                "Id: {victim}\nName: Victim\nThis deletes the bot, its routines, threads and files. It can't be undone."
+            )
+        );
     })
     .await;
     assert_eq!(allowed, "Done: {\"deleted\":true}", "{allowed}");

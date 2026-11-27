@@ -269,7 +269,8 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
 
 /// Delete one bot: never a group, thread, thread box, caller or the current lead. Unlike a change, a delete always
 /// waits on the user's Allow, even when the manager works under Auto; a denied, dropped or timed-out card leaves the
-/// bot alone. Only the bot's name goes on the card and in the manager's notice, never its instructions.
+/// bot alone. The card shows the bot's id as well as its name, so two bots with the same name can be told apart;
+/// neither its instructions nor any other private setting goes on the card.
 async fn delete(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
     let deadline = Instant::now() + APPROVAL_TIMEOUT;
     let id = text(args, "botId")?.context("botId is required")?;
@@ -290,7 +291,9 @@ async fn delete(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!("the current lead can't be deleted by a bot: the user deletes it in settings");
     }
     let name = target.name.clone();
-    let detail = format!("Name: {name}\nThis deletes the bot, its routines, threads and files. It can't be undone.");
+    // Same-name bots are common: the id is what tells the user which one Allow will actually delete.
+    let detail =
+        format!("Id: {id}\nName: {name}\nThis deletes the bot, its routines, threads and files. It can't be undone.");
     approve_destructive(hub, source, format!("Delete bot {name}"), detail, deadline).await?;
     // The bot may have gone while the card waited, or become lead. The check and the store delete share
     // `emit_lock` with `make_lead`, so a lead pick can't slip in between them.

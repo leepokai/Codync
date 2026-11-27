@@ -222,6 +222,77 @@ async fn a_target_made_lead_while_the_card_waits_is_not_deleted() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A finished thread cleared while its owner is being deleted must not abort the rest of the cleanup:
+/// the owner and its other threads all go, even though one thread vanished mid-delete.
+#[tokio::test]
+async fn a_thread_cleared_mid_delete_does_not_abort_the_owner_cleanup() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-thread-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let save = |id: &str, thread_of: Option<&str>| {
+        let mut v = json!({"id": id, "name": id, "backend": "claude", "cwd": dir.to_string_lossy()});
+        if let Some(owner) = thread_of {
+            v["threadOf"] = json!(owner);
+        }
+        hub.store.save_bot(&serde_json::from_value::<BotConfig>(v).unwrap()).unwrap();
+    };
+    save("parent", None);
+    save("thread-a", Some("parent"));
+    save("thread-b", Some("parent"));
+
+    // The check runs under emit_lock before the thread recursion: clearing one thread here is the
+    // same as a concurrent cleanup between the listing and the recursion.
+    let cleared = hub.clone();
+    hub.delete_bot_if("parent", |_| {
+        cleared.store.delete_bot("thread-a")?;
+        Ok(())
+    })
+    .unwrap();
+
+    assert!(hub.store.bot("parent").unwrap().unwrap().deleted, "the owner was deleted");
+    assert!(hub.store.bot("thread-a").unwrap().unwrap().deleted, "the cleared thread is gone");
+    assert!(hub.store.bot("thread-b").unwrap().unwrap().deleted, "the other thread still gets cleaned");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Two bots with the same name show their ids on the delete card, so the user can tell which one
+/// Allow will remove.
+#[tokio::test]
+async fn a_delete_card_names_the_bot_id_so_twins_can_be_told_apart() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-twins-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    for id in ["twin-a", "twin-b"] {
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": id, "name": "Twin", "backend": "claude", "cwd": dir.to_string_lossy()
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+    }
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    for id in ["twin-a", "twin-b"] {
+        let call_hub = hub.clone();
+        let target = id.to_owned();
+        let task = tokio::spawn(async move { call(&call_hub, "lead", "delete_bot", &json!({"botId": target})).await });
+        let reply = loop {
+            let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+            if let Cmd::Approve { detail, reply, .. } = cmd {
+                assert!(detail.contains(id), "{detail}");
+                assert!(detail.contains("Name: Twin"), "{detail}");
+                break reply;
+            }
+        };
+        // Deny, so both twins remain for the next card.
+        reply.send(false).unwrap();
+        assert!(task.await.unwrap().is_err(), "a deny leaves the bot alone");
+    }
+    assert!(!hub.store.bot("twin-a").unwrap().unwrap().deleted);
+    assert!(!hub.store.bot("twin-b").unwrap().unwrap().deleted);
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();

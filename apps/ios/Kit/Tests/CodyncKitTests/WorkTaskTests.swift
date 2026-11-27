@@ -31,6 +31,21 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
 @Suite struct WorkTaskTests {
     // MARK: the wire
 
+    @Test func aThreadsBackgroundWorkReadsAsSentAndItsCapsuleSaysWhatRuns() throws {
+        let work = try bot(#","work":[{"id":"t","title":"Review","status":"working","background":[{"id":"w1","kind":"workflow","name":"after-change","activity":"Review: diff","startedAt":7},{"id":"b1","kind":"future","name":"npm test","startedAt":9},{"name":"no id"}]},{"id":"o","title":"Old","status":"working"}]"#).work
+        #expect(work[0].background == [
+            .init(id: "w1", name: "after-change", activity: "Review: diff", startedAt: 7),
+            .init(id: "b1", name: "npm test", startedAt: 9),
+        ], "one without an id is left out")
+        #expect(work[1].background.isEmpty, "an older host says nothing")
+        #expect(work[1].backgroundLabel == nil)
+        var one = work[0]
+        one.background.removeLast()
+        #expect(one.backgroundLabel?.text == "after-change · Review: diff")
+        #expect(one.backgroundLabel?.since == 7)
+        #expect(work[0].backgroundLabel?.text == "after-change, npm test")
+    }
+
     @Test func aBotCarriesItsWork() throws {
         let work = try bot(#","work":[{"id":"i1","title":"Fix login","status":"needsYou","activity":"Reading","thread":"thread-1","wait":null,"cutIn":false,"createdAt":1,"startedAt":5,"endedAt":null,"result":""},{"id":"i2","title":"Docs","status":"waiting","activity":"","thread":null,"wait":{"kind":"behind","ahead":2},"cutIn":true,"createdAt":2},{"id":"i3","title":"CI","status":"failed","thread":"thread-2","createdAt":3,"startedAt":10,"endedAt":70,"result":"No network"}]"#).work
         #expect(work == [

@@ -185,6 +185,10 @@ mod tests {
         let was = port(&first);
         first.close().await;
         drop(first);
+        // A restart is a new process: the OS has let the port go. In this one, iroh's sockets close a
+        // little after `close` returns (later still while other tests keep the machine busy).
+        let free = |port: u16| std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)).is_ok();
+        until("the closed endpoint lets its port go", || was.is_some_and(free)).await;
         let again = bind(&dir, SecretKey::generate(), &Connector::Private).await.expect("bound again");
         assert_eq!(port(&again), was, "the same port after a restart");
         // Taken meanwhile (here by the running one): another port, kept from then on.

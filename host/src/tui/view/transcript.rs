@@ -23,6 +23,8 @@ pub(super) struct Built {
     pub(super) messages: Vec<(String, usize, usize)>,
     /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
     pub(super) texts: Vec<(usize, usize)>,
+    /// Drawn on a task's thread page, which has no trace pane: a card leaves out the `t` that shows more there.
+    pub(super) thread: bool,
 }
 
 struct TurnInfo {
@@ -149,6 +151,14 @@ fn message_text(out: &mut Built, e: &Entry, width: usize) {
     let text_from = out.lines.len();
     out.lines.extend(md::render(e.text(), width, 1));
     out.texts.push((text_from, out.lines.len()));
+}
+
+/// What a thread put in `b`'s chat (a card, a file, an artifact, a sign-in), drawn as the chat draws it, for the
+/// thread's own transcript.
+pub(super) fn shared_entry_lines(app: &App, b: &Bot, e: &Entry, width: usize) -> Vec<Line<'static>> {
+    let mut out = Built { thread: true, ..Built::default() };
+    entry_lines(&mut out, app, b, e, &HashMap::new(), width);
+    out.lines
 }
 
 /// One chat entry.

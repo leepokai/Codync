@@ -16,7 +16,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The `chat` server's tools that are the box's.
-pub const TOOLS: [&str; 6] = ["add_task", "steer_task", "tell_task", super::ask::TOOL, "work_status", "recall_task"];
+pub const TOOLS: [&str; 7] =
+    ["add_task", "steer_task", "tell_task", super::ask::TOOL, super::ask_chat::ANSWER, "work_status", "recall_task"];
 
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
@@ -103,6 +104,7 @@ pub fn tools() -> Vec<Value> {
             }, "required": ["task", "question"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
+        super::ask_chat::answer_tool(),
         json!({
             "name": "work_status",
             "description": "Your event box: every task that is working or waiting, and those ended in the last day, with its status, what it does now, how long, and its result.",
@@ -136,6 +138,7 @@ fn call_now(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value
         "add_task" => add(hub, bot, args),
         "steer_task" => steer_task(hub, bot, args),
         "tell_task" => tell(hub, bot, args),
+        super::ask_chat::ANSWER => super::ask_chat::answer(hub, bot, args),
         "work_status" => status(hub, bot),
         "recall_task" => recall::call(hub, bot, args),
         _ => bail!("unknown work tool: {name}"),
@@ -379,12 +382,17 @@ fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let now = now_ms();
     let tasks: Vec<Value> = tasks::seen_by_bot(hub, &cfg)
         .into_iter()
-        .map(|Shown { task, status, activity, wait }| {
+        .map(|Shown { task, status, activity, wait, background }| {
             let seconds = task.started_at.map(|at| (task.ended_at.unwrap_or(now) - at) / 1000);
-            json!({
+            let mut row = json!({
                 "taskId": task.id, "title": task.title, "status": status, "doingNow": activity, "wait": wait,
                 "seconds": seconds, "result": task.result,
-            })
+            });
+            // What its thread's agent runs in the background, which the task waits on: it isn't stuck.
+            if !background.is_empty() {
+                row["inBackground"] = background.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().into();
+            }
+            row
         })
         .collect();
     Ok(json!({"tasks": tasks}))

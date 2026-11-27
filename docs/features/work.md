@@ -19,7 +19,7 @@ Design: [the event box](../plans/event-box.md), [bots, projects and threads](../
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
-`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
+`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `ask.rs`: `ask_task`; `ask_chat.rs`: `ask_chat` and `answer_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
 `prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for its session, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
@@ -132,6 +132,16 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   (counted in `task_asked`) for a task that waits (`tell_task` it) or ended (its report came), a thread the user
   started, a routine's run, another bot's request, and while a question to the same task still waits for its answer;
   refused too in a thread and under a ceiling, as `add_task` is (those not counted there).
+- `answer_task {task, answer}` (`work/ask_chat.rs`) answers a thread's `ask_chat {question}`, the thread's own tool
+  (listed only for threads, not chat-only): the question starts a turn in the bot's chat (`Cmd::TaskAnswer`) that
+  tells it to answer from what it knows, then `(pass)`. That turn is host-started, so it can't call
+  `request_decision`: what only the user can decide, the chat says so in its answer and the thread asks them on its
+  own card ([below](#asking-and-sharing-from-a-thread)), which makes the task `needsYou`; while it only waits for the
+  chat the task stays `working`. The thread's call waits 270 seconds (`ask_chat::WAIT`, under Codex's 300 s tool
+  timeout, as `request_decision`'s; the MCP request 20 seconds more) and returns `{answered: true, answer}`, else
+  `{answered: false, note}`: it goes on and says what it assumed. A later `answer_task` is passed on as `tell_task`'s
+  `now`. Only for the bot's own tasks, one question at a time a thread; it goes when its task ends or is set aside.
+  Counted in `chat_asked`.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 - `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
@@ -141,9 +151,9 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
   cut at 280 bytes. Read only: allowed under a ceiling.
 
-Refused in a thread: these six and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these seven and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
-says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
+says to put what it needs in its report. `ask_chat`, `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
 rules instead ([other sources](#other-sources)).
 
@@ -236,12 +246,10 @@ chat's own queue: nothing here is a second copy of it.
   ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The desktop and the phones show a thread in the chat's form (desktop
   `ThreadChat`, iPhone `ThreadChatView`, Android `ThreadChat.kt`): each of these is the chat's own row, in time order
   among the thread's own entries, the same entry of the bot's chat, answered, downloaded and opened in the thread as in
-  the chat ([UI conventions](../design/ui-conventions.md)). Only the terminal shows each as one quiet line with a
-  symbol (`shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
-  `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
-  expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
-  [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry.
+  the chat ([UI conventions](../design/ui-conventions.md)). The terminal's thread page draws each among the steps as
+  the chat draws it (`view::transcript::shared_entry_lines`), and a waiting card answers there with the chat's keys
+  (`y` / `a` / `n` / `N`, `F1`…, `1`–`9`; `C` its agent's [sign-in](#fallbacks-and-sign-in)), the picked one first,
+  else the newest; on a picked file or artifact `o` opens it and `f` saves it, and `↵` opens the chat at it.
 
 With the rest:
 
@@ -270,7 +278,7 @@ task came from (`chat::context::render_thread`, by the task's `Source`):
 Every thread is also told it runs inside Codync, its folder (the bot's, a project, or a worktree Codync made), how
 dev servers work, the bot's skills and the compaction keep-list. None hears the chat's own paragraphs (Messages,
 Other conversations, `routines::BRIEF` outside a run or request, `work::BRIEF`). A thread's `chat` server lists only
-what a thread may call: `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
+what a thread may call: `ask_chat`, `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
 message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`, `work::chat_only`;
 a call to one is still refused, and counted as `thread_tool_refused`). Its instructions are kept with its bot's
 sessions (`context::resolve` keys by `BotConfig::owner`), and a profile update is announced only to a thread that was
@@ -296,6 +304,71 @@ or that the worktree had none and was removed, and ends with what the user wrote
 A task that doesn't finish reports why, the same way: its thread's agent couldn't start (`it could not start: …`),
 failed mid-turn, or ended short of `end_turn`. Every way a thread's turn ends goes through `Actor::turn_over`, so no
 task is left working with nothing behind it.
+
+### Background work left running
+
+A thread whose turn ends normally (`end_turn`) while work it started in the background still runs hasn't finished
+its task: its last message is a progress line ("started the review, waiting for it to finish"), not a report, and
+ending the thread would stop its agent and what runs inside it (#634). The task prompt already says not to; the host
+also checks, as a fact, never from the message's wording (`Actor::left_running`, `agent/bot/background_work.rs`):
+
+- what the agent itself [reports running in the background](#background-work-its-agent-reports) (Claude's adapter):
+  then nothing else is checked, since the agent says when that work ends;
+- otherwise, a process the agent runs detached, in a session of its own (`background_work`), that wasn't there when the task's
+  round began (`Actor::detached_before`, noted as its first turn starts and kept while the task goes on with what a
+  turn left running), where nothing listens: a server left listening is meant to stay and shows among the bot's
+  [dev servers](dev-servers.md). Unsure counts as nothing, so no task waits on a guess; Windows can't tell (no
+  sessions there), so it never waits on a process.
+
+The first time (`Task::held`, saved with the task), the task stays working (`Outcome::LeftRunning` →
+`work::hold`): the host posts a message in the thread (`from: host`, which every client shows as what the thread was
+told) asking it to wait for that in the foreground and then report, and the agent and its session stay as they are
+(`release_spent` and `stop_spent` are skipped). That turn's end is the task's end. If it ends normally again while
+something still runs, the task fails with `Failure::Background` and the result `it ended its turn while … still ran`,
+followed by its last message, so every client shows it failed, with that reason and **Try again**. No alert goes out
+for the held turn's end. A message the user wrote to the thread that still waits comes first (`thread::unheard`) and
+doesn't use the hold up: the task goes on with the agent and session kept the same way, and that turn's end is
+checked again; a turn held for a [sign-in](#fallbacks-and-sign-in) never reaches this check; the watchdog looks at the waiting turn as
+at any long one; the hold adds no hop (no report, `MAX_HOPS`). Analytics: `work_held` when a task is held, and
+`work_finished` says `held` with how it then ended.
+
+### Background work its agent reports
+
+A thread's Claude session asks its adapter to report the work it runs apart from its turn (`Background::Reported`
+in `agent/bot/launch.rs`: `_meta.jetbrains.air` with `asyncTasks` in `initialize`'s `clientCapabilities._meta`, so
+once for the agent's process; a chat's agent doesn't ask, so it reads as before). The adapter then sends `async_task_*` updates, which the `codync-agent` crate reads as
+`Event::Task` (`events/task.rs`): a command sent to the background, a workflow (Claude's `Workflow` tool), a
+monitor, and a turn the agent begins by itself to answer what such work said as it ended. In this mode the adapter
+leaves out what a tool call's later updates said before (`_meta.claudeCode`) and a permission request's kind and
+diff; the crate puts them back (`acp/calls.rs`), so every event reads as from any other client.
+
+- **The list.** What runs shows in the thread's `runtime.background` (`hub::BackgroundTask`: id, kind, name,
+  activity, since when) and on its task's wire row (`background`); a workflow's progress updates its activity
+  (`Count: two`). Every client shows it as a capsule over the thread's composer (`Background · <name> · <activity>`,
+  or the names of several, with the time). Background subagents aren't in the list: the adapter holds the turn
+  that launched them open until they finish, so their steps nest in that turn's as before.
+- **The task waits.** A turn that ends while something in the list runs ends `Outcome::Waiting`
+  (`Actor::left_running`, `Left::Reported`): its last message is kept, no report goes out, the task stays working
+  (its thread counts as busy, `dispatch::thread_state`, so the hourly look doesn't take it for lost) and the thread
+  isn't ended. `work_status` names what runs (`inBackground`). Commands alone don't hold it while the agent runs a
+  server left listening ([dev servers](dev-servers.md), `DevServers::agent_serves`): that is meant to stay, as a
+  detached one is, so the task ends with the turn's last message; a command can't be told from the server, so a
+  build beside one doesn't hold it either. A thread whose task ended doesn't stay for what still runs.
+- **The agent's own turn.** When the work ends, Claude begins a turn by itself (`taskType: turn`). With no turn of
+  the thread's running it becomes one (`background_tasks.rs`, `AgentTurn::Own`): the thread shows working, its
+  steps and approvals show as a turn's, and its end ends the task's round as a prompt's does, so its last message
+  is the report when nothing else still runs. One that begins while a turn runs, or just as it ends (reported before
+  the prompt's answer), joins it (`AgentTurn::Joined`): that turn ends once both have.
+- **A stop.** The agent hears nothing of a stopped piece, so no turn of its own follows: when the stopped piece was
+  the last that ran and no turn runs, the host asks the thread for its report (`work::ask_report`,
+  `prompts::report_after_stop`). Stopping the task while it waits between turns stops its agent and that work
+  (`Actor::stop`).
+- **Its agent stops.** However it stops (it quits or crashes, or the host stops it: a cancel it ignored, a restart
+  for a new model, a fallback; `Actor::kill_agent`), the list goes with it (`background_lost`): a turn the agent
+  began by itself ends failed, and a task that waited between turns fails (`Failure::Agent`, "its agent stopped
+  while its background work still ran").
+- Analytics: `thread_background` (`agent`, `kind`, `outcome`: started, completed, failed, stopped) and
+  `thread_agent_turn` (`agent`).
 
 ## Approvals
 
@@ -341,8 +414,8 @@ The apps show the `Work · <title>` line on the sign-in card and on the failure,
 out and a fallback was signed out too, there are two cards: the row names, and opens, the one that holds the task's
 message (`connectionRequest.entryIds`), whose sign-in is what sends the work again; an approval or choice newer than
 it comes first, as what the running turn waits on. In the task's
-[thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
-(`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
+[thread](#talking-to-a-thread) the sign-in card shows beside that transcript line as the chat shows it, and on the
+terminal's thread page `C` signs in there as in the chat; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.
 
 ## Advisor mode
@@ -684,7 +757,10 @@ only recalled, never listed.
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is
-  `{branch, path}` while the task has a [worktree](#worktrees) that is still there, and absent otherwise. The bot's own `status` stays the chat's.
+  `{branch, path}` while the task has a [worktree](#worktrees) that is still there, and absent otherwise.
+  `background` is `[{id, kind: shell | workflow | monitor | other, name, activity?, startedAt}]` while its thread's
+  agent [reports work running in the background](#background-work-its-agent-reports), and absent otherwise; the
+  clients show its name and activity, not its kind. The bot's own `status` stays the chat's.
 - Cards and messages a thread posts in the chat carry `data.thread = {id, title}` (the thread's id, the title of the
   task it works on) and `data.task` (the task's id, or null): permission cards,
   choice cards (`data.decision`), agent sign-in cards (`data.connectionRequest`, `kind: agent`), failure notices that
@@ -830,7 +906,9 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
   again with the message's words and the names of its files, not the files.
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
-- No subagent rows.
+- No subagent rows. A workflow shows its name and its latest activity, not its phases and agents.
+- Background work an agent reports needs Claude's adapter (`async_task_*`); other agents' background work is only
+  what [background work left running](#background-work-left-running) sees.
 - A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
   files) isn't in it, and removing an untouched one deletes what its thread left there ignored.
 - On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
@@ -842,7 +920,11 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 - What a thread's agent runs inside its own process (a harness's background agents and shells in the agent's session)
   ends when the thread does: its process and that session's processes are stopped (`Acp::kill`). A program it
   detached into a session of its own (a server from its shell) isn't reached and keeps running; one left listening
-  shows among the bot's [dev servers](dev-servers.md).
+  shows among the bot's [dev servers](dev-servers.md). Only some of that holds its task when the turn ends
+  ([background work left running](#background-work-left-running)): a background shell a harness keeps in its own
+  session, another adapter's in-process background work, and on Windows any process aren't seen, so a held turn,
+  or one a waiting message took first, that ends again while it runs is done, not failed. A detached
+  process meant to stay that doesn't listen (a watcher, a daemon) holds its task once, then fails it.
 - A thread ends as soon as its task does when nothing waits to follow it, so `after` is for work that is still
   working or waiting.
 - A routine's run in a thread has its `send_message` refused as before, and what it wrote reaches the chat when it
@@ -885,7 +967,7 @@ known after its earlier task is gone (`known`) (`worktree.rs`), how a bot stands
 (`dispatch.rs`), the watchdog's signals (looping, failing, quiet, a card overdue), its hourly hold and its reasons,
 only the bot's own tasks watched, a wake-up dropped once its task moved on and its analytics (`watch.rs`), the host
 watchdog's verdict, a computer that slept and the mark reported once (`watchdog.rs`), `recall_task` by id, query and
-latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the archive
+latest, its pages of steps and 30 days (`recall.rs`), `ask_chat` refused outside a handed-out task and while a question waits, its answer to the waiting call or passed on later, and its end after the wait or with its task (`ask_chat.rs`), a task ended over a week ago leaving the box for the archive
 at host start (`mod.rs`), the archive, parked threads coming back in their session, `threadKeepDays`, paging and an
 older host's past tasks (`archive.rs`, `store/archive.rs`), the terminal's Delete old threads choices and older pages
 (`tui/app/thread_keep.rs`, `tui/manage/older.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however

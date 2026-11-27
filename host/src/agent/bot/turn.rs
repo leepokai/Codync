@@ -1,5 +1,6 @@
 //! Starting a turn and wrapping it up: final reply, notices, the reply to a requesting bot or room, alerts and memory.
 
+use super::background_work::Left;
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
@@ -155,30 +156,13 @@ impl Actor {
         let answered = self.active_group.as_ref().map_or(self.turn_entries.as_slice(), |g| g.answers.as_slice());
         let opens = self.prompt_call.take().filter(|call| crate::chat::calls::is_live(&self.hub.store, call));
         self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered).or(opens);
-        self.turn_memory_revision.clear();
-        self.announce = None;
-        self.first_prompt = None;
-        self.stop_requested = false;
-        self.stopped_for_message = false;
-        self.cancel_deadline = None;
+        self.reset_turn_state();
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
         } else {
             crate::chat::team::Turn::Chat(self.reply_hops.unwrap_or(0))
         };
         self.hub.team.start_turn(&self.cfg.id, team_turn);
-        self.exit_tail = None;
-        self.agent_error = None;
-        self.seg = Seg::None;
-        self.tools.clear();
-        self.plan_entry = None;
-        self.last_text = None;
-        self.sent.clear();
-        self.reacted = Reacted::No;
-        self.joined = false;
-        self.unheard.clear();
-        self.files.summary = None;
-        self.files.cancel();
         if hidden {
             self.hidden_turn();
         } else {
@@ -210,6 +194,7 @@ impl Actor {
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
+        self.note_detached().await;
         let written = self.written_to_thread(entry_ids);
         let picked_up = self.hear_thread(&written);
         // A question of its bot's among them: the thread's next message answers it.
@@ -363,9 +348,33 @@ impl Actor {
         format!("{text}\n\n{}", worktree.brief())
     }
 
-    pub(super) fn finish_turn(&mut self, done: &Done) {
+    /// Clears what the last turn left for the one beginning: everything its end reads that no prompt sets.
+    pub(super) fn reset_turn_state(&mut self) {
+        self.turn_memory_revision.clear();
+        self.announce = None;
+        self.first_prompt = None;
+        self.stop_requested = false;
+        self.stopped_for_message = false;
+        self.cancel_deadline = None;
+        self.exit_tail = None;
+        self.agent_error = None;
+        self.seg = Seg::None;
+        self.tools.clear();
+        self.plan_entry = None;
+        self.last_text = None;
+        self.sent.clear();
+        self.reacted = Reacted::No;
+        self.joined = false;
+        self.unheard.clear();
+        self.files.summary = None;
+        self.files.cancel();
+    }
+
+    /// The running turn ended with `done`; `left`: what a thread's turn left running in the background
+    /// ([`Self::left_running`]). Whether the thread's task goes on with that in this session ([`Held::Background`]).
+    pub(super) fn finish_turn(&mut self, done: &Done, left: Option<Left>) -> bool {
         if self.turn.is_none() {
-            return;
+            return false;
         }
         self.after_turn(done);
         self.versions.after(&self.hub);
@@ -504,9 +513,15 @@ impl Actor {
             } else if stop_reason != "end_turn" {
                 Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
             } else {
-                Outcome::Done(final_text.clone())
+                match left {
+                    Some(Left::Reported) => Outcome::Waiting { text: final_text.clone() },
+                    Some(Left::Detached(running)) => Outcome::LeftRunning { running, text: final_text.clone() },
+                    None => Outcome::Done(final_text.clone()),
+                }
             }
         });
+        // Its task goes on with what it left running: nothing is done yet.
+        let waits = goes_on == Some(Held::Background);
         self.turn = None;
         self.reply_hops = None;
         let host_turn = self.end_host_turn(done.is_ok() && !stopped && stop_reason == "end_turn");
@@ -567,6 +582,7 @@ impl Actor {
             });
             push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
         }
+        waits
     }
 }
 

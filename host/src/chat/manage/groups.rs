@@ -48,12 +48,15 @@ pub(crate) async fn create_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
     }
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
     crate::hub::validate(&cfg)?;
-    let mut lines = vec![format!("Name: {name}")];
-    if !cfg.description.is_empty() {
-        lines.push(format!("Topic: {}", cfg.description));
-    }
-    lines.push(format!("Members: {}", member_names(hub, &cfg.members)));
-    approve(hub, source, format!("Create group {name}"), lines.join("\n"), deadline).await?;
+    // Same members reopen an existing group (`Hub::create_bot`) and ignore the requested name and
+    // topic. The card has to describe the group that write will return, not a new one.
+    let (title, lines) = if let Some(existing) = crate::chat::group::with_members(&hub.store, &cfg.members)? {
+        let have = group_bot(hub, &existing)?;
+        (format!("Open group {}", have.name), group_card(&have.name, &have.description, &have.members, hub))
+    } else {
+        (format!("Create group {name}"), group_card(name, &cfg.description, &cfg.members, hub))
+    };
+    approve(hub, source, title, lines, deadline).await?;
     let created = {
         let hub = hub.clone();
         tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??
@@ -68,7 +71,7 @@ pub(crate) async fn create_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
 pub(crate) async fn update_group(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
     let deadline = Instant::now() + APPROVAL_TIMEOUT;
     let id = text(args, "groupId")?.context("groupId is required")?;
-    let (target, expected_rev) = group_bot(hub, &id)?;
+    let target = group_bot(hub, &id)?;
     let mut patch = Map::new();
     let mut changed = Vec::new();
     if let Some(name) = text(args, "name")? {
@@ -133,14 +136,22 @@ pub(crate) async fn update_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
         lines.push(format!("Members: {}", member_names(hub, &ids)));
     }
     approve(hub, source, format!("Change group {}", target.name), lines.join("\n"), deadline).await?;
-    // The user may have edited the group while the card waited. Recheck the live row and write back
-    // in the same `emit_lock` that `update_bot` uses, so a stale member list can't overwrite it.
+    // The user may have edited the group while the card waited. Recheck the saved name, topic and
+    // members inside the same `emit_lock` as the write. The card itself bumps `rev` (in this room the
+    // member goes NeedsInput and `emit_bot` touches the group) without changing what is saved, so a
+    // rev compare would refuse a change the user just allowed.
     patch.insert("id".into(), id.clone().into());
     let patch = Value::Object(patch);
     let writing = hub.clone();
+    let saved_name = target.name.clone();
+    let saved_topic = target.description.clone();
+    let saved_members = target.members.clone();
     tokio::task::spawn_blocking(move || {
-        writing.update_bot_if(&patch, |row| {
-            if row.rev != expected_rev {
+        writing.update_bot_if(&patch, move |row| {
+            let same = row.config.name == saved_name
+                && row.config.description == saved_topic
+                && row.config.members == saved_members;
+            if !same {
                 bail!("the group changed while your card was up; look at its members again and retry");
             }
             Ok(())
@@ -162,14 +173,23 @@ fn group_topic(args: &Value) -> Result<Option<String>> {
     }
 }
 
-/// A group id must name an undeleted group on this computer, with its current store revision.
-fn group_bot(hub: &Hub, id: &str) -> Result<(BotConfig, i64)> {
-    let row = hub
-        .store
+/// A group id must name an undeleted group on this computer.
+fn group_bot(hub: &Hub, id: &str) -> Result<BotConfig> {
+    hub.store
         .bot(id)?
         .filter(|row| !row.deleted && row.config.is_group())
-        .ok_or_else(|| anyhow!("unknown group"))?;
-    Ok((row.config, row.rev))
+        .map(|row| row.config)
+        .ok_or_else(|| anyhow!("unknown group"))
+}
+
+/// What an approval card shows for a group: its name, topic (when it has one) and members.
+fn group_card(name: &str, topic: &str, members: &[String], hub: &Hub) -> String {
+    let mut lines = vec![format!("Name: {name}")];
+    if !topic.is_empty() {
+        lines.push(format!("Topic: {topic}"));
+    }
+    lines.push(format!("Members: {}", member_names(hub, members)));
+    lines.join("\n")
 }
 
 /// The `members` strings: a non-empty list of bot ids (duplicates allowed here, removed below).

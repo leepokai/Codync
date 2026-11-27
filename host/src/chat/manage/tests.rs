@@ -246,8 +246,8 @@ async fn a_manager_lists_creates_and_changes_local_groups() {
 }
 
 /// A user edit to a group's members while the manager's card waits must win: the update writes back
-/// only if the group is still at the revision the card described. `update_bot_if` rechecks under the
-/// same `emit_lock` as the write, so no stale overwrite can slip in between.
+/// only if the saved name, topic and members are still what the card described. `update_bot_if`
+/// rechecks under the same `emit_lock` as the write, so no stale overwrite can slip in between.
 #[tokio::test]
 async fn a_group_changed_while_the_card_waits_is_not_overwritten() {
     let dir = std::env::temp_dir().join(format!("codync-manage-group-race-{}", uuid::Uuid::new_v4()));
@@ -279,6 +279,91 @@ async fn a_group_changed_while_the_card_waits_is_not_overwritten() {
     assert!(err.contains("the group changed while your card was up"), "{err}");
     let members = hub.store.bot(&gid).unwrap().unwrap().config.members;
     assert_eq!(members, ["dev".to_owned(), "lead".to_owned()], "the user's edit survives");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// In the group's own room the approval card marks the member `NeedsInput`, and that bumps the group's
+/// rev without changing its saved setup. Allow still applies; only a real change to the saved group refuses.
+#[tokio::test]
+async fn an_approval_in_the_groups_room_still_applies() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-room-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    // The manager's turn is in this group's room, so NeedsInput touches the group as well as the member.
+    hub.set_runtime("lead", |r| {
+        r.status = crate::hub::BotStatus::Working;
+        r.lane = Some(Lane::main(&gid));
+    });
+    let rev_before = hub.store.bot(&gid).unwrap().unwrap().rev;
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let call_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&call_hub, "lead", "update_group", &json!({"groupId": call_gid, "name": "Squad"})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Change group Crew"), "{title}");
+            break reply;
+        }
+    };
+    hub.set_runtime("lead", |r| r.status = crate::hub::BotStatus::NeedsInput);
+    let rev_after = hub.store.bot(&gid).unwrap().unwrap().rev;
+    assert!(rev_after > rev_before, "the room's card bumps the group's rev");
+    reply.send(true).unwrap();
+
+    let updated = task.await.unwrap().unwrap();
+    assert_eq!(updated["group"]["name"], "Squad", "Allow applies when only rev moved");
+    assert_eq!(hub.store.bot(&gid).unwrap().unwrap().config.members, ["dev".to_owned()]);
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Same members reopen the existing group. The card must describe that group, not the requested name and topic.
+#[tokio::test]
+async fn reopening_a_group_asks_about_the_group_that_will_be_returned() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-reopen-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made =
+        call(&hub, "lead", "create_group", &json!({"name": "Plain", "topic": "Keep", "members": ["dev", "lead"]}))
+            .await
+            .unwrap();
+    let id = made["group"]["id"].as_str().unwrap().to_owned();
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let task = tokio::spawn(async move {
+        call(
+            &call_hub,
+            "lead",
+            "create_group",
+            &json!({"name": "Again", "topic": "Different", "members": ["lead", "dev"]}),
+        )
+        .await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, detail, reply } = cmd {
+            assert_eq!(title, "Open group Plain", "{title}");
+            assert!(detail.contains("Name: Plain"), "{detail}");
+            assert!(detail.contains("Topic: Keep"), "{detail}");
+            assert!(!detail.contains("Again") && !detail.contains("Different"), "{detail}");
+            break reply;
+        }
+    };
+    reply.send(true).unwrap();
+    let got = task.await.unwrap().unwrap();
+    assert_eq!(got["group"]["id"], id);
+    assert_eq!(got["group"]["name"], "Plain");
+    assert_eq!(got["group"]["topic"], "Keep");
+    drop(commands);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

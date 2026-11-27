@@ -21,7 +21,7 @@ use crate::store::{EntryKind, Lane, Store, now_ms, run_session_key};
 use anyhow::{Result, bail};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub struct Effects {
     pub agents: Vec<(String, String)>,
@@ -952,8 +952,22 @@ fn load_steps(store: &Store, run: &str) -> Result<Vec<StepRow>> {
                 ended: r.get(14)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+        Ok(in_attempt_order(rows))
     })
+}
+
+/// Rows come in creation order. Each node's own rows are put back in attempt order in the places they hold,
+/// so a retry written in the same millisecond, or after the clock moved back, still reads as that node's latest.
+fn in_attempt_order(rows: Vec<StepRow>) -> Vec<StepRow> {
+    let order: Vec<String> = rows.iter().map(|r| r.node_id.clone()).collect();
+    let mut by_node: HashMap<String, Vec<StepRow>> = HashMap::new();
+    for row in rows {
+        by_node.entry(row.node_id.clone()).or_default().push(row);
+    }
+    for attempts in by_node.values_mut() {
+        attempts.sort_by_key(|r| std::cmp::Reverse(r.attempt));
+    }
+    order.into_iter().filter_map(|node| by_node.get_mut(&node).and_then(Vec::pop)).collect()
 }
 
 fn recorded(steps: &[StepRow]) -> Vec<Recorded> {
@@ -1592,5 +1606,19 @@ mod tests {
         assert_eq!(outcome(false, &steps), (RunStatus::Failed, Some("boom".into())));
         let steps = [row("1", "a", StepStatus::Failed, Some("boom"))];
         assert_eq!(outcome(true, &steps), (RunStatus::Stopped, Some("boom".into())));
+    }
+
+    #[test]
+    fn rows_created_out_of_attempt_order_still_end_on_the_latest_attempt() {
+        let attempt = |id, node, n, status, error| StepRow { attempt: n, ..row(id, node, status, error) };
+        let rows = vec![
+            attempt("z", "a", 2, StepStatus::Done, None),
+            attempt("b1", "b", 1, StepStatus::Done, None),
+            attempt("y", "a", 1, StepStatus::Failed, Some("boom")),
+        ];
+        let rows = in_attempt_order(rows);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["y", "b1", "z"]);
+        assert_eq!(outcome(false, &rows), (RunStatus::Done, None));
     }
 }

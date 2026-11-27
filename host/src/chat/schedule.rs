@@ -493,6 +493,47 @@ mod tests {
         let _ = std::fs::remove_dir_all(&f.dir);
     }
 
+    /// Two windows hold the same sheet. After one saves newer words, the other's save is refused
+    /// and leaves those words and the scheduled time alone.
+    #[tokio::test]
+    async fn a_stale_update_does_not_replace_a_newer_edit() {
+        let f = Fixture::new();
+        let e = f.schedule("the first window's old words", 60_000);
+        let edited = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": e.id, "text": "the second window's newer words"}),
+        )
+        .await
+        .unwrap();
+        assert!(edited["entry"]["rev"].as_i64().unwrap() > e.rev);
+        let stale = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": e.id, "text": "the first window's stale words",
+                   "notBefore": crate::store::now_ms() + 120_000, "expectedRev": e.rev}),
+        )
+        .await;
+        assert!(stale.is_err(), "the stale sheet is refused");
+        let current = f.hub.store.entry(&e.id).unwrap();
+        assert_eq!(current.data["text"], "the second window's newer words");
+        assert_eq!(current.data["status"], "scheduled");
+        assert!(f.prompts().is_empty(), "nothing reaches the agent: {:?}", f.prompts());
+        let saved = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": e.id, "text": "the current final words", "expectedRev": current.rev}),
+        )
+        .await;
+        assert!(saved.is_ok(), "the current sheet can still save: {saved:?}");
+        assert_eq!(f.hub.store.entry(&e.id).unwrap().data["text"], "the current final words");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
     /// `sendScheduledNow` delivers at once: it enters the ordinary queue as the sweep would.
     #[tokio::test]
     async fn send_scheduled_now_delivers_immediately() {

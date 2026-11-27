@@ -73,6 +73,24 @@ test('the events decoder carries the held-message snapshot and clear-time sends 
   }])
 })
 
+test('updateScheduled sends the revision the sheet opened at', async () => {
+  const held = heldEntry()
+  const calls: { method: string; body: unknown }[] = []
+  const transport: HostTransport = {
+    call: (method, body) => {
+      calls.push({ method, body })
+      return Promise.resolve({ entry: held })
+    },
+    stream: () => () => {},
+  }
+  const client = new HostClient(transport)
+  await client.updateScheduled('b', held.id, { text: 'edited', notBefore: 9, expectedRev: held.rev })
+  assert.deepEqual(calls, [{
+    method: 'updateScheduled',
+    body: { botId: 'b', entryId: held.id, text: 'edited', notBefore: 9, expectedRev: held.rev },
+  }])
+})
+
 test('a held entry event updates its below-window hello copy, then removes it on cancel and fire', () => {
   const { store, receive } = storeWithAlerts()
   const held = heldEntry()

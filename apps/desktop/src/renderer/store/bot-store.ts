@@ -468,7 +468,7 @@ export class BotStore extends BotSync {
     show({ ...entry, data: { ...entry.data, ...patch, ...(held ? { status: 'scheduled' } : {}) } })
     this.perform(
       async (c) => {
-        const e = await c.updateScheduled(entry.botId, entry.id, patch)
+        const e = await c.updateScheduled(entry.botId, entry.id, { ...patch, expectedRev: entry.rev })
         if (e) {
           this.upsert(e)
           this.changed()

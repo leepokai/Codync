@@ -537,6 +537,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .entry(entry_id)
                 .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str())
                 .ok_or_else(|| anyhow!("that message isn't waiting any more"))?;
+            // The sheet sends the rev it opened at. A newer edit in another window is refused
+            // rather than overwritten. A caller that omits expectedRev keeps the old behavior.
+            if b["expectedRev"].as_i64().is_some_and(|rev| rev != e.rev) {
+                bail!("that message changed underneath you; take another look");
+            }
             match e.data["status"].as_str() {
                 // The live queue is the actor's: it moves the message, as `steer` and `unqueue` do. The
                 // entry it hands back follows in the store's events; a hold that finds the message already

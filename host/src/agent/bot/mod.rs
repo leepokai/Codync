@@ -419,6 +419,8 @@ impl Actor {
     /// The running turn is over, with every steer answered (`turn_ended`): it finishes or goes on with the next agent.
     async fn on_turn_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
         // Updates sent before the prompt response are already queued; apply them first.
+        // Verified with the refusal check below: a quota notice that arrives in that same instant
+        // is in `turn_text_seen` before `prompt_result` reads it (`chat::oneshot` does the same).
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
             match inc {
                 // No agent ends a turn it waits on: a request queued here is for work after it.

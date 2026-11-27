@@ -80,6 +80,18 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         loop {
             tokio::select! {
                 r = &mut prompt => {
+                    // The prompt answer can win the select while its text updates are still queued.
+                    // Both buffers see them before the refusal check; draining only `out` would miss one.
+                    while let Ok(inc) = conn.rx.try_recv() {
+                        if let Incoming::Update(update) = &inc
+                            && let Event::Text { text, .. } = &update.event
+                        {
+                            text_seen.push(text);
+                        }
+                        if !collect(Some(inc), &mut out) {
+                            bail!("the background job's agent exited");
+                        }
+                    }
                     let result = r.and_then(acp::codebuddy::prompt_result)?;
                     acp::refusal::prompt_result(&result, &text_seen).map_or(Ok(result), Err)?;
                     break

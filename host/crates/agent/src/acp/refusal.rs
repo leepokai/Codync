@@ -1,7 +1,7 @@
 //! A prompt that ends in a `refusal` after the adapter said it hit a quota can be a usage limit, not a decline:
 //! Antigravity writes `Usage Limit Reached` into the chat as regular text, then answers `stopReason: "refusal"`
-//! with no error object. Turn that one into the RPC error the fallback chain already understands. A genuine
-//! content-policy refusal has none of these words and stays a refusal.
+//! with no error object. Turn that one into the RPC error the fallback chain already understands. The notice
+//! has to open the turn's text: a content-policy refusal that only mentions the words stays a refusal.
 
 use super::{INTERNAL_ERROR, RpcError};
 use serde_json::Value;
@@ -24,8 +24,8 @@ pub struct PromptText(String);
 impl PromptText {
     /// Collects a streamed text chunk.
     pub fn push(&mut self, text: &str) {
+        // Append as streamed. A newline between chunks would split "Usage Limit" from "Reached".
         self.0.push_str(text);
-        self.0.push('\n');
     }
 
     /// The words the turn said, lowercased once for a case-insensitive match.
@@ -33,10 +33,12 @@ impl PromptText {
         self.0.to_lowercase()
     }
 
-    /// Whether the streamed text says the account hit a quota or rate limit.
+    /// Whether the streamed text opens with an adapter's quota or rate-limit notice.
+    /// A later mention inside a content-policy refusal is not that notice.
     pub fn says_usage_limit(&self) -> bool {
         let text = self.normalized();
-        USAGE_TEXT.iter().any(|word| text.contains(word))
+        let text = text.trim();
+        USAGE_TEXT.iter().any(|word| text.starts_with(word))
     }
 }
 
@@ -78,10 +80,18 @@ mod tests {
     #[test]
     fn a_quota_spoken_in_caps_or_across_chunks_is_recognized() {
         let mut text = PromptText::default();
-        text.push("USAGE LIMIT");
-        text.push(" REACHED — 429 TOO MANY REQUESTS");
-        assert!(text.says_usage_limit());
+        text.push("USAGE LIMIT ");
+        text.push("REACHED");
+        assert!(text.says_usage_limit(), "the split notice joins without an extra newline");
         assert!(prompt_result(&refusal(), &text).is_some());
+    }
+
+    #[test]
+    fn a_content_policy_refusal_that_mentions_a_quota_stays_a_refusal() {
+        let mut text = PromptText::default();
+        text.push("I can't help with that. Talking about a usage limit reached on an account is not allowed.");
+        assert!(!text.says_usage_limit());
+        assert!(prompt_result(&refusal(), &text).is_none());
     }
 
     #[test]

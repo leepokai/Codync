@@ -413,8 +413,56 @@ class HistoryPagingTest {
             StoredRow(older, older.length.toLong()),
         ), 10, kept.storedStubSentence()!!.length + older.length.toLong())
         assertEquals(listOf(2L), named.map { it.entry.seq })
-        assertEquals(kept.storedStubSentence()!!.length + "execute".length + "npm test".length, named.single().cost)
+        assertEquals(
+            kept.storedStubSentence()!!.length + "pending".length + "execute".length + "npm test".length +
+                "allow".length + "Allow".length + "allow_once".length,
+            named.single().cost,
+        )
         assertEquals(named.sumOf { it.cost }, named.sumOf { retainedStubChars(it.entry) })
+    }
+
+    @Test fun `a stub's counted cost is the sentence plus every key it kept`() {
+        val filler = "F".repeat(PER_MESSAGE_CHARS)
+        val threadId = "thread-retained"
+        val approval = row(7, "permission").copy(data = buildJsonObject {
+            put("status", "pending")
+            put("selected", "allow")
+            put("clientNonce", "nonce-retained")
+            put("removed", false)
+            put("toolKind", "execute")
+            put("title", "npm test")
+            put("options", buildJsonArray {
+                add(buildJsonObject { put("optionId", "allow"); put("name", "Allow"); put("kind", "allow_once") })
+            })
+            put("detail", filler)
+            putJsonObject("thread") { put("id", "not-the-column") }
+        })
+        val payload = WireJson.encodeToString(approval)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        val kept = windowRows(sequenceOf(StoredRow(
+            payload.take(PAYLOAD_HEAD_CHARS), payload.length.toLong(), payload.takeLast(PAYLOAD_TAIL_CHARS), threadId,
+        )), 10, Long.MAX_VALUE).single()
+        val entry = kept.entry
+        assertEquals("pending", entry.data.text("status"))
+        assertEquals("allow", entry.data.text("selected"))
+        assertEquals("nonce-retained", entry.clientNonce)
+        assertEquals(false, entry.isRemoved)
+        assertEquals("execute", entry.data.text("toolKind"))
+        assertEquals("npm test", entry.data.text("title"))
+        assertEquals(listOf("allow"), (entry.data["options"] as JsonArray).map { (it as JsonObject).text("optionId") })
+        assertEquals(threadId, entry.routingThreadId())
+        assertEquals("the body is not kept on the stub", null, entry.data["detail"])
+        val expected = entry.storedStubSentence()!!.length +
+            "pending".length + "allow".length + "nonce-retained".length + "false".length +
+            "execute".length + "npm test".length +
+            "allow".length + "Allow".length + "allow_once".length +
+            threadId.length
+        assertEquals(expected, kept.cost)
+        assertEquals(expected, retainedStubChars(entry))
+        val withoutNonce = entry.copy(data = JsonObject(entry.data.filterKeys { it != "clientNonce" }))
+        assertEquals(expected - "nonce-retained".length, retainedStubChars(withoutNonce))
+        val withBody = entry.copy(data = JsonObject(entry.data + ("detail" to JsonPrimitive(filler))))
+        assertEquals("a key the stub does not keep is not counted", expected, retainedStubChars(withBody))
     }
 
     @Test fun `stub copy is an id and every catalog has the sentence and the sheet title`() {

@@ -3,7 +3,9 @@ package com.codync.android
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
 import com.codync.android.core.threadNamed
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -238,12 +240,28 @@ private val ANSWER_KEYS = setOf("options", "selected")
 private val HEAD_ONLY_KEYS = setOf("toolKind", "title")
 
 /**
- * Characters a bounded stub counts. The sentence replaces the body. A tool kind and a title kept from the head
- * count as well, so the name is inside the same sum as every other retained character.
+ * Characters a bounded stub counts. The sentence replaces the body. Each key in [STUB_KEPT_KEYS] that the stub still
+ * holds adds the characters of its value, and a thread id does too. A key the stub dropped adds nothing. The sum is
+ * those characters: string values as themselves, nested text the same way, and no extra allowance on top.
  */
 internal fun retainedStubChars(entry: Entry): Int {
-    fun chars(key: String) = (entry.data[key] as? JsonPrimitive)?.contentOrNull?.length ?: 0
-    return (entry.storedStubSentence()?.length ?: entry.text.length) + chars("toolKind") + chars("title")
+    val sentence = entry.storedStubSentence()?.length ?: entry.text.length
+    val kept = STUB_KEPT_KEYS.sumOf { key -> entry.data[key]?.let(::retainedChars) ?: 0 }
+    return sentence + kept + retainedThreadIdChars(entry.data)
+}
+
+/** Characters of a value the stub kept. A string counts as its text. Nested values count the same way, key names aside. */
+private fun retainedChars(element: JsonElement): Int = when (element) {
+    is JsonNull -> 0
+    is JsonPrimitive -> element.content.length
+    is JsonArray -> element.sumOf(::retainedChars)
+    is JsonObject -> element.values.sumOf(::retainedChars)
+}
+
+/** Characters of `data.thread.id` when the stub still carries one. The key itself is not part of the sum. */
+private fun retainedThreadIdChars(data: JsonObject): Int {
+    val id = (data["thread"] as? JsonObject)?.get("id") as? JsonPrimitive ?: return 0
+    return if (id.isString) id.content.length else 0
 }
 
 /**

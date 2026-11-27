@@ -63,6 +63,13 @@ class AnalyticsTest {
         // Google Search adds whether it was on and how many answers used it, never the query.
         assertEquals("""{"engine":"gemini","reconnects":0,"stuck":"none","failure":"none","ready_ms":900,"google_search":true,"searches":2}""",
             json(AnalyticsEvent.VoiceCallQuality(VoiceEngineKind.Gemini, CallQuality.Report(900, 0, VoiceStuck.None, null, 2))))
+        assertEquals("stored_message_read_failed", AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Unreadable).name)
+        assertEquals("""{"reason":"open"}""", json(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Open)))
+        assertEquals("""{"reason":"missing"}""", json(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Missing)))
+        assertEquals("""{"reason":"blank"}""", json(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Blank)))
+        assertEquals("approval_read_failed", AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Decode).name)
+        assertEquals("""{"reason":"load"}""", json(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Load)))
+        assertEquals("""{"reason":"decode"}""", json(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Decode)))
     }
 
     @Test fun `pairing failures map to the catalog's reasons`() {

@@ -88,8 +88,6 @@ class AppStore internal constructor(
     internal val floors = ConcurrentHashMap<String, Long>()
     /** Identifies one card request separately from its equal `(bot, task)` value: an old page may not clear a later visit's. */
     internal val cardRequestEpoch = AtomicLong()
-    /** Test seam: runs after a page's I/O and before it commits a paging stop, so a close can interleave there. */
-    internal var beforeHistoryCommit: (suspend (String) -> Unit)? = null
     /** Residency applied by the last snapshot, so a history page can skip a repeat read when this chat's window is already loaded. */
     @Volatile internal var published: Residency? = null
     /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */

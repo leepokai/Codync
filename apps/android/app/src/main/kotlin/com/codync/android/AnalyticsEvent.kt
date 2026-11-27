@@ -183,6 +183,14 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
+    /** A stub's stored row could not be opened for the sheet. Never the text or the ids. */
+    data class StoredMessageReadFailed(val reason: StoredReadFailure) : AnalyticsEvent("stored_message_read_failed") {
+        override val properties get() = mapOf("reason" to reason.json)
+    }
+    /** A pending approval's stored row could not be read whole. Never the command. */
+    data class ApprovalReadFailed(val reason: ApprovalReadFailure) : AnalyticsEvent("approval_read_failed") {
+        override val properties get() = mapOf("reason" to reason.json)
+    }
 }
 
 /** One of a property's catalog values, as sent. */
@@ -352,6 +360,16 @@ internal enum class LayoutOption(override val wire: String) : CatalogValue {
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
 internal enum class VoiceNoteFailure(override val wire: String) : CatalogValue { Load("load"), Playback("playback") }
+
+/** Why opening a stored stub for its sheet failed. */
+internal enum class StoredReadFailure(override val wire: String) : CatalogValue {
+    Open("open"), Missing("missing"), Unreadable("unreadable"), Blank("blank")
+}
+
+/** Why a pending approval's stored row could not replace its stub. */
+internal enum class ApprovalReadFailure(override val wire: String) : CatalogValue {
+    Load("load"), Decode("decode")
+}
 
 internal enum class ShareOutcome(override val wire: String) : CatalogValue { Sent("sent"), Queued("queued"), Failed("failed") }
 

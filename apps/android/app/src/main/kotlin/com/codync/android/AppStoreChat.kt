@@ -51,7 +51,7 @@ private fun AppStore.ownsHistory(botId: String, epoch: Long): Boolean = historyE
 
 /** Commits [end] for [botId] only if the visit that loaded the page still owns it. */
 private suspend fun AppStore.commitHistoryEnd(botId: String, epoch: Long, end: HistoryEnd) {
-    beforeHistoryCommit?.invoke(botId)
+    runBeforeHistoryCommit(botId)
     if (!ownsHistory(botId, epoch)) return
     mutableState.update { it.copy(historyEnd = it.historyEnd + (botId to end)) }
 }
@@ -68,8 +68,12 @@ internal fun AppStore.storedMessageText(entry: Entry): String {
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
+        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Open))
         throw IOException("Couldn't open the stored message.", error)
-    } ?: throw IOException("That message is no longer on this phone.")
+    } ?: run {
+        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Missing))
+        throw IOException("That message is no longer on this phone.")
+    }
     return storedTextOfPayload(payload)
 }
 
@@ -83,9 +87,13 @@ internal fun storedTextOfPayload(payload: String): String {
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
+        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Unreadable))
         throw IOException("Couldn't read the stored message.", error)
     }
-    if (text.isBlank()) throw IOException("That message has no text on this phone.")
+    if (text.isBlank()) {
+        Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(StoredReadFailure.Blank))
+        throw IOException("That message has no text on this phone.")
+    }
     return text
 }
 

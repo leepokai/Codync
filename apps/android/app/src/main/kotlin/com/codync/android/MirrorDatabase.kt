@@ -361,6 +361,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 storedPayload(row.entry.botId, row.entry.id)
             } catch (error: Exception) {
                 android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                Analytics.capture(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Load))
                 kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
                 continue
             } ?: continue
@@ -368,6 +369,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 WireJson.decodeFromString<Entry>(payload)
             } catch (error: Exception) {
                 android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                Analytics.capture(AnalyticsEvent.ApprovalReadFailed(ApprovalReadFailure.Decode))
                 kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
                 continue
             }

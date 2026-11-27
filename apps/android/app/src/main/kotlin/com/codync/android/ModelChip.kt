@@ -1,8 +1,6 @@
 package com.codync.android
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,11 +41,16 @@ import java.io.IOException
         delay(600)
         store.saveSettings(draft) { error -> if (open) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    ChipLabel(Modifier.clip(Capsule()).clickable(enabled = online, role = Role.Button) { open = true }.semantics { contentDescription = "Model" }) {
-        AgentIcon(agentRegistry(state, bot.backend), 14.dp)
-        Text(bot.model ?: tr("Default"), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    ModelChipLabel(agentRegistry(state, bot.backend), bot.model, enabled = online) { open = true }
     CodyncSheet(open, { open = false }) { ModelSheet(bot, draft, { draft = it }, saveError, state, store) }
+}
+
+/** The model chip itself: the agent's logo ([registry]) and [model] (null: the agent's default); [open] opens its picker. */
+@Composable internal fun ModelChipLabel(registry: String, model: String?, modifier: Modifier = Modifier, enabled: Boolean = true, open: () -> Unit) {
+    ChipLabel(modifier.clip(Capsule()).clickable(enabled = enabled, role = Role.Button, onClick = open).semantics { contentDescription = "Model" }) {
+        AgentIcon(registry, 14.dp)
+        Text(model ?: tr("Default"), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** The bot's agent, login and model. */
@@ -57,11 +60,8 @@ import java.io.IOException
         add(tr("Changing the model starts a new agent session. Chat history is kept.") to Palette.secondary)
         error?.let { add(tr(it) to Palette.danger) }
     }
-    Column(Modifier.fillMaxSize()) {
-        ModalHeader("Model")
-        ModelPanel(state, store, backend = draft.backend, loginProfile = draft.loginProfile, model = draft.model, options = draft.modelOptions,
-            choose = { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, fast = draft.fastMode ?: false,
-            setFast = { edit(draft.copy(fastMode = it)) }, bot = bot, seats = readySeats(state, draft.login), pickSeat = { edit(draft.withAgent(it)) },
-            notes = notes)
-    }
+    ModelPanel(state, store, backend = draft.backend, loginProfile = draft.loginProfile, model = draft.model, options = draft.modelOptions,
+        choose = { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, fast = draft.fastMode ?: false,
+        setFast = { edit(draft.copy(fastMode = it)) }, bot = bot, seats = readySeats(state, draft.login), pickSeat = { edit(draft.withAgent(it)) },
+        notes = notes, approvals = draft, setApprovals = edit)
 }

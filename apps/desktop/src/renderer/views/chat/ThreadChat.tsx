@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { isTold } from '@shared/threads'
-import { isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
+import { agentOf, isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { IconButton, Spinner } from '../../components/Controls'
@@ -17,19 +17,18 @@ import { useStore } from '../../store/context'
 import { BotTemplateView } from '../bots/BotTemplateView'
 import { ArtifactView } from '../library/ArtifactView'
 import { WindowBarSlots } from '../WindowBar'
-import { PANEL_VIEWS, type PanelPane as Pane } from '@shared/panel-layout'
-import { BrowserTab } from './BrowserTab'
+import { closeView, PANEL_VIEWS, showView, type PanelPane as Pane } from '@shared/panel-layout'
 import { buildChat, type ChatItem } from './chat-items'
 import { ChatSidePanel, useSidePanelWidth } from './ChatSidePanel'
 import { CONVERSATION_MIN } from './side-panel-width'
 import { SideChat } from './ChatView'
-import { TerminalTab } from './TerminalTab'
 import { DetailsPanel } from './DetailsPanel'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { AgentBubble, ChatRow, TimeSeparator } from './ChatRows'
 import { Composer } from './Composer'
 import { PanelBarButtons } from './PanelBarButtons'
-import { PanelPane } from './PanelPane'
+import { closeTerminal } from './TerminalTab'
+import { MultiTab, multiTabViews, PanelPane } from './PanelPane'
 import { RequestRun } from './PermissionCard'
 import { workingSteps } from './trace-turns'
 import { StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
@@ -81,6 +80,10 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelFilled, setPanelFilled] = useState(false)
   const [pane, setPane] = useState<Pane>(NEW_PANE)
+  // Its panel goes when the thread leaves the window, and its terminals with it.
+  const tabs = useRef(pane.tabs)
+  useEffect(() => { tabs.current = pane.tabs }, [pane.tabs])
+  useEffect(() => () => { for (const tab of tabs.current) closeTerminal(store.client, tab) }, [store])
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [panelWidth, setPanelWidth] = usePref(prefs.detailsPanelWidth)
   const view = useRef<HTMLDivElement>(null)
@@ -121,7 +124,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   }
 
   const ownFolder = bot.managedWorkspace && !task.worktree && task.folder === bot.cwd
-  const agent = task.agent ?? bot.backend
+  const agent = agentOf(task, bot) ?? bot.backend
   const status = (
     <HStack as="span" gap={6} className="window-bar-status">
       <WorkDot mark={WORK_MARK[task.status]} />
@@ -206,14 +209,17 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
         {bot.plain ? <div className="details-panel"><div className="details-page"><div className="details-panes">
           <PanelPane
             pane={pane}
-            views={THREAD_VIEWS}
+            views={[...THREAD_VIEWS, ...multiTabViews(pane.tabs, THREAD_VIEWS, tr)]}
             first
             flush={pane.shown !== null}
-            show={(id) => setPane((p) => ({ tabs: p.tabs.includes(id) ? p.tabs : [...p.tabs, id], shown: id }))}
-            close={(id) => setPane((p) => { const tabs = p.tabs.filter((t) => t !== id); return { tabs, shown: p.shown === id ? (tabs[0] ?? null) : p.shown } })}
+            show={(id) => setPane((p) => showView([p], id)[0] ?? p)}
+            close={(id) => {
+              closeTerminal(store.client, id)
+              setPane((p) => closeView([p], 0, id)[0] ?? p)
+            }}
             choose={() => setPane((p) => ({ ...p, shown: null }))}
           >
-            {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} /> : pane.shown === 'terminal' ? <TerminalTab key={threadId} bot={bot} thread={threadId} /> : null}
+            {pane.shown ? <MultiTab bot={bot} thread={threadId} tab={pane.shown} /> : null}
           </PanelPane>
         </div></div></div> : (
           <DetailsPanel

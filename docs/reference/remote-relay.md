@@ -328,7 +328,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `pairingRequests`, `decidePairing`, `pairingCodeOpen`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token）；`pairingRequests` 事件也只送給 loopback |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `agentCall`, `networkHook`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `pairingRequests`, `decidePairing`, `pairingCodeOpen`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token）；`pairingRequests` 事件也只送給 loopback |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenCandidate`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `joinAccount`, `history`, `createBot`, `updateBot`, `renameSection`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `forgetDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `addLoginProfile`, `renameLoginProfile`, `removeLoginProfile`, `setLoginProfileKeys`, `loginShellVariables`, `botTerminal`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
@@ -348,7 +348,7 @@ key  = HKDF-Expand(prk, "codync/push-key/v1", 32)
 ct   = ChaCha20-Poly1305(key, nonce = 12 × 0x00, plaintext = {"title","subtitle"?,"body","from"?,"faces"?,"unread"?} JSON, aad = cidRaw)
 sealed = b64url(epk ‖ ct)
 ```
-送給 `relay/` 的 body：`alert` 為 Codync 與依 kind 選擇的通用說明句、`mutableContent: true`、`threadId = computerId:botId`、`category = done|needsInput|failed`、`data = {"botId","computerId","ctx":<SharedStore.Context.id>,"sealed"}`。Notification Service Extension 依 `ctx` 從共用 Keychain 取 push key、解開後替換 title／subtitle／body；解不開就保留通用文字。Live Activity 的 `contentState` 只含 `status` 與 `startedAt`（`activity` 固定為空字串），不含任何自由文字。向量 `push` 保留沒有 subtitle 的相容格式。通知呈現、票券更新、ActivityKit 時間與部署驗收見 [通知與 Live Activity 設計](../design/push-and-live-activity.md)。
+送給 `relay/` 的 body：`alert` 為 Codync 與依 kind 選擇的通用說明句、`mutableContent: true`、`threadId = computerId:botId`、`category = done|needsInput|failed`、`data = {"botId","computerId","ctx":<SharedStore.Context.id>,"sealed"}`，workflow 的通知另帶 `workflowId`、`stepId`，以及選填的 `runId`、`nodeId`（點開的位置）。FCM 路徑只轉送 `workflowId`／`runId`／`stepId`，且每個都須是 64 字元以內的字串，其他欄位與過長的值都會被丟掉。Notification Service Extension 依 `ctx` 從共用 Keychain 取 push key、解開後替換 title／subtitle／body；解不開就保留通用文字。Live Activity 的 `contentState` 只含 `status` 與 `startedAt`（`activity` 固定為空字串），不含任何自由文字。向量 `push` 保留沒有 subtitle 的相容格式。通知呈現、票券更新、ActivityKit 時間與部署驗收見 [通知與 Live Activity 設計](../design/push-and-live-activity.md)。
 
 ---
 

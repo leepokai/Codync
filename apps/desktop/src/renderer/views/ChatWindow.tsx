@@ -23,6 +23,7 @@ import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
+import { withOlderThreads } from '../store/older-threads'
 import { BotRoster } from './BotRoster'
 import { NavRail, OpenExtensions, pageIcon, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
@@ -78,6 +79,12 @@ function openRef(app: AppModel, key: string) {
 }
 
 /** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
+/** The workflow a clicked notification opens, or null when it opens its bot's chat. */
+function alertWorkflow(c: Extract<WindowCommand, { kind: 'openAlert' }>) {
+  const ref = parseRef(c.ref)
+  return ref && c.workflowId ? { computerId: ref.computerId, workflowId: c.workflowId } : null
+}
+
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
@@ -117,7 +124,8 @@ export function ChatWindow() {
             return openRef(app, c.ref)
           case 'openAlert':
             analytics.track({ event: 'desktop_notification_opened', kind: alertAnalyticsKind(c.alert) })
-            return openRef(app, c.ref)
+            // A workflow's alert is opened on its page (ChatSplitView); any other, in its bot's chat.
+            return alertWorkflow(c) ? undefined : openRef(app, c.ref)
           case 'stopBot': {
             const ref = parseRef(c.ref)
             const store = ref && app.store(ref.computerId)
@@ -288,8 +296,8 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
-  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
+  const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
   const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
@@ -363,6 +371,11 @@ function ChatSplitView() {
         if (c.kind === 'toggleSidebar') setListHidden(!prefs.listHidden.get())
         // The window's own handler selects the bot; its chat is on the Bots page.
         if (c.kind === 'openBot') setPage('bots')
+        if (c.kind === 'openAlert') {
+          const workflow = alertWorkflow(c)
+          if (workflow) openWorkflows(workflow.computerId, workflow.workflowId)
+          else setPage('bots')
+        }
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
           setPage('bots')

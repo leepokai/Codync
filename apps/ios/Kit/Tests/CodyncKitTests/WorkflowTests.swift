@@ -182,3 +182,22 @@ private func trigger(_ id: String) -> WorkflowNode {
         }
     }
 }
+
+@Test func soloStepDecodesFromTheHostsWorkflowStepAnswer() throws {
+    // host/src/workflows/run.rs `step_json`, for an approval run on its own: no bot, output or end yet.
+    struct Answer: Decodable { var step: WorkflowStep }
+    let json = #"{"step":{"id":"s","nodeId":"a","attempt":1,"requestId":"r","kind":"approval","botId":null,"status":"approval","input":"Ship it?","output":null,"branch":null,"passes":0,"truncated":false,"error":null,"startedAt":5,"endedAt":null,"title":"Approval"}}"#
+    let step = try JSONDecoder().decode(Answer.self, from: Data(json.utf8)).step
+    #expect(step.id == "s" && step.status == "approval" && step.botId == nil && step.endedAt == nil)
+}
+
+@Test func searchFindsWorkflowsByTitleOrIdPrefix() {
+    let list = [
+        WorkflowSummary(id: "a1b2", title: "Nightly build", revision: 1, updatedAt: 0),
+        WorkflowSummary(id: "c3d4", title: "Release notes", revision: 1, updatedAt: 0),
+    ]
+    #expect(WorkflowSummary.matching(list, " ") == list)
+    #expect(WorkflowSummary.matching(list, "BUILD").map(\.id) == ["a1b2"])
+    #expect(WorkflowSummary.matching(list, " c3 ").map(\.id) == ["c3d4"])
+    #expect(WorkflowSummary.matching(list, "b2").isEmpty)
+}

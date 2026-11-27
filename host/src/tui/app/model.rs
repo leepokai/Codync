@@ -39,6 +39,7 @@ pub enum After {
     Tracked,
     Analytics,
     AutoOrder,
+    ThreadKeep,
     CredentialsReset,
     History(String),
     Dirs(String),

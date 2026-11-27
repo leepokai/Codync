@@ -9,6 +9,11 @@
 .network-dot.online {
   background: var(--added);
 }
+
+/* A session whose state nothing can tell: no dot, its place kept. */
+.network-dot.unknown {
+  visibility: hidden;
+}
 .network-sheet {
   width: 440px;
 }

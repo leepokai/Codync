@@ -58,9 +58,12 @@ fn reachable_relay(url: String) -> String {
     if url == WORKERS_DEV_RELAY { RELAY.to_owned() } else { url }
 }
 
-/// True when `key` was sent less than `min_gap` ago; otherwise records now.
-fn throttled(key: (String, AlertKind), min_gap: Duration) -> bool {
-    throttled_in(&LAST_SENT, key, min_gap)
+/// The least time between two alerts of one kind for one bot (or one workflow step).
+const ALERT_GAP: Duration = Duration::from_secs(5);
+
+/// True when `key` was sent less than `ALERT_GAP` ago; otherwise records now.
+fn throttled(key: (String, AlertKind)) -> bool {
+    throttled_in(&LAST_SENT, key, ALERT_GAP)
 }
 
 fn throttled_in(
@@ -69,7 +72,9 @@ fn throttled_in(
     min_gap: Duration,
 ) -> bool {
     let mut last = table.locked();
-    if last.get(&key).is_some_and(|t| t.elapsed() < min_gap) {
+    // Keys past the gap can't hold anything back: dropping them keeps one entry per recent alert, not per step ever.
+    last.retain(|_, at| at.elapsed() < min_gap);
+    if last.contains_key(&key) {
         return true;
     }
     last.insert(key, Instant::now());
@@ -153,9 +158,14 @@ fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, sub
 }
 
 /// The `alert` event: what a desktop app shows as a system notification, the same text a phone's push opens to.
-fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind) -> Value {
+/// A workflow's alert names the workflow, so clicking it opens the workflow rather than the bot's chat.
+fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind, link: Option<&WorkflowLink>) -> Value {
     let (title, body) = alert_text(title, body);
-    json!({"type": "alert", "alert": {"botId": bot.id, "kind": kind, "title": title, "body": body}})
+    let mut alert = json!({"botId": bot.id, "kind": kind, "title": title, "body": body});
+    if let Some(link) = link {
+        alert["workflowId"] = link.workflow.clone().into();
+    }
+    json!({"type": "alert", "alert": alert})
 }
 
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
@@ -174,14 +184,14 @@ pub fn notify(
     }
     // A workflow step's alerts are throttled per step, so two steps of one bot both arrive.
     let repeated = match link {
-        Some(link) => throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), Duration::from_secs(5)),
-        None => throttled((bot.id.clone(), kind), Duration::from_secs(5)),
+        Some(link) => throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), ALERT_GAP),
+        None => throttled((bot.id.clone(), kind)),
     };
     if repeated {
         return;
     }
     // Live only (no rev, so no catch-up replays it): a desktop app shows it if its user turned that on.
-    let _ = hub.events.send(alert_event(bot, title, body, kind));
+    let _ = hub.events.send(alert_event(bot, title, body, kind, link));
     if hub.phone_connected() {
         return;
     }
@@ -282,6 +292,25 @@ mod tests {
         assert_eq!(secret["unread"], 1);
         assert_eq!(secret["title"], "Bot");
         assert_eq!(secret["faces"][0]["id"], "b1");
+    }
+
+    #[test]
+    fn alert_records_past_their_gap_are_dropped() {
+        let table = Mutex::default();
+        assert!(!throttled_in(&table, ("s1".into(), AlertKind::Done), Duration::ZERO));
+        assert!(!throttled_in(&table, ("s2".into(), AlertKind::Done), Duration::ZERO));
+        assert_eq!(table.locked().len(), 1);
+    }
+
+    #[test]
+    fn a_workflow_alert_names_its_workflow() {
+        let bot = bot("b1", "Bot", "/tmp");
+        let link = WorkflowLink { workflow: "w1".into(), run: None, step: "s1".into(), node: String::new() };
+        assert_eq!(
+            alert_event(&bot, "Flow", "Ship it?", AlertKind::NeedsInput, Some(&link))["alert"]["workflowId"],
+            "w1"
+        );
+        assert!(alert_event(&bot, "Bot", "done", AlertKind::Done, None)["alert"].get("workflowId").is_none());
     }
 
     #[test]

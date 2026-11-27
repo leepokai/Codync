@@ -8,3 +8,9 @@ retries = 2
 fail-fast = false
 # Report a test after a minute; stop one that hangs after five.
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The commit hook's run (`.githooks/pre-commit`): as CI, but without the tests that wait out the 270-second choice
+# deadline (`host/src/chat/decision.rs`). Each holds the run for almost five minutes; CI still runs them.
+[profile.precommit]
+inherits = "ci"
+default-filter = "not test(/270_second_call|the_open_card/)"

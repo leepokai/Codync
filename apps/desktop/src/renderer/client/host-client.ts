@@ -13,6 +13,7 @@ import {
   type Usage,
 } from '@shared/models'
 import { parseAlert, type HostAlert } from '@shared/alerts'
+import type { AgentModels } from '@shared/agent-models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
@@ -118,6 +119,8 @@ export type HostEvent =
   /** One entry of a thread's transcript (never a chat's); the catch-up has none. */
   | { type: 'threadEntry'; thread: string; entry: Entry }
   | { type: 'usage'; usage: Usage }
+  /** An agent's model list the computer just read (`loginProfile` null: the default login); no rev. */
+  | { type: 'models'; backend: string; loginProfile: string | null; models: AgentModels }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
@@ -128,6 +131,8 @@ export type HostEvent =
   | { type: 'name'; name: string }
   /** The computer's automatic bot order was switched (from any device): its `hello` says it from now on. */
   | { type: 'autoOrder'; enabled: boolean }
+  /** The computer's choice of when old threads are deleted changed (from any device): its `hello` says it from now on. */
+  | { type: 'threadKeepDays'; days: number }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
@@ -136,7 +141,7 @@ export type HostEvent =
   /** One this app has no use for. */
   | { type: 'skipped' }
   /** A workflow change. It carries no `rev` and never means the event stream is unreadable. */
-  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; enabled?: boolean }
+  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; stepId?: string; enabled?: boolean }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
 
@@ -181,6 +186,11 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
+    case 'models': {
+      const models = raw.models as AgentModels | undefined
+      if (typeof raw.backend !== 'string' || !Array.isArray(models?.models)) return null
+      return { type, backend: raw.backend, loginProfile: typeof raw.loginProfile === 'string' ? raw.loginProfile : null, models }
+    }
     case 'artifact': {
       const artifact = raw.artifact as Artifact | undefined
       return artifact && typeof artifact.id === 'string' && typeof artifact.botId === 'string' ? { type, artifact } : null
@@ -199,6 +209,8 @@ export function parseEvent(line: string): HostEvent | null {
       return typeof raw.name === 'string' ? { type, name: raw.name } : null
     case 'autoOrder':
       return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
+    case 'threadKeepDays':
+      return typeof raw.days === 'number' ? { type, days: raw.days } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
     case 'call': {
@@ -216,7 +228,14 @@ export function parseEvent(line: string): HostEvent | null {
       const workflowId = raw.workflowId
       if (typeof workflowId !== 'string') return null
       if (change !== 'graph' && change !== 'enabled' && change !== 'run' && change !== 'step' && change !== 'deleted') return null
-      return { type, change, workflowId, runId: typeof raw.runId === 'string' ? raw.runId : null, enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined }
+      return {
+        type,
+        change,
+        workflowId,
+        runId: typeof raw.runId === 'string' ? raw.runId : null,
+        stepId: typeof raw.stepId === 'string' ? raw.stepId : undefined,
+        enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined,
+      }
     }
     default:
       return null

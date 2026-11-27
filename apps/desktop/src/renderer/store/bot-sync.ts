@@ -1,7 +1,7 @@
 import { isChat, unseen, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
-import { fetchWorkflow, fetchWorkflowRun, listWorkflows, workflowRuns } from '../views/workflows/api'
+import { fetchWorkflow, fetchWorkflowRun, fetchWorkflowStep, listWorkflows, workflowRuns } from '../views/workflows/api'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
@@ -255,6 +255,7 @@ export class BotSync extends BotMirror {
     if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
     this.iconsRevision = -1
     this.hello = h
+    this.olderThreads.reset()
     if (h.workflows === true) void this.reloadWorkflowMirror()
     else this.workflows = []
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
@@ -326,6 +327,9 @@ export class BotSync extends BotMirror {
       case 'usage':
         this.usage = event.usage
         break
+      case 'models':
+        this.keepModels(event.backend, event.loginProfile, event.models)
+        break
       case 'alert':
         if (!this.isReading(event.alert.botId)) this.onAlert?.(event.alert)
         break
@@ -349,6 +353,11 @@ export class BotSync extends BotMirror {
         break
       case 'autoOrder':
         this.showAutoOrder(event.enabled)
+        break
+      case 'threadKeepDays':
+        this.showThreadKeepDays(event.days)
+        // Sent once the computer deleted threads, the choice the same or not: list them again.
+        this.olderThreads.reset()
         break
       case 'network':
         this.network = event.network
@@ -467,6 +476,22 @@ export class BotSync extends BotMirror {
     // or that its stop landed. Otherwise the canvas stays on the snapshot from when it was opened.
     if (session && session.id === event.workflowId && event.runId && (session.followLive || session.runId === event.runId)) {
       void this.pullWorkflowRun(event.runId)
+    }
+    if (session && session.id === event.workflowId && !event.runId && event.stepId) void this.pullWorkflowSoloStep(event.workflowId, event.stepId)
+  }
+
+  private async pullWorkflowSoloStep(workflowId: string, stepId: string) {
+    const client = this.live
+    if (!client || this.workflowStepMissing) return
+    try {
+      const { step } = await fetchWorkflowStep(client, stepId)
+      if (this.retired || this.workflowSession?.id !== workflowId) return
+      this.workflowSoloStep = step
+      this.changed()
+    } catch (error) {
+      // Not reportWorkflowFailure's "unknown method": that would hide workflows a host from before `workflowStep` runs.
+      if (error instanceof HostError && error.message === 'unknown method') this.workflowStepMissing = true
+      else this.reportWorkflowFailure(error)
     }
   }
 

@@ -9,10 +9,14 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+mod push;
 mod remote;
 pub use remote::serve_remote;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// A call that may wait for a session's mail, with time for the host to answer.
+const WAIT_REPLY: Duration = Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15);
 
 /// ACP `McpServer` for `codync-host mcp <args…> --port <port>`. Its env names the data directory, where the token
 /// is: some agents start MCP servers with a filtered environment (Hermes keeps only PATH, HOME and a few more), so a
@@ -37,8 +41,7 @@ pub enum Server {
     Manage,
     Memory,
     Composio,
-    /// For coding agents' sessions on this computer that aren't Codync bots; `bot` is an address
-    /// to start from (`--name`), or empty.
+    /// For coding agents' sessions on this computer that aren't Codync bots (`bot` is empty).
     Network,
 }
 
@@ -114,7 +117,11 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
                 "initialize" => {
-                    let _ = client.set(params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned());
+                    let agent = params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned();
+                    let first = client.set(agent.clone()).is_ok();
+                    if first && matches!(server, Server::Network) && push::wanted(&agent, |k| std::env::var_os(k)) {
+                        tokio::spawn(push::run(port));
+                    }
                     Ok(json!({
                         "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
                         "capabilities": {"tools": {}},
@@ -129,7 +136,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
                 }),
                 "tools/call" => Ok(match server {
                     Server::Network => {
-                        network_call(port, &token, &bot, client.get().map_or("", String::as_str), params).await
+                        network_call(port, &token, client.get().map_or("", String::as_str), params).await
                     }
                     _ => call(port, &token, &bot, params, server).await,
                 }),
@@ -182,7 +189,7 @@ async fn computer_tools(port: u16, token: &str) -> Value {
 
 /// A `network` tool call: the host learns which session calls (`network::sessions`). A Codync bot's
 /// agent that loads the user's own `codync` server gets nothing from it: the bot has its team tools.
-async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: &Value) -> Value {
+async fn network_call(port: u16, token: &str, client: &str, params: &Value) -> Value {
     // This server's process, with a nonce so a reused pid never takes over another's session.
     static PROCESS: LazyLock<String> =
         LazyLock::new(|| format!("{}-{}", std::process::id(), &uuid::Uuid::new_v4().simple().to_string()[..8]));
@@ -200,7 +207,6 @@ async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: 
         session: looked.await.unwrap_or_default(),
         process: PROCESS.clone(),
         cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
-        hint: Some(hint.trim()).filter(|h| !h.is_empty()).map(str::to_owned),
     };
     send(port, token, Server::Network, params, json!({"agent": caller})).await
 }
@@ -248,9 +254,7 @@ async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: 
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
         // A session may wait for its mail.
-        Server::Network if params["name"] == "check_inbox" => {
-            ("agentCall", Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15))
-        }
+        Server::Network if params["name"] == "check_inbox" => ("agentCall", WAIT_REPLY),
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
     };

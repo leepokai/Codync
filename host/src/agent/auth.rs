@@ -30,6 +30,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 mod agent;
+mod model_cache;
 mod models;
 mod proxied;
 pub use agent::authenticate;
@@ -37,7 +38,11 @@ use agent::start;
 pub(crate) use agent::{Started, authenticate_account, start_with};
 pub use codync_agent::acp::auth::{Method, MethodKind};
 use codync_agent::acp::auth::{methods, reported_login};
-pub use models::{InFlight, models, shared_models};
+pub use model_cache::{
+    Wanted as ModelListWanted, forget as forget_model_list, shared_models, signed_in as model_list_signed_in,
+    warm as warm_models,
+};
+pub use models::{InFlight, models};
 
 /// What the last check found for one backend.
 #[derive(Clone, Debug, Default, Serialize)]

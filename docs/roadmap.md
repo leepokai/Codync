@@ -1,111 +1,123 @@
 # Roadmap
 
-Status: **proposed**, 2026-11-03. Four long-running tracks, in the order the owner listed them. Each track links to the
-doc that holds its current behavior and its detailed plan. Shipped work stays in those docs, not here; when a track
-finishes a step, update its plan doc in the same change and trim the item below.
+Direction agreed with the owner: **personal agent first, multiplayer AI later**, 2026-11-13.
+The stages define product priorities; the four technical tracks support them continuously.
+These are goals and acceptance criteria, not claims of shipped behavior or commitments to release dates.
 
-Rules that apply to every track: [CLAUDE.md](../CLAUDE.md) (version bumps, e2e, cross-platform UI), [docs/plans/](plans/)
-(detailed plans), [docs/archive/](archive/README.md) (finished plans).
+Detailed plans live in [plans/](plans/); current behavior lives in [features/](features/).
+Move completed plans to [archive/](archive/README.md) and update corresponding feature docs.
 
-## 1. Cloud plan
+## Product stages
 
-Goal: users who want their bots on a cloud computer bring their own sandbox, with no charge from Codync and without
-changing how the host owns the logic.
+### 1. Personal agent: daily tasks and project work
 
-Where it stands:
+Make one person's everyday agent useful and dependable. The immediate milestone is:
 
-- The Codync cloud already carries the encrypted relay (`cloud/`, ComputerRelay DO), accounts, public routine
-  webhooks and the cloud assistant connector (`mcp.codync.dev`, [cloud assistants](features/cloud-assistants.md)).
-- A private relay is supported and has no accounts ([relay reference](reference/remote-relay.md)).
-- The product direction (owner, 2026-11-06): Codync charges nothing, and users bring their own sandbox and API key.
-  Memoh (self-hosted per-bot cloud computers) is a possible option; its role is not decided yet.
-- `feat/cloud-boat` has the cloud computer flow on Boat, so far with one Codync-held key.
-- `cloud/` is deployed by hand, never by CI ([deployment](guides/environments-and-deployment.md#releasing-cloud-changes)).
+**Daily conversation → select a project → execute a coding task → inspect the result → return to daily conversation.**
 
-Next steps:
+- Bot-based work retains the bot's identity, personal preferences, conversations and routines.
+- Project-based work makes the computer, repository, working directory, task context, execution state and results explicit.
+- Personal preferences can carry across tasks; project knowledge, permissions and execution context have clear boundaries.
+- Entering a project task must not silently reconfigure unrelated conversations or routines.
+- Starting, cancelling, recovering and understanding a failed task are part of the experience.
 
-1. Decide how users bring a sandbox: which providers come first and where their API key lives. Write the decision in
-   `docs/design/` before building.
-2. Prove one end-to-end path: sign in, start a cloud computer on the user's own sandbox, pair a phone, run a bot, read
-   the reply.
+Done when: a user completes this flow without recreating a bot or accidentally mixing project contexts, with consistent
+behavior on desktop, iPhone, Android and terminal. See the [personal agent integration plan](plans/personal-agent-experience.md).
 
-Done when: a new user can bring a sandbox, get a working cloud computer, and use it from the iPhone and desktop apps with
-no local computer, and the relay docs describe it.
+### 2. Personal agent across computers
 
-## 2. codync-network: long-term upkeep and stable bot-to-bot exchange
+Make the same person's local computers, remote computers and cloud sandboxes understandable execution destinations.
+Build on the existing network and cloud paths.
 
-Goal: computers on several networks keep talking as the set of agent types grows, and bot-to-bot messages behave the
-same whatever agent is on each end.
+- Make destination and handoff explicit, including the context and access the receiving agent gets.
+- Keep status and results understandable through disconnection, reconnect, timeout and remote failure.
+- Validate communication between supported coding agents before expanding the agent list.
+- Make cloud lifecycle management support the same personal workflows.
 
-Where it stands: [codync-network](features/codync-network.md), [what's left](plans/codync-network-next.md), and
-[bot collaboration](features/bot-collaboration.md). Still open there: Codync-run relays (waiting for the owner to
-rent servers), the account networks, and the screen and rules items in the plan.
+Done when: a user sends a task to another computer they own and can track where it runs, its result and failure reason.
+Validate on two real hosts. This does not promise transparent migration of a live ACP session or automatic sharing of
+all memory and credentials.
 
-Next steps:
+### 3. Multiplayer AI
 
-1. Close the open packages in `plans/codync-network-next.md` in build order; move finished ones into the feature doc.
-2. Conformance tests for bot-to-bot exchange: one fixture per agent type (Claude, Codex, and each ACP registry agent
-   that can run a bot), checking the same message flow: request, reply, timeout, refusal, and a routine that a bot may
-   not run for another bot.
-3. Keep `host/crates/network` at its 0.x version rule: every release that changes it bumps `codync-network`.
-4. Upkeep: each release, run the conformance set against the current agent versions and record failures in
-   [upstream agent bugs](upstream-agents/README.md) when they come from an agent.
+After personal workflows and cross-computer boundaries are dependable, define shared agents and projects,
+membership, permissions, collaborative tasks and attributable activity.
 
-Done when: the conformance set passes on every supported agent type across two computers, on the same network, in CI
-or in a documented manual run, and the network docs list no open "Beta" gaps.
+Entry condition: stages 1 and 2 pass their acceptance scenarios, including context boundaries and recovery.
+Detailed multiplayer behavior and acceptance criteria need a separate design before implementation. Existing
+collaboration remains maintained throughout; this ordering governs new product expansion.
 
-## 3. Memory (codync-mem): benchmarking and optimization
+## Four continuous technical tracks
 
-Goal: measure how well bot memory works, then improve it with numbers, not guesses.
+### 1. ACP compatibility and agent process management
 
-Where it stands: [context and memory](features/context-and-memory.md) and the design in
-[bot memory](design/bot-memory.md). Bot memory is files (`MEMORY.md` and notes) that the bot edits; dreaming tidies them
-into topic notes. The open choice is between a harness's own memory and `codync-mem`
-([harness memory](plans/harness-memory.md)).
+Goal: supported agents execute tasks reliably throughout their lifecycle.
 
-Next steps:
+- Cover launch, authentication failure, session resume, cancellation, crash recovery, process cleanup and host restart.
+- Define ownership and lifecycle for task processes and background programs so cancellation and recovery are predictable.
+- Maintain common conformance scenarios with capability-specific expectations for each supported adapter/version.
+- Record upstream defects, workarounds and removal conditions; recheck when adapters change and before release.
 
-1. Write a benchmark set: a fixed script of conversations per bot, with questions whose answers depend on earlier
-   sessions. Keep it in `host/crates/memory` tests or a fixtures folder; no real user data.
-2. Metrics: recall (right fact returned), precision (no wrong or stale fact), tokens added to each turn, time to
-   first token, and notes size after N dreams.
-3. Run it on the current memory, then on the harness-memory option, and publish the table in `docs/reference/`.
-4. Optimize the worst metric first. Keep the rule that memory is never full: dreaming moves detail into topic notes.
-5. Use the result to decide the harness-vs-`codync-mem` question, and record the decision in the harness-memory plan.
+Acceptance: supported lifecycle scenarios pass, unsupported capabilities are explicit, failures reach the user,
+and every workaround has a documented reason and removal condition.
 
-Done when: the benchmark runs from one command, its results are in the repo, and the default memory choice is backed
-by those results.
+References: [conversation runtime](architecture/conversation-runtime.md),
+[upstream agent bugs](upstream-agents/README.md), [dev servers](features/dev-servers.md).
 
-## 4. ACP coordination and long-term maintenance
+### 2. Agent memory
 
-Goal: every agent that Codync drives over ACP keeps working as adapters change, and the patches around them shrink
-over time.
+Goal: useful continuity with understandable personal, bot and project boundaries.
 
-Where it stands: the host drives agents over ACP (`host/crates/agent/src/acp.rs`, `host/src/agent/bot/`). Each agent bug,
-patched in the host or not, has a row on its agent's page in [upstream agent bugs](upstream-agents/README.md) (last
-checked 2026-11-02). Open upstream items include codex-acp#647 (429s and other errors sent as reply text) and the JetBrains AIR opt-in that works around it.
+- Define what carries from daily work to a project, what stays scoped to that project, and how users inspect or forget it.
+- Resolve Codync-memory versus harness-memory choices with explicit ownership and tradeoffs.
+- Benchmark recall, wrong or stale recall, tokens added, latency and growth after repeated consolidation.
+- Include cross-project leakage and forgotten information returning in acceptance scenarios.
 
-Next steps:
+Acceptance: repeatable fixtures support memory decisions; switching work contexts preserves relevant preferences
+without exposing unrelated project knowledge. Storage and harness details remain in their authoritative docs.
 
-1. Make the adapter check a routine: on each release, check every registry adapter version against the workaround
-   table; delete rows whose upstream fix has shipped, and add rows for new bugs in the same change.
-2. Track upstream issues in one list (owner, status, which workaround it unblocks) and re-check it on the same cadence.
-3. Once an adapter's rows are mostly gone, reconsider its place in the registry, or whether another implementation is
-   worth it. Record the decision in the workarounds doc.
-4. Keep the ACP parser tolerant (updates stay `serde_json::Value`), and add a test for each new adapter variant seen
-   in the field.
+References: [context and memory](features/context-and-memory.md), [bot memory](design/bot-memory.md),
+[harness memory](plans/harness-memory.md).
 
-Done when: the workaround table is checked on every release, each row names an upstream issue or a delete condition,
-and no adapter is patched in code without a row.
+### 3. Agent network and coding agent support
 
-## Order and dependencies
+Goal: reliable exchange between agents on the user's computers, with more agents added when they can be maintained.
 
-- Track 1 (cloud) sets the cloud option; it does not block the others.
-- Track 2 needs the adapter list from track 4, so run track 4's routine check first.
-- Track 3 feeds track 1 if cloud computers need a memory default.
+- Prioritize open network work that blocks personal cross-computer workflows.
+- Test request, reply, timeout, refusal, reconnect and prohibited operations across supported agent combinations.
+- Distinguish transport delivery from task acceptance and completion; document retry and duplicate behavior.
+- Add agents based on user needs, demonstrated compatibility and ongoing maintenance cost.
 
-## Open questions
+Acceptance: documented supported combinations pass two-host scenarios and expose actionable failure states.
 
-- Which sandbox providers can users bring first (Boat, Memoh or others)?
-- Does the memory benchmark run in CI, or as a manual run on a dev computer?
-- Who owns the adapter check each release (a routine, or the release checklist)?
+References: [codync-network](features/codync-network.md), [remaining network work](plans/codync-network-next.md),
+[bot collaboration](features/bot-collaboration.md).
+
+### 4. Agent cloud sandbox management
+
+Goal: the personal agent works reliably even when the user has no local computer running.
+
+- Improve the existing bring-your-own-cloud lifecycle: provisioning, agent sign-in, sleep/wake, updates and recovery.
+- Make persistence, credentials, access boundaries and provider failures understandable.
+- Validate unattended routines and message-triggered wake as part of the personal experience.
+- Expand providers after supported paths work reliably and a concrete user need justifies another adapter.
+
+Acceptance: a user provisions a cloud computer, signs into an agent, completes a task, sleeps and wakes it, and
+recovers from a failed operation without losing durable work.
+
+Reference: [Codync Cloud](plans/codync-cloud.md), which records the existing BYOC implementation, release history and
+remaining delivery work. Codync remains free; users bring their own provider account. Cloud changes follow the
+[manual deployment rules](guides/environments-and-deployment.md#releasing-cloud-changes).
+
+## Maintenance and execution
+
+Issue and PR maintenance runs throughout every stage, following the
+[roadmap maintenance guide](guides/roadmap-maintenance.md) and existing [issue and PR review](guides/issue-pr-review.md).
+
+Focus on one product milestone at a time. Fix serious reliability regressions as they arise; choose technical work
+by the milestone it enables. Stage 1 starts with ACP/process reliability and memory/context boundaries. Network and
+cloud expand that experience into stage 2. Product logic remains in the host under the
+[ownership rules](architecture/overview.md#host-owns-the-logic).
+
+Review this roadmap at milestone completion and when user evidence changes priorities. Do not infer completion from
+a merged PR alone: record release and acceptance evidence in the detailed plan.

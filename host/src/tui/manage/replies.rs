@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
-use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::app::{After, AgentModel, App, Entry, ModelKey, Overlay, Toggle, rename_fold};
 use super::super::l10n::tr;
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
@@ -99,6 +99,7 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::OlderThreads(bot, asked) => self.older_threads(&bot, asked, Some(&v)),
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::Gear(backend) => {
                 let lists = super::gear::GearLists {
@@ -234,33 +235,7 @@ impl App {
                     });
                 }
             }
-            Reply::Models(key) => {
-                let mut list: Vec<_> =
-                    v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
-                if v["defaultModelOptions"] == true
-                    && let Some(default) = v["models"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .find(|m| m["id"] == v["currentModelId"])
-                        .and_then(AgentModel::parse)
-                {
-                    list.insert(
-                        0,
-                        AgentModel {
-                            id: String::new(),
-                            name: "Default".into(),
-                            options: default.options,
-                            options_error: default.options_error,
-                        },
-                    );
-                }
-                if v["fastMode"] == true {
-                    self.fast_mode.insert(key.clone());
-                }
-                self.modes.insert(key.clone(), crate::tui::app::parse_modes(&v));
-                self.models.insert(key, Some(list));
-            }
+            Reply::Models(key) => self.keep_models(key, &v),
             Reply::Downloaded => {
                 let paths: Vec<String> =
                     v["paths"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(str::to_owned)).collect();
@@ -275,8 +250,40 @@ impl App {
         }
     }
 
+    /// An agent login's model list (`agentModels`, or a `models` event's), its Fast mode and modes.
+    pub(in crate::tui) fn keep_models(&mut self, key: ModelKey, v: &Value) {
+        let mut list: Vec<_> = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+        if v["defaultModelOptions"] == true
+            && let Some(default) = v["models"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|m| m["id"] == v["currentModelId"])
+                .and_then(AgentModel::parse)
+        {
+            list.insert(
+                0,
+                AgentModel {
+                    id: String::new(),
+                    name: "Default".into(),
+                    options: default.options,
+                    options_error: default.options_error,
+                },
+            );
+        }
+        if v["fastMode"] == true {
+            self.fast_mode.insert(key.clone());
+        } else {
+            self.fast_mode.remove(&key);
+        }
+        self.modes.insert(key.clone(), crate::tui::app::parse_modes(v));
+        self.models.insert(key, Some(list));
+    }
+
     fn sheet_error(&mut self, r: &Reply, e: String) {
         match r {
+            // The page keeps what it has; the next try comes when the page opens again.
+            Reply::OlderThreads(bot, asked) => self.older_threads(bot, *asked, None),
             Reply::Models(key) => {
                 self.models.insert(key.clone(), Some(vec![]));
             }

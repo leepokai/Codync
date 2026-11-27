@@ -4,12 +4,17 @@ import com.codync.android.core.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
-// A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
+// A thread's own transcript, read and written to from its chat ([ThreadChat]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
 
 /**
@@ -26,8 +31,14 @@ internal suspend fun AppStore.loadThread(botId: String, threadId: String) {
     }
 }
 
-/** The thread's transcript closed: it is let go. */
-internal fun AppStore.closeThread(threadId: String) = mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+/** One more thread chat shows [threadId] (the same thread can show under its bot's details over it). */
+internal fun AppStore.watchThread(threadId: String) { threadViews.merge(threadId, 1, Int::plus) }
+
+/** A thread chat of [threadId] closed: its transcript is let go once none shows it. */
+internal fun AppStore.closeThread(threadId: String) {
+    if (threadViews.compute(threadId) { _, shown -> ((shown ?: 1) - 1).takeIf { it > 0 } } != null) return
+    mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+}
 
 internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.update { state ->
     val received = state.threadEntries.receivingThreads(events)
@@ -101,3 +112,51 @@ internal fun AppState.receivingThreadEntry(entry: Entry): AppState {
     val held = threadEntries[entry.botId] ?: return this
     return copy(threadEntries = threadEntries + (entry.botId to mergeThreadEntries(held, listOf(entry))))
 }
+
+/**
+ * Reads the computer's next page of older threads (`olderThreads`): the newest first, then the ones before the oldest held.
+ * Nothing on a host without them, off the link, while a page loads or once none are left. A page that lands after the
+ * list was dropped (a new hello, another Delete old threads), or fails after it, is let go and the first page asked again.
+ */
+internal fun AppStore.loadOlderThreads() {
+    val now = state.value
+    if (threadKeepDays(now.hello) == null || now.actualConnection !is LinkState.Ready) return
+    val held = now.olderThreads
+    if (held?.more == false) return
+    action("olderThreads") {
+        mutableState.readOlderThreads(held?.before, now.olderThreadsGeneration) { before ->
+            hostQuery("olderThreads", buildJsonObject { before?.let { put("before", it) } })
+        }
+    }
+}
+
+/** [loadOlderThreads]'s pages from [from], asked under [asked], through [query] (the host's `olderThreads`). */
+internal suspend fun MutableStateFlow<AppState>.readOlderThreads(from: Long?, asked: Int, query: suspend (before: Long?) -> JsonElement) {
+    var before = from
+    var generation = asked
+    while (true) {
+        val reply = try { query(before) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { if (value.droppedOlderThreadsSince(generation)) null else throw error }
+        val next = reply?.let { page -> updateAndGet { it.takingOlderThreads(generation, OlderThreads.decode(page.jsonObject)) } } ?: value
+        // Dropped meanwhile (a new hello, another Delete old threads): the first page is asked again.
+        if (!next.droppedOlderThreadsSince(generation) || threadKeepDays(next.hello) == null) return
+        before = null
+        generation = next.olderThreadsGeneration
+    }
+}
+
+/** [page] after the older threads held, unless they were dropped since it was asked under [generation]. */
+internal fun AppState.takingOlderThreads(generation: Int, page: OlderThreads): AppState =
+    if (droppedOlderThreadsSince(generation)) this
+    else copy(olderThreads = (olderThreads ?: OlderThreads(more = true)) + page)
+
+/** Whether the older threads were dropped since a page was asked under [generation]: that page, or its failure, is let go. */
+internal fun AppState.droppedOlderThreadsSince(generation: Int): Boolean = olderThreadsGeneration != generation
+
+/** The older threads are read again from the start; a page on its way is let go. */
+internal fun AppState.droppingOlderThreads(): AppState = copy(olderThreads = null, olderThreadsGeneration = olderThreadsGeneration + 1)
+
+/** [bot] with its computer's older threads it doesn't hold among its `work`, as the Threads list and a thread's page show them. */
+internal fun AppState.withOlder(bot: Bot): Bot =
+    olderThreads?.of(bot.id)?.takeIf { it.isNotEmpty() }?.let { bot.copy(work = mergedWork(bot.work, it)) } ?: bot

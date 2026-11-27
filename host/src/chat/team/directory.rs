@@ -96,7 +96,7 @@ fn session_row(s: &Session) -> Row {
         Some(false) => "idle",
         None => "unknown",
     };
-    let mut value = json!({"id": s.address, "kind": s.kind, "cwd": s.cwd, "status": status, "tier": "pull"});
+    let mut value = json!({"id": s.address, "kind": s.kind, "cwd": s.cwd, "status": status, "tier": s.tier});
     if s.temporary {
         value["temporary"] = true.into();
     } else if let Some(title) = &s.title {

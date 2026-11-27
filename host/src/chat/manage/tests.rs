@@ -1,7 +1,7 @@
 use super::*;
+use crate::LockExt;
 use crate::remote::identity::Identity;
 use crate::store::{Permission, Store};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 fn hub(dir: &std::path::Path) -> Arc<Hub> {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -302,27 +302,22 @@ async fn a_lead_pick_during_the_cleanup_window_is_refused() {
     let dir = std::env::temp_dir().join(format!("codync-manage-delete-lead-window-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let hub = hub(&dir);
-    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
-    let signalled = AtomicBool::new(false);
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    // The delete stops after the mark is set and before cleanup, so the pick runs inside that window.
+    *hub.cleanup_gate.locked() = Some(Box::new(move || {
+        entered_tx.send(()).unwrap();
+        resume_rx.recv().unwrap();
+    }));
     let delete_hub = hub.clone();
-    let task = tokio::task::spawn_blocking(move || {
-        delete_hub.delete_bot_if("dev", |_| {
-            // First check (under emit_lock): the target is about to be marked. Wake the picker;
-            // it blocks on emit_lock until the mark is in place, then runs in the cleanup window.
-            if !signalled.swap(true, Ordering::SeqCst) {
-                let _ = entered_tx.send(());
-            }
-            Ok(())
-        })
-    });
-    entered_rx.recv().await.unwrap();
+    let task = tokio::task::spawn_blocking(move || delete_hub.delete_bot_if("dev", |_| Ok(())));
+    entered_rx.recv().unwrap();
+    assert!(hub.is_deleting("dev"), "the mark is set before cleanup");
 
-    // Whoever wins `emit_lock` after the signal, the lead pick can never succeed: it either sees the
-    // delete mark and is refused, or the delete has already finished and the bot is gone. Assert the
-    // invariant, not which error string the race produced.
     let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
-    assert!(err.contains("being deleted") || err.contains("unknown bot"), "the lead pick was refused: {err}");
+    assert!(err.contains("being deleted"), "{err}");
     assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead, "no half-promoted lead in the store");
+    resume_tx.send(()).unwrap();
 
     task.await.unwrap().unwrap();
     let row = hub.store.bot("dev").unwrap().unwrap();

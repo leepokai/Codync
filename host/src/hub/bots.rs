@@ -124,6 +124,13 @@ impl Hub {
             self.deleting.locked().insert(id.to_owned());
         }
         let _marked = DeletingGuard { hub: self, id: id.to_owned() };
+        // The mark is in and the lock is out. A test can stop here, in the unlocked cleanup window,
+        // and try to make this bot lead before any resource is torn down. Taken so a nested thread
+        // delete does not wait on the same gate.
+        #[cfg(test)]
+        if let Some(gate) = self.cleanup_gate.locked().take() {
+            gate();
+        }
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in threads {
             self.delete_owned_thread(&thread.id)?;

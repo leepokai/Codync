@@ -141,6 +141,10 @@ pub struct Hub {
     /// Bots mid-deletion. Checked by `make_lead` under `emit_lock`, so a lead pick can't land in the
     /// unlocked cleanup window and leave a lead in the store whose runtime is already torn down.
     deleting: Mutex<BTreeSet<String>>,
+    /// Test only: taken and run once after the delete mark is set and `emit_lock` is released,
+    /// before cleanup. Lets a test call `make_lead` while the mark is held and cleanup has not started.
+    #[cfg(test)]
+    pub(crate) cleanup_gate: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     bots: Mutex<HashMap<String, BotHandle>>,
     runtime: Mutex<HashMap<String, Runtime>>,
     /// Bot → the status its Live Activities last heard (`outside_changed`).
@@ -228,6 +232,8 @@ impl Hub {
             events,
             emit_lock: Mutex::new(()),
             deleting: Mutex::default(),
+            #[cfg(test)]
+            cleanup_gate: Mutex::default(),
             bots: Mutex::default(),
             runtime: Mutex::default(),
             outside: Mutex::default(),

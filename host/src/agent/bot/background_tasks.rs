@@ -3,7 +3,7 @@
 //! in the thread, and the turn the agent begins by itself once such work ends is a turn of the thread's, whose last
 //! message is the task's report when nothing else still runs.
 
-use super::{Actor, Seg};
+use super::{Actor, Done};
 use crate::analytics::{self, Event as Analytics};
 use crate::hub::{BackgroundKind, BackgroundTask, BotStatus};
 use codync_agent::events::{Task, TaskChange, TaskEnd, TaskKind};
@@ -56,11 +56,17 @@ impl Actor {
         self.agent_turn.is_some() || !self.hub.runtime(&self.cfg.id).background.is_empty()
     }
 
-    /// What still runs, in words that fit "while … still runs", for the thread's own record of why it waits.
-    pub(super) fn background_line(&self) -> Option<String> {
-        let names: Vec<String> =
-            self.hub.runtime(&self.cfg.id).background.iter().map(|t| format!("\"{}\"", t.name)).collect();
-        (!names.is_empty()).then(|| names.join(", "))
+    /// Whether a turn that ends now leaves its task waiting on what the agent reports running: on anything but a
+    /// command, or on commands while nothing it runs listens. A server left listening is meant to stay, as one left
+    /// detached is ([`left_detached`](super::background_work)).
+    // ponytail: a command can't be told from the server it may be, so with any server under the agent no command holds
+    // the task; map each command to its processes if a build beside a dev server must hold it.
+    pub(super) async fn waits_on_background(&self) -> bool {
+        let background = self.hub.runtime(&self.cfg.id).background;
+        if background.iter().any(|t| t.kind != BackgroundKind::Shell) {
+            return true;
+        }
+        !background.is_empty() && !self.hub.dev_servers.agent_serves(&self.cfg.id).await
     }
 
     fn background_ended(&mut self, id: &str, end: TaskEnd) {
@@ -99,17 +105,7 @@ impl Actor {
         self.turn_text = None;
         self.turn_entries.clear();
         self.turn_call = None;
-        self.stop_requested = false;
-        self.cancel_deadline = None;
-        self.exit_tail = None;
-        self.agent_error = None;
-        self.seg = Seg::None;
-        self.tools.clear();
-        self.plan_entry = None;
-        self.last_text = None;
-        self.sent.clear();
-        self.joined = false;
-        self.unheard.clear();
+        self.reset_turn_state();
         let (lane, session) = (self.lane.clone(), self.turn_session.clone());
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::Working;
@@ -119,25 +115,27 @@ impl Actor {
             r.message = None;
             r.session = session;
         });
-        analytics::capture(&self.hub, Analytics::ThreadAgentTurn, self.properties(&[]));
+        let properties = json!({"agent": self.cfg.backend});
+        analytics::capture(&self.hub, Analytics::ThreadAgentTurn, properties.as_object().cloned().unwrap_or_default());
     }
 
     /// The turn the agent began by itself ended: the thread's turn ends as a prompt's does (`turn_ended`), with how
     /// the prompt it joined ended, if it did. A stop the user asked for still reads as one there (`stop_requested`).
     fn agent_turn_ended(&mut self, end: TaskEnd) {
+        self.end_agent_turn(match end {
+            TaskEnd::Completed | TaskEnd::Stopped => Ok(json!({"stopReason": "end_turn"})),
+            TaskEnd::Failed => Err(anyhow::anyhow!("its agent's turn failed")),
+        });
+    }
+
+    /// No prompt answers a turn the agent began by itself, so it ends here, with `own`: one it began with no turn of
+    /// the thread's running; one it joined ends as the prompt did, once that has (still none while the prompt runs).
+    fn end_agent_turn(&mut self, own: Done) {
         let done = match self.agent_turn.take() {
-            Some(AgentTurn::Own(_)) => Some(match end {
-                TaskEnd::Completed | TaskEnd::Stopped => Ok(json!({"stopReason": "end_turn"})),
-                TaskEnd::Failed => Err(anyhow::anyhow!("its agent's turn failed")),
-            }),
-            // Still none while the prompt runs: its answer ends the turn.
+            Some(AgentTurn::Own(_)) => Some(own),
             Some(AgentTurn::Joined(_)) => self.held_done.take(),
             None => None,
         };
-        self.end_with(done);
-    }
-
-    fn end_with(&self, done: Option<super::Done>) {
         if let (Some(done), Some(done_tx)) = (done, &self.done_tx) {
             let _ = done_tx.send(done);
         }
@@ -146,13 +144,7 @@ impl Actor {
     /// The agent stopped (or crashed): the work it ran in the background is gone with it, and so is a turn it began
     /// by itself. Between turns, the task that waited on that work fails.
     pub(super) fn background_lost(&mut self) {
-        // No prompt answers a turn the agent began by itself, nor one that waits on it: it ends here.
-        let done = match self.agent_turn.take() {
-            Some(AgentTurn::Own(_)) => Some(Err(anyhow::anyhow!("its agent stopped"))),
-            Some(AgentTurn::Joined(_)) => self.held_done.take(),
-            None => None,
-        };
-        self.end_with(done);
+        self.end_agent_turn(Err(anyhow::anyhow!("its agent stopped")));
         if self.hub.runtime(&self.cfg.id).background.is_empty() {
             return;
         }
@@ -164,21 +156,8 @@ impl Actor {
     }
 
     fn capture(&self, kind: BackgroundKind, outcome: &str) {
-        let kind = serde_json::to_value(kind).unwrap_or_default();
-        analytics::capture(
-            &self.hub,
-            Analytics::ThreadBackground,
-            self.properties(&[("kind", kind), ("outcome", outcome.into())]),
-        );
-    }
-
-    fn properties(&self, more: &[(&str, serde_json::Value)]) -> serde_json::Map<String, serde_json::Value> {
-        let mut properties = serde_json::Map::new();
-        properties.insert("agent".into(), self.cfg.backend.clone().into());
-        for (key, value) in more {
-            properties.insert((*key).into(), value.clone());
-        }
-        properties
+        let properties = json!({"agent": self.cfg.backend, "kind": kind, "outcome": outcome});
+        analytics::capture(&self.hub, Analytics::ThreadBackground, properties.as_object().cloned().unwrap_or_default());
     }
 }
 

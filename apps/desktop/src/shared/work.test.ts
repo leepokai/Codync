@@ -40,9 +40,9 @@ test("a thread's background work reads as the host sends it, and its capsule say
     { name: 'no id' },
   ] }])
   assert.deepEqual(read!.background, [
-    { id: 'w1', kind: 'workflow', name: 'after-change', activity: 'Review: diff', startedAt: 7 },
-    { id: 'b1', kind: 'other', name: 'npm test', activity: null, startedAt: 9 },
-  ], 'a kind this app does not know reads as other work')
+    { id: 'w1', name: 'after-change', activity: 'Review: diff', startedAt: 7 },
+    { id: 'b1', name: 'npm test', activity: null, startedAt: 9 },
+  ], 'what it can do nothing with is left out')
   assert.deepEqual(normalizeWork([{ id: 'o', status: 'working' }])[0]!.background, [], 'an older host says nothing')
   assert.equal(backgroundLabel(task('a')), null)
   const one = task('a', 'working', { background: [read!.background[0]!] })

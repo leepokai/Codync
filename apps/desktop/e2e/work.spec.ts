@@ -18,6 +18,8 @@ const threadPrompts = (botId: string, title: string) =>
 //     `release-<name>` appears in the bot's workspace). `PERMISSION`: it asks for approval (a card titled
 //     `Run the tests`, one option, shown as `Allow once`) and goes on once answered. Neither: it finishes at once.
 //   - `SIGNIN`: the thread's turn fails once asking to sign in, and goes through when its message comes again.
+//   - `WORKFLOW:<name>` (on an agent started with `tasks`): its turn ends while a workflow it reports runs in the
+//     background, which ends once `release-<name>` appears; then the agent reports by itself.
 //   - A thread's report comes back to the chat as `Relayed: …`.
 //   - What the user writes to a task's thread is a turn of that thread, answered `Thread <their words>: same session`
 //     (or `picked up`); words that hold `HOLD:<name>` keep that turn working, and `ASK` raises a choice card
@@ -920,6 +922,31 @@ test('a held thread that ends its turn again while its background work runs stop
     await expect(page.locator('.transcript').first()).toContainText('still ran')
   } finally {
     if (botId) writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-again'), '')
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("a thread whose agent runs a workflow in the background shows it over its message box until it ends", async () => {
+  const { browser, page } = await attach()
+  const name = `Work background e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    // Like Claude's adapter, it reports its background work to a thread (`asyncTasks`).
+    await api(page, 'updateBot', { id: botId, command: `${fixtureCommand(workAgent)} tasks` })
+    await addWork(page, botId, 'Review the PR', 'WORKFLOW:capsule')
+
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Review the PR'))
+    const background = thread.locator('[data-background-capsule]')
+    await expect(background).toContainText('after-change · Review: diff')
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('working')
+
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-capsule'), '')
+    await expect(background).toHaveCount(0)
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('done')
+  } finally {
     await cleanUp(page, botId)
     await browser.close()
   }

@@ -958,9 +958,6 @@ mod tests {
             r.activity = "Thinking…".into();
         });
         assert_eq!(wire(&hub, &cfg)[0]["activity"], "Thinking…");
-        // It counts as running: the hourly look doesn't take it for lost.
-        hub.set_runtime("thread-bg", |r| r.status = BotStatus::Idle);
-        assert!(dispatch::turn_runs(&hub, "thread-bg", None));
     }
 
     #[test]

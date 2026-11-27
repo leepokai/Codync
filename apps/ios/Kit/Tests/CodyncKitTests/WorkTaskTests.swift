@@ -34,9 +34,9 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
     @Test func aThreadsBackgroundWorkReadsAsSentAndItsCapsuleSaysWhatRuns() throws {
         let work = try bot(#","work":[{"id":"t","title":"Review","status":"working","background":[{"id":"w1","kind":"workflow","name":"after-change","activity":"Review: diff","startedAt":7},{"id":"b1","kind":"future","name":"npm test","startedAt":9},{"name":"no id"}]},{"id":"o","title":"Old","status":"working"}]"#).work
         #expect(work[0].background == [
-            .init(id: "w1", kind: .workflow, name: "after-change", activity: "Review: diff", startedAt: 7),
-            .init(id: "b1", kind: .other, name: "npm test", startedAt: 9),
-        ], "a kind this app doesn't know reads as other work; one without an id is left out")
+            .init(id: "w1", name: "after-change", activity: "Review: diff", startedAt: 7),
+            .init(id: "b1", name: "npm test", startedAt: 9),
+        ], "one without an id is left out")
         #expect(work[1].background.isEmpty, "an older host says nothing")
         #expect(work[1].backgroundLabel == nil)
         var one = work[0]

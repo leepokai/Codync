@@ -1,6 +1,5 @@
 package com.codync.android
 
-import com.codync.android.core.BackgroundKind
 import com.codync.android.core.BackgroundTask
 import com.codync.android.core.Bot
 import com.codync.android.core.Computer
@@ -292,10 +291,10 @@ class WorkWordsTest {
     }
 
     @Test fun `the background capsule says what one piece does, or names several, and hides with none`() {
-        val one = BackgroundTask("a", BackgroundKind.Workflow, "probe", "Count: two", 7)
+        val one = BackgroundTask("a", "probe", "Count: two", 7)
         assertNull(backgroundLabel(WorkTask("w", status = WorkStatus.Working)))
         assertEquals(BackgroundLabel("probe · Count: two", 7), backgroundLabel(WorkTask("w", status = WorkStatus.Working, background = listOf(one))))
-        val two = listOf(one, BackgroundTask("b", BackgroundKind.Shell, "Sleep", startedAt = 9))
+        val two = listOf(one, BackgroundTask("b", "Sleep", startedAt = 9))
         assertEquals(BackgroundLabel("probe, Sleep", 7), backgroundLabel(WorkTask("w", status = WorkStatus.Working, background = two)))
     }
 }

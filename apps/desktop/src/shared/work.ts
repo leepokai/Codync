@@ -73,7 +73,6 @@ export interface WorkTask {
 /** A piece of work a thread's agent reports running in the background. */
 export interface BackgroundTask {
   id: string
-  kind: 'shell' | 'workflow' | 'monitor' | 'other'
   /** What the agent calls it: a workflow's name, a command's description. */
   name: string
   /** What it does now, when the agent says (a workflow's phase and agent). */
@@ -140,16 +139,12 @@ export function normalizeWork(raw: unknown): WorkTask[] {
   )
 }
 
-const BACKGROUND_KINDS: BackgroundTask['kind'][] = ['shell', 'workflow', 'monitor', 'other']
-
 function normalizeBackground(raw: unknown): BackgroundTask[] {
   if (!Array.isArray(raw)) return []
   return (raw as (Partial<BackgroundTask> | null)[]).flatMap((t) =>
     t && typeof t.id === 'string'
       ? [{
           id: t.id,
-          // A kind this app doesn't know reads as other work.
-          kind: BACKGROUND_KINDS.includes(t.kind as BackgroundTask['kind']) ? t.kind as BackgroundTask['kind'] : 'other',
           name: t.name ?? '',
           activity: t.activity || null,
           startedAt: t.startedAt ?? 0,

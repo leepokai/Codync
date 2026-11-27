@@ -13,7 +13,9 @@ turn while that command still runs: asked by the host to wait for what it left r
 and reports, or ends at once again with `AGAIN` in its brief. `WORKFLOW:<name>` (to a host that asked for
 `asyncTasks` in `initialize`, which `initialize.jsonl` logs, of an agent started with `tasks`) starts a workflow the way Claude's adapter reports one and
 ends its turn; once `release-<name>` is there the workflow ends and the agent begins a turn by itself that reports
-(`STOP` in the brief: the workflow is stopped instead, and no such turn follows). `LOOP` makes the same tool call six
+(`AFTER:<seconds>` in the brief: it ends after that long; `STOP`: the workflow is stopped instead, and no such turn
+follows; `JOIN`: the workflow ends as its
+turn does, and the agent's own turn begins before that turn's end and reports after it). `SERVE:<port>` (to such a host) runs a server on `port` the way Claude's adapter reports a background command. `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
 A thread's question (`ask_chat`) the chat answers with `answer_task` (`Chat: <the question>`) and `(pass)`;
 `QUIET` in it: it doesn't answer; `DECIDE`: it tries `request_decision` first (logged to `chat_decision.jsonl`)
@@ -46,6 +48,7 @@ import json
 import os
 import pathlib
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -224,9 +227,27 @@ def work(text, session):
             {"sessionUpdate": "async_task_progress", "asyncTaskId": "w1", "description": "Review: diff"},
         ):
             send({"method": "session/update", "params": {"sessionId": session, "update": update}})
-        threading.Thread(target=run_workflow, args=(session, workflow.group(1), title, "STOP" in brief),
-                         daemon=True).start()
+        if "JOIN" in brief:
+            # It ends as this turn does: the agent's own turn begins before this one's end and goes on after it.
+            ended = workflow_end(title, False)
+            send_updates(session, ended[:2])
+            threading.Thread(target=send_updates, args=(session, ended[2:], 0.5), daemon=True).start()
+        else:
+            after = re.search(r"AFTER:(\d+)", brief)
+            threading.Thread(target=run_workflow, daemon=True, args=(
+                session, workflow.group(1), title, "STOP" in brief, int(after.group(1)) if after else None)).start()
         notes.append("started the workflow, waiting for it to finish")
+    serve = re.search(r"SERVE:(\d+)", brief)
+    if serve and reports_tasks:
+        # A dev server Claude runs in the background (`run_in_background`), left listening for the user.
+        server = pathlib.Path(__file__).with_name("port_server.py")
+        subprocess.Popen([sys.executable, str(server), serve.group(1)], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        while not listens(int(serve.group(1))):
+            time.sleep(0.05)
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "async_task_spawned", "asyncTaskId": "server", "name": "npm run dev", "taskType": "shell"}}})
+        notes.append("the dev server runs")
     if "LOOP" in brief:
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
@@ -261,11 +282,24 @@ def work(text, session):
     return f"Report {title}: " + "; ".join(notes)
 
 
-def run_workflow(session, name, title, stopped):
-    """The workflow `WORKFLOW:<name>` started: it ends once `release-<name>` is there, and the agent's own turn that
-    answers its end reports (none after a stop)."""
-    while not pathlib.Path("release-" + name).exists():
+def listens(port):
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def run_workflow(session, name, title, stopped, after):
+    """The workflow `WORKFLOW:<name>` started: it ends once `release-<name>` is there, or `after` seconds."""
+    ends = time.monotonic() + after if after else None
+    while not pathlib.Path("release-" + name).exists() and not (ends and time.monotonic() > ends):
         time.sleep(0.05)
+    send_updates(session, workflow_end(title, stopped))
+
+
+def workflow_end(title, stopped):
+    """The workflow's end, and the agent's own turn that answers it and reports (none after a stop)."""
     updates = [{"sessionUpdate": "async_task_state_update", "asyncTaskId": "w1",
                 "state": "stopped" if stopped else "completed"}]
     if not stopped:
@@ -278,6 +312,11 @@ def run_workflow(session, name, title, stopped):
              "content": {"type": "text", "text": f"Report {title}: the workflow passed"}},
             {"sessionUpdate": "async_task_state_update", "asyncTaskId": "turn-1", "state": "completed"},
         ]
+    return updates
+
+
+def send_updates(session, updates, after=0):
+    time.sleep(after)
     for update in updates:
         send({"method": "session/update", "params": {"sessionId": session, "update": update}})
 

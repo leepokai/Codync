@@ -54,4 +54,7 @@ session then sends `async_task_spawned` (`asyncTaskId`, `taskType` `shell | work
 `async_task_state_update` (`state` `running | completed | failed | stopped`; a completed one can come twice, the
 second with its output file). When such work ends, Claude begins a turn by itself, reported as a `turn` task under the
 same session, whose end is its own `async_task_state_update`. A stopped task starts no turn. How the host uses it:
-[background work its agent reports](../features/work.md#background-work-its-agent-reports).
+[background work its agent reports](../features/work.md#background-work-its-agent-reports). The daily upstream check
+(`tools/agent-upstream`) runs a chat's turn, which doesn't ask for `asyncTasks`, so a new adapter that changes these
+updates or what its AIR form leaves out passes it: only the captures above test them, so check them again by hand
+when the adapter's version moves.

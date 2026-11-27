@@ -175,10 +175,19 @@ impl Actor {
     /// Stops the agent with everything it started, to give that back; the next turn starts it again and reopens its
     /// session.
     pub(super) async fn retire(&mut self, reason: Retired) {
-        let Some(conn) = self.conn.take() else { return };
+        if self.conn.is_none() {
+            return;
+        }
         tracing::info!(bot = %self.cfg.id, ?reason, "stopping the agent");
         crate::analytics::agent_retired(&self.hub, &self.cfg.backend, reason);
+        self.kill_agent().await;
+    }
+
+    /// Stops the agent's process: what it ran in the background goes with it (`background_lost`).
+    pub(super) async fn kill_agent(&mut self) {
+        let Some(conn) = self.conn.take() else { return };
         conn.acp.kill().await;
+        self.background_lost();
     }
 
     /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see

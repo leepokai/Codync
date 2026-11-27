@@ -423,6 +423,11 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        // One of those began a turn of the agent's own: this one goes on with it (`turn_ended`).
+        if self.agent_turn.is_some() {
+            self.held_done = Some(done);
+            return;
+        }
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
@@ -477,12 +482,12 @@ impl Actor {
                     if (self.active_routine.is_some() || self.active_workflow.is_some()) && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.kill_agent().await;
                     }
                     // The agent ignored the cancel: stop its process so the bot is free again.
                     if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                         self.cancel_deadline = None;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.kill_agent().await;
                     }
                     self.release_idle().await;
                     // The idle check may have queued a compaction.

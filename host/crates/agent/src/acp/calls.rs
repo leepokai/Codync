@@ -33,16 +33,16 @@ struct Known {
 impl Calls {
     /// A `session/update`'s `params`: a tool call's update gets back the identity keys it left out.
     pub(super) fn update(&mut self, params: &mut Value) {
-        let u = &mut params["update"];
+        let Some(u) = params.get_mut("update").filter(|u| u.is_object()) else { return };
         let started = u["sessionUpdate"] == "tool_call";
         if !started && u["sessionUpdate"] != "tool_call_update" {
             return;
         }
         let Some(id) = u["toolCallId"].as_str().map(str::to_owned) else { return };
-        if started {
-            self.known.remove(&id);
-        }
         let known = self.remember(id);
+        if started {
+            *known = Known::default();
+        }
         if let Some(kind) = u.get("kind").filter(|k| !k.is_null()) {
             known.kind = Some(kind.clone());
         }
@@ -74,9 +74,10 @@ impl Calls {
 
     /// A `session/request_permission`'s `params`: its `toolCall` gets back the kind and the file change it left out.
     pub(super) fn permission(&self, params: &mut Value) {
-        let tool = &mut params["toolCall"];
-        let Some(known) = tool["toolCallId"].as_str().and_then(|id| self.known.get(id)) else { return };
-        let Some(tool) = tool.as_object_mut() else { return };
+        let Some(tool) = params.get_mut("toolCall").and_then(Value::as_object_mut) else { return };
+        let Some(known) = tool.get("toolCallId").and_then(Value::as_str).and_then(|id| self.known.get(id)) else {
+            return;
+        };
         for (key, value) in [("kind", &known.kind), ("content", &known.diff)] {
             if let Some(value) = value
                 && tool.get(key).is_none_or(Value::is_null)
@@ -152,6 +153,26 @@ mod tests {
         }
         assert_eq!(calls.known.len(), KEPT);
         assert!(!calls.known.contains_key("0"));
+    }
+
+    #[test]
+    fn a_call_started_again_is_remembered_once() {
+        let mut calls = Calls::default();
+        for _ in 0..2 {
+            calls.update(&mut update(&json!({"sessionUpdate": "tool_call", "toolCallId": "a"})));
+        }
+        assert_eq!(calls.order.len(), 1);
+    }
+
+    #[test]
+    fn params_that_arent_an_object_pass_as_they_are() {
+        let mut calls = Calls::default();
+        for mut params in [json!([]), json!("x"), json!({"update": []}), json!({"toolCall": "x"})] {
+            let before = params.clone();
+            calls.update(&mut params);
+            calls.permission(&mut params);
+            assert_eq!(params, before);
+        }
     }
 
     /// Each message of a capture of claude-agent-acp 0.113.0 reporting its background work (`tests/fixtures`), as

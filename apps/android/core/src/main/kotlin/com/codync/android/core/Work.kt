@@ -54,13 +54,9 @@ data class WorkSource(val kind: SourceKind, val id: String? = null)
 @Serializable
 data class Worktree(val branch: String, val path: String = "")
 
-/** What a piece of background work is; one this app doesn't know reads as [Other]. */
-@Serializable enum class BackgroundKind { @SerialName("shell") Shell, @SerialName("workflow") Workflow, @SerialName("monitor") Monitor, @SerialName("other") Other }
-
 /** A piece of work a thread's agent reports running in the background: a command, a workflow, a monitor. */
 @Serializable data class BackgroundTask(
     val id: String,
-    val kind: BackgroundKind,
     /** What the agent calls it: a workflow's name, a command's description. */
     val name: String,
     /** What it does now, when the agent says (a workflow's phase and agent). */
@@ -209,9 +205,8 @@ private fun backgroundTask(item: JsonElement): BackgroundTask? {
     val fields = item.present() ?: return null
     fun text(key: String) = (fields[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
     val id = text("id")?.takeIf { it.isNotEmpty() } ?: return null
-    val kind = BackgroundKind.entries.firstOrNull { it.name.lowercase() == text("kind") } ?: BackgroundKind.Other
     val startedAt = (fields["startedAt"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: 0
-    return BackgroundTask(id, kind, text("name").orEmpty(), text("activity")?.takeIf { it.isNotEmpty() }, startedAt)
+    return BackgroundTask(id, text("name").orEmpty(), text("activity")?.takeIf { it.isNotEmpty() }, startedAt)
 }
 
 /** An object's fields that have a value: a null field is a missing one. */

@@ -276,6 +276,7 @@ async fn a_task_whose_thread_ends_its_turn_while_its_background_work_runs_is_not
 /// Work its agent reports running in the background (Claude's adapter, `asyncTasks`, asked for by a thread only)
 /// holds its task between turns without a word to the thread: it shows on the task, the agent stays, and the turn the
 /// agent begins by itself once that work ends is the thread's, whose last message is the report.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_workflow_its_agent_reports_holds_its_task_until_the_agents_own_turn_reports() {
     let host = Host::start().await;
@@ -310,6 +311,7 @@ async fn a_workflow_its_agent_reports_holds_its_task_until_the_agents_own_turn_r
 
 /// The agent hears nothing of a stop of its background work, so no turn of its own follows: the task that waited on
 /// the last of it asks its thread for the report.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_stopped_workflow_has_its_thread_asked_for_the_report() {
     let host = Host::start().await;
@@ -321,6 +323,65 @@ async fn a_stopped_workflow_has_its_thread_asked_for_the_report() {
     release(&host, &bot, "review");
     let done = task(&host, &bot, "Review", "done").await;
     assert_eq!(done["result"], "Report after the stop", "{done}");
+}
+
+/// A turn the agent begins by itself just as the thread's turn ends is part of it: the task ends once both have, with
+/// the agent's own turn's last message as the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_turn_the_agent_begins_as_its_threads_turn_ends_joins_it() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review JOIN").await;
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: the workflow passed", "{done}");
+}
+
+/// A server its agent runs in the background, left listening for the user, doesn't hold its task: the turn's last
+/// message is the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_server_its_agent_leaves_listening_doesnt_hold_its_task() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    let port = (20_000 + u16::try_from(uuid::Uuid::new_v4().as_u128() % 10_000).unwrap()..32_000)
+        .find(|port| std::net::TcpListener::bind(("127.0.0.1", *port)).is_ok())
+        .unwrap();
+    host.reply(&bot, &format!("ADD Serve|SERVE:{port}")).await;
+    let done = task(&host, &bot, "Serve", "done").await;
+    assert_eq!(done["result"], "Report Serve: briefed; no chat; the dev server runs", "{done}");
+}
+
+/// While its task waits on a workflow its agent reports, the bot's `work_status` names it; a Stop ends it with its
+/// agent, and an agent that dies meanwhile fails the task.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_task_waiting_on_its_agents_workflow_stops_or_fails_with_its_agent() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    let agent_of = |title: &str| task_prompts(&host, &bot, title)[0]["pid"].to_string();
+    let waits = async |title: &str| {
+        let thread = task(&host, &bot, title, "working").await["thread"].clone();
+        wait("the thread's turn to end", async || (!finals(&host, &bot, &thread).await.is_empty()).then_some(())).await;
+    };
+
+    host.reply(&bot, "ADD One|WORKFLOW:one").await;
+    waits("One").await;
+    host.reply(&bot, "STATUS").await;
+    let status = reply(&host, &bot, "Status:").await;
+    assert!(status.contains(r#""inBackground":["after-change"]"#), "{status}");
+    let one = task(&host, &bot, "One", "working").await;
+    host.call("stopWork", json!({"botId": bot, "taskId": id(&one)})).await;
+    let agent = agent_of("One");
+    common::eventually("its agent to stop", Duration::from_secs(10), async || !common::alive(&agent)).await;
+    let stopped = task(&host, &bot, "One", "stopped").await;
+    assert!(stopped.get("background").is_none() && stopped["result"].is_null(), "{stopped}");
+
+    host.reply(&bot, "ADD Two|WORKFLOW:two").await;
+    waits("Two").await;
+    common::kill(&agent_of("Two"));
+    let failed = task(&host, &bot, "Two", "failed").await;
+    assert_eq!(failed["result"], "its agent stopped while its background work still ran", "{failed}");
 }
 
 /// #634: a thread that ends its turn again while its background work still runs, after it was asked to wait, has

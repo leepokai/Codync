@@ -185,10 +185,12 @@ pub(crate) async fn start_agent(
     background: Background,
 ) -> Result<Conn> {
     let (acp, mut rx) = Acp::spawn(command, cwd, env)?;
-    let mut meta = json!({"parameterizedModelPicker": true});
+    let mut meta = serde_json::Map::from_iter([("parameterizedModelPicker".to_owned(), true.into())]);
     // Claude's adapter reads it; every other agent passes over a `_meta` key it doesn't know.
-    if background == Background::Reported {
-        meta["jetbrains"] = acp::claude::background_tasks_meta()["jetbrains"].take();
+    if background == Background::Reported
+        && let Value::Object(asks) = acp::claude::background_tasks_meta()
+    {
+        meta.extend(asks);
     }
     let init = tokio::time::timeout(
         budget,

@@ -65,7 +65,7 @@ Codync/
 ├── relay/                     # Separate APNs push Worker; src/ and test/
 ├── discord/                   # Discord GitHub-role Worker (discord.codync.dev)
 ├── docs/                      # Architecture, features, design, guides, reference, upstream agent bugs, plans, investigations, archive
-├── tools/                     # Release, App Store and Google Play submission (store_release.py: what both share), font scripts
+├── tools/                     # Release, App Store and Google Play submission (store_release.py: what both share), font scripts, xcodebuild.sh (shared compile cache)
 ├── packaging/                 # Distribution templates
 ├── marketing/app-store-screenshots/ # App Store screenshot editor (bun dev; Export bundle → out/)
 ├── web/                       # Website (Next.js static export)
@@ -83,7 +83,7 @@ Codync/
 - `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals, or `ximagesrc` + XTest on a plain X display: `backend.rs`, `x11/`), the Linux Remote screen helper
 - `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `apps/android/` — Android app (`com.pokai.Codync.android`, Dev `.dev`; Gradle modules `app`, `core`, `design`; CI `.github/workflows/android.yml`)
-- `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator)
+- `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `../../../tools/xcodebuild.sh test -scheme CodyncKit-Package` from `apps/ios/Kit` on an iOS simulator)
 
 ## Where to make a change
 

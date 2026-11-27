@@ -59,7 +59,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 Always stop the old desktop app, host and iPhone process before running a new build (old host = old protocol, old app = old UI); commands in [development: desktop app](docs/guides/development.md#desktop-app) and [iOS app](docs/guides/development.md#ios-app).
 
-Keep only the latest build: in this checkout, Apple builds go to `build/dd` only (no other `-derivedDataPath`, no copies in scratchpads, `/tmp` or Xcode's DerivedData); delete any older Codync build right away, so macOS never launches a stale copy. A git worktree may keep its own single build inside that worktree.
+Keep only the latest build: in this checkout, Apple builds go through `tools/xcodebuild.sh` ([shared compile cache](docs/guides/xcode-build-cache.md)) to `build/dd` only (no other `-derivedDataPath`, no copies in scratchpads, `/tmp` or Xcode's DerivedData); delete any older Codync build right away, so macOS never launches a stale copy. A git worktree may keep its own single build inside that worktree.
 
 ## End-to-end test every change
 

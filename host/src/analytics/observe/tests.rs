@@ -474,6 +474,16 @@ fn a_team_change_names_the_settings_it_passes_never_their_values() {
         Some((Event::TeamManaged, json!({"tool": "update", "fields": ["modelOptions", "name"], "client": "local"})))
     );
     assert_eq!(props("manageCall", &json!({"name": "list_team", "arguments": {}})), None, "a read");
+
+    // A delete names its tool, not the bot: no id, name or standing instruction reaches analytics.
+    let delete =
+        json!({"name": "delete_bot", "arguments": {"botId": "b2", "name": "Secret", "instructions": "destroy"}});
+    assert_eq!(
+        props("manageCall", &delete),
+        Some((Event::TeamManaged, json!({"tool": "delete", "fields": [], "client": "local"})))
+    );
+    let delete_props = props("manageCall", &delete).unwrap().1.to_string();
+    assert!(!delete_props.contains("b2") && !delete_props.contains("Secret") && !delete_props.contains("destroy"));
 }
 
 #[test]

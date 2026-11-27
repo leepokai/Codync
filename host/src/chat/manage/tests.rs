@@ -127,6 +127,70 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
 }
 
 #[test]
+fn delete_bot_is_a_destructive_tool_with_an_explicit_card() {
+    let tools = tools();
+    let delete = tools.as_array().unwrap().iter().find(|t| t["name"] == "delete_bot").unwrap();
+    assert_eq!(delete["annotations"]["readOnlyHint"], false);
+    assert_eq!(delete["annotations"]["destructiveHint"], true);
+    assert_eq!(delete["inputSchema"]["required"], json!(["botId"]));
+    assert_eq!(delete["inputSchema"]["properties"].as_object().unwrap().len(), 1);
+    assert!(!INSTRUCTIONS.contains("Deleting bots is the user's"));
+    assert!(INSTRUCTIONS.contains("every delete needs the user's Allow on an approval card"));
+}
+
+#[tokio::test]
+async fn a_manager_refuses_unsafe_delete_targets_before_any_card() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let bot = |cfg: Value| {
+        let id = cfg["id"].as_str().unwrap().to_owned();
+        hub.store.save_bot(&serde_json::from_value::<BotConfig>(cfg).unwrap()).unwrap();
+        id
+    };
+    let group = bot(
+        json!({"id": "group", "name": "Group", "kind": "group", "backend": "claude", "cwd": dir.to_string_lossy()}),
+    );
+    let thread = bot(
+        json!({"id": "thread-1", "name": "Thread", "backend": "claude", "cwd": dir.to_string_lossy(), "threadOf": "lead"}),
+    );
+    let plain =
+        bot(json!({"id": "plain", "name": "Box", "backend": "claude", "cwd": dir.to_string_lossy(), "plain": true}));
+    let lead = bot(
+        json!({"id": "other-lead", "name": "Lead", "backend": "claude", "cwd": dir.to_string_lossy(), "lead": true}),
+    );
+
+    let refused = |actor: &'static str, args: Value| {
+        let hub = hub.clone();
+        async move { call(&hub, actor, "delete_bot", &args).await.unwrap_err().to_string() }
+    };
+    assert!(refused("dev", json!({"botId": "dev"})).await.contains("may not manage the team"));
+    assert!(refused("lead", json!({})).await.contains("botId is required"));
+    assert!(refused("lead", json!({"botId": "gone"})).await.contains("unknown bot"));
+    assert!(refused("lead", json!({"botId": "lead"})).await.contains("delete yourself"));
+    assert!(refused("lead", json!({"botId": group})).await.contains("unknown bot"));
+    assert!(refused("lead", json!({"botId": thread})).await.contains("thread isn't a bot"));
+    assert!(refused("lead", json!({"botId": plain})).await.contains("box for threads without a bot"));
+    assert!(refused("lead", json!({"botId": lead})).await.contains("current lead can't be deleted"));
+    hub.store.delete_bot("dev").unwrap();
+    assert!(refused("lead", json!({"botId": "dev"})).await.contains("unknown bot"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn delete_bot_stays_under_a_network_ceiling() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-ceiling-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let refused = hub.ceilings.check_tool("lead", "delete_bot").unwrap_err().to_string();
+    assert!(refused.contains("delete_bot isn't available in this turn"), "{refused}");
+    hub.ceilings.set("lead", codync_network::Access::Allow);
+    assert!(hub.ceilings.check_tool("lead", "delete_bot").is_ok());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();
     assert_eq!(

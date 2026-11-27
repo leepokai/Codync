@@ -139,10 +139,102 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
     let abandoned = wait(&host, &lead, card("Create bot Abandoned")).await;
     send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 7}}));
     wait(&host, &lead, |e| e["id"] == abandoned["id"] && e["data"]["status"] == "expired").await;
-    let sync = host.snapshot().await;
-    assert_eq!(sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == lead).unwrap()["status"], "working");
-    assert!(!named(&sync, "Stopped") && !named(&sync, "Abandoned"), "nothing was created");
     std::fs::write(workspace.join("release"), "").unwrap();
+
+    let stopped = host.call("createBot", json!({"name": "StopDelete", "backend": "custom", "command": "unused"})).await
+        ["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.call("send", json!({"botId": lead, "text": format!("MANAGE delete_bot {{\"botId\": \"{stopped}\"}}")})).await;
+    let card = wait(&host, &lead, card("Delete bot StopDelete")).await;
+    host.call("stop", json!({"botId": lead})).await;
+    wait(&host, &lead, |e| e["id"] == card["id"] && e["data"]["status"] == "cancelled").await;
+    wait(&host, &lead, |e| {
+        e["kind"] == "agent" && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Refused: "))
+    })
+    .await;
+
+    let before_turn = host.call("history", json!({"botId": lead})).await["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["turn"].as_i64())
+        .max()
+        .unwrap_or(0);
+    std::fs::remove_file(workspace.join("release")).unwrap();
+    host.call("send", json!({"botId": lead, "text": "BLOCK"})).await;
+    wait(&host, &lead, |e| {
+        e["kind"] == "user"
+            && e["data"]["text"] == "BLOCK"
+            && e["data"]["status"] == "sent"
+            && e["turn"] == before_turn + 1
+    })
+    .await;
+    let abandoned_delete = host
+        .call("createBot", json!({"name": "AbandonDelete", "backend": "custom", "command": "unused"}))
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    send(json!({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+        "params": {"name": "delete_bot", "arguments": {"botId": abandoned_delete}}}));
+    let delete_card =
+        wait(&host, &lead, |e| e["kind"] == "permission" && e["data"]["title"] == "Delete bot AbandonDelete").await;
+    send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 8}}));
+    wait(&host, &lead, |e| e["id"] == delete_card["id"] && e["data"]["status"] == "expired").await;
+    std::fs::write(workspace.join("release"), "").unwrap();
+    wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"] == "reply: BLOCK"
+            && e["turn"] == before_turn + 1
+    })
+    .await;
+
+    let sync = host.snapshot().await;
+    assert!(!named(&sync, "Stopped") && !named(&sync, "Abandoned"), "nothing was created");
+    let removed =
+        |name: &str| sync["bots"].as_array().unwrap().iter().any(|b| b["name"] == name && b["deleted"] == true);
+    assert!(!removed("StopDelete") && !removed("AbandonDelete"), "a cancelled delete removes nothing");
     drop(stdin);
     mcp.wait().unwrap();
+}
+
+/// Under Auto a delete still needs the card: the manager can't remove a bot until the user says so.
+#[tokio::test]
+async fn a_manager_deletes_one_bot_only_after_the_user_allows_it() {
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "auto", "manageTeam": true})).await;
+    let victim =
+        host.call("createBot", json!({"name": "Victim", "backend": "custom", "command": "unused"})).await["bot"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    let kept =
+        host.call("createBot", json!({"name": "Kept", "backend": "custom", "command": "unused"})).await["bot"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+    let denied = manage(&host, &lead, "delete_bot", &json!({"botId": kept}), "deny", |detail| {
+        assert_eq!(detail, "Name: Kept\nThis deletes the bot, its routines, threads and files. It can't be undone.");
+    })
+    .await;
+    assert!(denied.starts_with("Refused: ") && denied.contains("didn't allow"), "{denied}");
+    let allowed = manage(&host, &lead, "delete_bot", &json!({"botId": victim}), "allow", |detail| {
+        assert_eq!(detail, "Name: Victim\nThis deletes the bot, its routines, threads and files. It can't be undone.");
+    })
+    .await;
+    assert_eq!(allowed, "Done: {\"deleted\":true}", "{allowed}");
+
+    wait(&host, &lead, |e| e["data"]["text"] == "Deleted Victim").await;
+    let sync = host.snapshot().await;
+    let deleted = |id: &str| {
+        sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == id).is_some_and(|b| b["deleted"] == true)
+    };
+    assert!(deleted(&victim), "the allowed bot is gone");
+    assert!(!deleted(&kept), "the denied bot is still here");
+    assert!(!deleted(&lead), "the manager is still here");
 }

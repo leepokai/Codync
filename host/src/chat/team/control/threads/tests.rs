@@ -75,14 +75,14 @@ async fn an_app_sees_its_own_threads_and_others_only_with_the_scope_never_a_plai
     assert_eq!(titles(&seen), ["mine", "plain-mine", "users"], "never the user's threads without a bot");
     assert_eq!(seen["threads"][0]["startedBy"], "App a");
     let other = app("b", Level::Full, &[Scope::Threads]);
-    assert!(titles(&call(&hub, &other, "thread_list", &json!({})).await.unwrap()).is_empty());
+    assert_eq!(titles(&call(&hub, &other, "thread_list", &json!({})).await.unwrap()), Vec::<String>::new());
     let read = json!({"botId": "box", "taskId": "plain-mine"});
     assert_eq!(refused(&hub, &other, "thread_read", read.clone()).await, Code::NotFound, "another app's");
     assert!(call(&hub, &a, "thread_read", &read).await.is_ok());
     // The cloud assistant reaches only the bots open to cloud assistants.
     let mut cloud = clients::cloud(&hub.store);
     cloud.scopes.push(Scope::AllThreads);
-    assert!(titles(&call(&hub, &cloud, "thread_list", &json!({})).await.unwrap()).is_empty());
+    assert_eq!(titles(&call(&hub, &cloud, "thread_list", &json!({})).await.unwrap()), Vec::<String>::new());
 }
 
 #[tokio::test]

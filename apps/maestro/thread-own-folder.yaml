@@ -34,6 +34,18 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: ".*${output.thread.title}.*"
     timeout: 20000
+# Grouped by folder, whatever this phone kept from before. Picking the grouping on again turns it off, so only when
+# the list isn't grouped by folder yet.
+- runFlow:
+    when:
+      notVisible: "Own folder"
+    commands:
+      - tapOn: "Computers, .*Filter conversations"
+      - tapOn: "Group by folder"
+      - runFlow:
+          when:
+            visible: "Group by bot"
+          file: subflows/close-menu.yaml
 # One group for every thread in a folder of its own, named so; no folder named by an id.
 - assertVisible: "Own folder"
 - assertNotVisible: "[0-9a-f]{8}-[0-9a-f]{4}-.*"

@@ -57,11 +57,24 @@ impl Hub {
     }
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
+        self.update_bot_if(patch, |_| Ok(()))
+    }
+
+    /// Applies `patch` like [`Self::update_bot`], but runs `check` on the live row inside the same
+    /// `emit_lock` as the write: a caller that waited on an approval card can refuse a stale edit
+    /// without another read-then-write window.
+    pub fn update_bot_if(
+        &self,
+        patch: &Value,
+        check: impl FnOnce(&crate::store::BotRow) -> Result<()>,
+    ) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
+        // Read, check, merge and save under one lock: a section rename or group edit in between would
+        // otherwise be written back over.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            check(&row)?;
             let mut cfg = patch::patched(&row.config, patch)?;
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;

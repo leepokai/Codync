@@ -200,6 +200,16 @@ async fn a_manager_lists_creates_and_changes_local_groups() {
     assert_eq!(made["group"]["members"][0]["name"], "lead");
     assert_eq!(hub.store.bot(&id).unwrap().unwrap().config.created_by.as_deref(), Some("lead"));
 
+    // With no topic the group still builds: `description` must be left out, not sent as null.
+    let plain =
+        call(&hub, "lead", "create_group", &json!({"name": "Plain", "members": ["dev", "lead"]})).await.unwrap();
+    assert_eq!(plain["group"]["topic"], "");
+    // Same members reopen the existing group and report its real name, not the requested one.
+    let reopened =
+        call(&hub, "lead", "create_group", &json!({"name": "Again", "members": ["lead", "dev"]})).await.unwrap();
+    assert_eq!(reopened["group"]["id"], plain["group"]["id"]);
+    assert_eq!(reopened["group"]["name"], "Plain", "the real group name is returned");
+
     let changed = call(&hub, "lead", "update_group", &json!({"groupId": id, "name": "Squad", "addMembers": ["dev"]}))
         .await
         .unwrap();
@@ -224,8 +234,51 @@ async fn a_manager_lists_creates_and_changes_local_groups() {
     );
     assert_eq!(
         notices(&hub, "lead"),
-        [json!("Created group Crew"), json!("Updated Crew: name, members"), json!("Updated Squad: members")]
+        [
+            json!("Created group Crew"),
+            json!("Created group Plain"),
+            json!("Created group Plain"),
+            json!("Updated Crew: name, members"),
+            json!("Updated Squad: members")
+        ]
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A user edit to a group's members while the manager's card waits must win: the update writes back
+/// only if the group is still at the revision the card described. `update_bot_if` rechecks under the
+/// same `emit_lock` as the write, so no stale overwrite can slip in between.
+#[tokio::test]
+async fn a_group_changed_while_the_card_waits_is_not_overwritten() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-group-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let made = call(&hub, "lead", "create_group", &json!({"name": "Crew", "members": ["dev"]})).await.unwrap();
+    let gid = made["group"]["id"].as_str().unwrap().to_owned();
+    // Force a card under Auto: a ceiling holds the manager's turn to Ask, so the change waits.
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let call_gid = gid.clone();
+    let task = tokio::spawn(async move {
+        call(&call_hub, "lead", "update_group", &json!({"groupId": call_gid, "addMembers": ["lead"]})).await
+    });
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Change group Crew"), "{title}");
+            break reply;
+        }
+    };
+    // While the card is up, the user edits the group: another bot joins it.
+    hub.update_bot(&json!({"id": gid, "members": ["dev", "lead"]})).unwrap();
+    reply.send(true).unwrap();
+
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("the group changed while your card was up"), "{err}");
+    let members = hub.store.bot(&gid).unwrap().unwrap().config.members;
+    assert_eq!(members, ["dev".to_owned(), "lead".to_owned()], "the user's edit survives");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

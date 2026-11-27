@@ -128,8 +128,9 @@ A bot with **Manage the team** on can set up the team for you: list your bots, c
 - **List the team:** every bot with its setup and routines, including hidden bots and the manager itself.
 - **Create bots** with a name, standing instructions, agent, model and model settings such as effort, fallbacks, avatar, projects and routines. A new bot gets the manager's approval setting, connectors and skills, so it can't do more than the manager. It can manage the team too. It never gets computer use. Without a chosen avatar it gets a random one.
 - **Change any bot**, itself included: name, standing instructions, model and model settings such as effort, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, and its [routines](/docs/routines) (add new ones or replace existing ones). A model setting has to be one the bot's model offers, the same choices its settings show you. Changing a bot's model clears that bot's model settings unless the manager sets new ones in the same change. A manager that changes its own model gets the new one after its current turn.
+- **List, create and change local groups**: a group is a room for several bots to talk together. A manager can list its groups and their members, start one with a name and one or more bots on this computer, and change a group's name, topic or members. Members must be real bots here, not groups, threads or bots on another computer. Asking for a group whose members exactly match one that exists reopens that group. Groups a bot made don't count towards the 20-bot limit.
 
-Bots stop creating bots once 20 bots made by bots exist (deleted ones don't count). Past that, the manager asks you.
+Bots stop creating bots once 20 bots made by bots exist (deleted ones don't count; groups aren't bots). Past that, the manager asks you.
 
 A bot created this way shows who made it in its settings: "Created by Lead · Oct 20, 2026". The terminal UI shows it on the settings form's Name row.
 

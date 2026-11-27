@@ -122,6 +122,23 @@ async fn a_lead_manages_local_groups_with_cards() {
     .await;
     assert_eq!(reply["data"]["text"], "Done: {\"groups\":[]}", "{reply}");
 
+    // A group with no topic still builds (Allow), and asking for the same members again reopens it
+    // under its real name rather than making a duplicate.
+    let no_topic = json!({"name": "Pair", "members": [lead, ben]});
+    let reply = manage(&host, &lead, "create_group", &no_topic, "allow", |detail| {
+        assert_eq!(detail, "Name: Pair\nMembers: Lead, Ben");
+    })
+    .await;
+    let pair: Value = serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    assert_eq!(pair["group"]["topic"], "");
+    wait(&host, &lead, |e| e["data"]["text"] == "Created group Pair").await;
+    let reopen = json!({"name": "Other", "members": [lead, ben]});
+    let reply = manage(&host, &lead, "create_group", &reopen, "allow", |_| {}).await;
+    let reopened: Value =
+        serde_json::from_str(reply.strip_prefix("Done: ").unwrap_or_else(|| panic!("{reply}"))).unwrap();
+    assert_eq!(reopened["group"]["id"], pair["group"]["id"]);
+    assert_eq!(reopened["group"]["name"], "Pair", "the real group name comes back");
+
     let made_args = json!({"name": "Crew", "topic": "Ship it", "members": [lead, ada]});
     let reply = manage(&host, &lead, "create_group", &made_args, "allow", |detail| {
         assert_eq!(detail, "Name: Crew\nTopic: Ship it\nMembers: Lead, Ada");

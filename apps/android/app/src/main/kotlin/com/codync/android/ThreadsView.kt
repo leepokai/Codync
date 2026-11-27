@@ -41,8 +41,8 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
-import com.codync.android.core.ThreadGroup
 import com.codync.android.core.OWN_FOLDER_GROUP
+import com.codync.android.core.ThreadGroup
 import com.codync.android.core.ThreadGroupKind
 import com.codync.android.core.ThreadGrouping
 import com.codync.android.core.ThreadRow

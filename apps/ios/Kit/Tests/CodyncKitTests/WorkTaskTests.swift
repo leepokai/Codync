@@ -65,6 +65,11 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(owner.work[1].agent(of: plain) == nil, "the box of threads without a bot has no agent of its own")
     }
 
+    @Test func aTaskSaysWhetherItWorksInItsOwnFolder() throws {
+        let owner = try bot(#","work":[{"id":"o","status":"working","folder":"/h/.codync/threads/1","ownFolder":true},{"id":"p","status":"working","folder":"/h/p"}]"#)
+        #expect(owner.work.map(\.ownFolder) == [true, false], "an older host sends no flag")
+    }
+
     @Test func aHostFromBeforeTheBoxHasNoWorkAndNoSetting() throws {
         let old = try bot(#","tasks":[{"id":"task-1","title":"Fix login","status":"working"}]"#)
         #expect(old.work.isEmpty)

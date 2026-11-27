@@ -8,24 +8,20 @@ import { useStore } from '../../store/context'
 import './work.css'
 
 /**
- * Where a task's thread works, in one quiet line: the folder symbol and its folder, or the branch symbol and its
- * branch. A folder too long for the line is cut in the middle, so its last name stays in view.
+ * Where a task's thread works, in one quiet line: the folder symbol and its folder (Own folder for the one Codync made
+ * for it), or the branch symbol and its branch. A folder too long for the line is cut in the middle, so its last name
+ * stays in view.
  */
 export function WorkWhere({ where }: { where: WhereLine }) {
   const tr = useTr()
-  if (where.kind === 'own') return (
-    <HStack as="span" gap={4} shrink className="work-where">
-      <Icon name="folder" size={10} color="var(--tertiary)" />
-      <Text size="caption" tone="secondary" truncate>{tr(where.text)}</Text>
-    </HStack>
-  )
-  const cut = where.kind === 'folder' ? Math.max(where.text.lastIndexOf('/'), where.text.lastIndexOf('\\')) : -1
+  const text = where.kind === 'own' ? tr(where.text) : where.text
+  const cut = where.kind === 'folder' ? Math.max(text.lastIndexOf('/'), text.lastIndexOf('\\')) : -1
   return (
     <HStack as="span" gap={4} shrink className="work-where">
       <Icon name={where.kind === 'branch' ? 'arrow.triangle.branch' : 'folder'} size={10} color="var(--tertiary)" />
       <HStack as="span" gap={0} shrink>
-        {cut > 0 ? <Text size="caption" tone="secondary" truncate className="work-where-lead">{where.text.slice(0, cut)}</Text> : null}
-        <Text size="caption" tone="secondary" truncate className="work-where-end">{cut > 0 ? where.text.slice(cut) : where.text}</Text>
+        {cut > 0 ? <Text size="caption" tone="secondary" truncate className="work-where-lead">{text.slice(0, cut)}</Text> : null}
+        <Text size="caption" tone="secondary" truncate className="work-where-end">{cut > 0 ? text.slice(cut) : text}</Text>
       </HStack>
     </HStack>
   )

@@ -136,6 +136,11 @@ test('a thread without a bot starts in a folder of its own', async () => {
     const where = page.locator('.work-where-copy').filter({ visible: true }).first()
     await expect(where).toHaveText('Own folder')
     await expect(where).toHaveAttribute('aria-label', /threads[\\/][0-9a-f-]{36}$/)
+    // The groups are by folder (the default; an earlier spec may have left Group by bot picked).
+    await page.locator('.sidebar-header .computer-filter').click()
+    const byFolder = page.getByRole('menuitemradio', { name: 'Group by folder', exact: true })
+    if ((await byFolder.getAttribute('aria-checked')) !== 'true') await byFolder.click()
+    await page.keyboard.press('Escape')
     const groups = page.locator('.thread-group[aria-label="Own folder"]')
     await expect(groups).toHaveCount(1)
     await expect(groups.getByText(text)).toBeVisible()

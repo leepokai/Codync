@@ -297,6 +297,32 @@ A task that doesn't finish reports why, the same way: its thread's agent couldn'
 failed mid-turn, or ended short of `end_turn`. Every way a thread's turn ends goes through `Actor::turn_over`, so no
 task is left working with nothing behind it.
 
+### Background work left running
+
+A thread whose turn ends normally (`end_turn`) while work it started in the background still runs hasn't finished
+its task: its last message is a progress line ("started the review, waiting for it to finish"), not a report, and
+ending the thread would stop its agent and what runs inside it (#634). The task prompt already says not to; the host
+also checks, as a fact, never from the message's wording (`Actor::left_running`, `agent/bot/background_work.rs`):
+
+- a subagent Claude's adapter launched in the background in that turn (`isAsync`, read into `Subagent.background`);
+- a process the agent runs detached, in a session of its own (`background_work`), that wasn't there when the task's
+  round began (`Actor::detached_before`, noted as its first turn starts and kept while the task goes on with what a
+  turn left running), where nothing listens: a server left listening is meant to stay and shows among the bot's
+  [dev servers](dev-servers.md). Unsure counts as nothing, so no task waits on a guess; Windows can't tell (no
+  sessions there), so it never waits on a process.
+
+The first time (`Task::held`, saved with the task), the task stays working (`Outcome::LeftRunning` →
+`work::hold`): the host posts a message in the thread (`from: host`, which every client shows as what the thread was
+told) asking it to wait for that in the foreground and then report, and the agent and its session stay as they are
+(`release_spent` and `stop_spent` are skipped). That turn's end is the task's end. If it ends normally again while
+something still runs, the task fails with `Failure::Background` and the result `it ended its turn while … still ran`,
+followed by its last message, so every client shows it failed, with that reason and **Try again**. No alert goes out
+for the held turn's end. A message the user wrote to the thread that still waits comes first (`thread::unheard`) and
+doesn't use the hold up: the task goes on with the agent and session kept the same way, and that turn's end is
+checked again; a turn held for a [sign-in](#fallbacks-and-sign-in) never reaches this check; the watchdog looks at the waiting turn as
+at any long one; the hold adds no hop (no report, `MAX_HOPS`). Analytics: `work_held` when a task is held, and
+`work_finished` says `held` with how it then ended.
+
 ## Approvals
 
 A thread's permission request becomes a card in **its bot's chat**, with `data.thread = {id, title}` (the thread bot's id,
@@ -844,7 +870,13 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 - What a thread's agent runs inside its own process (a harness's background agents and shells in the agent's session)
   ends when the thread does: its process and that session's processes are stopped (`Acp::kill`). A program it
   detached into a session of its own (a server from its shell) isn't reached and keeps running; one left listening
-  shows among the bot's [dev servers](dev-servers.md).
+  shows among the bot's [dev servers](dev-servers.md). Only some of that holds its task when the turn ends
+  ([background work left running](#background-work-left-running)): a background shell a harness keeps in its own
+  session (whether Claude Code's `run_in_background` does isn't checked yet), another adapter's in-process background
+  work, and on Windows any process aren't seen, and a Claude background subagent only in the turn that launched it
+  (it never says that it finished), so a held turn, or one a waiting message took first, that ends again while it
+  runs is done, not failed. Asked to wait for a subagent that already finished in its turn, the thread reports then. A detached
+  process meant to stay that doesn't listen (a watcher, a daemon) holds its task once, then fails it.
 - A thread ends as soon as its task does when nothing waits to follow it, so `after` is for work that is still
   working or waiting.
 - A routine's run in a thread has its `send_message` refused as before, and what it wrote reaches the chat when it

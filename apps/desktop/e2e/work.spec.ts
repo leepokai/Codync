@@ -880,6 +880,51 @@ test('the bot passes words on to a working task: its thread shows them as told, 
   }
 })
 
+test('a thread that ends its turn while its background work runs is held: it reads the ask as told and reports once', async () => {
+  const { browser, page } = await attach()
+  const name = `Work held e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Review the PR', 'DETACH:held')
+
+    // Its turn ended with a progress line, but the command it left runs: the task is still working.
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Review the PR'))
+    await expect(thread.locator('.work-thread-quote', { hasText: 'you ended your turn while' })).toBeVisible()
+    await expect.poll(async () => (await statuses(page, botId!))['Review the PR']).toBe('working')
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(0)
+    await closeThread(details)
+
+    // Once the command is done, the thread reports once: its real report.
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-held'), '')
+    await expect(row(details, 'Recent', 'Review the PR')).toHaveAttribute('data-work-status', 'done')
+    await expect(page.locator('.transcript')).toContainText('Relayed: Report Review the PR: it finished, all green')
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(1)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('a held thread that ends its turn again while its background work runs stopped early: a failed task', async () => {
+  const { browser, page } = await attach()
+  const name = `Work held again e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Watch the CI', 'DETACH:again AGAIN')
+
+    const details = await openDetails(page)
+    await expect(row(details, 'Recent', 'Watch the CI')).toHaveAttribute('data-work-status', 'failed')
+    await expect(page.locator('.transcript').first()).toContainText('still ran')
+  } finally {
+    if (botId) writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-again'), '')
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('the bot looks back at a finished task: its status, result and thread steps', async () => {
   const { browser, page } = await attach()
   const name = `Work recall e2e ${Date.now()}`

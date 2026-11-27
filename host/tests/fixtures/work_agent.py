@@ -7,7 +7,11 @@ works until a `release-<name>` file is in its folder, `PERMISSION` asks for an a
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
-one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
+one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `DETACH:<name>` starts a command in a
+session of its own (its pid in `detached.pid`) that writes `detached-done` once `release-<name>` is there, and ends its
+turn while that command still runs, `SUBAGENT` launches a subagent in the background the way Claude's adapter reports
+one and ends its turn: asked by the host to wait for what it left running, it waits for `detached-done` (or for nothing,
+for the subagent) and reports, or ends at once again with `AGAIN` in its brief. `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
 The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
@@ -62,12 +66,16 @@ LONG_COMMAND = (
     "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
     " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
 )
+# What the thread's task left running in the background (`DETACH`, `SUBAGENT`), for the host's ask to wait for it.
+left = {}
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
 servers = []
 forked = set()
 count = 0
+# Prompts this process took so far, which `closed.jsonl` says of each session it closed.
+prompted = 0
 
 
 def send(value):
@@ -182,6 +190,24 @@ def work(text, session):
         notes.append(said(chat_tool("add_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
     if "TOUCH" in brief:
         pathlib.Path("made.txt").write_text("made by a thread", encoding="utf-8")
+    detach = re.search(r"DETACH:(\w+)", brief)
+    if detach:
+        # Like a review or `gh run watch` the agent left running in the background; gives up after a minute.
+        wait = f'i=0; while [ ! -e release-{detach.group(1)} ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done'
+        started = subprocess.Popen(["/bin/sh", "-c", f"{wait}; echo done > detached-done"], start_new_session=True,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pathlib.Path("detached.pid").write_text(str(started.pid), encoding="utf-8")
+        notes.append("started the review, waiting for it to finish")
+        left.update(title=title, again="AGAIN" in brief, detached=True)
+    if "SUBAGENT" in brief:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "agent", "title": "Review the change", "kind": "think",
+            "status": "completed", "rawInput": {"subagent_type": "general-purpose", "run_in_background": True},
+            "_meta": {"claudeCode": {"toolName": "Agent", "toolResponse": {
+                "isAsync": True, "status": "async_launched", "agentId": "a1"}}},
+        }}})
+        notes.append("launched a reviewer, waiting for it to finish")
+        left.update(title=title, again="AGAIN" in brief, detached=False)
     if "LOOP" in brief:
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
@@ -242,8 +268,19 @@ def answer_asked(session, question):
         send({"method": "session/update", "params": {"sessionId": session, "update": update}})
 
 
+def waited():
+    """The host asked it to wait for what it left running: it does and reports, or (`AGAIN`) ends at once again."""
+    if left.get("again"):
+        return "Still waiting for it"
+    while left.get("detached") and not pathlib.Path("detached-done").exists() and not cancel.wait(0.05):
+        pass
+    return f"Report {left.get('title')}: it finished, all green"
+
+
 def answer(text, session):
     """What this turn replies."""
+    if "[Codync: you ended your turn while" in text:
+        return waited()
     if ASKED in text:
         # An agent that can't take it mid-turn: the question is a turn of its own.
         return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
@@ -314,7 +351,7 @@ def answer(text, session):
 def prompt(request):
     session = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
-    log("prompts.jsonl", {"session": session, "text": text})
+    log("prompts.jsonl", {"session": session, "text": text, "pid": os.getpid()})
     if pathlib.Path("signedout").exists():
         send({"id": request["id"], "error": SIGNED_OUT})
         return
@@ -356,8 +393,10 @@ for line in sys.stdin:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
+        log("closed.jsonl", {"session": params.get("sessionId"), "prompts": prompted})
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
+        prompted += 1
         cancel.clear()
         permission.clear()
         joined.clear()

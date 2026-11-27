@@ -176,7 +176,7 @@ mod tests {
             crate::chat::context::render_with_identity(&hub.store, &thread_cfg.as_owner());
         let thread_snap = crate::chat::context::adopt(
             &hub.store,
-            thread_cfg.owner(),
+            &thread_cfg,
             "s-thread",
             thread_system,
             thread_identity,

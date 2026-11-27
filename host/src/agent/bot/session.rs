@@ -251,14 +251,14 @@ impl Actor {
         // re-rendered them, loading the session again swaps the prompt in (the adapter
         // rebuilds its query and resumes the same conversation).
         let current = self.session_for(slot);
-        let snapshot = match (&current, instructions) {
+        let claude_snapshot = match (&current, instructions) {
             (Some(sid), Instructions::ClaudeMeta) => Some(self.snapshot(sid).await?),
             _ => None,
         };
         let Some(conn) = self.conn.as_ref() else { bail!("agent not running") };
         if let Some(sid) = current {
             let prompt_current =
-                snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
+                claude_snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
             if conn.loaded.contains_key(&sid) && prompt_current {
                 if !self.servers_dropped().await {
                     self.turn_session = Some(sid);
@@ -274,17 +274,28 @@ impl Actor {
             };
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let mut params = self.session_params(&servers, Some(&sid));
+            let snapshot = if instructions == Instructions::SystemPrompt {
+                Some(self.snapshot(&sid).await?)
+            } else {
+                claude_snapshot
+            };
             if let Some(s) = &snapshot {
-                params["_meta"] = claude_meta(&self.cfg, &s.system);
-            }
-            if instructions == Instructions::SystemPrompt {
-                params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
+                self.instruct(&mut params, instructions, &s.system);
             }
             let res = self.session_request(reopen.method(), params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             let about_agent = drop_replay(conn);
             match res {
                 Ok(res) => {
+                    let as_bot = context::as_bot(&self.cfg, &self.task_source);
+                    if !as_bot && let Some(s) = &snapshot {
+                        let delivery = if instructions == Instructions::ClaudeMeta {
+                            context::TaskSystemDelivery::Immediate
+                        } else {
+                            context::TaskSystemDelivery::MayDefer
+                        };
+                        context::task_system_reopened(&self.hub.store, self.cfg.owner(), s, delivery)?;
+                    }
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
@@ -311,9 +322,12 @@ impl Actor {
                     for update in &about_agent {
                         self.on_session_wide(update);
                     }
-                    if let Some(s) = snapshot {
-                        // Its system prompt now names the bot and holds memory as rendered.
-                        context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
+                    if instructions == Instructions::ClaudeMeta
+                        && let Some(s) = snapshot
+                    {
+                        if as_bot {
+                            context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
+                        }
                         memory::opened(&self.hub.store, self.cfg.owner(), &sid, &s.memory)?;
                         self.applied_system.insert(sid.clone(), s.system);
                     }
@@ -342,7 +356,7 @@ impl Actor {
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
-        context::adopt(&self.hub.store, self.cfg.owner(), &sid, system.clone(), identity, revision)?;
+        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), identity, revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }

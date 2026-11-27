@@ -38,11 +38,19 @@ impl Identity {
         Self {
             name: cfg.name.trim().to_owned(),
             description: cfg.description.trim().to_owned(),
-            skills_brief: crate::market::skills_brief(store, &enabled_skills(store, cfg)).unwrap_or_default(),
+            skills_brief: current_skills(store, cfg),
             lead: Some(cfg.lead),
             projects: cfg.projects.clone(),
         }
     }
+
+    fn skills_or_none(&self) -> &str {
+        if self.skills_brief.is_empty() { "Skills: none." } else { &self.skills_brief }
+    }
+}
+
+fn current_skills(store: &Store, cfg: &BotConfig) -> String {
+    crate::market::skills_brief(store, &enabled_skills(store, cfg)).unwrap_or_default()
 }
 
 /// Standalone sessions use an empty skill list. Bot-backed sessions use their owner's saved list or `cfg.skills`.
@@ -75,6 +83,12 @@ pub struct Snapshot {
     pub system_identity: Identity,
     /// The identity the agent last heard of (`system` or a later update block).
     pub announced: Identity,
+    /// The skill block from the last opening accounted for in the task's context.
+    #[serde(default, alias = "loadedTaskSkills", skip_serializing_if = "Option::is_none")]
+    confirmed_task_skills: Option<String>,
+    /// The skill block sent on a standard reopen that still needs confirmation in a prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_task_skills: Option<String>,
     /// The memory revision `system` holds (`memory::current_revision` before it was rendered).
     #[serde(default)]
     pub memory: String,
@@ -149,9 +163,13 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
     if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
         return Ok(s.clone());
     }
-    let (system, identity) = render_with_identity(store, cfg);
     let memory = crate::chat::memory::current_revision(store, owner);
+    let (system, identity) = render_with_identity(store, cfg);
     let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
+    let (announced, confirmed_task_skills, pending_task_skills) = stored.map_or_else(
+        || (identity.clone(), None, None),
+        |old| (old.announced, old.confirmed_task_skills, old.pending_task_skills),
+    );
     let s = Snapshot {
         session: session.to_owned(),
         epoch,
@@ -160,7 +178,9 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
         unprompted,
         // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
         // until then it knows the identity it last heard, so an update it missed is still announced.
-        announced: stored.map_or(identity, |old| old.announced),
+        announced,
+        confirmed_task_skills,
+        pending_task_skills,
         memory,
     };
     save(store, owner, &s)?;
@@ -197,18 +217,23 @@ pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
 /// session's snapshot.
 pub fn adopt(
     store: &Store,
-    bot_id: &str,
+    cfg: &BotConfig,
     session: &str,
     system: String,
     identity: Identity,
     memory: String,
 ) -> Result<Snapshot> {
+    let bot_id = cfg.owner();
+    let confirmed_task_skills =
+        (!as_bot(cfg, &crate::chat::work::source_of(store, cfg))).then(|| identity.skills_brief.clone());
     let s = Snapshot {
         session: session.to_owned(),
         epoch: epoch(store, bot_id, session),
         system,
         system_identity: identity.clone(),
         announced: identity,
+        confirmed_task_skills,
+        pending_task_skills: None,
         memory,
         unprompted: true,
     };
@@ -443,7 +468,6 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
         return None;
     }
     let or_none = |s: &str, none: &str| if s.is_empty() { none.to_owned() } else { s.to_owned() };
-    let skills = if identity.skills_brief.is_empty() { "Skills: none." } else { &identity.skills_brief };
     // Its role, when it leads or its instructions or an earlier update said it did.
     let role = if identity.lead == Some(true) {
         crate::chat::lead::BRIEF
@@ -457,7 +481,7 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
         "Your agent profile changed. This full update is authoritative and supersedes the Agent profile section in your instructions and every earlier profile update in this conversation.".to_owned(),
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
-        skills.to_owned(),
+        identity.skills_or_none().to_owned(),
         // A thread has none: the bot's projects are the bot's to send work to.
         if cfg.is_thread() { String::new() } else { projects_line(&identity.projects) },
         role.to_owned(),
@@ -471,12 +495,67 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
     Some((text, identity))
 }
 
+/// Replaces the skill list a handed-out task last heard.
+pub fn task_skills_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Option<(String, Identity)> {
+    let skills_brief = current_skills(store, cfg);
+    if skills_brief == snapshot.announced.skills_brief && snapshot.pending_task_skills.is_none() {
+        return None;
+    }
+    let identity = Identity { skills_brief, ..snapshot.announced.clone() };
+    let text = format!(
+        "<skills_update>\nUse this list in place of all earlier skill lists for this task.\n{}\n</skills_update>",
+        identity.skills_or_none()
+    );
+    Some((text, identity))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TaskSystemDelivery {
+    Immediate,
+    MayDefer,
+}
+
+/// Accounts for the skills in a successfully reopened task's system prompt.
+pub fn task_system_reopened(store: &Store, bot_id: &str, sent: &Snapshot, delivery: TaskSystemDelivery) -> Result<()> {
+    let skills = &sent.system_identity.skills_brief;
+    update_if_current(store, bot_id, sent, |current| {
+        let differs_from_announced = &current.announced.skills_brief != skills;
+        let changed = current.confirmed_task_skills.as_ref().map_or(differs_from_announced, |last| last != skills);
+        if delivery == TaskSystemDelivery::MayDefer
+            && (current.confirmed_task_skills.is_none()
+                || (changed && differs_from_announced)
+                || current.pending_task_skills.is_some())
+        {
+            if current.pending_task_skills.as_ref() == Some(skills) {
+                return false;
+            }
+            current.pending_task_skills = Some(skills.clone());
+            return true;
+        }
+        let cleared = current.pending_task_skills.take().is_some();
+        if current.confirmed_task_skills.as_ref() == Some(skills) {
+            return cleared;
+        }
+        current.confirmed_task_skills = Some(skills.clone());
+        if changed && delivery == TaskSystemDelivery::Immediate {
+            current.announced.skills_brief.clone_from(skills);
+        }
+        true
+    })
+}
+
 /// After the turn that carried an update reached the agent: remember it heard
 /// `identity`, unless the snapshot moved on meanwhile (a compaction re-rendered it).
 pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, identity: Identity) -> Result<()> {
     update_if_current(store, bot_id, turn_snapshot, |current| {
         let changed = current.announced != identity;
         current.announced = identity;
+        if turn_snapshot.pending_task_skills.is_some()
+            && current.pending_task_skills == turn_snapshot.pending_task_skills
+        {
+            current.confirmed_task_skills = current.pending_task_skills.take();
+            return true;
+        }
         changed
     })
 }
@@ -586,7 +665,7 @@ mod tests {
         assert!(!thread_text.contains("Your projects"));
 
         let identity = Identity::of(&store, &original);
-        let first = adopt(&store, &original.id, "s1", "SYSTEM".into(), identity, String::new()).expect("adopt");
+        let first = adopt(&store, &original, "s1", "SYSTEM".into(), identity, String::new()).expect("adopt");
         let (text, _) = profile_update(&store, &first, &bot).expect("its projects changed");
         assert!(text.contains("/code/app (your default)"), "{text}");
         let renamed = thread_of(&cfg("Fixer 2", ""));
@@ -613,7 +692,7 @@ mod tests {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
         let first =
-            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
+            adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         // Frozen: resolving again returns the same text, even though a live render differs.
         assert_eq!(resolve(&store, &a, "s1").expect("resolve").system, "SYSTEM v1");
         assert!(profile_update(&store, &first, &a).is_none());
@@ -647,7 +726,7 @@ mod tests {
         let mut a = cfg("Fixer", "Fix bugs");
         a.skills = vec!["release".into()];
         let first =
-            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
+            adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         assert!(profile_update(&store, &first, &a).is_none());
         skill("When shipping a release or a hotfix");
         let (text, _) = profile_update(&store, &first, &a).expect("the description changed");
@@ -658,7 +737,7 @@ mod tests {
     fn a_memory_change_re_renders_but_keeps_what_the_agent_heard() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
+        adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         let b = cfg("Fixer", "Fix bugs and write tests");
         invalidate(&store, &a.id).expect("invalidate");
         let snap = resolve(&store, &b, "s1").expect("resolve");
@@ -672,7 +751,7 @@ mod tests {
         let mut lead = cfg("Fixer", "Fix bugs");
         lead.lead = true;
         let (system, identity) = render_with_identity(&store, &lead);
-        adopt(&store, &lead.id, "s1", system, identity, String::new()).expect("adopt");
+        adopt(&store, &lead, "s1", system, identity, String::new()).expect("adopt");
         // A snapshot from before the lead could move: the role was in its instructions alone.
         let k = key(&lead.id, "s1");
         let mut old: serde_json::Value = serde_json::from_str(&store.kv_get(&k).expect("saved")).expect("json");
@@ -699,7 +778,7 @@ mod tests {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
         let first =
-            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
+            adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
         mark_prompted(&store, &a.id, &first).expect("mark");
         assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
@@ -714,7 +793,7 @@ mod tests {
         thread.id = "thread-1".into();
         thread.thread_of = Some(owner.id.clone());
         let (system, identity) = render_with_identity(&store, &thread.as_owner());
-        let snap = adopt(&store, thread.owner(), "s-thread", system, identity, String::new()).expect("adopt");
+        let snap = adopt(&store, &thread, "s-thread", system, identity, String::new()).expect("adopt");
         assert!(profile_update(&store, &snap, &thread.as_owner()).is_none());
 
         let list = serde_json::json!([{"id": "deploy", "name": "Deploy", "description": "Ship releases"}]);
@@ -741,7 +820,7 @@ mod tests {
         owner.skills = vec!["deploy".into()];
         store.save_bot(&owner).expect("save owner with skill");
 
-        let snap = adopt(&store, &owner.id, "s-new", system, identity, String::new()).expect("adopt");
+        let snap = adopt(&store, &owner, "s-new", system, identity, String::new()).expect("adopt");
         let (update, _) = profile_update(&store, &snap, &owner).expect("new skill must still be announced");
         assert!(update.contains("- Deploy: Ship releases"), "{update}");
     }

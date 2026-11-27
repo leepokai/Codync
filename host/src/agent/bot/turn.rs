@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 
 /// Leads a `<bot-profile>` sent again after a compaction, so the agent drops an older copy it may still hold.
 const PROFILE_AGAIN: &str = "Your context was summarized. This is your full, current profile and memory; it replaces any earlier bot profile in this conversation.";
+const TASK_AGAIN: &str = "Your context was summarized. Codync's task framing and skill list below replace their earlier versions. Continue following the user's original brief.";
 
 impl Actor {
     /// This session's frozen instructions (reads memory files when re-rendering).
@@ -52,8 +53,7 @@ impl Actor {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
         }
-        // A thread on a handed-out task holds neither memory nor who the bot is in its instructions, so no change to
-        // them is news.
+        // A handed-out task looks up memory as needed and only hears changes to its skill list.
         let as_bot = context::as_bot(&self.cfg, &self.task_source);
         if as_bot && let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
             prompt = format!("{notice}\n\n{prompt}");
@@ -67,11 +67,28 @@ impl Actor {
         if snapshot.unprompted && instructions == Instructions::FirstMessage {
             prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         } else if resend {
-            context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, snapshot.system_identity.clone())?;
-            snapshot.announced = snapshot.system_identity.clone();
-            prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
+            let intro = if as_bot {
+                context::mark_announced(
+                    &self.hub.store,
+                    self.cfg.owner(),
+                    &snapshot,
+                    snapshot.system_identity.clone(),
+                )?;
+                snapshot.announced = snapshot.system_identity.clone();
+                PROFILE_AGAIN
+            } else {
+                snapshot.announced.skills_brief.clone_from(&snapshot.system_identity.skills_brief);
+                self.announce = Some((snapshot.clone(), snapshot.announced.clone()));
+                TASK_AGAIN
+            };
+            prompt = format!("<bot-profile>\n{intro}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
-        if as_bot && let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
+        let update = if as_bot {
+            context::profile_update(&self.hub.store, &snapshot, &self.cfg)
+        } else {
+            context::task_skills_update(&self.hub.store, &snapshot, &self.cfg)
+        };
+        if let Some((update, identity)) = update {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
@@ -513,11 +530,11 @@ impl Actor {
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
-        // The message reached the agent: the profile update it carried is now known to it.
+        // The message reached the agent: the context update it carried is now known to it.
         if let (Ok(_), Some((snapshot, identity))) = (&done, self.announce.take())
             && let Err(error) = context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, identity)
         {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the profile update");
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
         }
         if let (Ok(_), Some(sent)) = (&done, self.first_prompt.take())
             && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)

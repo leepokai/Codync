@@ -24,7 +24,10 @@ notes say whether the session is the one that did the work (`same session`) or a
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
 Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
-session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+session can't be picked up again. `standard` advertises ACP `systemPrompt` without the usual close and fork capabilities.
+`resume-only` exchanges load for resume in that mode. `defer-system` keeps the original system across reopens.
+In that mode, `apply-system-<session>` permits replacing the active opening and `COMPACT_AGAIN` emits a second compaction.
+`steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`; the bot's question (`ask_task`) it answers at once with `Answer: <the question>` (`SLOW` in it: after 62 seconds), and
 a late answer's turn in the chat replies `Late: <the answer>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
@@ -47,6 +50,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
+CLAUDE = "claude" in sys.argv
+STANDARD = "standard" in sys.argv
+RESUME_ONLY = "resume-only" in sys.argv
+DEFER_SYSTEM = "defer-system" in sys.argv
+SESSION_LOG = "claude_sessions.jsonl" if CLAUDE else "standard_sessions.jsonl"
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
@@ -317,7 +325,18 @@ def prompt(request):
     if pathlib.Path("signedout").exists():
         send({"id": request["id"], "error": SIGNED_OUT})
         return
+    compaction = None
+    if (CLAUDE or STANDARD) and "[Task]" in text and "COMPACT_NOW" in text:
+        compaction = "task-compaction"
+    elif DEFER_SYSTEM and "COMPACT_AGAIN" in text:
+        compaction = "task-compaction-again"
+    if compaction:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "compaction_update", "compactionId": compaction, "status": "completed"}}})
     reply = answer(text, session)
+    if STANDARD and "FAIL_SKILL_PROMPT" in text:
+        send({"id": request["id"], "error": {"code": -32603, "message": "Fixture rejected the prompt"}})
+        return
     if cancel.is_set():
         send({"id": request["id"], "result": {"stopReason": "cancelled"}})
         return
@@ -335,6 +354,15 @@ def prompt(request):
     send({"id": request["id"], "result": {"stopReason": "end_turn"}})
 
 
+def finish_held_reopen(request_id, session, gate):
+    while gate.exists() and not cancel.wait(0.01):
+        pass
+    if pathlib.Path(f"fail-load-{session}").exists():
+        send({"id": request_id, "error": {"code": -32603, "message": "Fixture rejected the reopen"}})
+    else:
+        send({"id": request_id, "result": {}})
+
+
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get("method")
@@ -342,18 +370,44 @@ for line in sys.stdin:
     if method == "initialize":
         initialized = {"protocolVersion": 1, "agentCapabilities": {
             "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
+        if CLAUDE:
+            initialized["agentCapabilities"]["_meta"] = {"claudeCode": {}}
+        elif STANDARD:
+            initialized["agentCapabilities"]["sessionCapabilities"] = {"systemPrompt": {}}
+            if RESUME_ONLY:
+                initialized["agentCapabilities"]["loadSession"] = False
+                initialized["agentCapabilities"]["sessionCapabilities"]["resume"] = {}
         if CAN_STEER:
             initialized["_meta"] = {"steering": {"supported": True}}
         send({"id": message["id"], "result": initialized})
-    elif method in ("session/new", "session/fork", "session/load"):
+    elif method in ("session/new", "session/fork", "session/load", "session/resume"):
         servers = params.get("mcpServers", servers)
-        session = params["sessionId"] if method == "session/load" else new_session()
+        reopened = method in ("session/load", "session/resume")
+        session = params["sessionId"] if reopened else new_session()
         if method == "session/fork":
             forked.add(session)
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
-        if method != "session/load":
+        if not reopened:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
-        send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
+        if CLAUDE or STANDARD:
+            if CLAUDE:
+                system = params.get("_meta", {}).get("systemPrompt", {}).get("append")
+            else:
+                system_prompt = params["systemPrompt"]
+                assert system_prompt["mode"] == "append"
+                system = system_prompt["content"][0]["text"]
+            event = {"method": method, "session": session, "pid": os.getpid(), "system": system}
+            if DEFER_SYSTEM:
+                opening = pathlib.Path(f"fixture-system-{session}")
+                if not reopened or pathlib.Path(f"apply-system-{session}").exists():
+                    opening.write_text(system, encoding="utf-8")
+                event["activeSystem"] = opening.read_text(encoding="utf-8")
+            log(SESSION_LOG, event)
+            gate = pathlib.Path(f"hold-load-{session}")
+            if reopened and gate.exists():
+                threading.Thread(target=finish_held_reopen, args=(message["id"], session, gate), daemon=True).start()
+                continue
+        send({"id": message["id"], "result": {} if reopened else {"sessionId": session}})
     elif method == "session/close":
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
@@ -376,3 +430,6 @@ for line in sys.stdin:
         permission.set()
     elif "id" in message and method:
         send({"id": message["id"], "error": {"code": -32601, "message": "not supported"}})
+
+if CLAUDE or STANDARD:
+    log(SESSION_LOG, {"method": "exit", "pid": os.getpid()})

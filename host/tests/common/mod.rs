@@ -26,6 +26,10 @@ pub async fn serve(home: &Path) -> (Child, String) {
 
 /// [`serve`] with `env` on top of the test host's own.
 pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
+    serve_binary(Path::new(env!("CARGO_BIN_EXE_codync-host")), home, env).await
+}
+
+pub(super) async fn serve_binary(binary: &Path, home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
     // The host logs to stdout (`tracing`) and panics to stderr: both go to one file.
@@ -34,7 +38,7 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
     loop {
         let port = std::net::TcpListener::bind("127.0.0.1:0").expect("free port").local_addr().expect("port").port();
         let base = format!("http://127.0.0.1:{port}");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
+        let mut child = Command::new(binary)
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")

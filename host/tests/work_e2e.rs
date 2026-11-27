@@ -2192,25 +2192,22 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
 }
 
 #[tokio::test]
-async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills() {
+async fn a_background_task_hears_skill_changes_from_its_bot_and_restart_adopts_old_thread_skills() {
     let mut host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    let description = "Coordinates production releases.";
+    host.call("updateBot", json!({"id": bot, "description": description})).await;
     host.reply(&bot, "ADD Ship it|HOLD:gate").await;
     let working = task(&host, &bot, "Ship it", "working").await;
     let thread = working["thread"].as_str().unwrap().to_owned();
-    wait("first prompt in thread", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
+    let first = wait("first prompt in thread", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
 
-    // Save a skill from the running background thread: the parent bot gets ownership, settings and chat notice.
-    let saved = host
-        .call(
-            "chatCall",
-            json!({
-                "botId": thread,
-                "name": "save_skill",
-                "arguments": {"name": "Deploy notes", "description": "Release steps.", "instructions": "1. Build."}
-            }),
-        )
-        .await;
+    let arguments = json!({"name": "Deploy notes", "description": "Release steps.", "instructions": "1. Build."});
+    let refused =
+        host.refused("chatCall", json!({"botId": thread, "name": "save_skill", "arguments": arguments})).await;
+    assert!(refused.starts_with("save_skill isn't available in a thread"), "{refused}");
+    assert_eq!(common::bot(&host.snapshot().await, &bot)["skills"], json!([]));
+    let saved = host.call("chatCall", json!({"botId": bot, "name": "save_skill", "arguments": arguments})).await;
     let skill_id = saved["skill"]["id"].as_str().unwrap().to_owned();
     let bot_skills = |snap: &Value| -> Vec<String> {
         common::bot(snap, &bot)["skills"]
@@ -2229,7 +2226,6 @@ async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills
         .collect();
     assert!(notices.iter().any(|t| t == "Saved the skill Deploy notes"), "notice in parent chat: {notices:?}");
 
-    // The parent bot's main chat can rewrite the skill its thread saved.
     let updated = host
         .call(
             "chatCall",
@@ -2247,23 +2243,42 @@ async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills
         .await;
     assert_eq!(updated["skill"]["id"], skill_id);
 
-    // A follow-up in the same thread sees the skill on its next prompt.
+    let memory = "Prefers a dry run before deploying.";
+    host.write_memory(Some(&bot), "MEMORY.md", &format!("- {memory}\n"));
     release(&host, &bot, "gate");
     let done = task(&host, &bot, "Ship it", "done").await;
-    tell(&host, &bot, &done, "use the new skill").await;
-    let follow_up = wait("follow-up prompt in thread", async || {
-        logged(&host.workspace(&bot), "prompts.jsonl")
-            .into_iter()
-            .find(|p| p["text"].as_str().is_some_and(|t| t.contains("use the new skill")))
-    })
-    .await;
-    let text = follow_up["text"].as_str().unwrap();
-    assert!(
-        text.contains("<agent_profile_update>") && text.contains("Deploy notes: Release steps updated."),
-        "saving thread gets the skill on its next message: {text}"
-    );
+    let looked_up = host.tool(&thread, "read_memory", json!({"file": "MEMORY.md"})).await;
+    assert!(looked_up["content"].as_str().unwrap().contains(memory), "{looked_up}");
 
-    // Restart with a legacy thread-owned skill in the DB: host start turns it on for the parent bot and hands over ownership.
+    let continue_task = async |message: &str| {
+        assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], thread);
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], first["session"], "the same ACP session continued");
+        let text = prompt["text"].as_str().unwrap().to_owned();
+        for absent in ["<agent_profile_update>", "Title: Mika", description, "<memory_update>", memory] {
+            assert!(!text.contains(absent), "{absent} in the task prompt: {text}");
+        }
+        text
+    };
+    let text = continue_task("use the new skill").await;
+    assert!(
+        text.contains("<skills_update>") && text.contains("Deploy notes: Release steps updated."),
+        "the existing task gets the updated skill list: {text}"
+    );
+    let text = continue_task("confirm the steps").await;
+    assert!(!text.contains("<skills_update>"), "the agent already heard this list: {text}");
+
+    host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    let text = continue_task("continue without the skill").await;
+    assert!(text.contains("<skills_update>") && text.contains("Skills: none."), "{text}");
+    assert!(!text.contains("Deploy notes"), "{text}");
+
+    // Restart adopts a skill whose saved owner is an old thread.
     let legacy_id = "legacy-thread-skill";
     host.restart(|home| {
         let dir = home.join("skills").join(legacy_id);
@@ -2299,4 +2314,442 @@ async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills
         )
         .await;
     assert_eq!(rewritten["skill"]["id"], legacy_id, "parent bot can rewrite adopted legacy skill");
+}
+
+#[tokio::test]
+async fn a_claude_task_keeps_its_announced_skills_across_session_loads() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "claude").await;
+    let description = "Coordinates production releases.";
+    let memory = "Prefers a dry run before deploying.";
+    host.call("updateBot", json!({"id": bot, "description": description})).await;
+    host.write_memory(Some(&bot), "MEMORY.md", &format!("- {memory}\n"));
+    host.reply(&bot, "ADD Ship it|Read the release notes").await;
+    let done = task(&host, &bot, "Ship it", "done").await;
+    let initial = task_prompts(&host, &bot, "Ship it").into_iter().next().unwrap();
+    let session = initial["session"].as_str().unwrap();
+    let sessions = || host.log(&bot, "claude_sessions.jsonl");
+    let ended = async |pid: &Value| {
+        wait("the task agent to exit", async || {
+            sessions().into_iter().any(|e| e["method"] == "exit" && &e["pid"] == pid).then_some(())
+        })
+        .await;
+    };
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    let system = opening["system"].as_str().unwrap();
+    let assert_task_context = |text: &str| {
+        for absent in
+            ["Agent profile:", "<agent_profile_update>", "Title: Mika", description, "<memory_update>", memory]
+        {
+            assert!(!text.contains(absent), "{absent} in the task context: {text}");
+        }
+    };
+    assert!(system.starts_with("You are doing one task"), "{system}");
+    assert_task_context(system);
+    assert!(!system.contains("Skills you can use"), "{system}");
+    ended(&opening["pid"]).await;
+
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let announced = || -> String {
+        db.query_row(
+            "SELECT json_extract(v, '$.announced.skills_brief') FROM kv WHERE k = ?1",
+            [format!("context.{bot}.{session}")],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert!(announced().is_empty(), "the task opened with no skills");
+
+    let continue_task = async |message: &str, load_count| {
+        assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], done["thread"]);
+        let loads: Vec<_> =
+            sessions().into_iter().filter(|e| e["method"] == "session/load" && e["session"] == session).collect();
+        assert_eq!(loads.len(), load_count, "the task reloaded its original session");
+        let load = loads.last().unwrap();
+        assert_eq!(load["system"], system, "the load used the frozen task instructions");
+        ended(&load["pid"]).await;
+
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        let text = prompt["text"].as_str().unwrap().to_owned();
+        assert_task_context(&text);
+        (text, announced())
+    };
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let added = continue_task("use the new skill", 1).await;
+    let unchanged = continue_task("confirm the steps", 2).await;
+    host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    let removed = continue_task("continue without the skill", 3).await;
+
+    let updates = [&added, &unchanged, &removed].map(|(text, _)| text.matches("<skills_update>").count());
+    let empty_list = removed.0.contains("Skills: none.");
+    let delivered_b = added.1.contains("- B: Release steps.");
+    eprintln!(
+        "three loads of {session} with the frozen system: updates {updates:?}, empty list {empty_list}, \
+         SQLite B after first and second turns {delivered_b}/{}, empty after third {}",
+        unchanged.1 == added.1,
+        removed.1.is_empty(),
+    );
+    assert_eq!(updates, [1, 0, 1], "add, keep, and remove skills across the three loads");
+    assert!(delivered_b && added.0.contains(&added.1), "the first prompt delivered the recorded skill");
+    assert_eq!(unchanged.1, added.1);
+    assert!(empty_list && removed.1.is_empty(), "the last prompt revoked the recorded skill");
+}
+
+#[tokio::test]
+async fn a_claude_task_revokes_a_skill_disabled_during_a_compacted_session_load() {
+    compacted_task_skills_on_reopen("claude", CompactedSkill::Disabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_revokes_a_skill_disabled_during_a_compacted_session_load() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::Disabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_announces_skills_after_a_deferred_load() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::Enabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_announces_skills_after_a_deferred_resume() {
+    compacted_task_skills_on_reopen("standard resume-only defer-system", CompactedSkill::Enabled).await;
+}
+
+#[tokio::test]
+async fn an_upgraded_standard_acp_task_revokes_the_frozen_skill_on_reopen() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::Legacy).await;
+}
+
+#[tokio::test]
+async fn an_upgraded_claude_task_revokes_the_frozen_skill_on_reopen() {
+    compacted_task_skills_on_reopen("claude", CompactedSkill::Legacy).await;
+}
+
+#[tokio::test]
+#[ignore = "requires a historical codync-host via CODYNC_LEGACY_HOST_BIN"]
+async fn a_legacy_standard_task_revokes_skills_after_reopening_a_refreshed_system() {
+    let legacy = std::env::var_os("CODYNC_LEGACY_HOST_BIN").expect("set the historical codync-host path");
+    let mut host = Host::start_from(Path::new(&legacy), &[]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system").await;
+    let title = "Legacy task";
+    let skill = "- B: Release steps.";
+    host.reply(&bot, "ADD Legacy task|COMPACT_NOW HOLD:legacy_start").await;
+    let initial = wait("the legacy task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let events = |host: &Host, method: &str| -> Vec<Value> {
+        host.log(&bot, "standard_sessions.jsonl")
+            .into_iter()
+            .filter(|event| event["session"] == session && event["method"] == method)
+            .collect()
+    };
+    let ended = async |host: &Host, pid: &Value| {
+        wait("the task agent to exit", async || {
+            host.log(&bot, "standard_sessions.jsonl")
+                .into_iter()
+                .find(|event| event["method"] == "exit" && &event["pid"] == pid)
+        })
+        .await;
+    };
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let kv =
+        |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |row| row.get(0)).ok() };
+    let snapshot = || -> Value { serde_json::from_str(&kv(&format!("context.{bot}.{session}")).unwrap()).unwrap() };
+    let compacted = async |revision: u32, id: &str| {
+        let key = format!("context.epoch.{bot}.{session}");
+        let expected = format!("{session}\t{revision}\t{id}");
+        wait(id, async || (kv(&key).as_deref() == Some(&expected)).then_some(())).await;
+    };
+    compacted(1, "task-compaction").await;
+    release(&host, &bot, "legacy_start");
+    let done = task(&host, &bot, title, "done").await;
+    ended(&host, &events(&host, "session/new")[0]["pid"]).await;
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let apply = flag(&host, &bot, &format!("apply-system-{session}"));
+    assert_eq!(tell(&host, &bot, &done, "COMPACT_AGAIN FAIL_SKILL_PROMPT HOLD:legacy_origin").await["reopened"], true);
+    compacted(2, "task-compaction-again").await;
+    let saved = snapshot();
+    let [origin_load] = events(&host, "session/load").try_into().unwrap();
+    assert!(origin_load["activeSystem"].as_str().unwrap().contains(skill));
+    assert_eq!(origin_load["activeSystem"], saved["system"]);
+    assert_eq!(saved["epoch"], 1);
+    assert_eq!(saved["announced"]["skills_brief"], "");
+    for key in ["loadedTaskSkills", "confirmedTaskSkills", "pendingTaskSkills"] {
+        assert!(saved.get(key).is_none(), "{key} in the historical snapshot");
+    }
+    let bot_change = host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    assert_eq!(bot_change["bot"]["skills"], json!([]));
+    std::fs::remove_file(apply).unwrap();
+    release(&host, &bot, "legacy_origin");
+    let failed = task(&host, &bot, title, "failed").await;
+    ended(&host, &origin_load["pid"]).await;
+    assert_eq!(snapshot(), saved);
+    host.restart(|_| {}).await;
+
+    let first_message = "finish after upgrade HOLD:confirm";
+    assert_eq!(tell(&host, &bot, &failed, first_message).await["reopened"], true);
+    let thread_prompt = async |host: &Host, message: &str| {
+        wait(message, async || {
+            thread_prompts(host, &bot)
+                .into_iter()
+                .find(|prompt| prompt["text"].as_str().is_some_and(|text| text.contains(message)))
+        })
+        .await
+    };
+    let first = thread_prompt(&host, first_message).await;
+    let before_reply = snapshot();
+    let [_, upgraded] = events(&host, "session/load").try_into().unwrap();
+    assert_eq!(before_reply["epoch"], 2);
+    assert_eq!(before_reply["systemIdentity"]["skills_brief"], "");
+    assert_eq!(before_reply["announced"]["skills_brief"], "");
+    assert_eq!(upgraded["system"], before_reply["system"]);
+    assert_eq!(upgraded["activeSystem"], origin_load["activeSystem"]);
+    release(&host, &bot, "confirm");
+    let finished = result(&host, &bot, title, &format!("Thread {first_message}:")).await;
+    ended(&host, &upgraded["pid"]).await;
+    let delivered = snapshot();
+
+    let second_message = "check the same opening";
+    assert_eq!(tell(&host, &bot, &finished, second_message).await["reopened"], true);
+    result(&host, &bot, title, &format!("Thread {second_message}:")).await;
+    let replay = thread_prompt(&host, second_message).await;
+    let [_, _, repeat] = events(&host, "session/load").try_into().unwrap();
+    ended(&host, &repeat["pid"]).await;
+    assert_eq!(repeat["system"], upgraded["system"]);
+    assert_eq!(repeat["activeSystem"], origin_load["activeSystem"]);
+    let updates = [&first, &replay].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap().matches("<skills_update>").count()
+    });
+    let revoked = first["text"].as_str().unwrap().contains("Skills: none.");
+    eprintln!(
+        "{session} upgraded from epoch 1 with B to epoch 2 without B, active system still contains B: \
+         updates {updates:?}, revoked {revoked}, pending before prompt reply {}, confirmed before reply {}, \
+         confirmed after reply {}, announced after reply {}",
+        before_reply["pendingTaskSkills"],
+        before_reply["confirmedTaskSkills"],
+        delivered["confirmedTaskSkills"],
+        delivered["announced"]["skills_brief"],
+    );
+    assert_eq!(updates, [1, 0]);
+    assert!(revoked);
+    assert_eq!(before_reply["pendingTaskSkills"], "");
+    assert!(before_reply.get("confirmedTaskSkills").is_none());
+    for state in [delivered, snapshot()] {
+        assert_eq!(state["announced"]["skills_brief"], "");
+        assert_eq!(state["confirmedTaskSkills"], "");
+        assert!(state.get("pendingTaskSkills").is_none());
+    }
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_does_not_credit_skills_from_a_failed_reopen() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::FailedReopen).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_after_a_failed_prompt() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::RetryPrompt).await;
+}
+
+enum CompactedSkill {
+    Enabled,
+    Disabled,
+    Legacy,
+    FailedReopen,
+    RetryPrompt,
+}
+
+async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", mode).await;
+    host.reply(&bot, "ADD Ship it|COMPACT_NOW HOLD:compact").await;
+    let initial =
+        wait("the initial task prompt", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let stored =
+        |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |row| row.get(0)).ok() };
+    let snapshot_key = format!("context.{bot}.{session}");
+    let snapshot = || -> Value { serde_json::from_str(&stored(&snapshot_key).unwrap()).unwrap() };
+    let epoch_key = format!("context.epoch.{bot}.{session}");
+    let compaction = format!("{session}\t1\ttask-compaction");
+    wait("the compaction notification to advance the epoch", async || {
+        (stored(&epoch_key).as_deref() == Some(&compaction)).then_some(())
+    })
+    .await;
+    assert_eq!(snapshot()["systemIdentity"]["skills_brief"], "");
+    assert_eq!(snapshot()["announced"]["skills_brief"], "");
+
+    let log = if mode == "claude" { "claude_sessions.jsonl" } else { "standard_sessions.jsonl" };
+    let sessions = || host.log(&bot, log);
+    let ended = async |pid: &Value| {
+        wait("the task agent to exit", async || {
+            sessions().into_iter().any(|e| e["method"] == "exit" && &e["pid"] == pid).then_some(())
+        })
+        .await;
+    };
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    release(&host, &bot, "compact");
+    let done = task(&host, &bot, "Ship it", "done").await;
+    ended(&opening["pid"]).await;
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let method = if mode.contains("resume-only") { "session/resume" } else { "session/load" };
+    let loads = || -> Vec<Value> {
+        sessions().into_iter().filter(|e| e["method"] == method && e["session"] == session).collect()
+    };
+    let gate = host.workspace(&bot).join(format!("hold-load-{session}"));
+    std::fs::write(&gate, "").unwrap();
+    let enabled = matches!(skill, CompactedSkill::Enabled | CompactedSkill::RetryPrompt);
+    let first_message = match skill {
+        CompactedSkill::Enabled => "finish with B HOLD:delivery",
+        CompactedSkill::RetryPrompt => "finish with B HOLD:delivery FAIL_SKILL_PROMPT",
+        _ => "finish without B",
+    };
+    assert_eq!(tell(&host, &bot, &done, first_message).await["reopened"], true);
+    let load = wait("the held reopen request", async || loads().into_iter().next()).await;
+    let applied = load["system"].as_str().unwrap();
+    let rendered = snapshot();
+    assert_eq!(rendered["epoch"], 1);
+    assert_ne!(applied, opening["system"].as_str().unwrap());
+    assert!(applied.contains("- B: Release steps."), "{applied}");
+    assert_eq!(rendered["system"], applied);
+    assert_eq!(rendered["announced"]["skills_brief"], "", "the new opening has yet to be loaded");
+    if enabled {
+        assert_eq!(load["activeSystem"], opening["system"], "the agent deferred the system carrying B");
+    } else {
+        let bot_change = host.call("updateBot", json!({"id": bot, "skills": []})).await;
+        assert_eq!(bot_change["bot"]["skills"], json!([]));
+    }
+    assert!(thread_prompts(&host, &bot).is_empty(), "the task still awaits the load response");
+    if matches!(skill, CompactedSkill::FailedReopen) {
+        flag(&host, &bot, &format!("fail-load-{session}"));
+    }
+    std::fs::remove_file(gate).unwrap();
+    if matches!(skill, CompactedSkill::FailedReopen) {
+        let fresh = result(&host, &bot, "Ship it", &format!("Thread {first_message}:")).await;
+        assert_eq!(fresh["thread"], done["thread"]);
+        let prompts = thread_prompts(&host, &bot);
+        assert_eq!(prompts.len(), 1);
+        assert_ne!(prompts[0]["session"], session);
+        assert!(!prompts[0]["text"].as_str().unwrap().contains("<skills_update>"));
+        let opened = sessions()
+            .into_iter()
+            .find(|e| e["method"] == "session/new" && e["session"] == prompts[0]["session"])
+            .unwrap();
+        assert!(!opened["system"].as_str().unwrap().contains("- B: Release steps."));
+        assert_eq!(snapshot(), rendered, "a failed reopen leaves the old snapshot intact");
+        eprintln!("failed standard load of {session} left its snapshot intact, new session {}", prompts[0]["session"]);
+        return;
+    }
+    let early_announcement = if enabled {
+        wait("the held prompt after reopen", async || thread_prompts(&host, &bot).into_iter().next()).await;
+        let announced = snapshot()["announced"]["skills_brief"].clone();
+        release(&host, &bot, "delivery");
+        Some(announced)
+    } else {
+        None
+    };
+
+    let finished = async |message: &str, load_count: usize| {
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], done["thread"]);
+        let loads = loads();
+        assert_eq!(loads.len(), load_count);
+        assert_eq!(loads.last().unwrap()["system"], applied);
+        ended(&loads.last().unwrap()["pid"]).await;
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap().to_owned()
+    };
+    let (mut notice, mut load_count) = if matches!(skill, CompactedSkill::RetryPrompt) {
+        let failed = task(&host, &bot, "Ship it", "failed").await;
+        ended(&load["pid"]).await;
+        let prompts = thread_prompts(&host, &bot);
+        assert_eq!(prompts[0]["session"], session);
+        assert!(prompts[0]["text"].as_str().unwrap().contains("- B: Release steps."));
+        assert_eq!(snapshot()["announced"]["skills_brief"], "");
+        assert_eq!(tell(&host, &bot, &failed, "retry with B").await["reopened"], true);
+        (finished("retry with B", 2).await, 3)
+    } else {
+        (finished(first_message, 1).await, 2)
+    };
+    if matches!(skill, CompactedSkill::Legacy) {
+        assert!(notice.contains("Skills: none."), "the saved opening has B after the task heard the revocation");
+        let mut legacy = snapshot();
+        assert_eq!(legacy["announced"]["skills_brief"], "");
+        legacy.as_object_mut().unwrap().retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "session" | "epoch" | "system" | "systemIdentity" | "announced" | "memory" | "unprompted"
+            )
+        });
+        assert_eq!(
+            db.execute("UPDATE kv SET v = ?1 WHERE k = ?2", rusqlite::params![legacy.to_string(), snapshot_key])
+                .unwrap(),
+            1
+        );
+        assert_eq!(tell(&host, &bot, &done, "continue the upgraded task").await["reopened"], true);
+        notice = finished("continue the upgraded task", load_count).await;
+        load_count += 1;
+    }
+    let delivered = snapshot();
+    assert_eq!(tell(&host, &bot, &done, "check the final result").await["reopened"], true);
+    let replay = finished("check the final result", load_count).await;
+    let latest = snapshot();
+    let updates = [&notice, &replay].map(|text| text.matches("<skills_update>").count());
+    let expected_list = if enabled { "- B: Release steps." } else { "Skills: none." };
+    let has_list = notice.contains(expected_list);
+    eprintln!(
+        "{mode} {method} of {session} at epoch 1: updates {updates:?}, expected list {has_list}, \
+         legacy {}, announced before prompt reply {early_announcement:?}",
+        matches!(skill, CompactedSkill::Legacy),
+    );
+    assert_eq!(updates, [1, 0], "confirm the current skills once after reopening");
+    assert!(has_list, "{notice}");
+    if enabled {
+        assert_eq!(early_announcement, Some(json!("")), "the held prompt has not completed");
+    }
+    let expected = if enabled { rendered["systemIdentity"]["skills_brief"].as_str().unwrap() } else { "" };
+    for state in [delivered, latest] {
+        assert_eq!(state["announced"]["skills_brief"], expected);
+    }
+    for text in [notice, replay] {
+        for absent in ["<agent_profile_update>", "Title: Mika", "<memory_update>"] {
+            assert!(!text.contains(absent), "{absent} in the task prompt: {text}");
+        }
+        assert!(enabled || !text.contains("- B: Release steps."), "{text}");
+    }
 }

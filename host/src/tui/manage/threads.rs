@@ -11,7 +11,10 @@ use serde_json::{Value, json};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 
-use super::super::app::{After, App, Editor, Entry, Focus, Kind, Overlay, Queued, WorkTask, shared_line};
+use super::super::app::{
+    After, App, Confirm, ConfirmAct, Editor, Entry, Focus, Kind, Overlay, Queued, WorkTask, shared_line,
+};
+use super::super::l10n::tr;
 use super::scroll::up_from_end;
 use super::{Reply, ctrl};
 
@@ -137,6 +140,14 @@ impl ThreadSheet {
         app.bots.get(&self.bot)?.work.iter().find(|i| i.id == self.task)
     }
 
+    fn has_draft(&self) -> bool {
+        !self.draft.text.is_empty() || !self.files.is_empty()
+    }
+
+    pub(in crate::tui) fn can_edit(&self, task: Option<&WorkTask>) -> bool {
+        self.typing || self.has_draft() || task.is_some_and(|task| task.talk)
+    }
+
     fn restore_send_files(&mut self) {
         if let Some(sent) = &mut self.sending
             && let Some(task) = sent.task.take()
@@ -210,13 +221,19 @@ impl App {
     pub(in crate::tui) fn rewind_threads(&mut self) {
         self.thread_entries = ThreadEntries::default();
         for overlay in &mut self.overlays {
-            if let Overlay::Thread(s) = overlay {
-                (s.fetched, s.pick) = (Fetched::Loading, None);
-                s.scroll.set(0);
-                s.restore_send_files();
-                if let Some(sent) = &mut s.sending {
-                    sent.receipt = None;
+            match overlay {
+                Overlay::Confirm(Confirm { act: ConfirmAct::DiscardThreadDraft { entry: Some(_) }, .. }) => {
+                    *overlay = Overlay::ThreadDraftKept;
                 }
+                Overlay::Thread(s) => {
+                    (s.fetched, s.pick) = (Fetched::Loading, None);
+                    s.scroll.set(0);
+                    s.restore_send_files();
+                    if let Some(sent) = &mut s.sending {
+                        sent.receipt = None;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -385,7 +402,10 @@ impl App {
     /// and reopens a task that ended.
     fn send_to_thread(&mut self, s: &mut ThreadSheet) {
         let text = s.draft.text.trim();
-        if self.replaying_mirror() || (text.is_empty() && s.files.is_empty()) {
+        if self.replaying_mirror()
+            || !s.task(self).is_some_and(|task| task.talk)
+            || (text.is_empty() && s.files.is_empty())
+        {
             return;
         }
         if s.sending.as_ref().is_some_and(|sent| sent.task.is_some()) {
@@ -430,25 +450,51 @@ impl App {
         self.on_queued(act, json!({"botId": s.bot, "taskId": s.task}), id);
     }
 
-    /// The thread closes: nothing brings an ended thread's entries any more.
-    fn leave_thread(&mut self, s: &ThreadSheet) {
-        if !self.thread_open(&s.thread) && !self.bots.get(&s.bot).is_some_and(|b| works(&b.work, &s.thread)) {
-            self.thread_entries.forget(&s.thread);
+    fn close_thread(&mut self, s: ThreadSheet, entry: Option<String>) -> Option<Overlay> {
+        if !s.has_draft() {
+            return self.leave_thread(s, entry.as_deref());
+        }
+        self.overlays.push(Overlay::Confirm(Confirm {
+            title: tr("Discard the draft and its attachments?").into_owned(),
+            detail: String::new(),
+            note: String::new(),
+            button: "Close",
+            act: ConfirmAct::DiscardThreadDraft { entry },
+        }));
+        Some(Overlay::Thread(s))
+    }
+
+    pub(in crate::tui) fn discard_thread_draft(&mut self, entry: Option<&str>) {
+        if matches!(self.overlays.last(), Some(Overlay::Thread(_)))
+            && let Some(Overlay::Thread(s)) = self.overlays.pop()
+            && let Some(overlay) = self.leave_thread(s, entry)
+        {
+            self.overlays.push(overlay);
         }
     }
 
-    /// `↵` on a picked line: the thread and what is under it close for the bot's chat at that entry. A card still
-    /// waiting is at the chat's end, where the chat's keys answer it; anything else is picked, which brings it on
-    /// screen.
-    fn show_in_chat(&mut self, s: &ThreadSheet, entry: &str) {
-        let pending = self.lane(&s.bot).into_iter().find(|e| e.id == entry).is_none_or(Entry::pending);
-        self.leave_thread(s);
-        self.overlays.clear();
-        self.select(&s.bot);
-        self.chat_page = true;
-        self.focus = Focus::Chat;
-        self.chat_scroll = 0;
-        self.pick = (!pending).then(|| entry.to_owned());
+    fn leave_thread(&mut self, mut s: ThreadSheet, entry: Option<&str>) -> Option<Overlay> {
+        let pending = if let Some(id) = entry {
+            let Some(row) = self.shared(&s.bot, &s.thread).into_iter().find(|row| row.id == id) else {
+                s.pick = None;
+                return Some(Overlay::Thread(s));
+            };
+            row.pending()
+        } else {
+            false
+        };
+        if !self.thread_open(&s.thread) && !self.bots.get(&s.bot).is_some_and(|b| works(&b.work, &s.thread)) {
+            self.thread_entries.forget(&s.thread);
+        }
+        if let Some(entry) = entry {
+            self.overlays.clear();
+            self.select(&s.bot);
+            self.chat_page = true;
+            self.focus = Focus::Chat;
+            self.chat_scroll = 0;
+            self.pick = (!pending).then(|| entry.to_owned());
+        }
+        None
     }
 
     /// A key while the thread's composer has the keys.
@@ -472,34 +518,25 @@ impl App {
     }
 
     pub(in crate::tui) fn thread_key(&mut self, mut s: ThreadSheet, k: KeyEvent) -> Option<Overlay> {
-        let task = s.task(self).cloned();
-        // A task that stopped taking messages (it was dropped, or started again elsewhere) takes no more keys.
-        let talks = task.as_ref().is_some_and(|i| i.talk);
-        s.typing &= talks || self.replaying_mirror();
         if s.typing {
             self.thread_typing(&mut s, k);
             return Some(Overlay::Thread(s));
         }
-        let live = task.filter(|i| i.status.live());
+        let task = s.task(self);
         match k.code {
             KeyCode::Tab | KeyCode::BackTab => s.step_pick(self, k.code == KeyCode::Tab),
             KeyCode::Enter if s.pick.is_some() => {
-                if let Some(entry) = s.pick.clone() {
-                    self.show_in_chat(&s, &entry);
-                }
-                return None;
+                let entry = s.pick.clone();
+                return self.close_thread(s, entry);
             }
             KeyCode::Esc if s.pick.is_some() => s.pick = None,
-            KeyCode::Char('i') | KeyCode::Enter if talks => s.typing = true,
+            KeyCode::Char('i') | KeyCode::Enter if s.can_edit(task) => s.typing = true,
             KeyCode::Char('S') => self.on_thread_queued(&s, Queued::SendNow),
             KeyCode::Char('D') => self.on_thread_queued(&s, Queued::Remove),
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.leave_thread(&s);
-                return None;
-            }
+            KeyCode::Esc | KeyCode::Char('q') => return self.close_thread(s, None),
             KeyCode::Char('T') => s.full = !s.full,
             KeyCode::Char('X') => {
-                if let Some(task) = live {
+                if let Some(task) = task.filter(|i| i.status.live()).cloned() {
                     let bot = s.bot.clone();
                     self.overlays.push(Overlay::Thread(s));
                     self.confirm_stop(bot, &task);
@@ -523,6 +560,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;
+
+    use crossterm::event::KeyEventKind;
 
     use super::super::super::app::{Msg, SendReceipts, next_request, recording_host, test_app};
     use super::super::work::tests::{bot_with, key};
@@ -789,7 +828,75 @@ mod tests {
         app.on_key(KeyEvent::from(KeyCode::Esc));
         assert!(!sheet(&app).typing);
         key(&mut app, 'q');
-        assert!(app.overlays.is_empty(), "q closes a thread outside its composer");
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        key(&mut app, 'd');
+        assert!(app.overlays.is_empty(), "q can close a thread after confirming");
+    }
+
+    #[tokio::test]
+    async fn a_thread_without_its_restored_task_keeps_the_draft_until_discarded() {
+        let file = PathBuf::from("draft.txt");
+        for (text, typing) in [("draft", true), ("", false)] {
+            let mut app = test_app();
+            open_draft(&mut app, text, file.clone());
+            if !typing {
+                app.on_key(KeyEvent::from(KeyCode::Esc));
+            }
+            app.on_msg(Msg::Rewind(SendReceipts::default()));
+            hello(&mut app);
+            bot_with(&mut app, &[]);
+            app.on_msg(Msg::ReplayComplete);
+            assert!(!app.replaying_mirror() && sheet(&app).task(&app).is_none());
+
+            if typing {
+                key(&mut app, 'q');
+                assert_eq!(sheet(&app).draft.text, "draftq");
+                app.on_key(KeyEvent::from(KeyCode::Esc));
+            }
+            let draft = sheet(&app).draft.text.clone();
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+            assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+            assert_eq!(sheet(&app).draft.text, draft);
+            assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
+
+            key(&mut app, 'i');
+            assert!(sheet(&app).typing);
+            app.on_key(KeyEvent::from(KeyCode::Enter));
+            assert!(sheet(&app).sending.is_none());
+            assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+            key(&mut app, 'q');
+            key(&mut app, 'd');
+            assert!(app.overlays.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn clearing_the_draft_keeps_the_editor_open_without_a_task() {
+        for (text, files) in [("x", vec![]), ("", vec![PathBuf::from("draft.txt")])] {
+            let mut app = test_app();
+            app.on_msg(writable_task());
+            app.overlays.push(Overlay::Thread(ThreadSheet {
+                draft: Editor::with(text),
+                files,
+                typing: true,
+                ..ThreadSheet::new("a".into(), "1".into(), "thread-1".into())
+            }));
+            app.on_msg(Msg::Rewind(SendReceipts::default()));
+            hello(&mut app);
+            bot_with(&mut app, &[]);
+            app.on_msg(Msg::ReplayComplete);
+
+            app.on_key(KeyEvent::from(KeyCode::Backspace));
+            assert!(sheet(&app).typing && !sheet(&app).has_draft());
+            key(&mut app, 'q');
+            assert_eq!(sheet(&app).draft.text, "q");
+            app.on_key(KeyEvent::from(KeyCode::Enter));
+            assert!(sheet(&app).sending.is_none());
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+            assert!(!sheet(&app).typing);
+        }
     }
 
     #[tokio::test]
@@ -1066,6 +1173,8 @@ mod tests {
         app.open_thread("a", &run);
         key(&mut app, 'i');
         assert!(!sheet(&app).typing);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.overlays.is_empty(), "a read-only thread with no draft closes directly");
     }
 
     #[tokio::test]
@@ -1142,5 +1251,85 @@ mod tests {
         assert!(sheet(&app).pick.is_none());
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert!(sheet(&app).typing);
+
+        app.on_paste("draft for the thread");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        for kind in [KeyEventKind::Repeat, KeyEventKind::Press, KeyEventKind::Press] {
+            app.on_key(KeyEvent::new_with_kind(KeyCode::Enter, KeyModifiers::NONE, kind));
+            assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        }
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(sheet(&app).draft.text, "draft for the thread");
+        assert_eq!(sheet(&app).pick.as_deref(), Some("card"));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        key(&mut app, 'd');
+        assert!(app.overlays.is_empty() && app.focus == Focus::Chat && app.pick.is_none());
+    }
+
+    fn shared_file(rev: i64, thread: &str) -> Msg {
+        Msg::Event(json!({"type": "entry", "rev": rev, "entry": {
+            "id": "file", "botId": "a", "seq": 1, "rev": rev, "kind": "agent", "turn": 1,
+            "data": {"final": true, "thread": {"id": thread}, "files": [{"id": "f", "name": "log.txt", "size": 3}]}
+        }}))
+    }
+
+    #[tokio::test]
+    async fn a_reference_that_changed_threads_cannot_discard_the_draft() {
+        let mut app = test_app();
+        let file = PathBuf::from("draft.txt");
+        open_draft(&mut app, "keep", file.clone());
+        app.on_msg(shared_file(1, "thread-1"));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+
+        app.on_msg(shared_file(2, "thread-2"));
+        assert!(app.shared("a", "thread-1").is_empty());
+        key(&mut app, 'd');
+        assert_eq!(sheet(&app).draft.text, "keep");
+        assert_eq!(sheet(&app).files, &[file]);
+        assert!(sheet(&app).pick.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_rewind_holds_reference_input_until_escape_but_keeps_plain_close_confirmation() {
+        let mut app = test_app();
+        let file = PathBuf::from("draft.txt");
+        open_draft(&mut app, "keep", file.clone());
+        app.on_msg(shared_file(1, "thread-1"));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
+        let check_notice = |app: &mut App| {
+            for kind in [KeyEventKind::Press, KeyEventKind::Repeat, KeyEventKind::Press] {
+                app.on_key(KeyEvent::new_with_kind(KeyCode::Enter, KeyModifiers::NONE, kind));
+            }
+            key(app, 'd');
+            let [Overlay::Thread(thread), Overlay::ThreadDraftKept] = app.overlays.as_slice() else {
+                panic!("the notice still covers the thread");
+            };
+            assert!(!thread.typing && thread.sending.is_none() && thread.pick.is_none());
+            assert_eq!(thread.draft.text, "keep");
+            assert_eq!(thread.files, std::slice::from_ref(&file));
+        };
+        check_notice(&mut app);
+        hello(&mut app);
+        app.on_msg(writable_task());
+        check_notice(&mut app);
+        app.on_msg(Msg::ReplayComplete);
+        check_notice(&mut app);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(!sheet(&app).typing && sheet(&app).task(&app).is_some_and(|task| task.talk));
+
+        key(&mut app, 'q');
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        key(&mut app, 'd');
+        assert!(app.overlays.is_empty());
     }
 }

@@ -162,7 +162,9 @@ A thread can add to the bot's [memory](/docs/memory) but can't change or remove 
 
 Tasks run on your computer and pick up again after the host restarts. The bot can look up what a task was asked and what it found for 30 days, so you can ask it about earlier work.
 
-After the host restores a backup, the terminal reloads the thread you have open and keeps your draft and its attachments.
+After the host restores a backup, the terminal reloads the thread you have open and keeps your draft and its attachments. If the restored backup has no task for that thread, you can still edit locally. You can keep typing after clearing the last character or attachment. Sending is available when the task returns and takes messages. Press Esc to leave the composer and `i` to edit a draft again.
+
+If you close a thread with a draft or follow a line from it to the chat, press `d` to discard the draft and continue, or Esc to keep it. If a restore removes the line while the confirmation is open, the terminal shows **Draft kept**. Press Esc to return to the thread, then `i` to edit again.
 
 ### Old threads
 

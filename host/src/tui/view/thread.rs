@@ -42,7 +42,7 @@ fn read_only(task: &WorkTask) -> Option<Cow<'static, str>> {
 enum Keys {
     /// The composer's: the message waits behind a turn that runs.
     Typing,
-    EditingDuringReplay,
+    EditingLocally,
     /// A line of what the thread put in the chat is picked.
     Picked,
     /// The page's, with `tab` when it has such lines.
@@ -55,7 +55,7 @@ enum Keys {
 fn thread_keys(live: bool, keys: Keys) -> String {
     let lines = match keys {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
-        Keys::EditingDuringReplay => return " esc".into(),
+        Keys::EditingLocally => return " esc".into(),
         Keys::Picked => return " ↵ shows it in the chat · tab ⇧tab another · esc".into(),
         Keys::Reading { lines } => lines,
     };
@@ -121,7 +121,6 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     let live = task.is_some_and(|task| task.status.live());
     let talks = task.is_some_and(|task| task.talk);
     let replaying = app.replaying_mirror();
-    let editing = s.typing && (talks || replaying);
     if let Some(task) = task {
         put(
             buf,
@@ -145,9 +144,9 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     }
     hline(buf, inner.x, inner.y + 2, inner.width, t.dim.patch(t.panel));
     let foot = inner.bottom() - 1;
-    let keys = if editing && replaying {
-        Keys::EditingDuringReplay
-    } else if editing {
+    let keys = if s.typing && (replaying || !talks) {
+        Keys::EditingLocally
+    } else if s.typing {
         Keys::Typing
     } else if s.pick.is_some() {
         Keys::Picked
@@ -157,7 +156,7 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     put(buf, inner.x, foot, inner.width, &thread_keys(live, keys), t.dim.patch(t.panel));
     // Between the transcript and the keys: what waits in the thread over its composer, or why it has none.
     let mut bottom = foot;
-    if talks || editing {
+    if s.can_edit(task) {
         bottom = thread_composer(buf, inner, app, s, foot);
     } else if let Some(why) = task.and_then(read_only) {
         bottom = foot - 1;
@@ -410,5 +409,19 @@ mod tests {
         let rebuilding = draw(&app, &own);
         let composer = at(&rebuilding, "› one more").expect("the draft stays visible during recovery");
         assert_eq!(rebuilding[composer + 1], "esc");
+
+        bot(&mut app, &json!([]));
+        app.on_msg(Msg::ReplayComplete);
+        own.typing = false;
+        own.files.push("draft.txt".into());
+        let restored = draw(&app, &own);
+        assert!(at(&restored, "› one more").is_some() && at(&restored, "draft.txt").is_some());
+
+        own.typing = true;
+        own.draft.clear();
+        own.files.clear();
+        let empty = draw(&app, &own);
+        let composer = at(&empty, "Message this thread").expect("the empty editor stays visible while typing");
+        assert_eq!(empty[composer + 1], "esc");
     }
 }

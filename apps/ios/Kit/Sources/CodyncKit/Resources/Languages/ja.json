@@ -40,6 +40,8 @@
   "Choose your widget": "ウィジェットを選択してください",
   "Clear search": "検索をクリア",
   "Close": "閉じる",
+  "Discard the draft and its attachments?": "下書きと添付ファイルを破棄しますか？",
+  "Draft kept": "下書きを保持しました",
   "Cloudflare, then Wi-Fi or Tailscale": "Cloudflare、次に Wi-Fi または Tailscale",
   "Code": "コード",
   "Collapse": "折りたたむ",

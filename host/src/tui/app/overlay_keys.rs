@@ -102,7 +102,7 @@ impl App {
                 }
             }
             Overlay::Confirm(c) => match k.code {
-                KeyCode::Enter => {
+                _ if c.act.confirms(k) => {
                     let changed = After::Sheet(Reply::Changed);
                     match &c.act {
                         ConfirmAct::Delete(id) => self.call("deleteBot", json!({"botId": id}), After::Nothing),
@@ -125,6 +125,7 @@ impl App {
                             self.call("resetCredentials", json!({}), After::CredentialsReset);
                         }
                         ConfirmAct::StopWork { bot, task } => self.stop_work(bot, task),
+                        ConfirmAct::DiscardThreadDraft { entry } => self.discard_thread_draft(entry.as_deref()),
                         ConfirmAct::DeleteWorkflow(id) => {
                             self.call(
                                 "deleteWorkflow",
@@ -141,6 +142,7 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => None,
                 _ => Some(Overlay::Confirm(c)),
             },
+            o @ Overlay::ThreadDraftKept => (k.code != KeyCode::Esc).then_some(o),
             Overlay::NewBot(n) => self.new_bot_key(n, k),
             Overlay::Folder(p) => self.folder_key(p, k),
             Overlay::Form(f) => self.form_key(f, k),

@@ -59,8 +59,17 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             } else {
                 t.sel
             };
-            let x = put(buf, inner.x, inner.y + 4, 30, &format!(" ↵ {button} "), danger) + 1;
+            let key = c.act.confirmation_letter().unwrap_or('↵');
+            let x = put(buf, inner.x, inner.y + 4, 30, &format!(" {key} {button} "), danger) + 1;
             put(buf, x, inner.y + 4, 14, &format!(" esc {cancel} "), t.text.patch(t.btn).add_modifier(Modifier::BOLD));
+        }
+        Overlay::ThreadDraftKept => {
+            let t = theme();
+            let inner = frame_box(buf, centered(area, 62, 8), t.text, t.panel, None);
+            let title = super::super::l10n::tr("Draft kept");
+            let back = super::super::l10n::tr("Back");
+            put(buf, inner.x, inner.y, inner.width, &title, t.bold.patch(t.panel));
+            put(buf, inner.x, inner.y + 4, inner.width, &format!(" esc {back} "), t.text.patch(t.btn));
         }
         Overlay::NewBot(n) => new_bot_view(buf, area, n),
         Overlay::Folder(p) => {

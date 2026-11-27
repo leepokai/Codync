@@ -74,7 +74,19 @@ CI only tests `cloud/`; nothing deploys it. A change to `cloud/` (routes, bindin
 4. Right after the merge into `main`, before or with the release tag: create the same bindings for main (`wrangler.toml` names them, e.g. `codync-icons` beside `codync-icons-dev`; keep R2 buckets private), apply migrations, `npm run deploy:main`.
 5. Check main: each new route on `api.codync.dev` answers (401 without credentials, not 404), and `npx wrangler deployments list` shows the new version.
 
-Clients and host that call a new route must not reach users before `api.codync.dev` has it (step 4). In 2026-10, custom icons shipped in v2.33.2 while production cloud was days old and its R2 bucket missing, so every upload failed.
+Clients and host that call a new route must not reach users before `api.codync.dev` has it (step 4).
+
+## Releasing Worker changes
+
+Every merge into `main` deploys, right away, everything it changed that deploys, so production always runs what `main` has (owner's rule, 2026-11-27: `relay/` was missed in 2.54.0). The `release-pr` workflow does it after the merge, from its worktree at the merged `main` (never the shared checkout), for each target that differs between the previous release tag and the merge commit:
+
+| Target | Deploy | Check |
+|---|---|---|
+| `cloud/` | bindings, migrations, `npm run deploy:main` ([above](#releasing-cloud-changes)) | new routes on `api.codync.dev` answer 401, not 404 |
+| `relay/` (`codync-relay`) | `npm ci && npm run deploy` | `https://push.codync.dev/health` answers `{"ok":true}` |
+| `discord/` (`codync-discord`) | `npm ci && npm run deploy` | `https://discord.codync.dev/` answers 302 to Discord's sign-in |
+
+Each also checks `npx wrangler deployments list` shows the new version. A failed deploy or check stops the release there; a new version that breaks its path is rolled back with `npx wrangler rollback <the version live before>`. Only `cloud/` has a dev env (`deploy:dev` after a merge into `dev`); `relay/` and `discord/` are one Worker each that dev shares, so a merge into `dev` deploys neither. `private-relay/` is self-hosted by whoever runs it: nothing deploys it. In 2026-10, custom icons shipped in v2.33.2 while production cloud was days old and its R2 bucket missing, so every upload failed.
 
 ## Secrets audit
 

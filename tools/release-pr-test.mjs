@@ -40,7 +40,8 @@ const ready = { status: 'ready', head: sha('a'), findings: [], detail: '' }
 const notReady = { status: 'not_ready', head: sha('b'), findings: ['ci: host clippy'], detail: '' }
 const fixed = { applied: ['fixed clippy'], rerun: [], refuted: [], needs_maintainer: [], tests: 'ok' }
 const merged = { status: 'merged', merge_commit: sha('m'), detail: '' }
-const followed = { status: 'done', detail: '' }
+const deploys = [{ target: 'relay', changed: true, result: 'deployed' }, { target: 'discord', changed: false, result: 'not_changed' }]
+const followed = { status: 'done', deploys, detail: '' }
 const base = { inspect: facts, prepare: prepared, merge: merged, 'follow-up': followed }
 const capture = (answer) => { const f = (p) => { f.prompt = p; return answer }; return f }
 
@@ -189,6 +190,20 @@ for (const status of ['timed_out', 'failed']) {
   check(both.r.outcome === 'released', 'both args release a MIN_APP raise')
   const held = await run({ ...base, cloud: { status: 'needs_maintainer', main_needs: [], detail: 'secret BAR' }, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] })
   check(/rerun with \{merge: true\}/.test(held.r.next), 'a merge run held at the cloud check reruns as a merge run')
+}
+
+{
+  const followUp = capture(followed)
+  const { r } = await run({ ...base, merge: { ...merged, merge_commit: sha('d') }, 'follow-up': followUp, inspect: { ...facts, cloud_changed: true }, cloud: { status: 'ready', main_needs: [], detail: '' }, 'gate:': [ready] })
+  const p = followUp.prompt
+  const workers = p.indexOf('Deploy each Worker')
+  check(r.outcome === 'released' && workers > p.indexOf('deploy:main') && workers < p.indexOf('back into dev'), 'the Workers deploy after the cloud and before the merge back into dev')
+  check(/relay\/, discord\//.test(p) && p.includes('git diff --quiet v2.52.0 ' + sha('d') + ' -- <dir>') && /npm ci/.test(p) && /npm run deploy\b/.test(p), 'each Worker deploys only when it changed since the previous release tag')
+  check(p.includes('push.codync.dev/health') && p.includes('discord.codync.dev/') && /wrangler rollback/.test(p) && /stops here/.test(p), 'each Worker checks its real path and rolls back a broken version')
+  for (const [rows, why] of [[undefined, 'no rows'], [[deploys[0]], 'a Worker missing'], [[deploys[0], { target: 'discord', changed: true, result: 'rolled_back' }], 'a rolled-back Worker']]) {
+    const bad = await run({ ...base, 'follow-up': { ...followed, deploys: rows }, 'gate:': [ready] })
+    check(bad.r.outcome === 'merged_incomplete' && /Deploy each Worker/.test(bad.r.next), 'a follow-up with ' + why + ' is not released')
+  }
 }
 
 if (failures) process.exit(1)

@@ -5,7 +5,7 @@ import Testing
 
 /// Renders the Live Activity, Dynamic Island and widget cards to PNG contact sheets for design
 /// review (the simulator's screenshots don't show Live Activities). Runs only when asked:
-/// `TEST_RUNNER_CODYNC_RENDER_DIR=<dir> xcodebuild test … -only-testing:CodyncKitTests/renderSurfaces`
+/// `TEST_RUNNER_CODYNC_RENDER_DIR=<dir> ../../../tools/xcodebuild.sh test … -only-testing:CodyncKitTests/renderSurfaces`
 @MainActor @Test func renderSurfaces() throws {
     guard let dir = ProcessInfo.processInfo.environment["CODYNC_RENDER_DIR"] else { return }
     let bot = Bot.widgetPreview[0]
@@ -72,7 +72,7 @@ import Testing
 
 /// Writes the Dynamic Island's working loops (the bot in every shape and the thinking orb,
 /// 10 frames each, in points of a 20 pt face) for tools/timer-fonts.py:
-/// `TEST_RUNNER_CODYNC_FRAMES_FILE=<file.json> xcodebuild test … -only-testing:'CodyncKitTests/exportBotFrames()'`.
+/// `TEST_RUNNER_CODYNC_FRAMES_FILE=<file.json> ../../../tools/xcodebuild.sh test … -only-testing:'CodyncKitTests/exportBotFrames()'`.
 /// Each font is one layer: `Ink` every dot of the bot, `Tint` its lit dots (in its color),
 /// `Ghost` the orb's resting grain, `Dot` its inked dots (a font has no per-dot opacity).
 @MainActor @Test func exportBotFrames() throws {

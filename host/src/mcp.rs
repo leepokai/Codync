@@ -154,7 +154,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
 }
 
 /// The `chat` server's tools, from each part of the host that answers them; a thread's (`thread`) without
-/// `work::chat_only`'s.
+/// `work::chat_only`'s, with `ask_chat`.
 pub(crate) fn chat_tools(thread: bool) -> Value {
     let mut tools = crate::chat::outbox::tools();
     if let Some(list) = tools.as_array_mut() {
@@ -167,6 +167,7 @@ pub(crate) fn chat_tools(thread: bool) -> Value {
         list.extend(crate::chat::work::tools());
         if thread {
             list.retain(|tool| !crate::chat::work::chat_only(tool["name"].as_str().unwrap_or_default()));
+            list.push(crate::chat::work::ask_chat::tool());
         }
     }
     tools
@@ -247,6 +248,10 @@ async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: 
         // `ask_task` waits for the thread's answer.
         Server::Chat if params["name"] == crate::chat::work::ask::TOOL => {
             ("chatCall", crate::chat::work::ask::WAIT + Duration::from_secs(20))
+        }
+        // `ask_chat` waits for the bot's answer.
+        Server::Chat if params["name"] == crate::chat::work::ask_chat::TOOL => {
+            ("chatCall", crate::chat::work::ask_chat::WAIT + Duration::from_secs(20))
         }
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
@@ -342,16 +347,19 @@ mod tests {
             tools.as_array().into_iter().flatten().filter_map(|t| t["name"].as_str().map(str::to_owned)).collect()
         };
         let (chat, thread) = (names(false), names(true));
-        for kept in ["request_decision", "send_file", "publish_artifact", "list_artifacts", "start_dev_server"] {
+        let kept =
+            ["request_decision", "send_file", "publish_artifact", "list_artifacts", "start_dev_server", "ask_chat"];
+        for kept in kept {
             assert!(thread.iter().any(|n| n == kept), "{kept} missing from {thread:?}");
         }
         let told = crate::chat::outbox::instructions(true);
-        for gone in ["send_message", "react", "save_skill", "add_task", "recall_task", "set_name", "set_fallbacks"] {
+        for gone in ["send_message", "react", "save_skill", "add_task", "answer_task", "set_name", "set_fallbacks"] {
             assert!(chat.iter().any(|n| n == gone), "the chat has {gone}");
             assert!(!thread.iter().any(|n| n == gone), "{gone} offered to a thread");
             assert!(!told.contains(gone), "a thread is told of {gone}: {told}");
         }
         assert!(!told.contains("(pass)"), "{told}");
+        assert!(!chat.iter().any(|n| n == "ask_chat"), "the chat has no bot to ask");
     }
 
     #[test]

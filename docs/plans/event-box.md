@@ -471,12 +471,18 @@ differs from the text above:
   as in the chat, with the chat's keys: `S` sends the next one now, `D` takes back the last. The heading has `⎇
   <branch>` or the folder (home as `~`) after the status. A routine's run and another bot's request have no
   composer and one dim line: `Read only: a routine's run`, `Read only: another bot's request`. The composer's
-  placeholder is `Message this thread`. What the thread put in the bot's chat is one dim line among the steps where
-  it came (`app::shared_line`: `◆` while it waits on the user, `✓`, `×` or `·` once answered or not, `▤` a file or
-  an artifact, `♪` a voice note; a sign-in card `◆`, `✓` once signed in, `×` cancelled). `tab` picks the newest line and goes up, `⇧tab` down, `esc` lets go; `↵` on a
-  picked line closes the page for the bot's chat at that entry: a card still waiting is at the chat's end, where
-  the chat's keys answer it, and anything else is picked there (an answered card counts as a message for that),
-  which brings it on screen. The page (`view/thread.rs`, `manage/threads.rs`) still opens over Details as before, not
+  placeholder is `Message this thread`. What the thread put in the bot's chat (the entries `app::is_shared` names:
+  cards, answered or not, a sign-in, files, voice notes, artifacts) shows among the steps where it came as the chat
+  draws it (`view::transcript::shared_entry_lines`): a waiting card whole, with its keys, an answered one as its
+  decided line, a file or an artifact as the bot's message. The thread's waiting card answers here with the chat's
+  keys (`y` / `a` / `n` an approval, `N` denies and gives the keys to the thread's composer to say why, `F1`… a
+  choice, `1`–`9` either, `C` its agent's sign-in), the picked one first, else the newest; a card leaves out the
+  `t shows the whole diff` hint, since the page has no trace pane, and the chat's other keys on a picked message
+  (reply, reactions, copy) stay the chat's, which `↵` opens. `tab` picks the newest of them and goes up,
+  `⇧tab` down, `esc` lets go; on a picked file or artifact `o` opens it in the browser and `f` saves it, as in the
+  chat; `↵` on a picked one closes the page for the bot's chat at that entry: a card still waiting is at the
+  chat's end, and anything else is picked there (an answered card counts as a message for that), which brings it on
+  screen. The page (`view/thread.rs`, `manage/threads.rs`) still opens over Details as before, not
   in its place.
 - **Where it works, shown (host, terminal, manual)**: `bot.gitInstalled` (bool, beside `bot.gitRepo`; absent =
   installed) from a cached look for git that never holds a snapshot up, refreshed at most every five minutes, so
@@ -516,7 +522,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   choice cards, answered ones too, its agent's sign-in card, files, voice notes, artifact cards) joins the transcript in time order
   (`createdAt`, each side kept in its order, the thread's own first at the same moment) as the chat's own row,
   answered, downloaded and opened in the thread as in the chat (desktop `buildChat`, iPhone `ChatItem.thread`,
-  Android `threadChatItems`). Only the terminal shows it as one dim line (above).
+  Android `threadChatItems`, the terminal `shared_entry_lines`, above).
 - **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
   (`talkFiles`), but on the phones no dictation, commands, reply or call (the desktop's has dictation). Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it

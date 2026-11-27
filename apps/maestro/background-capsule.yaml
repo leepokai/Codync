@@ -1,0 +1,59 @@
+# A thread whose agent runs a workflow in the background, on the phones: the Background capsule over the thread's
+# composer names it and what it does now (`Background · after-change · Review: diff`), the task stays working, and the
+# capsule goes once the workflow ends and the agent reports by itself. The phone must already be signed in and paired
+# with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes); the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags background-capsule \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e TASK_AGENT="$PWD/host/tests/fixtures/work_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - background-capsule
+onFlowComplete:
+  - runScript:
+      file: background-capsule.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: background-capsule.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A working row's spinner never lets the screen settle: tap without waiting for it. Android still takes 40 s or so
+# to find the Threads tab beside that spinner, so the workflow runs for 90 s.
+- tapOn:
+    text: "Threads(, .*)?"
+    waitToSettleTimeoutMs: 300
+- extendedWaitUntil:
+    visible: ".*${output.bot.task}.*"
+    timeout: 20000
+- tapOn:
+    text: ".*${output.bot.task}.*"
+    waitToSettleTimeoutMs: 300
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: "background-capsule"
+    timeout: 20000
+# One label on iPhone, the word and the line as two texts on Android.
+- assertVisible: "Background.*"
+- assertVisible: ".*after-change · Review: diff.*"
+- takeScreenshot: background-capsule
+# The workflow ends on its own (`AFTER`), and the agent's own turn reports: the capsule goes.
+- extendedWaitUntil:
+    notVisible:
+      id: "background-capsule"
+    timeout: 120000
+- runFlow: subflows/thread-back.yaml

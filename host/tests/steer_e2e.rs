@@ -314,6 +314,9 @@ async fn a_message_the_agent_leaves_for_later_goes_before_other_work() {
     // The first turn outlasts the setup below even on a slow CI runner: a steer that only arrives after it ended
     // finds the routine's turn running, and the message rightly waits behind it.
     let bot = host.fixture_bot("Ahead", "steer_agent.py", "next 15").await;
+    // Its routine runs as a turn of its chat, behind the message (a bot that manages the team): a run in a thread of
+    // its own starts beside the chat when the first turn ends, and which prompt went out first would be a race.
+    host.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
     turn_running(&host, &bot).await;
     let body = json!({"botId": bot, "name": "Other work", "instruction": "Other work", "triggers": [{"type": "webhook"}], "timeoutSeconds": 60});
     let routine = host.call("saveRoutine", body).await["routine"]["id"].clone();

@@ -229,6 +229,10 @@ pub(super) struct Task {
     /// A host restart already sent it back to waiting once: the next one fails it.
     #[serde(default)]
     pub restarted: bool,
+    /// Its thread ended a turn while what it started in the background still ran, and was asked to wait for it: the
+    /// next such end fails it (`work::hold`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
     #[serde(default)]
     pub hops: u8,
     pub created_at: i64,
@@ -339,6 +343,7 @@ impl Task {
             thread: None,
             cut_in: false,
             restarted: false,
+            held: false,
             hops,
             created_at: now_ms(),
             started_at: None,
@@ -356,13 +361,14 @@ impl Task {
         }
     }
 
-    /// Back to waiting at the front of `tasks`, to start again in a new thread.
+    /// Back to waiting at the front of `tasks`, to start again in a new thread, which may be asked to wait once again.
     pub(super) fn set_aside(&mut self, front: i64) {
         self.status = Status::Waiting;
         self.order = front;
         self.thread = None;
         self.started_at = None;
         self.began = false;
+        self.held = false;
     }
 }
 
@@ -439,6 +445,8 @@ pub(super) struct Shown {
     pub status: Status,
     pub activity: String,
     pub wait: Option<Wait>,
+    /// What its thread's agent runs in the background, which the task waits on.
+    pub background: Vec<crate::hub::BackgroundTask>,
 }
 
 /// `cfg`'s tasks worth showing: the working ones (oldest first), the waiting in dispatch order, then the ones ended
@@ -479,9 +487,18 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
                 task.thread.as_deref().filter(|_| task.status == Status::Working).map(|thread| hub.runtime(thread));
             let status = if asks_user(hub, &task) { Status::NeedsYou } else { task.status };
             let wait = waits.remove(&task.id);
-            Shown { status, activity: rt.map(|rt| rt.activity).unwrap_or_default(), wait, task }
+            let (activity, background) = rt.map(now_doing).unwrap_or_default();
+            Shown { task, status, activity, wait, background }
         })
         .collect()
+}
+
+/// What a working task's thread does (`rt`: its runtime): its turn's activity, else between turns what its agent runs
+/// in the background, which then is the task's work; and that work.
+fn now_doing(rt: crate::hub::Runtime) -> (String, Vec<crate::hub::BackgroundTask>) {
+    let between = || rt.background.first().map(|t| t.activity.clone().unwrap_or_else(|| t.name.clone()));
+    let activity = Some(rt.activity.clone()).filter(|a| !a.is_empty()).or_else(between).unwrap_or_default();
+    (activity, rt.background)
 }
 
 /// What the bot sees of its box: [`shown`] without the threads the user started, which are theirs.
@@ -509,7 +526,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     Value::Array(
         shown
             .into_iter()
-            .map(|Shown { task, status, activity, wait }| {
+            .map(|Shown { task, status, activity, wait, background }| {
                 // It takes one of the bot's seats.
                 let seat = task.source.seated()
                     && match status {
@@ -523,7 +540,11 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
                     |t| agent_of(&hub.store, t),
                 );
-                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on))
+                let mut row = row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on));
+                if !background.is_empty() {
+                    row["background"] = json!(background);
+                }
+                row
             })
             .collect(),
     )
@@ -584,6 +605,13 @@ pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
     let live: Vec<Shown> = seen_by_bot(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
     let live: Vec<_> = live.iter().map(|s| (s.status, s.task.title.as_str(), s.task.id.as_str())).collect();
     summary(&live, cfg.max_threads, whose)
+}
+
+/// The tasks still to come whose report comes to the bot's own chat (its `add_task`'s: not a routine's run, another
+/// bot's request or a thread the user started), as `(id, title)`.
+pub fn reporting(store: &Store, bot: &str) -> Vec<(String, String)> {
+    let mine = load(store, bot).into_iter().filter(|t| t.source.is_bot() && !t.status.ended());
+    mine.map(|t| (t.id, t.title)).collect()
 }
 
 /// What one of a bot's tasks does now, for who follows the bot from outside its chat (a call's voice).
@@ -690,6 +718,19 @@ fn summary(live: &[(Status, &str, &str)], most: u8, whose: &str) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_bots_own_tasks_still_to_come_report_to_its_chat() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let tasks = json!([
+            {"id": "a", "title": "Mine", "brief": "x", "status": "working", "order": 1, "createdAt": 1},
+            {"id": "b", "title": "Reported", "brief": "x", "status": "done", "order": 2, "createdAt": 1},
+            {"id": "c", "title": "Run", "brief": "x", "status": "waiting", "order": 3, "createdAt": 1,
+                "source": {"kind": "routine", "id": "r", "run": "1"}},
+        ]);
+        hub.store.kv_set(&key("b1"), &tasks.to_string()).expect("saved");
+        assert_eq!(reporting(&hub.store, "b1"), [("a".to_owned(), "Mine".to_owned())]);
+    }
 
     #[test]
     fn a_task_works_in_its_folder_else_the_default_project_else_where_the_bot_lives() {
@@ -905,6 +946,38 @@ mod tests {
         let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
         hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
         assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
+    }
+
+    #[test]
+    fn between_turns_a_task_shows_and_does_what_its_agent_runs_in_the_background() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b-bg", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-bg"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let workflow = crate::hub::BackgroundTask {
+            id: "w1".into(),
+            kind: crate::hub::BackgroundKind::Workflow,
+            name: "after-change".into(),
+            activity: None,
+            started_at: 5,
+        };
+        hub.set_runtime("thread-bg", |r| r.background = vec![workflow.clone()]);
+        let row = wire(&hub, &cfg)[0].clone();
+        assert_eq!(
+            row["background"],
+            json!([{"id": "w1", "kind": "workflow", "name": "after-change", "startedAt": 5}])
+        );
+        assert_eq!(row["activity"], "after-change", "no turn runs: the workflow is what it does");
+        hub.set_runtime("thread-bg", |r| r.background[0].activity = Some("Review: diff".into()));
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Review: diff");
+        // A turn's own activity comes first.
+        hub.set_runtime("thread-bg", |r| {
+            r.status = BotStatus::Working;
+            r.activity = "Thinking…".into();
+        });
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Thinking…");
     }
 
     #[test]

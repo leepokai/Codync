@@ -5,6 +5,8 @@ import SwiftUI
 public struct WorkflowDetailView: View {
     let workflowId: String
     var pendingRunId: String?
+    /// A step run on its own, outside any run: its push opens it alone.
+    var pendingStepId: String?
 
     @Environment(BotStore.self) private var model
     @State private var detail: WorkflowDetail?
@@ -20,9 +22,10 @@ public struct WorkflowDetailView: View {
 
     private var display: WorkflowStepDisplay { WorkflowStepDisplay(rawValue: displayRaw) ?? .labels }
 
-    public init(workflowId: String, pendingRunId: String? = nil) {
+    public init(workflowId: String, pendingRunId: String? = nil, pendingStepId: String? = nil) {
         self.workflowId = workflowId
         self.pendingRunId = pendingRunId
+        self.pendingStepId = pendingStepId
     }
 
     public var body: some View {
@@ -74,7 +77,7 @@ public struct WorkflowDetailView: View {
                 .environment(model)
         }
         .navigationDestination(item: $openedRun) { route in
-            WorkflowRunView(runId: route.id)
+            WorkflowRunView(target: route.target)
                 .environment(model)
         }
         .task { await reload() }
@@ -166,7 +169,7 @@ public struct WorkflowDetailView: View {
 
     /// The whole row opens the run. The card's padding sits inside the button, so the gray area is part of the tap.
     private func runButton(_ run: WorkflowRunSummary) -> some View {
-        Button { openedRun = WorkflowRunRoute(id: run.id) } label: {
+        Button { openedRun = WorkflowRunRoute(.run(run.id)) } label: {
             runLine(run)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
@@ -243,13 +246,14 @@ public struct WorkflowDetailView: View {
             let loaded = try await client.workflow(workflowId)
             detail = loaded
             error = nil
+            // The run or step a notification named opens before the run history, which it doesn't need.
+            if !didOpenPendingRun, let pending = pendingRunId.map(WorkflowRunView.Target.run) ?? pendingStepId.map(WorkflowRunView.Target.step) {
+                didOpenPendingRun = true
+                openedRun = WorkflowRunRoute(pending)
+            }
             await loadScheduleLines(loaded)
             let page = try await client.workflowRuns(workflowId, limit: 20)
             runs = page.runs
-            if let pendingRunId, !didOpenPendingRun {
-                didOpenPendingRun = true
-                openedRun = WorkflowRunRoute(id: pendingRunId)
-            }
         } catch {
             if detail == nil { self.error = error.localizedDescription }
         }
@@ -276,7 +280,10 @@ public struct WorkflowDetailView: View {
 }
 
 struct WorkflowRunRoute: Identifiable, Hashable {
-    var id: String
+    var target: WorkflowRunView.Target
+    var id: WorkflowRunView.Target { target }
+
+    init(_ target: WorkflowRunView.Target) { self.target = target }
 }
 
 struct WorkflowRunsRoute: Identifiable, Hashable {

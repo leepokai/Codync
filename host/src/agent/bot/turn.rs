@@ -37,10 +37,11 @@ impl Actor {
         }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
-        // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
+        // Sessions whose frozen instructions predate send_file, artifacts or follow-ups (as they are now: not for the bot's
+        // own tasks) hear about them each turn.
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
-        let remind_follow_ups = !snapshot.system.contains("follow_up");
+        let remind_follow_ups = !snapshot.system.contains("check on a task you started");
         let briefed_on_threads = snapshot.system.contains("add_task");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.

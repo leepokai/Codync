@@ -21,7 +21,10 @@ On the built-in `routines` MCP server every agent has:
 
 - `follow_up {minutes, note}`: `minutes` from now, 1 to 43,200 (30 days). A delay, not a clock time: an agent
   doesn't reliably know what time it is. The answer has the follow-up (`id`, `at`) and `atLocal`, the time on the
-  computer's clock, for the bot to tell the user.
+  computer's clock, for the bot to tell the user. Set from a turn of the bot's own chat while some of its own
+  tasks are under way (`add_task`'s, waiting or working: `work::reporting`), it also has a `hint` naming them:
+  their reports come to the chat by themselves and the watchdog catches a stuck one, so a follow-up that only waits
+  on them should be cancelled ([below](#not-for-the-bots-own-tasks)).
 - `cancel_follow_up {id}`. The user's own cancel, from the bot's Details, is the host method `cancelFollowUp`
   ([below](#in-details)).
 - `list_routines` also answers `followUps`, the ones still waiting.
@@ -33,15 +36,32 @@ see them. The refusal tells the bot to say in its reply that it can't check back
 [ceiling](codync-network.md#ceilings-auto-and-ask) can't call it either (the API refuses it with every tool that
 isn't a read or an answer to the user): its later turn would act on the sender's text without the ceiling.
 
-The server's instructions tell the bot to set one whenever something in its own chat needs another look later,
-never to say it will check back without setting one, and to use a routine for anything recurring.
+The server's instructions tell the bot to set one when something in its own chat needs another look later and
+won't say when it changes (the user asked it to check back at a time, a build or deploy outside Codync, a reply
+someone owes), never for a task it started, never to say it will check back without setting one, and to use a
+routine for anything recurring.
+
+### Not for the bot's own tasks
+
+A task the bot added reports back by itself: its report is a turn in the chat when its thread's turn ends
+([report](work.md#report)), and one that gets stuck wakes the bot ([watchdog](work.md#watchdog)). A follow-up to
+wait for it is polling: it comes at a guessed time, finds the task still working or already reported, and spends
+a turn on nothing. So every place that tells a bot about follow-ups says not to set one for its own task
+(`routines::BRIEF`, the server's instructions, `follow_up`'s description, `work::BRIEF`, `add_task`'s
+description and answer), and keeps the exception: the user asked it to check back then.
+
+The host doesn't refuse one: it can't tell a follow-up on a task from one the user asked for, or one on something
+outside Codync that a task started (a deploy, a CI run). It sets it, and its answer carries the `hint` above while
+the bot has tasks of its own under way, so the bot can cancel one it set only to wait. A routine's run setting one
+gets no hint: its own task is the run itself.
 
 The bot's own instructions say it too (`routines::BRIEF` in the snapshot, `chat/context.rs`), and name what not to
 use: the engine's own wake-ups, timers, loops, sleeps and cron. Without that line a model reaches for them first.
 Claude Code has a wake-up tool of its own, and a bot asked to check back in a minute used it instead of
 `follow_up`: it works only while the agent's process lives (it stops when idle, and with the host), and the user
 sees no line and can't cancel it. A session whose instructions were written before follow-ups existed is told the
-same line on each turn of its own chat instead, until its instructions are rendered again (`agent/bot/turn.rs`).
+same line on each turn of its own chat instead, until its instructions are rendered again (`agent/bot/turn.rs`);
+so is one whose instructions predate the line about its own tasks (the reminder looks for that line).
 
 ## Limits
 
@@ -127,7 +147,8 @@ already read that listing every three seconds.
 
 ## Analytics
 
-`follow_up_set` (`outcome`, `minutes`, `chain`), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`; the
+`follow_up_set` (`outcome`, `minutes`, `chain`, `tasksUnderWay`: the bot had tasks of its own under way, so the answer
+had the hint), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`; the
 user's comes from `api::dispatch` like every API call, so it also says which app), and
 `turn_finished` with `source: follow_up` for how the turn went:
 [analytics events](../reference/analytics-events.md).
@@ -140,14 +161,17 @@ user's comes from `api::dispatch` like every API call, so it also says which app
   the row), `a_reload_keeps_the_cursor_on_the_row_it_picked` and the sheet's render test (terminal).
 - Unit (`routines/follow_up.rs`, `kept.rs`): the wait's wording, the note's checks, the ten and the chain limit,
   only from the bot's own chat, surviving a restart, leaving with the bot, what Stop drops, one that couldn't be
-  taken or dropped is handed over again. `agent/bot/inflight.rs`: the running turn's mark keeps a follow-up's
+  taken or dropped is handed over again, the hint names the bot's own tasks under way and is absent with none.
+  `agent/bot/inflight.rs`: the running turn's mark keeps a follow-up's
   place in its chain; what is no mark resumes nothing.
 - End to end (`host/tests/routines_e2e/follow_ups.rs`, a real host and a fixture agent): a follow-up that came due
   while the host was off takes one turn in the chat's own session and is gone; one with nothing to say leaves no
   reply; one set from that turn has `chain: 1`; one asked for in a room turn is refused and the same call in the
   bot's own chat is taken; one cut off by a restart is resumed as a follow-up, and one it sets then continues the
   chain (`chain: 3`, then 4); Stop drops the one queued behind a running turn; the tools over the real MCP
-  subprocess (`routine_agent.py`).
+  subprocess (`routine_agent.py`). `work_e2e`'s
+  `a_follow_up_set_while_a_task_works_is_set_and_says_its_report_comes_by_itself`: set while a task works, with a
+  hint naming it; set after it reported, without one.
 - Each client's language test: the lines translate around the wait, also when the note reads like a wait.
 - With a real agent (Claude Code, 2026-11-14, an isolated host and `codync-host send --wait`): asked to check
   back in a minute, the bot set a follow-up, the line appeared, and a minute later it answered in the same chat; a

@@ -292,7 +292,9 @@ the session it has.
 
 When a thread's turn ends, its last message is its task's `result` and goes to its bot as `Cmd::TaskReport`, one per
 task, which becomes a turn in the chat (`HostTurn::TaskReport`; reports that arrive together are one turn). The
-bot's reply there is an ordinary message with the usual alert; `(pass)` stays silent. A report is kept on the task
+bot's reply there is an ordinary message with the usual alert; `(pass)` stays silent. Since the report comes by
+itself, the bot is told not to set a [follow-up](follow-ups.md#not-for-the-bots-own-tasks) to wait for a task, and
+one it sets while its tasks are under way says so in its answer. A report is kept on the task
 until that turn has ended: a host restart before then sends it again (the cut-off report turn isn't resumed). When
 the turn ends without the bot's answer (stopped, failed, or it never started), the chat shows the report as a notice
 (`"<title>" finished in the background: …`), so what the thread found isn't lost with the turn. A task the user
@@ -866,6 +868,8 @@ aren't watched: their result has an owner other than the bot's chat. What it fla
   per card: the needs-you alert (`AlertKind::NeedsInput`, opening the bot's chat; none when the bot's alerts are off).
 
 A thread that waits on the user (a card, a sign-in) is never flagged otherwise, nor is one between turns.
+
+This is what makes a follow-up on a task needless: the bot hears of a stuck one without asking.
 
 **The wake-up.** On `looping`, `failing` or `quiet` the bot gets a host turn in its own chat (`Cmd::Watchdog`,
 `HostTurn::Watchdog`), queued behind the user's messages as a report is: `[Codync watchdog] Task "<title>" (<id>)

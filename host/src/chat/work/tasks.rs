@@ -607,6 +607,13 @@ pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
     summary(&live, cfg.max_threads, whose)
 }
 
+/// The tasks still to come whose report comes to the bot's own chat (its `add_task`'s: not a routine's run, another
+/// bot's request or a thread the user started), as `(id, title)`.
+pub fn reporting(store: &Store, bot: &str) -> Vec<(String, String)> {
+    let mine = load(store, bot).into_iter().filter(|t| t.source.is_bot() && !t.status.ended());
+    mine.map(|t| (t.id, t.title)).collect()
+}
+
 /// What one of a bot's tasks does now, for who follows the bot from outside its chat (a call's voice).
 pub struct Doing {
     pub task: String,

@@ -41,7 +41,7 @@ pub use sources::{access_of, add_request, add_routine, add_thread, boxed, routin
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
-pub use tasks::{Setup, Source, Status, doing, lines, outside, waiting_threads, wire, working_threads};
+pub use tasks::{Setup, Source, Status, doing, lines, outside, reporting, waiting_threads, wire, working_threads};
 pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
 pub use tools::{TOOLS, acting_as, call, chat_only, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;

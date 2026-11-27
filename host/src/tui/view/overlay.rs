@@ -6,6 +6,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
 use super::super::app::{App, Editor, Overlay, tilde};
+use super::super::manage::ThreadNavigationBlock;
 use super::super::md::{truncate, width as w};
 use super::buffer::{centered, dim_all, frame_box, put, restyle, rput, u};
 use super::forms::{form_view, group_view};
@@ -27,17 +28,17 @@ pub(super) fn overlays(f: &mut Frame<'_>, app: &mut App) {
     app.hits.clicks.clear();
     // Only the top overlay is live; draw it alone over the dimmed screen.
     let ovs = std::mem::take(&mut app.overlays);
-    if let Some(top) = ovs.last() {
-        overlay(buf, area, app, top);
+    if let Some((top, underneath)) = ovs.split_last() {
+        overlay(buf, area, app, top, ThreadNavigationBlock::in_overlays(underneath));
     }
     app.overlays = ovs;
 }
 
-pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
+fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay, block: Option<ThreadNavigationBlock>) {
     match top {
         Overlay::Goto(g) => {
             let items = app.goto_items(g);
-            goto(buf, area, app, g, &items);
+            goto(buf, area, app, g, &items, block);
         }
         Overlay::Help(filter) => help(buf, area, filter, app.any_work()),
         Overlay::LeadAgent(scroll) => super::lead_agent::lead_agent(buf, area, *scroll),
@@ -152,7 +153,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Pair(code) => pair(buf, area, app, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
-        Overlay::Thread(s) => super::thread::thread_details(buf, area, app, s),
+        Overlay::Thread(s) => super::thread::thread_details(buf, area, app, s, block),
         Overlay::CutIn(c) => super::work::cut_in(buf, area, app, c),
         Overlay::AllWork(p) => super::super::sheets::all_work(buf, area, app, p),
         Overlay::DevServers(sheet) => super::dev_servers::dev_servers(buf, area, app, sheet),

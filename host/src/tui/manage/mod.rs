@@ -51,6 +51,7 @@ pub use older::OlderThreads;
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
+pub(super) use threads::ThreadNavigationBlock;
 pub use threads::{Fetched, ThreadEntries, ThreadSheet};
 pub use when::complete_zone;
 pub use work::{CutIn, DetailRow, DetailSection, WorkAct, giving_way};

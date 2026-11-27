@@ -230,8 +230,10 @@ impl App {
                 let items = self.goto_items(&g);
                 match items.get(g.cursor) {
                     Some(GotoItem::Bot(id)) => {
-                        let id = id.clone();
-                        self.select(&id);
+                        if !self.go_to_bot(id) {
+                            return Some(Overlay::Goto(g));
+                        }
+                        self.close_thread_overlays();
                         self.start_typing();
                     }
                     Some(GotoItem::Action(a)) => self.run_action(*a),

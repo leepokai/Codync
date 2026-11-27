@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
 use super::super::l10n::tr;
-use super::super::manage::{Fetched, ThreadSheet};
+use super::super::manage::{Fetched, ThreadNavigationBlock, ThreadSheet};
 use super::super::md::{self, truncate};
 use super::buffer::{centered, frame_box, hline, put, put_line, rput, u};
 use super::chat::{composer_lines, file_names};
@@ -45,6 +45,8 @@ enum Keys {
     EditingLocally,
     /// A line of what the thread put in the chat is picked.
     Picked,
+    SendingReference,
+    BlockedReference(ThreadNavigationBlock),
     /// The page's, with `tab` when it has such lines.
     Reading {
         lines: bool,
@@ -57,6 +59,8 @@ fn thread_keys(live: bool, keys: Keys) -> String {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
         Keys::EditingLocally => return " esc".into(),
         Keys::Picked => return " ↵ shows it in the chat · tab ⇧tab another · esc".into(),
+        Keys::SendingReference => return format!(" {} · esc clears pick", ThreadNavigationBlock::Sending.label()),
+        Keys::BlockedReference(block) => return format!(" {} · q back · esc clears pick", block.label()),
         Keys::Reading { lines } => lines,
     };
     let stop = live.then(|| tr("X stops"));
@@ -110,7 +114,13 @@ fn thread_composer(buf: &mut Buffer, inner: Rect, app: &App, s: &ThreadSheet, bo
 /// A thread's transcript: its task's title, how it stands and where it works, then its entries in the trace's rows
 /// and a line for what it put in the chat, the picked one marked. The bot's own task has a composer under them; a
 /// routine's run and another bot's request say why they have none.
-pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &ThreadSheet) {
+pub(super) fn thread_details(
+    buf: &mut Buffer,
+    area: Rect,
+    app: &App,
+    s: &ThreadSheet,
+    block: Option<ThreadNavigationBlock>,
+) {
     let t = theme();
     let r = centered(area, 100, area.height.saturating_sub(4));
     let inner = frame_box(buf, r, t.text, t.panel, None);
@@ -149,7 +159,7 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     } else if s.typing {
         Keys::Typing
     } else if s.pick.is_some() {
-        Keys::Picked
+        if s.send_in_flight() { Keys::SendingReference } else { block.map_or(Keys::Picked, Keys::BlockedReference) }
     } else {
         Keys::Reading { lines: !app.shared(&s.bot, &s.thread).is_empty() }
     };
@@ -340,7 +350,7 @@ mod tests {
         let area = Rect::new(0, 0, 100, 20);
         let heading = |task: &str| {
             let sheet = ThreadSheet::new("a".into(), task.into(), "thread".into());
-            let lines = screen(area, |buf| thread_details(buf, area, &app, &sheet));
+            let lines = screen(area, |buf| thread_details(buf, area, &app, &sheet, None));
             let standing = lines.iter().find(|line| line.contains("Working")).expect("how it stands");
             standing.trim().trim_matches('│').trim().to_owned()
         };
@@ -372,7 +382,7 @@ mod tests {
         app.on_msg(Msg::Event(entry(2, json!({"text": "and the tests", "status": "queued"}))));
         let area = Rect::new(0, 0, 100, 24);
         let draw = |app: &App, sheet: &ThreadSheet| {
-            let lines = screen(area, |buf| thread_details(buf, area, app, sheet));
+            let lines = screen(area, |buf| thread_details(buf, area, app, sheet, None));
             lines.iter().map(|line| line.trim().trim_matches('│').trim().to_owned()).collect::<Vec<_>>()
         };
         let mut own = ThreadSheet::new("a".into(), "i".into(), "thread-1".into());

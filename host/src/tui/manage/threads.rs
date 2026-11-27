@@ -2,6 +2,7 @@
 //! whatever session it was in), a line for each thing the thread put in the bot's chat, which `↵` shows there, and its
 //! composer: the user writes to the thread of the bot's own task as to a chat.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -59,6 +60,33 @@ pub enum Fetched {
     Loading,
     Failed(String),
     Loaded,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::tui) enum ThreadNavigationBlock {
+    Sending,
+    Draft,
+}
+
+impl ThreadNavigationBlock {
+    pub(in crate::tui) fn in_overlays(overlays: &[Overlay]) -> Option<Self> {
+        let mut threads = overlays.iter().filter_map(|overlay| match overlay {
+            Overlay::Thread(thread) => Some(thread),
+            _ => None,
+        });
+        if threads.clone().any(ThreadSheet::send_in_flight) {
+            Some(Self::Sending)
+        } else {
+            threads.any(ThreadSheet::has_draft).then_some(Self::Draft)
+        }
+    }
+
+    pub(in crate::tui) fn label(self) -> Cow<'static, str> {
+        tr(match self {
+            Self::Sending => "Sending…",
+            Self::Draft => "Draft kept",
+        })
+    }
 }
 
 pub(in crate::tui) struct ThreadSend {
@@ -144,7 +172,7 @@ impl ThreadSheet {
         !self.draft.text.is_empty() || !self.files.is_empty()
     }
 
-    fn send_in_flight(&self) -> bool {
+    pub(in crate::tui) fn send_in_flight(&self) -> bool {
         self.sending.as_ref().is_some_and(|sent| sent.task.is_some())
     }
 
@@ -454,21 +482,48 @@ impl App {
         self.on_queued(act, json!({"botId": s.bot, "taskId": s.task}), id);
     }
 
-    pub(in crate::tui) fn keep_thread_overlays(&mut self) -> bool {
-        if self.overlays.iter().any(|o| matches!(o, Overlay::Thread(thread) if thread.send_in_flight())) {
-            self.flash("Sending…");
-            return true;
+    pub(in crate::tui) fn keep_thread_overlays(&self) -> bool {
+        ThreadNavigationBlock::in_overlays(&self.overlays).is_some()
+    }
+
+    pub(in crate::tui) fn close_thread_overlays(&mut self) {
+        let mut closed = Vec::new();
+        let mut previous_was_thread = false;
+        self.overlays.retain(|overlay| {
+            let is_thread = if let Overlay::Thread(s) = overlay {
+                closed.push((s.bot.clone(), s.thread.clone()));
+                true
+            } else {
+                false
+            };
+            let is_thread_prompt = previous_was_thread
+                && matches!(
+                    overlay,
+                    Overlay::ThreadDraftKept
+                        | Overlay::Confirm(Confirm {
+                            act: ConfirmAct::DiscardThreadDraft { .. } | ConfirmAct::StopWork { .. },
+                            ..
+                        })
+                );
+            previous_was_thread = is_thread;
+            !is_thread && !is_thread_prompt
+        });
+        for (bot, thread) in closed {
+            self.forget_closed_thread(&bot, &thread);
         }
-        let has_draft = self.overlays.iter().any(|o| matches!(o, Overlay::Thread(thread) if thread.has_draft()));
-        if has_draft && self.hint.is_none() {
-            self.flash("Draft kept");
+    }
+
+    fn forget_closed_thread(&mut self, bot: &str, thread: &str) {
+        if !self.thread_open(thread) && !self.bots.get(bot).is_some_and(|b| works(&b.work, thread)) {
+            self.thread_entries.forget(thread);
         }
-        has_draft
     }
 
     fn close_thread(&mut self, s: ThreadSheet, entry: Option<String>) -> Option<Overlay> {
         if s.send_in_flight() {
-            self.flash("Sending…");
+            if s.pick.is_none() {
+                self.flash("Sending…");
+            }
             return Some(Overlay::Thread(s));
         }
         if !s.has_draft() {
@@ -509,9 +564,7 @@ impl App {
         if entry.is_some() && self.keep_thread_overlays() {
             return Some(Overlay::Thread(s));
         }
-        if !self.thread_open(&s.thread) && !self.bots.get(&s.bot).is_some_and(|b| works(&b.work, &s.thread)) {
-            self.thread_entries.forget(&s.thread);
-        }
+        self.forget_closed_thread(&s.bot, &s.thread);
         if let Some(entry) = entry {
             self.overlays.clear();
             self.select(&s.bot);
@@ -588,9 +641,9 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use crossterm::event::{KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
-    use ratatui::layout::Rect;
+    use ratatui::{Terminal, backend::TestBackend};
 
-    use super::super::super::app::{Click, Msg, SendReceipts, next_request, recording_host, test_app};
+    use super::super::super::app::{Click, Field, Msg, SendReceipts, next_request, recording_host, test_app};
     use super::super::work::tests::{bot_with, key};
     use super::*;
 
@@ -1318,47 +1371,61 @@ mod tests {
         }}))
     }
 
-    #[tokio::test]
-    async fn a_bot_click_keeps_pending_and_returned_thread_files() {
+    fn draw_terminal(app: &mut App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+        terminal.draw(|frame| crate::tui::view::draw(frame, app)).expect("draw the terminal");
+        terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect()
+    }
+
+    fn go_to_preserves_a_thread_until_its_send_succeeds(choose_bot: impl Fn(&mut App), focus: Focus) {
         let file = PathBuf::from("draft.txt");
         let go_to = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
         let escape = KeyEvent::from(KeyCode::Esc);
-        let click = MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: 4,
-            row: 2,
-            modifiers: KeyModifiers::NONE,
+        let search = |app: &mut App| {
+            app.on_key(go_to);
+            app.on_paste("Second");
+            app.on_key(KeyEvent::from(KeyCode::Down));
         };
-        for (bot, delivered) in [("a", false), ("b", true)] {
+        let assert_picker_kept = |app: &App| {
+            assert!(matches!(app.overlays.as_slice(), [Overlay::Thread(_), Overlay::Goto(g)]
+                if g.query.text == "Second" && g.cursor == 1));
+            assert_eq!(app.selected.as_deref(), Some("a"));
+        };
+        for delivered in [false, true] {
             let mut app = test_app();
             hello(&mut app);
             open_pending_file_send(&mut app, file.clone());
-            app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B"}})));
+            for (id, name) in [("b", "Second beta"), ("c", "Second alpha")] {
+                app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": id, "name": name}})));
+            }
             app.select("a");
             let reply = send_reply(&app);
             let result = if delivered { Ok(delivery(&app)) } else { Err("refused".into()) };
 
-            app.on_key(go_to);
-            app.hits.clicks.push((Rect::new(4, 2, 1, 1), Click::Bot(bot.into())));
-            app.on_mouse(click);
-            assert!(matches!(app.overlays.as_slice(), [Overlay::Thread(thread), Overlay::Goto(_)]
-                if thread.send_in_flight()));
-            assert_eq!(app.selected.as_deref(), Some("a"));
-            assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some(tr("Sending…").as_ref()));
+            search(&mut app);
+            choose_bot(&mut app);
+            assert_picker_kept(&app);
+            assert!(draw_terminal(&mut app).contains(tr("Sending…").as_ref()));
 
             app.on_key(escape);
             assert!(sheet(&app).send_in_flight(), "Esc closes Go to while the thread still waits");
-            app.on_key(go_to);
+            search(&mut app);
             app.on_msg(Msg::Reply(reply, result));
-            app.on_mouse(click);
+            choose_bot(&mut app);
             if delivered {
                 assert!(app.overlays.is_empty());
                 assert_eq!(app.selected.as_deref(), Some("b"));
+                assert_eq!(app.focus, focus);
+                assert_eq!(app.typing, focus == Focus::Chat);
+                if app.typing {
+                    key(&mut app, 'm');
+                    assert_eq!(app.drafts["b"].text, "m");
+                }
             } else {
-                assert_eq!(app.overlays.len(), 2, "Go to and the thread stay open after refusal");
-                assert!(matches!(app.overlays.last(), Some(Overlay::Goto(_))));
-                assert_eq!(app.selected.as_deref(), Some("a"));
-                assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some("refused"));
+                assert_picker_kept(&app);
+                let drawn = draw_terminal(&mut app);
+                assert!(drawn.contains(&format!("{} · esc back", tr("Draft kept"))));
+                assert!(drawn.contains("refused"));
                 app.on_key(escape);
                 assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
                 key(&mut app, 'q');
@@ -1367,6 +1434,162 @@ mod tests {
                 assert!(app.overlays.is_empty());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn go_to_enter_keeps_a_thread_draft_and_opens_a_safe_bot_in_the_composer() {
+        go_to_preserves_a_thread_until_its_send_succeeds(|app| app.on_key(KeyEvent::from(KeyCode::Enter)), Focus::Chat);
+    }
+
+    fn go_to_from_loaded_thread(status: &str) -> App {
+        let mut app = test_app();
+        bot_with(&mut app, &[("1", status)]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B"}})));
+        key(&mut app, 'R');
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(sheet(&app).thread, "thread-1");
+        app.on_msg(Msg::Reply(
+            read_reply(&app, "thread-1"),
+            Ok(json!({"entries": [thread_entry(1, 1, "the earlier transcript")]})),
+        ));
+        assert!(matches!(sheet(&app).fetched, Fetched::Loaded));
+        assert_eq!(texts(&app), ["the earlier transcript"]);
+
+        app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        key(&mut app, 'b');
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.selected.as_deref(), Some("b"));
+        assert!(matches!(app.overlays.as_slice(), [Overlay::Details(_)]));
+        app
+    }
+
+    #[tokio::test]
+    async fn go_to_enter_releases_the_closed_recent_threads_transcript() {
+        let app = go_to_from_loaded_thread("done");
+        assert!(texts(&app).is_empty(), "the closed, finished thread releases its transcript");
+    }
+
+    #[tokio::test]
+    async fn go_to_enter_keeps_the_closed_working_threads_transcript() {
+        let app = go_to_from_loaded_thread("working");
+        assert_eq!(texts(&app), ["the earlier transcript"]);
+    }
+
+    #[tokio::test]
+    async fn go_to_enter_keeps_an_open_bot_settings_form() {
+        let mut app = test_app();
+        bot_with(&mut app, &[]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B"}})));
+        let instructions = "Keep the working draft";
+        key(&mut app, 'e');
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        for c in instructions.chars() {
+            key(&mut app, c);
+        }
+        assert!(draw_terminal(&mut app).contains(instructions));
+
+        app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        key(&mut app, 'b');
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.selected.as_deref(), Some("b"));
+        let [Overlay::Form(form)] = app.overlays.as_slice() else { panic!("A's settings form stays open") };
+        assert_eq!(form.bot_id, "a");
+        assert_eq!(form.current(), Field::Instructions);
+        assert_eq!(form.instructions.text, instructions);
+        assert!(draw_terminal(&mut app).contains(instructions));
+
+        let (url, mut requests) = recording_host().await;
+        app.client = crate::tui::net::Client::new(&url, Some("test"));
+        app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        let request = next_request(&mut requests).await;
+        let (headers, body) = request.split_once("\r\n\r\n").expect("an HTTP request");
+        assert!(headers.starts_with("POST /api/updateBot "));
+        assert_eq!(
+            serde_json::from_str::<Value>(body).expect("a JSON body"),
+            json!({"id": "a", "description": instructions})
+        );
+        app.on_msg(Msg::Reply(
+            After::Saved(app.mirror_epoch()),
+            Ok(json!({
+                "bot": {"id": "a", "name": "A", "description": instructions}
+            })),
+        ));
+        assert!(app.overlays.is_empty());
+        assert_eq!(app.bots["a"].description, instructions);
+        key(&mut app, 'm');
+        assert_eq!(app.drafts["b"].text, "m");
+    }
+
+    #[tokio::test]
+    async fn go_to_enter_closes_a_thread_with_its_prompt_and_keeps_other_edits() {
+        let mut app = test_app();
+        bot_with(&mut app, &[("1", "working")]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B"}})));
+        app.custom_icons = true;
+        key(&mut app, 'e');
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_paste("Keep instructions");
+        app.on_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_paste("draft-icon.png");
+
+        let go_to = |app: &mut App, query: &str| {
+            app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+            app.on_paste(query);
+            app.on_key(KeyEvent::from(KeyCode::Enter));
+        };
+        go_to(&mut app, "Details of this bot");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(sheet(&app).task, "1");
+        key(&mut app, 'X');
+        assert!(draw_terminal(&mut app).contains(tr("Stop this task?").as_ref()));
+
+        go_to(&mut app, "B");
+        assert_eq!(app.selected.as_deref(), Some("b"));
+        let [Overlay::Form(form), Overlay::Fields(fields), Overlay::Details(_)] = app.overlays.as_slice() else {
+            panic!("the form, icon editor and Details stay open")
+        };
+        assert_eq!(form.instructions.text, "Keep instructions");
+        assert_eq!(fields.inputs[0].ed.text, "draft-icon.png");
+
+        key(&mut app, 'X');
+        go_to(&mut app, "B");
+        assert!(draw_terminal(&mut app).contains(tr("Stop this task?").as_ref()), "Details keeps its confirmation");
+        key(&mut app, 'q');
+        key(&mut app, 'q');
+        assert!(draw_terminal(&mut app).contains("draft-icon.png"));
+    }
+
+    #[tokio::test]
+    async fn go_to_click_keeps_a_thread_draft_and_opens_a_safe_bot_in_the_roster() {
+        go_to_preserves_a_thread_until_its_send_succeeds(
+            |app| {
+                draw_terminal(app);
+                let row = app.hits.clicks.iter().find(|(_, hit)| matches!(hit, Click::Bot(id) if id == "b"));
+                let (rect, _) = row.expect("the bot row is on screen");
+                app.on_mouse(MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: rect.x,
+                    row: rect.y,
+                    modifiers: KeyModifiers::NONE,
+                });
+            },
+            Focus::Roster,
+        );
+    }
+
+    #[tokio::test]
+    async fn go_to_can_open_an_action_over_a_thread_draft() {
+        let mut app = test_app();
+        let file = PathBuf::from("draft.txt");
+        open_draft(&mut app, "draft text", file.clone());
+        app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        app.on_paste("Keys");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(matches!(app.overlays.as_slice(), [Overlay::Thread(_), Overlay::Help(_)]));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(sheet(&app).draft.text, "draft text");
+        assert_eq!(sheet(&app).files, &[file]);
     }
 
     #[tokio::test]
@@ -1381,21 +1604,35 @@ mod tests {
             app.overlays.push(Overlay::Thread(ThreadSheet::new("a".into(), "2".into(), "thread-2".into())));
             app.on_msg(shared_file(1, "thread-2"));
             app.on_key(KeyEvent::from(KeyCode::Tab));
+            app.on_key(KeyEvent::from(KeyCode::Enter));
             assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
+            let waiting = draw_terminal(&mut app);
 
             app.on_msg(Msg::Reply(reply, result));
-            app.hint = None;
-            app.on_key(KeyEvent::from(KeyCode::Enter));
             if delivered {
+                assert!(draw_terminal(&mut app).contains("↵ shows it in the chat"));
+                app.on_key(KeyEvent::from(KeyCode::Enter));
                 assert!(app.overlays.is_empty() && app.chat_page);
                 assert_eq!(app.pick.as_deref(), Some("file"));
             } else {
+                for _ in 0..2 {
+                    app.on_key(KeyEvent::from(KeyCode::Enter));
+                }
                 assert_eq!(app.overlays.len(), 2, "the chat jump keeps the underlying thread open");
                 assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
-                assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some(tr("Draft kept").as_ref()));
-                key(&mut app, 'q');
+                let drawn = draw_terminal(&mut app);
+                assert!(drawn.contains(&format!("{} · q back · esc clears pick", tr("Draft kept"))));
+                assert_eq!(drawn.matches(tr("Draft kept").as_ref()).count(), 1);
+                assert!(drawn.contains("refused"));
+                assert!(!drawn.contains("↵ shows it in the chat"));
+                app.on_key(KeyEvent::from(KeyCode::Esc));
+                assert_eq!(app.overlays.len(), 2);
+                assert!(sheet(&app).pick.is_none());
+                app.on_key(KeyEvent::from(KeyCode::Esc));
                 assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
             }
+            assert!(waiting.contains(&format!("{} · q back", tr("Sending…"))));
+            assert!(!waiting.contains("↵ shows it in the chat"));
         }
     }
 

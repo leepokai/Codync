@@ -429,11 +429,10 @@ impl App {
                 match hit {
                     Some(Click::LeadAgent) => self.overlays.push(Overlay::LeadAgent(0)),
                     Some(Click::Bot(id)) => {
-                        if self.keep_thread_overlays() {
+                        if !self.go_to_bot(&id) {
                             return;
                         }
                         self.overlays.clear();
-                        self.select(&id);
                         self.focus = Focus::Roster;
                         if self.width == Width::Narrow {
                             self.chat_page = true;

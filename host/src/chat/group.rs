@@ -4,9 +4,10 @@
 //! transcript, but no agent. When the user writes, the group runs a *room turn*:
 //! up to [`MAX_ROUNDS`] rounds in which the members answer one at a time, each in
 //! its **own** session (a member's history is unified across its chats), told
-//! what was said since it last spoke. In the first round everyone answers unless
-//! the user @-mentions someone; later rounds only ask the members another member
-//! @-mentioned and who haven't spoken or been asked since. A member with nothing
+//! what was said since it last spoke. In the first round the user's @-mentions (or `@all`) pick who
+//! answers; with no mention, the group's admins answer first and only everyone when it has no admin.
+//! Later rounds only ask the members another member @-mentioned and who haven't spoken or been asked since.
+//! A member with nothing
 //! to add says `(pass)`, and a round where nobody speaks ends the turn. A newer
 //! message in the same lane (or Stop) moves the lane's epoch, which ends a running
 //! room turn before its next speaker. A member's answer the room turn didn't wait
@@ -130,7 +131,7 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, turn: &Turn, asked: &m
         let since_user = since_last_user_message(hub, lane)?;
         let since_late = turn.late.map(|seq| hub.store.messages_after(lane, seq - 1, HISTORY_LINES)).transpose()?;
         let mut spoke = 0;
-        for member in speakers(&members, &since_user, since_late.as_deref(), round, asked) {
+        for member in speakers(&group, &members, &since_user, since_late.as_deref(), round, asked) {
             if !hub.groups.current(lane, turn.epoch) {
                 return Ok(());
             }
@@ -286,6 +287,7 @@ fn answers(since: &[Entry]) -> Vec<String> {
 /// user's room turn asks who their message names (or everyone) first; a late one asks who the late answers name,
 /// looking only at messages from the oldest of them on (`since_late`).
 fn speakers<'a>(
+    group: &BotConfig,
     members: &'a [BotConfig],
     since_user: &[Entry],
     since_late: Option<&[Entry]>,
@@ -294,7 +296,7 @@ fn speakers<'a>(
 ) -> Vec<&'a BotConfig> {
     let mut out = match since_late {
         Some(since) => cited(members, since, asked),
-        None if round == 0 => responders(members, since_user),
+        None if round == 0 => responders(group, members, since_user),
         None => cited(members, since_user, asked),
     };
     if !out.is_empty() {
@@ -304,14 +306,33 @@ fn speakers<'a>(
     out
 }
 
-/// Who answers the user: the members @-mentioned or replied to since the user's last message, or
-/// everyone when nobody (or `@all` / `@everyone`) is.
-fn responders<'a>(members: &'a [BotConfig], messages: &[Entry]) -> Vec<&'a BotConfig> {
+/// Who answers the user: the members @-mentioned or replied to since the user's last message, or `@all`
+/// for everyone. With no mention, the group's admins answer first; only a group without an admin asks everyone.
+/// Later rounds (and late turns) are handled by [`cited`], where a member pulls in a teammate by naming it.
+fn responders<'a>(group: &BotConfig, members: &'a [BotConfig], messages: &[Entry]) -> Vec<&'a BotConfig> {
     let texts: Vec<&str> = messages.iter().filter_map(|e| e.data["text"].as_str()).collect();
-    let everyone = texts.iter().any(|t| names_everyone(t));
+    if texts.iter().any(|t| names_everyone(t)) {
+        return members.iter().collect();
+    }
     let replied = |m: &BotConfig| messages.iter().any(|e| e.data["replyTo"]["author"] == m.id.as_str());
     let named: Vec<&BotConfig> = members.iter().filter(|m| replied(m) || texts.iter().any(|t| names(t, m))).collect();
-    if everyone || named.is_empty() { members.iter().collect() } else { named }
+    if !named.is_empty() {
+        return named;
+    }
+    let admins = admins(group, members);
+    if admins.is_empty() { members.iter().collect() } else { admins }
+}
+
+/// The group's admins, in roster order: the bot that created it while still a member, else its bots with
+/// team-management or lead status. A group the user created has no creator here, so those flags decide.
+fn admins<'a>(group: &BotConfig, members: &'a [BotConfig]) -> Vec<&'a BotConfig> {
+    if let Some(creator) = group.created_by.as_deref() {
+        let created: Vec<&BotConfig> = members.iter().filter(|m| m.id == creator).collect();
+        if !created.is_empty() {
+            return created;
+        }
+    }
+    members.iter().filter(|m| m.manage_team || m.lead).collect()
 }
 
 /// Who answers in a later round: the members another member @-mentioned since the user's last

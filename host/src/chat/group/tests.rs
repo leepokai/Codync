@@ -5,6 +5,16 @@ fn bot(id: &str, name: &str) -> BotConfig {
     serde_json::from_value(json!({"id": id, "name": name, "backend": "claude", "cwd": "/tmp"})).expect("valid bot")
 }
 
+fn configured(id: &str, name: &str, fields: &serde_json::Value) -> BotConfig {
+    let mut value = json!({"id": id, "name": name, "backend": "claude", "cwd": "/tmp"});
+    value.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+    serde_json::from_value(value).expect("valid bot")
+}
+
+fn group(created_by: Option<&str>) -> BotConfig {
+    configured("g", "Crew", &json!({"kind": "group", "createdBy": created_by}))
+}
+
 fn said(text: &str) -> Entry {
     Entry {
         id: "e".into(),
@@ -23,7 +33,7 @@ fn said(text: &str) -> Entry {
 fn mentions_pick_responders_and_no_mention_means_everyone() {
     let members = [bot("a", "Alice Chen"), bot("b", "Bob"), bot("c", "尼采課")];
     let ids = |m: &[BotConfig], text: &str| -> Vec<String> {
-        responders(m, &[said(text)]).into_iter().map(|b| b.id.clone()).collect()
+        responders(&group(None), m, &[said(text)]).into_iter().map(|b| b.id.clone()).collect()
     };
     assert_eq!(ids(&members, "hi all"), ["a", "b", "c"]);
     assert_eq!(ids(&members, "@bob can you look"), ["b"]);
@@ -33,8 +43,50 @@ fn mentions_pick_responders_and_no_mention_means_everyone() {
     assert_eq!(ids(&members, "@all go"), ["a", "b", "c"]);
     let mut reply = said("why?");
     reply.data["replyTo"] = json!({"id": "x", "author": "b", "text": "done"});
-    let replied: Vec<String> = responders(&members, &[reply]).into_iter().map(|b| b.id.clone()).collect();
+    let replied: Vec<String> = responders(&group(None), &members, &[reply]).into_iter().map(|b| b.id.clone()).collect();
     assert_eq!(replied, ["b"], "a reply asks the bot it quotes");
+}
+
+#[test]
+fn an_unmentioned_group_asks_its_admins_first() {
+    let plain = bot("a", "Alice");
+    let manager = configured("b", "Bob", &json!({"manageTeam": true}));
+    let lead = configured("c", "Cara", &json!({"lead": true}));
+    let members = [plain, manager, lead];
+    let ids = |g: &BotConfig, text: &str| -> Vec<String> {
+        speakers(g, &members, &[said(text)], None, 0, &HashMap::new()).into_iter().map(|b| b.id.clone()).collect()
+    };
+
+    // A plain message: the manager and lead answer first; Alice waits for an @.
+    assert_eq!(ids(&group(None), "hi team"), ["b", "c"]);
+    // @all and a specific @ still mean what they always did.
+    assert_eq!(ids(&group(None), "@all hi"), ["a", "b", "c"]);
+    assert_eq!(ids(&group(None), "@alice check"), ["a"], "an explicit mention wins over the admins");
+    assert_eq!(ids(&group(None), "@everyone hi"), ["a", "b", "c"]);
+    // A reply to a plain member keeps the old reply rule too.
+    let mut reply = said("why?");
+    reply.data["replyTo"] = json!({"author": "a"});
+    let replied: Vec<String> = responders(&group(None), &members, &[reply]).into_iter().map(|b| b.id.clone()).collect();
+    assert_eq!(replied, ["a"]);
+}
+
+#[test]
+fn a_group_without_an_admin_still_asks_everyone() {
+    let members = [bot("a", "Alice"), bot("b", "Bob")];
+    let ids: Vec<String> =
+        responders(&group(None), &members, &[said("hi team")]).into_iter().map(|b| b.id.clone()).collect();
+    assert_eq!(ids, ["a", "b"], "no admin: the old all-hands default stays");
+}
+
+#[test]
+fn the_creator_of_a_group_leads_it_while_it_is_a_member() {
+    let members = [bot("a", "Alice"), configured("b", "Bob", &json!({"manageTeam": true}))];
+    let ids = |g: &BotConfig| -> Vec<String> {
+        responders(g, &members, &[said("hi team")]).into_iter().map(|b| b.id.clone()).collect()
+    };
+    assert_eq!(ids(&group(Some("a"))), ["a"], "the creator outranks the manage_team flag");
+    assert_eq!(ids(&group(Some("gone"))), ["b"], "a creator that left can't answer");
+    assert_eq!(ids(&group(None)), ["b"]);
 }
 
 #[test]
@@ -69,7 +121,7 @@ fn later_rounds_ask_only_the_members_another_member_mentioned() {
         "the user's mentions pick the first round"
     );
     let late_turn = |late: &[Entry]| -> Vec<String> {
-        let first = speakers(&members, &[said("@cara look")], Some(late), 0, &HashMap::new());
+        let first = speakers(&group(None), &members, &[said("@cara look")], Some(late), 0, &HashMap::new());
         first.into_iter().map(|b| b.id.clone()).collect()
     };
     assert_eq!(

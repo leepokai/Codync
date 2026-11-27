@@ -2161,12 +2161,31 @@ async fn a_thread_that_ends_while_its_program_runs_waits_for_it_and_reports_afte
 async fn a_thread_that_ends_after_launching_a_background_subagent_is_told_to_wait_for_it() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
-    host.reply(&bot, "ADD Review|Review the change SUBAGENT").await;
-    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Waited");
-    assert_eq!(task(&host, &bot, "Review", "done").await["result"], "Waited");
-    let told = told_to_wait(&host, &bot);
-    assert!(told.len() == 1 && told[0].contains("a subagent you started in the background"), "{told:?}");
+    host.reply(&bot, "ADD Review|Review the change SUBAGENT:review").await;
+    let told = wait("the thread to be told to wait", async || told_to_wait(&host, &bot).pop()).await;
+    assert!(told.contains("a subagent you started in the background"), "{told}");
+    // The helper comes back only now, in the agent's own process: the turn that waits for it reads what it found.
+    release(&host, &bot, "review");
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Waited: review");
+    assert_eq!(task(&host, &bot, "Review", "done").await["result"], "Waited: review");
     assert!(waited_in_the_same_agent(&host, &bot, "Review"), "the subagent runs in the agent: it isn't stopped");
+}
+
+/// #634: a message the user wrote to a thread that ends its turn with a program still running is the thread's next
+/// turn, as always, and the session that holds that program stays for it: it is told to wait after that turn.
+#[tokio::test]
+#[cfg_attr(windows, ignore = "Windows can't tell a program left running from the agent's own (docs/features/work.md)")]
+async fn a_message_waiting_for_a_thread_that_left_a_program_running_keeps_its_session() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Watch CI|Run the checks BACKGROUND:ci HOLD:go").await;
+    let working = task(&host, &bot, "Watch CI", "working").await;
+    tell(&host, &bot, &working, "how is it going").await;
+    release(&host, &bot, "go");
+    wait("the thread to be told to wait", async || told_to_wait(&host, &bot).pop()).await;
+    release(&host, &bot, "ci");
+    let done = task(&host, &bot, "Watch CI", "done").await;
+    assert_eq!(done["result"], "Waited", "its session wasn't closed under the program");
 }
 
 /// #634: a thread that ends again while its background work still runs, after being told to wait, ends its task as
@@ -2184,5 +2203,9 @@ async fn a_thread_that_ends_again_while_its_program_runs_stops_early_and_says_wh
     let relayed = reply(&host, &bot, "Relayed:").await;
     assert!(relayed.contains("did not finish: it stopped early"), "{relayed}");
     assert_eq!(told_to_wait(&host, &bot).len(), 1, "told once, not again and again");
+    // Tried again, its new thread may be told to wait once too.
+    host.call("retryWork", json!({"botId": bot, "taskId": failed["id"]})).await;
+    wait("the new thread to be told to wait", async || (told_to_wait(&host, &bot).len() == 2).then_some(())).await;
+    task(&host, &bot, "Watch CI", "failed").await;
     release(&host, &bot, "ci");
 }

@@ -10,8 +10,10 @@ choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the t
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
 `BACKGROUND:<name>` leaves a program running detached, in a session of its own, until `release-<name>` is in its
-folder, and `SUBAGENT` launches a background subagent the way Claude's adapter reports one: either way the turn ends
-at once. Told its background work still runs, it waits for those programs to end and reports `Waited`, or with
+folder, and `SUBAGENT:<name>` launches a background subagent the way Claude's adapter reports one, a helper in the
+agent's own process that comes back with `<name>` once `release-<name>` is there: either way the turn ends at once.
+Told its background work still runs, it waits for it and reports `Waited` (`Waited: <names>` with what its helpers
+came back with; `(its session was closed)` after it when the host closed the session in between), or with
 `STUBBORN` in its brief ends again at once (`Still waiting`).
 The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
@@ -72,8 +74,12 @@ permission = threading.Event()
 servers = []
 forked = set()
 count = 0
-# The programs its tasks left running in the background, and whether the last task's brief was `STUBBORN`.
+# What its tasks left running in the background (whether each still runs), what its helpers came back with, and
+# whether the last task's brief was `STUBBORN`.
 background = []
+helped = []
+# The sessions the host closed (`session/close`), kept in memory: a file in the folder could race the test removing it.
+closed = set()
 stubborn = False
 WAIT = "[Codync: you ended your turn while"
 
@@ -203,9 +209,12 @@ def work(text, session):
     if "BACKGROUND" in brief:
         for name in re.findall(r"BACKGROUND:(\w+)", brief):
             program = f"import pathlib, time\nwhile not pathlib.Path('release-{name}').exists(): time.sleep(0.05)"
-            background.append(subprocess.Popen([sys.executable, "-c", program], start_new_session=True))
+            background.append(subprocess.Popen([sys.executable, "-c", program], start_new_session=True).poll)
         notes.append("left running")
-    if "SUBAGENT" in brief:
+    for name in re.findall(r"SUBAGENT:(\w+)", brief):
+        helper = threading.Thread(target=lambda name=name: hold("HOLD:" + name) or helped.append(name), daemon=True)
+        helper.start()
+        background.append(lambda helper=helper: None if helper.is_alive() else 0)
         meta = {"claudeCode": {"toolName": "Agent", "toolResponse": {"isAsync": True, "status": "async_launched"}}}
         send({"method": "session/update", "params": {"sessionId": session, "update": {
             "sessionUpdate": "tool_call", "toolCallId": "agent", "title": "Review", "status": "completed", "_meta": meta}}})
@@ -271,9 +280,10 @@ def answer(text, session):
     if WAIT in text:
         if stubborn:
             return "Still waiting"
-        while any(program.poll() is None for program in background) and not cancel.wait(0.01):
+        while any(running() is None for running in background) and not cancel.wait(0.01):
             pass
-        return "Waited"
+        waited = "Waited: " + ", ".join(helped) if helped else "Waited"
+        return waited + (" (its session was closed)" if session in closed else "")
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
@@ -381,6 +391,7 @@ for line in sys.stdin:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
+        closed.add(params["sessionId"])
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
         cancel.clear()

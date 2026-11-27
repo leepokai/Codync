@@ -353,11 +353,13 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 /// report, as a turn in the chat), and the dispatcher decides what the thread does next. A task the user stopped
 /// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the task isn't
 /// over: that turn's end is its end. A turn that ended while its background work still ran is followed, once, by one
-/// that tells the thread to wait for it ([`wait`]). True: the task goes on in a turn the host started for it.
+/// that tells the thread to wait for it ([`wait`]). True: the task goes on with work still running in the background,
+/// in the turn the host started for it or the waiting message's, so its thread's agent and session stay.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
     let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
+    let running = matches!(outcome, Outcome::LeftRunning(..));
     let ended = tasks::change(hub, bot, |tasks| {
         if thread::unheard(&hub.store, &cfg.id) {
             return Ok(Ended::Open);
@@ -379,7 +381,10 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
             next(hub);
             return true;
         }
-        Ok(Ended::Open) => next(hub),
+        Ok(Ended::Open) => {
+            next(hub);
+            return running;
+        }
         Err(error) => {
             host_error!(hub, "couldn't save a task's end", thread = %cfg.id, error = format!("{error:#}"));
             next(hub);
@@ -393,7 +398,7 @@ enum Ended {
     Over(Box<Over>),
     /// Its thread was told to wait for its background work: this message, saved, goes to it next.
     Waits(Entry, Left),
-    /// It goes on: a message waits for the thread, or it has no task left.
+    /// It goes on (a message waits for the thread), or it has no task left.
     Open,
 }
 
@@ -449,6 +454,12 @@ fn close(hub: &Arc<Hub>, bot: &str, (task, worktree): Over, then: impl FnOnce(&A
 /// Ends the task `thread` works on, in `tasks`. None: it has none (stopped, or it gave way), or a host restart or a
 /// lost thread cut it off for the first time and it waits again.
 fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
+    let outcome = match outcome {
+        // A subagent's launch says nothing of whether it still runs (no adapter tells Codync it ended): it earns its
+        // thread the turn that waits for it, never a stopped-early end.
+        Outcome::LeftRunning(Left::Subagent, text) => Outcome::Done(text),
+        outcome => outcome,
+    };
     let front = tasks::front(tasks);
     let task = tasks.iter_mut().find(|i| i.status == Status::Working && i.thread.as_deref() == Some(thread))?;
     let (status, result, failure) = match outcome {
@@ -478,7 +489,7 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             (Status::Failed, Some(Err(why)), Some(Failure::Start))
         }
         Outcome::Stopped => (Status::Stopped, None, None),
-        // Told to wait for it once already: not finished, whatever its last message says.
+        // A program it started still runs, after it was told to wait for it: not finished, whatever it says.
         Outcome::LeftRunning(left, text) => {
             let why = prompts::stopped_early(left.what(), text.as_deref().map(str::trim).unwrap_or_default());
             (Status::Failed, Some(Err(codync_agent::acp::truncate(&why, MAX_REPORT))), Some(Failure::StoppedEarly))
@@ -760,8 +771,8 @@ mod tests {
         assert_eq!(finished_properties(&unstarted, None).get("waitedMs"), None, "it never started");
     }
 
-    /// #634: a thread told once to wait for its background work that ends again while it runs stops early, with why
-    /// and its last message, never as finished.
+    /// #634: a thread told once to wait for a program it left running that ends again while it runs stops early, with
+    /// why and its last message, never as finished.
     #[test]
     fn a_task_that_ends_again_while_its_background_work_runs_stopped_early() {
         let mut tasks = [working("a", "t1"), working("b", "t2")];
@@ -771,9 +782,14 @@ mod tests {
         let why = "it stopped early: a program it started in the background was still running. Its last message: \
                    Running the review, waiting for it.";
         assert_eq!(early.report.expect("a report").outcome, Err(why.to_owned()));
-        let silent = end(&mut tasks, "t2", Outcome::LeftRunning(Left::Subagent, None)).expect("ended");
-        let why = "it stopped early: a subagent it started in the background was still running";
+        let silent = end(&mut tasks, "t2", Outcome::LeftRunning(Left::Program, None)).expect("ended");
+        let why = "it stopped early: a program it started in the background was still running";
         assert_eq!(silent.result.as_deref(), Some(why));
+        // A subagent's launch never tells whether it still runs: told to wait once, the thread's word is its report.
+        let mut launched = [working("c", "t3")];
+        let launched = end(&mut launched, "t3", Outcome::LeftRunning(Left::Subagent, Some("Reviewed.".into())));
+        let launched = launched.expect("ended");
+        assert_eq!((launched.status, launched.result.as_deref()), (Status::Done, Some("Reviewed.")));
         assert_eq!(json!(Failure::StoppedEarly), "stopped_early");
         assert_eq!(json!(Left::Subagent), "subagent", "work_told_to_wait's `left`");
     }
@@ -791,10 +807,11 @@ mod tests {
 
     #[test]
     fn a_task_a_restart_cut_off_waits_again_once_then_fails() {
-        let mut tasks = [working("a", "t1")];
+        let mut tasks = [Task { told_to_wait: true, ..working("a", "t1") }];
         assert!(end(&mut tasks, "t1", Outcome::Failed(Failure::Restart, CUT_OFF.into())).is_none());
         let task = &tasks[0];
         assert!(task.status == Status::Waiting && task.cut_in && task.thread.is_none(), "{task:?}");
+        assert!(!task.told_to_wait, "its new thread may be told to wait too");
 
         tasks[0].status = Status::Working;
         tasks[0].thread = Some("t2".into());

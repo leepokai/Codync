@@ -368,6 +368,8 @@ impl Task {
         self.thread = None;
         self.started_at = None;
         self.began = false;
+        // A new thread starts it again (a cut-in, a restart, Try again): it may be told to wait once more.
+        self.told_to_wait = false;
     }
 }
 

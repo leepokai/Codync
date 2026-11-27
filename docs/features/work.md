@@ -311,13 +311,16 @@ rely on it: as a thread's turn ends with `end_turn`, the actor looks for backgro
 - else **a program the agent started detached**, in a session of its own (`background_work::left_running`, the same
   look as the idle stop's, but only what is seen counts: a listing that fails is no signal).
 
-Seen, the turn ends as `Outcome::LeftRunning` and the task stays open: once per task (`told_to_wait`), the host saves
-a `from: host` message to the thread telling it to wait for that work and then report (`prompts::wait`), and the
-thread's agent and session stay as they are for that turn (`Actor::task_goes_on`: no `release_spent`). Its next turn
-end is the task's end as usual. A thread that ends its turn again while its background work still runs ends its task
-as **stopped early**: `failed`, `failure: stopped_early`, with why and its last message as the report
+Seen, the turn ends as `Outcome::LeftRunning` and the task stays open: once per task (`told_to_wait`, cleared when
+a new thread takes it up again: a cut-in, a restart, Try again), the host saves a `from: host` message to the thread
+telling it to wait for that work and then report (`prompts::wait`), and the thread's agent and session stay as they
+are for that turn (`Actor::task_goes_on`: no `release_spent`). A message the user wrote to the thread meanwhile is its
+next turn instead, as always, and keeps the agent and session the same way. Its next turn end is the task's end as
+usual. A thread that ends its turn again while a program it left running still runs ends its task as **stopped
+early**: `failed`, `failure: stopped_early`, with why and its last message as the report
 (`it stopped early: a program it started in the background was still running. Its last message: …`), never as
-finished. Only what the host sees decides it, never the report's wording. `work_told_to_wait` (`left`, `agent`,
+finished. A subagent's launch only earns the turn that waits for it: no adapter tells Codync when a background
+subagent ends, so a thread that launched one again in that turn ends as its words say. Only what the host sees decides it, never the report's wording. `work_told_to_wait` (`left`, `agent`,
 `source`) says each time a thread was told to wait; `work_finished`'s `error: stopped_early` each task that stopped
 early.
 

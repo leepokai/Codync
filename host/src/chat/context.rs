@@ -83,6 +83,9 @@ pub struct Snapshot {
     pub system_identity: Identity,
     /// The identity the agent last heard of (`system` or a later update block).
     pub announced: Identity,
+    /// The epoch of the delivered opening or update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    announced_epoch: Option<u32>,
     /// The skill block from the last opening accounted for in the task's context.
     #[serde(default, alias = "loadedTaskSkills", skip_serializing_if = "Option::is_none")]
     confirmed_task_skills: Option<String>,
@@ -95,6 +98,12 @@ pub struct Snapshot {
     /// True from the session's creation until a prompt that carried its instructions has reached the agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unprompted: bool,
+}
+
+impl Snapshot {
+    pub fn needs_resend(&self) -> bool {
+        self.announced_epoch.is_some_and(|announced| announced < self.epoch)
+    }
 }
 
 // A bot talks in several sessions (its chat and groups, routine runs), each with its own: snapshots
@@ -155,7 +164,7 @@ fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
 
 /// The snapshot for `session` at its current epoch, rendering a fresh one when
 /// the stored one belongs to another session or an earlier epoch.
-pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot> {
+pub fn resolve(store: &Store, cfg: &BotConfig, session: &str, opening_in_prompt: bool) -> Result<Snapshot> {
     // A thread's sessions are kept with its bot's, as its memory is.
     let owner = cfg.owner();
     let epoch = epoch(store, owner, session);
@@ -165,7 +174,8 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
     }
     let memory = crate::chat::memory::current_revision(store, owner);
     let (system, identity) = render_with_identity(store, cfg);
-    let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
+    let unprompted = stored.as_ref().map_or(opening_in_prompt && epoch > 0, |old| old.unprompted);
+    let announced_epoch = stored.as_ref().map(|old| old.announced_epoch.unwrap_or(old.epoch));
     let (announced, confirmed_task_skills, pending_task_skills) = stored.map_or_else(
         || (identity.clone(), None, None),
         |old| (old.announced, old.confirmed_task_skills, old.pending_task_skills),
@@ -176,9 +186,8 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
         system,
         system_identity: identity.clone(),
         unprompted,
-        // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
-        // until then it knows the identity it last heard, so an update it missed is still announced.
         announced,
+        announced_epoch,
         confirmed_task_skills,
         pending_task_skills,
         memory,
@@ -232,6 +241,7 @@ pub fn adopt(
         system,
         system_identity: identity.clone(),
         announced: identity,
+        announced_epoch: None,
         confirmed_task_skills,
         pending_task_skills: None,
         memory,
@@ -241,10 +251,13 @@ pub fn adopt(
     Ok(s)
 }
 
-/// After the first prompt of a session reached the agent: its instructions are no longer owed, unless the
-/// snapshot moved on meanwhile.
+/// Records the epoch of the opening carried by a successful prompt.
 pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
-    update_if_current(store, bot_id, sent, |current| std::mem::take(&mut current.unprompted))
+    update_if_current(store, bot_id, sent, |current| {
+        let first = std::mem::take(&mut current.unprompted);
+        let previous = current.announced_epoch.replace(sent.epoch);
+        first || previous != Some(sent.epoch)
+    })
 }
 
 /// Whether a session of `cfg` working for `source` is told who the bot is (name, description, memory): all but a
@@ -496,9 +509,14 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
 }
 
 /// Replaces the skill list a handed-out task last heard.
-pub fn task_skills_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Option<(String, Identity)> {
+pub fn task_skills_update(
+    store: &Store,
+    snapshot: &Snapshot,
+    cfg: &BotConfig,
+    resend: bool,
+) -> Option<(String, Identity)> {
     let skills_brief = current_skills(store, cfg);
-    if skills_brief == snapshot.announced.skills_brief && snapshot.pending_task_skills.is_none() {
+    if !resend && skills_brief == snapshot.announced.skills_brief && snapshot.pending_task_skills.is_none() {
         return None;
     }
     let identity = Identity { skills_brief, ..snapshot.announced.clone() };
@@ -550,13 +568,14 @@ pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, ide
     update_if_current(store, bot_id, turn_snapshot, |current| {
         let changed = current.announced != identity;
         current.announced = identity;
+        let previous = current.announced_epoch.replace(turn_snapshot.epoch);
         if turn_snapshot.pending_task_skills.is_some()
             && current.pending_task_skills == turn_snapshot.pending_task_skills
         {
             current.confirmed_task_skills = current.pending_task_skills.take();
             return true;
         }
-        changed
+        changed || previous != Some(turn_snapshot.epoch)
     })
 }
 
@@ -694,21 +713,21 @@ mod tests {
         let first =
             adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         // Frozen: resolving again returns the same text, even though a live render differs.
-        assert_eq!(resolve(&store, &a, "s1").expect("resolve").system, "SYSTEM v1");
+        assert_eq!(resolve(&store, &a, "s1", true).expect("resolve").system, "SYSTEM v1");
         assert!(profile_update(&store, &first, &a).is_none());
 
         let b = cfg("Fixer", "Fix bugs and write tests");
         let (text, identity) = profile_update(&store, &first, &b).expect("changed");
         assert!(text.contains("Current description: Fix bugs and write tests"));
         mark_announced(&store, &a.id, &first, identity).expect("mark");
-        let snap = resolve(&store, &b, "s1").expect("resolve");
+        let snap = resolve(&store, &b, "s1", true).expect("resolve");
         assert_eq!(snap.system, "SYSTEM v1");
         assert!(profile_update(&store, &snap, &b).is_none());
 
         // A compaction folds the new identity into a fresh render.
         assert!(bump_epoch(&store, &a.id, "s1", "c1").expect("bump"));
         assert!(!bump_epoch(&store, &a.id, "s1", "c1").expect("bump"));
-        let folded = resolve(&store, &b, "s1").expect("resolve");
+        let folded = resolve(&store, &b, "s1", true).expect("resolve");
         assert_eq!(folded.epoch, 1);
         assert!(folded.system.contains("Description: Fix bugs and write tests"));
         // A new session starts over at epoch 0.
@@ -740,7 +759,7 @@ mod tests {
         adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         let b = cfg("Fixer", "Fix bugs and write tests");
         invalidate(&store, &a.id).expect("invalidate");
-        let snap = resolve(&store, &b, "s1").expect("resolve");
+        let snap = resolve(&store, &b, "s1", true).expect("resolve");
         assert!(snap.system.contains("Description: Fix bugs and write tests"), "re-rendered");
         assert!(profile_update(&store, &snap, &b).is_some(), "the agent never heard the new description");
     }
@@ -759,7 +778,7 @@ mod tests {
             old[identity].as_object_mut().expect("an identity").remove("lead");
         }
         store.kv_set(&k, &old.to_string()).expect("save");
-        let snap = resolve(&store, &lead, "s1").expect("resolve");
+        let snap = resolve(&store, &lead, "s1", true).expect("resolve");
         assert!(profile_update(&store, &snap, &lead).is_none(), "it heard its role in its instructions");
 
         let mut other = lead.clone();
@@ -767,7 +786,7 @@ mod tests {
         let (text, identity) = profile_update(&store, &snap, &other).expect("the role moved");
         assert!(text.contains(NOT_LEAD) && !text.contains(crate::chat::lead::BRIEF), "{text}");
         mark_announced(&store, &lead.id, &snap, identity).expect("mark");
-        let snap = resolve(&store, &other, "s1").expect("resolve");
+        let snap = resolve(&store, &other, "s1", true).expect("resolve");
         assert!(profile_update(&store, &snap, &other).is_none(), "told once");
         let (text, _) = profile_update(&store, &snap, &lead).expect("it leads again");
         assert!(text.contains(crate::chat::lead::BRIEF), "{text}");
@@ -779,9 +798,41 @@ mod tests {
         let a = cfg("Fixer", "Fix bugs");
         let first =
             adopt(&store, &a, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
-        assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
+        assert!(resolve(&store, &a, "s1", true).expect("resolve").unprompted, "survives a restart");
         mark_prompted(&store, &a.id, &first).expect("mark");
-        assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
+        assert!(!resolve(&store, &a, "s1", true).expect("resolve").unprompted);
+    }
+
+    #[test]
+    fn a_missing_snapshot_after_compaction_only_owes_an_opening_in_the_prompt() {
+        let store = store();
+        let bot = cfg("Fixer", "Fix bugs");
+        for (sid, opening_in_prompt) in [("first-message", true), ("system-prompt", false)] {
+            bump_epoch(&store, &bot.id, sid, "c1").expect("compaction");
+            let snapshot = resolve(&store, &bot, sid, opening_in_prompt).expect("rebuild missing snapshot");
+            assert_eq!(snapshot.unprompted, opening_in_prompt);
+        }
+    }
+
+    #[test]
+    fn a_late_announcement_does_not_settle_a_newer_compaction() {
+        let store = store();
+        let bot = cfg("Fixer", "Fix bugs");
+        let sid = "s1";
+        let first = resolve(&store, &bot, sid, true).expect("initial snapshot");
+        assert!(!first.needs_resend());
+
+        bump_epoch(&store, &bot.id, sid, "c1").expect("first compaction");
+        let sent = resolve(&store, &bot, sid, true).expect("sent snapshot");
+        assert!(sent.needs_resend());
+
+        bump_epoch(&store, &bot.id, sid, "c2").expect("second compaction");
+        let latest = resolve(&store, &bot, sid, true).expect("latest snapshot");
+        mark_announced(&store, &bot.id, &sent, sent.system_identity.clone()).expect("late acknowledgement");
+        assert!(resolve(&store, &bot, sid, true).expect("resolve after late acknowledgement").needs_resend());
+
+        mark_announced(&store, &bot.id, &latest, latest.system_identity.clone()).expect("current acknowledgement");
+        assert!(!resolve(&store, &bot, sid, true).expect("resolve after current acknowledgement").needs_resend());
     }
 
     #[test]

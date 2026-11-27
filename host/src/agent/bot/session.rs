@@ -173,15 +173,20 @@ impl Actor {
         Ok(conn)
     }
 
-    /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
-    /// mustn't leave the agent opening a session the host never learns of.
+    /// Bounds a routine's session setup and retires any agent left with an unfinished opening.
     pub(super) async fn ensure_turn_session(&mut self, slot: Option<&str>) -> Result<()> {
-        let Some(deadline) = self.routine_deadline else { return self.ensure_session(slot).await };
-        let setup = tokio::time::timeout_at(deadline.into(), self.ensure_session(slot)).await;
+        let setup = if let Some(deadline) = self.routine_deadline {
+            tokio::time::timeout_at(deadline.into(), self.ensure_session(slot))
+                .await
+                .context("routine session setup timed out")
+                .flatten()
+        } else {
+            self.ensure_session(slot).await
+        };
         if setup.is_err() {
             self.drop_unanswered().await;
         }
-        setup.context("routine session setup timed out")?
+        setup
     }
 
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
@@ -252,7 +257,7 @@ impl Actor {
         // rebuilds its query and resumes the same conversation).
         let current = self.session_for(slot);
         let claude_snapshot = match (&current, instructions) {
-            (Some(sid), Instructions::ClaudeMeta) => Some(self.snapshot(sid).await?),
+            (Some(sid), Instructions::ClaudeMeta) => Some(self.snapshot(sid, instructions).await?),
             _ => None,
         };
         let Some(conn) = self.conn.as_ref() else { bail!("agent not running") };
@@ -275,7 +280,7 @@ impl Actor {
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let mut params = self.session_params(&servers, Some(&sid));
             let snapshot = if instructions == Instructions::SystemPrompt {
-                Some(self.snapshot(&sid).await?)
+                Some(self.snapshot(&sid, instructions).await?)
             } else {
                 claude_snapshot
             };
@@ -287,36 +292,41 @@ impl Actor {
             let about_agent = drop_replay(conn);
             match res {
                 Ok(res) => {
+                    conn.opening = reopen == acp::Reopen::Resume;
                     let as_bot = context::as_bot(&self.cfg, &self.task_source);
-                    if !as_bot && let Some(s) = &snapshot {
-                        let delivery = if instructions == Instructions::ClaudeMeta {
-                            context::TaskSystemDelivery::Immediate
-                        } else {
-                            context::TaskSystemDelivery::MayDefer
-                        };
-                        context::task_system_reopened(&self.hub.store, self.cfg.owner(), s, delivery)?;
-                    }
-                    // A resumed session can come back on the agent's last-used model (Cursor
-                    // keeps one for all its sessions), so the bot's own is set again.
-                    let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        match select_model(&conn.acp, &res, &sid, &self.cfg).await {
-                            Ok(selected) => selected,
-                            Err(error) => {
-                                // The agent now holds a session the host doesn't track, and `session/resume` refuses
-                                // one it holds. Stopped, it takes the session again on the next message.
-                                if reopen == acp::Reopen::Resume
-                                    && let Some(c) = self.conn.take()
-                                {
-                                    c.acp.kill().await;
-                                }
-                                return Err(error);
-                            }
+                    let prepared = async {
+                        if !as_bot && let Some(s) = &snapshot {
+                            let delivery = if instructions == Instructions::ClaudeMeta {
+                                context::TaskSystemDelivery::Immediate
+                            } else {
+                                context::TaskSystemDelivery::MayDefer
+                            };
+                            context::task_system_reopened(&self.hub.store, self.cfg.owner(), s, delivery)?;
                         }
-                    } else {
-                        res
+                        // The resumed session can come back on the agent's last-used model.
+                        if res.get("configOptions").is_some() || res.get("models").is_some() {
+                            select_model(&conn.acp, &res, &sid, &self.cfg).await
+                        } else {
+                            Ok(res)
+                        }
+                    }
+                    .await;
+                    let res = match prepared {
+                        Ok(res) => res,
+                        Err(error) => {
+                            // Resume refuses a session this process already holds.
+                            if reopen == acp::Reopen::Resume
+                                && self.close_session(&sid).await
+                                && let Some(conn) = self.conn.as_mut()
+                            {
+                                conn.opening = false;
+                            }
+                            return Err(error);
+                        }
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
+                    conn.opening = false;
                     watch_servers(conn).await;
                     self.note_options(&sid, &res, Listing::Session);
                     for update in &about_agent {
@@ -393,21 +403,28 @@ impl Actor {
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
-        conn.opening = matches!(method, "session/new" | "session/load" | "session/resume");
+        let opens = matches!(method, "session/new" | "session/load" | "session/resume");
+        if opens {
+            conn.opening = true;
+        }
         let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
-        conn.opening = false;
+        if opens {
+            conn.opening = false;
+        }
         if let Ok(result) = answered {
             return result;
         }
-        if let Some(c) = self.conn.take() {
+        // A pending resume is retired by ensure_turn_session outside the routine deadline.
+        if !conn.opening
+            && let Some(c) = self.conn.take()
+        {
             c.acp.kill().await;
         }
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
     }
 
-    /// A routine's time limit cut a session request short. An agent that can resume stops, so a session it might
-    /// still open goes with its process; one that can't keeps running rather than lose the sessions it has.
+    /// Retires a resumable agent that may hold a session whose opening or preparation didn't finish.
     async fn drop_unanswered(&mut self) {
         let Some(conn) = self.conn.as_mut() else { return };
         if !std::mem::take(&mut conn.opening) {

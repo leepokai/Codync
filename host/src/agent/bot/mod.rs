@@ -109,7 +109,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_completion: None,
         session_fresh: false,
         unfiled: codex_section::Unfiled::default(),
-        profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
         handoff: None,
@@ -200,8 +199,7 @@ pub(crate) struct Conn {
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
     spent: bool,
     started: Instant,
-    /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
-    /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
+    /// An opening request is in flight, or an accepted resume is still being prepared or closed.
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
@@ -296,9 +294,6 @@ struct Actor {
     session_fresh: bool,
     /// The new Codex sessions that aren't in Codex's Codync section yet.
     unfiled: codex_section::Unfiled,
-    /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
-    /// a fresh one.
-    profile_resend: HashSet<String>,
     /// The running turn is a compaction the host started (`Some(true)` while the user is away).
     compacting: Option<bool>,
     /// The next prompt goes as it is: a command such as `/compact`, with nothing put before or after it.

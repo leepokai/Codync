@@ -43,6 +43,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
@@ -50,10 +51,27 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
+if "background-worker" in sys.argv:
+    workspace = pathlib.Path.cwd()
+    pathlib.Path("background-ready").write_text(f"{os.getpid()} {os.getppid()}", encoding="utf-8")
+    for _ in range(1200):
+        if not workspace.exists():
+            break
+        if pathlib.Path("release-background").exists():
+            pathlib.Path("background-finished").write_text(f"{os.getpid()} {os.getppid()}", encoding="utf-8")
+            break
+        time.sleep(0.05)
+    sys.exit(0)
+
 CLAUDE = "claude" in sys.argv
 STANDARD = "standard" in sys.argv
 RESUME_ONLY = "resume-only" in sys.argv
+STRICT_RESUME = "strict-resume" in sys.argv
+CAN_CLOSE = "with-close" in sys.argv
 DEFER_SYSTEM = "defer-system" in sys.argv
+TRACK_SKILLS = "track-skills" in sys.argv
+REPORT_COMPACTION = "report-compaction" in sys.argv
+NATIVE_COMPACT = "native-compact" in sys.argv
 SESSION_LOG = "claude_sessions.jsonl" if CLAUDE else "standard_sessions.jsonl"
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
@@ -75,6 +93,7 @@ cancel = threading.Event()
 permission = threading.Event()
 servers = []
 forked = set()
+resumed = set()
 count = 0
 
 
@@ -326,15 +345,25 @@ def prompt(request):
         send({"id": request["id"], "error": SIGNED_OUT})
         return
     compaction = None
-    if (CLAUDE or STANDARD) and "[Task]" in text and "COMPACT_NOW" in text:
+    if NATIVE_COMPACT and text == "/compact":
+        compaction = "native-compaction"
+    elif (CLAUDE or STANDARD or REPORT_COMPACTION) and "[Task]" in text and "COMPACT_NOW" in text:
         compaction = "task-compaction"
-    elif DEFER_SYSTEM and "COMPACT_AGAIN" in text:
+    elif (DEFER_SYSTEM or REPORT_COMPACTION) and "COMPACT_AGAIN" in text:
         compaction = "task-compaction-again"
+    if TRACK_SKILLS:
+        overlay = pathlib.Path(f"fixture-skills-{session}")
+        update = re.search(r"<skills_update>\n(.*?)\n</skills_update>", text, re.S)
+        if update:
+            overlay.write_text(update.group(1), encoding="utf-8")
+        if compaction and overlay.exists():
+            log("compacted_skills.jsonl", {"session": session, "dropped": overlay.read_text(encoding="utf-8")})
+            overlay.unlink()
     if compaction:
         send({"method": "session/update", "params": {"sessionId": session, "update": {
             "sessionUpdate": "compaction_update", "compactionId": compaction, "status": "completed"}}})
     reply = answer(text, session)
-    if STANDARD and "FAIL_SKILL_PROMPT" in text:
+    if (STANDARD or REPORT_COMPACTION) and "FAIL_SKILL_PROMPT" in text:
         send({"id": request["id"], "error": {"code": -32603, "message": "Fixture rejected the prompt"}})
         return
     if cancel.is_set():
@@ -377,6 +406,8 @@ for line in sys.stdin:
             if RESUME_ONLY:
                 initialized["agentCapabilities"]["loadSession"] = False
                 initialized["agentCapabilities"]["sessionCapabilities"]["resume"] = {}
+            if CAN_CLOSE:
+                initialized["agentCapabilities"]["sessionCapabilities"]["close"] = {}
         if CAN_STEER:
             initialized["_meta"] = {"steering": {"supported": True}}
         send({"id": message["id"], "result": initialized})
@@ -389,6 +420,10 @@ for line in sys.stdin:
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
         if not reopened:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
+        if NATIVE_COMPACT and method == "session/new":
+            send({"method": "session/update", "params": {"sessionId": session, "update": {
+                "sessionUpdate": "available_commands_update",
+                "availableCommands": [{"name": "compact", "description": "Summarize context"}]}}})
         if CLAUDE or STANDARD:
             if CLAUDE:
                 system = params.get("_meta", {}).get("systemPrompt", {}).get("append")
@@ -403,13 +438,33 @@ for line in sys.stdin:
                     opening.write_text(system, encoding="utf-8")
                 event["activeSystem"] = opening.read_text(encoding="utf-8")
             log(SESSION_LOG, event)
+            if STRICT_RESUME and method == "session/resume":
+                if session in resumed:
+                    send({"id": message["id"], "error": {"code": -32603, "message": "Session already held"}})
+                    continue
+                resumed.add(session)
             gate = pathlib.Path(f"hold-load-{session}")
             if reopened and gate.exists():
+                if CAN_CLOSE and method == "session/resume":
+                    child = subprocess.Popen(
+                        [sys.executable, __file__, "background-worker"],
+                        start_new_session=os.name == "posix",
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    threading.Thread(target=child.wait, daemon=True).start()
                 threading.Thread(target=finish_held_reopen, args=(message["id"], session, gate), daemon=True).start()
                 continue
         send({"id": message["id"], "result": {} if reopened else {"sessionId": session}})
     elif method == "session/close":
-        send({"id": message["id"], "result": {}})
+        session = params["sessionId"]
+        rejected = CAN_CLOSE and pathlib.Path(f"fail-close-{session}").exists()
+        if CAN_CLOSE:
+            log(SESSION_LOG, {"method": method, "session": session, "pid": os.getpid(), "rejected": rejected})
+        if rejected:
+            send({"id": message["id"], "error": {"code": -32603, "message": "Fixture rejected the close"}})
+        else:
+            resumed.discard(session)
+            send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
         cancel.clear()
         permission.clear()

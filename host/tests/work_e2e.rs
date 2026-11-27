@@ -2410,6 +2410,358 @@ async fn a_claude_task_keeps_its_announced_skills_across_session_loads() {
 }
 
 #[tokio::test]
+async fn a_standard_task_resends_skill_updates_dropped_by_compaction() {
+    let mut counts = Vec::new();
+    for initially_enabled in [false, true] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+        let save_skill = async || {
+            host.call(
+                "chatCall",
+                json!({"botId": bot, "name": "save_skill",
+                    "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+            )
+            .await;
+        };
+        if initially_enabled {
+            save_skill().await;
+        }
+        let sessions = || host.log(&bot, "standard_sessions.jsonl");
+        let exited = async |pid: &Value| {
+            wait("the task agent to exit", async || {
+                sessions().into_iter().find(|e| e["method"] == "exit" && &e["pid"] == pid)
+            })
+            .await;
+        };
+        host.reply(&bot, "ADD Keep going|Finish the release").await;
+        let mut done = task(&host, &bot, "Keep going", "done").await;
+        let initial = &task_prompts(&host, &bot, "Keep going")[0];
+        let session = initial["session"].as_str().unwrap();
+        let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+        exited(&opening["pid"]).await;
+        let opening_text = opening["system"].as_str().unwrap();
+        assert_eq!(opening_text.contains("- B: Release steps."), initially_enabled);
+        if initially_enabled {
+            assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+        } else {
+            save_skill().await;
+        }
+        let expected = if initially_enabled { "Skills: none." } else { "- B: Release steps." };
+        let mut updates = Vec::new();
+        let overlay = host.workspace(&bot).join(format!("fixture-skills-{session}"));
+        for (index, message) in ["record the update COMPACT_AGAIN", "continue after the summary", "check one more time"]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+            done = result(&host, &bot, "Keep going", &format!("Thread {message}:")).await;
+            let loaded =
+                sessions().into_iter().rfind(|e| e["method"] == "session/load" && e["session"] == session).unwrap();
+            assert_eq!(loaded["activeSystem"], opening["system"]);
+            exited(&loaded["pid"]).await;
+            let prompt = thread_prompts(&host, &bot)
+                .into_iter()
+                .find(|p| p["text"].as_str().unwrap().contains(message))
+                .unwrap();
+            assert_eq!(prompt["session"], session);
+            let text = prompt["text"].as_str().unwrap();
+            let count = text.matches("<skills_update>").count();
+            assert!(count == 0 || text.contains(expected), "{text}");
+            updates.push(count);
+            if index == 0 {
+                assert!(!overlay.exists(), "compaction discarded the delivered update");
+            }
+        }
+        let dropped = host.log(&bot, "compacted_skills.jsonl");
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0]["session"], session);
+        assert!(dropped[0]["dropped"].as_str().unwrap().contains(expected));
+        eprintln!("standard {session} dropped {expected:?} before the turn succeeded, update counts {updates:?}");
+        counts.push(updates);
+    }
+    assert_eq!(counts, [[1, 1, 0], [1, 1, 0]]);
+}
+
+#[tokio::test]
+async fn a_first_message_agent_retries_compacted_instructions_after_a_failed_prompt() {
+    let mut counts = Vec::new();
+    for handed_out in [true, false] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "report-compaction").await;
+        let title = "Try again";
+        let rejected = "refuse the refreshed instructions FAIL_SKILL_PROMPT";
+        let retry = "deliver the refreshed instructions";
+        let quiet = "check without a repeat";
+        if handed_out {
+            host.reply(&bot, "ADD Try again|COMPACT_NOW HOLD:before_retry").await;
+            let working = task(&host, &bot, title, "working").await;
+            wait("the compacting task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+            assert_eq!(tell(&host, &bot, &working, rejected).await["queued"], true);
+            release(&host, &bot, "before_retry");
+            let failed = task(&host, &bot, title, "failed").await;
+            assert_eq!(tell(&host, &bot, &failed, retry).await["reopened"], true);
+            let done = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+            assert_eq!(tell(&host, &bot, &done, quiet).await["reopened"], true);
+            result(&host, &bot, title, &format!("Thread {quiet}:")).await;
+        } else {
+            host.reply(&bot, "start the chat").await;
+            host.reply(&bot, "COMPACT_AGAIN").await;
+            host.call("send", json!({"botId": bot, "text": rejected, "clientNonce": "reject-profile"})).await;
+            entry(&host, &bot, "the rejected profile prompt", |e| {
+                e["data"]["text"].as_str().is_some_and(|text| text.contains("Fixture rejected the prompt"))
+            })
+            .await;
+            host.reply(&bot, retry).await;
+            host.reply(&bot, quiet).await;
+        }
+        let prompts = host.log(&bot, "prompts.jsonl");
+        let [failed, retried, after] = [rejected, retry, quiet]
+            .map(|message| prompts.iter().find(|p| p["text"].as_str().unwrap().contains(message)).unwrap());
+        assert_eq!(failed["session"], retried["session"]);
+        assert_eq!(failed["session"], after["session"]);
+        let copies = [failed, retried, after].map(|p| p["text"].as_str().unwrap().matches("<bot-profile>").count());
+        let expected = if handed_out { "Continue following the user's original brief." } else { "Title: Mika" };
+        for prompt in [failed, retried] {
+            let text = prompt["text"].as_str().unwrap();
+            if text.contains("<bot-profile>") {
+                assert!(text.contains("Your context was summarized.") && text.contains(expected), "{text}");
+            }
+        }
+        eprintln!("FirstMessage task={handed_out} session {} profile counts {copies:?}", failed["session"]);
+        counts.push(copies);
+    }
+    assert_eq!(counts, [[1, 1, 0], [1, 1, 0]]);
+}
+
+#[tokio::test]
+async fn a_standard_task_retries_its_session_after_a_resume_bookkeeping_error() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Unsupported).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_closes_the_failed_resume_and_keeps_background_work() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Supported).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_restarts_its_agent_when_close_is_rejected() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Refused).await;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ResumeClose {
+    Unsupported,
+    Supported,
+    Refused,
+}
+
+async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
+    let host = Host::start().await;
+    let options = if close == ResumeClose::Unsupported {
+        "standard resume-only strict-resume"
+    } else {
+        "standard resume-only strict-resume with-close"
+    };
+    let bot = host.fixture_bot("Mika", "work_agent.py", options).await;
+    let sessions = || host.log(&bot, "standard_sessions.jsonl");
+    host.reply(&bot, "ADD Retry resume|COMPACT_NOW").await;
+    let done = task(&host, &bot, "Retry resume", "done").await;
+    let task_opened = &task_prompts(&host, &bot, "Retry resume")[0];
+    let session = task_opened["session"].as_str().unwrap();
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    wait("the original task agent to exit", async || {
+        sessions().into_iter().find(|e| e["method"] == "exit" && e["pid"] == opening["pid"])
+    })
+    .await;
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+
+    let gate = flag(&host, &bot, &format!("hold-load-{session}"));
+    assert_eq!(tell(&host, &bot, &done, "reopen with B").await["reopened"], true);
+    let resumes = || -> Vec<Value> {
+        sessions().into_iter().filter(|e| e["method"] == "session/resume" && e["session"] == session).collect()
+    };
+    let accepted = wait("the held resume", async || resumes().into_iter().next()).await;
+    assert!(accepted["system"].as_str().unwrap().contains("- B: Release steps."));
+    let workspace = host.workspace(&bot);
+    let background = if close == ResumeClose::Unsupported {
+        None
+    } else {
+        Some(
+            wait("the detached worker to start under the resuming agent", async || {
+                let parent = format!(" {}", accepted["pid"]);
+                std::fs::read_to_string(workspace.join("background-ready")).ok().filter(|s| s.ends_with(&parent))
+            })
+            .await,
+        )
+    };
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    db.execute_batch("CREATE TABLE fixture_resume_failure(k TEXT PRIMARY KEY, fired INTEGER NOT NULL);").unwrap();
+    db.execute("INSERT INTO fixture_resume_failure VALUES(?1, 0)", [format!("context.{bot}.{session}")]).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER reject_resume_snapshot BEFORE INSERT ON kv
+         WHEN CASE WHEN EXISTS(SELECT 1 FROM fixture_resume_failure WHERE k = NEW.k AND fired = 0)
+              THEN json_type(NEW.v, '$.pendingTaskSkills') IS NOT NULL ELSE 0 END
+         BEGIN
+             UPDATE fixture_resume_failure SET fired = 1 WHERE k = NEW.k;
+             SELECT RAISE(FAIL, 'fixture refused the snapshot write');
+         END;",
+    )
+    .unwrap();
+    if close == ResumeClose::Refused {
+        flag(&host, &bot, &format!("fail-close-{session}"));
+    }
+    let retry_text = "retry the same session HOLD:resume_retry";
+    assert_eq!(tell(&host, &bot, &done, retry_text).await["queued"], true);
+    std::fs::remove_file(gate).unwrap();
+    let resumed_prompt = wait("the prompt from the queued retry", async || {
+        thread_prompts(&host, &bot).into_iter().find(|p| p["text"].as_str().unwrap().contains(retry_text))
+    })
+    .await;
+    let events = sessions();
+    let [first, retry]: [usize; 2] = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e["method"] == "session/resume" && e["session"] == session)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let close_event =
+        events[first + 1..retry].iter().find(|e| e["method"] == "session/close" && e["session"] == session);
+    let first_pid = &events[first]["pid"];
+    let retry_pid = &events[retry]["pid"];
+    if background.is_some() {
+        release(&host, &bot, "background");
+    }
+    let worker_finished = if close == ResumeClose::Supported && first_pid == retry_pid {
+        Some(
+            wait("the detached worker to finish during the retry", async || {
+                std::fs::read_to_string(workspace.join("background-finished")).ok().filter(|s| s.contains(' '))
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+    release(&host, &bot, "resume_retry");
+    result(&host, &bot, "Retry resume", &format!("Thread {retry_text}:")).await;
+    assert_eq!(db.query_row("SELECT fired FROM fixture_resume_failure", [], |r| r.get::<_, i32>(0)).unwrap(), 1);
+    assert!(transcript(&host, &bot, &done).await.iter().any(|entry| {
+        entry["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the snapshot write"))
+    }));
+    eprintln!(
+        "{close:?}: resume of {session} accepted by PID {first_pid}, close {close_event:?}, next resume PID {retry_pid}, retry prompt session {}, detached worker {background:?}",
+        resumed_prompt["session"]
+    );
+    assert_eq!(first_pid == retry_pid, close == ResumeClose::Supported);
+    assert_eq!(
+        close_event.map(|e| e["rejected"].as_bool().unwrap()),
+        match close {
+            ResumeClose::Unsupported => None,
+            ResumeClose::Supported => Some(false),
+            ResumeClose::Refused => Some(true),
+        }
+    );
+    if let Some(event) = close_event {
+        assert_eq!(&event["pid"], first_pid);
+    }
+    assert_eq!(resumed_prompt["session"], session);
+    let prompt_text = resumed_prompt["text"].as_str().unwrap();
+    assert_eq!(prompt_text.matches("<skills_update>").count(), 1);
+    assert!(prompt_text.contains("- B: Release steps."));
+    if let Some(finished) = worker_finished {
+        assert_eq!(Some(&finished), background.as_ref());
+        assert!(finished.ends_with(&format!(" {first_pid}")));
+        eprintln!("detached worker finished with unchanged PID and parent {finished}");
+    }
+}
+
+#[tokio::test]
+async fn a_first_message_agent_recovers_an_opening_lost_before_compaction() {
+    for compacted in [false, true] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "report-compaction native-compact").await;
+        let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+        db.busy_timeout(Duration::from_secs(5)).unwrap();
+        db.execute_batch(
+            "CREATE TABLE fixture_adopt_failure(bot TEXT PRIMARY KEY, fired INTEGER NOT NULL);
+             CREATE TRIGGER reject_adoption BEFORE INSERT ON kv
+             WHEN EXISTS(SELECT 1 FROM fixture_adopt_failure WHERE fired = 0 AND NEW.k GLOB ('context.' || bot || '.*'))
+             BEGIN
+                 UPDATE fixture_adopt_failure SET fired = 1;
+                 SELECT RAISE(FAIL, 'fixture refused the initial snapshot');
+             END;",
+        )
+        .unwrap();
+        db.execute("INSERT INTO fixture_adopt_failure VALUES(?1, 0)", [&bot]).unwrap();
+        let send = async |text: &str| {
+            host.call("send", json!({"botId": bot, "text": text, "clientNonce": uuid::Uuid::new_v4().to_string()}))
+                .await
+        };
+        send("try the initial opening").await;
+        entry(&host, &bot, "the snapshot adoption error", |e| {
+            e["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the initial snapshot"))
+        })
+        .await;
+        assert_eq!(db.query_row("SELECT fired FROM fixture_adopt_failure", [], |r| r.get::<_, i32>(0)).unwrap(), 1);
+        let stored =
+            |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |r| r.get(0)).ok() };
+        let opened = host.log(&bot, "servers.jsonl");
+        let session = opened[0]["session"].as_str().unwrap();
+        let snapshot_key = format!("context.{bot}.{session}");
+        assert_eq!(host.log(&bot, "prompts.jsonl"), Vec::<Value>::new());
+        assert!(stored(&snapshot_key).is_none());
+        if compacted {
+            wait("the native compact command to be registered", async || {
+                stored(&format!("agent.commands.{bot}")).filter(|commands| commands.contains("\"compact\""))
+            })
+            .await;
+            host.reply(&bot, "/compact").await;
+            let commands = host.log(&bot, "prompts.jsonl");
+            assert_eq!(commands[0]["session"], session);
+            assert_eq!(commands[0]["text"], "/compact");
+            assert_eq!(
+                stored(&format!("context.epoch.{bot}.{session}")),
+                Some(format!("{session}\t1\tnative-compaction"))
+            );
+            assert!(stored(&snapshot_key).is_none(), "the native command skipped the opening");
+        }
+        send("refuse the missing opening FAIL_SKILL_PROMPT").await;
+        entry(&host, &bot, "the failed recovery prompt", |e| {
+            e["data"]["text"].as_str().is_some_and(|text| text.contains("Fixture rejected the prompt"))
+        })
+        .await;
+        host.reply(&bot, "recover the opening").await;
+        host.reply(&bot, "continue without the opening").await;
+        let prompts = host.log(&bot, "prompts.jsonl");
+        let rounds: &[Value; 3] = prompts[usize::from(compacted)..].try_into().unwrap();
+        let copies = rounds.each_ref().map(|p| {
+            assert_eq!(p["session"], session);
+            p["text"].as_str().unwrap().matches("<bot-profile>").count()
+        });
+        let profile = |p: &Value| {
+            p["text"]
+                .as_str()
+                .unwrap()
+                .split_once("<bot-profile>")
+                .and_then(|(_, text)| text.split_once("</bot-profile>").map(|(opening, _)| opening.to_owned()))
+        };
+        eprintln!("FirstMessage {session} compacted={compacted} opening counts {copies:?}");
+        assert_eq!(copies, if compacted { [1, 1, 0] } else { [0, 0, 0] });
+        assert_eq!(profile(&rounds[0]), profile(&rounds[1]));
+        if compacted {
+            assert!(profile(&rounds[1]).unwrap().contains("Title: Mika"));
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_claude_task_revokes_a_skill_disabled_during_a_compacted_session_load() {
     compacted_task_skills_on_reopen("claude", CompactedSkill::Disabled).await;
 }

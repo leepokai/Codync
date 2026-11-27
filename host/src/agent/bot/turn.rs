@@ -22,9 +22,10 @@ const TASK_AGAIN: &str = "Your context was summarized. Codync's task framing and
 
 impl Actor {
     /// This session's frozen instructions (reads memory files when re-rendering).
-    pub(super) async fn snapshot(&self, session: &str) -> Result<Snapshot> {
+    pub(super) async fn snapshot(&self, session: &str, instructions: Instructions) -> Result<Snapshot> {
         let (hub, cfg, session) = (self.hub.clone(), self.cfg.clone(), session.to_owned());
-        tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session)).await?
+        let opening_in_prompt = instructions == Instructions::FirstMessage;
+        tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session, opening_in_prompt)).await?
     }
 
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
@@ -36,7 +37,7 @@ impl Actor {
             return Ok(text.to_owned());
         }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
-        let mut snapshot = self.snapshot(sid).await?;
+        let mut snapshot = self.snapshot(sid, instructions).await?;
         // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
@@ -48,7 +49,7 @@ impl Actor {
             prompt = format!("{first}\n\n{prompt}");
         }
         // A compaction may have dropped the profile the session's first message carried.
-        let resend = instructions == Instructions::FirstMessage && self.profile_resend.remove(sid);
+        let resend = instructions == Instructions::FirstMessage && snapshot.needs_resend();
         if snapshot.unprompted || resend {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
@@ -68,25 +69,20 @@ impl Actor {
             prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         } else if resend {
             let intro = if as_bot {
-                context::mark_announced(
-                    &self.hub.store,
-                    self.cfg.owner(),
-                    &snapshot,
-                    snapshot.system_identity.clone(),
-                )?;
                 snapshot.announced = snapshot.system_identity.clone();
                 PROFILE_AGAIN
             } else {
                 snapshot.announced.skills_brief.clone_from(&snapshot.system_identity.skills_brief);
-                self.announce = Some((snapshot.clone(), snapshot.announced.clone()));
                 TASK_AGAIN
             };
+            self.announce = Some((snapshot.clone(), snapshot.announced.clone()));
             prompt = format!("<bot-profile>\n{intro}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
         let update = if as_bot {
             context::profile_update(&self.hub.store, &snapshot, &self.cfg)
         } else {
-            context::task_skills_update(&self.hub.store, &snapshot, &self.cfg)
+            let resend_skills = instructions == Instructions::SystemPrompt && snapshot.needs_resend();
+            context::task_skills_update(&self.hub.store, &snapshot, &self.cfg, resend_skills)
         };
         if let Some((update, identity)) = update {
             prompt = format!("{prompt}\n\n{update}");

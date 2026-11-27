@@ -21,7 +21,7 @@ import { agentModelsRequest } from './agent-models-query.ts'
 import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countedPause, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -222,6 +222,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       .filter((item) => !chosenProvider || item.bot.backend === chosenProvider.id)
   }, [items, query, chosenProvider, modelSearch, backends])
   const shownKeys = allKeys(shown)
+  // The filter can change while a batch awaits a catalog or an earlier save. The loops read this
+  // at each write, so a bot hidden since the batch started is left untouched.
+  const shownNow = useRef(new Set<string>())
+  shownNow.current = new Set(shownKeys)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
   // Apply only ever touches what the user can see: checked bots the filter hides stay checked
@@ -252,30 +256,21 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       for (const item of chosen) {
         if (!alive.current || run.current !== myRun) return
         const key = refKey(item.ref)
+        if (remainingTargets([item], shownNow.current).length === 0) continue
         try {
-          await item.store
-            .ready()
-            .then((client) => {
-              if (!alive.current || run.current !== myRun) return 'skipped' as const
-              return client.call('updateBot', pausePatch(item.ref.botId, paused)).then((res) => {
-                if (!alive.current || run.current !== myRun) return 'skipped' as const
-                return pauseEcho(paused, res).applied ? 'applied' as const : 'ignored' as const
-              })
-            })
-            .then((result) => {
-              if (result === 'skipped') return
-              if (result === 'applied') {
-                applied++
-                if (alive.current && run.current === myRun) {
-                  setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr(paused ? 'Paused' : 'Resumed') } }))
-                }
-                return
-              }
-              failed++
-              if (alive.current && run.current === myRun) {
-                setOutcomes((o) => ({ ...o, [key]: { ok: false, text: tr('Not applied on this computer') } }))
-              }
-            })
+          const client = await item.store.ready()
+          // The wait may outlast the run, or the filter may have hidden this bot: re-check before anything is sent.
+          if (!alive.current || run.current !== myRun) continue
+          if (remainingTargets([item], shownNow.current).length === 0) continue
+          const res = await client.call('updateBot', pausePatch(item.ref.botId, paused))
+          // The host has already answered. Count that echo even if the sheet closed while it was in flight.
+          const result = countedPause(pauseEcho(paused, res).applied, alive.current && run.current === myRun)
+          if (result.tally === 'applied') applied++
+          else failed++
+          if (result.show) {
+            const text = result.tally === 'applied' ? tr(paused ? 'Paused' : 'Resumed') : tr('Not applied on this computer')
+            setOutcomes((o) => ({ ...o, [key]: { ok: result.tally === 'applied', text } }))
+          }
         } catch (e) {
           failed++
           if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
@@ -314,6 +309,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       if (needsCatalog(backend, model, options)) {
         for (const item of chosen) {
           if (!alive.current || run.current !== myRun) return
+          if (remainingTargets([item], shownNow.current).length === 0) continue
           const key = catalogKey(item)
           if (key in catalogs) continue
           const loginProfile = loginProfileFor(item.bot, backend)
@@ -333,6 +329,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       for (const row of rows) {
         if (!alive.current || run.current !== myRun) return
         const key = refKey(row.item.ref)
+        if (remainingTargets([row.item], shownNow.current).length === 0) continue
         if (!row.ok) {
           countFailure(tally, row.refusal)
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason } }))
@@ -354,8 +351,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           await row.item.store
             .ready()
             .then((client) => {
-              // The wait for a reconnect may outlast the run: re-check before anything is sent.
+              // The wait may outlast the run, or the filter may have hidden this bot: re-check before anything is sent.
               if (!alive.current || run.current !== myRun) return 'skipped'
+              if (remainingTargets([row.item], shownNow.current).length === 0) return 'skipped'
               return client.call('updateBot', patch).then((): 'sent' | 'skipped' => 'sent')
             })
             .then((sent) => {

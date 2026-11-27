@@ -199,6 +199,27 @@ export const providerOptions = (items: RosterItem[], backends: ReadonlyArray<{ i
  */
 export const pausePatch = (botId: string, paused: boolean) => ({ id: botId, paused })
 
+/**
+ * The bots a running batch may still write, in the order it captured them. A bot the filter
+ * has hidden since that capture is dropped: the notice says no action touches a hidden bot,
+ * and this write has not been sent yet.
+ */
+export const remainingTargets = (chosen: readonly RosterItem[], shownNow: ReadonlySet<string>): RosterItem[] =>
+  chosen.filter((item) => shownNow.has(refKey(item.ref)))
+
+/** How a pause the host already answered is counted. `show` is whether the row text is still drawn. */
+export type PauseCount = { tally: 'applied' | 'failed'; show: boolean }
+
+/**
+ * A finished pause call. The host has already changed the bot, so the echo is counted even when
+ * the sheet closed or the model pick changed while the request was in flight. `show` only decides
+ * whether the row text is drawn.
+ */
+export const countedPause = (echoApplied: boolean, show: boolean): PauseCount => ({
+  tally: echoApplied ? 'applied' : 'failed',
+  show,
+})
+
 /** The segments of a bot's model path, joined the way the row already shows them. */
 const PATH_SEPARATOR = '->'
 

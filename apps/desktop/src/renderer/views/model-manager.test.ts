@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck, PlanRow } from './bots/model-manager-logic'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countedPause, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -313,6 +313,24 @@ test('applyTargets gates a bulk pause to what the filter shows, exactly like App
   assert.deepEqual(t.chosen.map((i) => i.bot.name), ['Beta'])
   assert.equal(t.hiddenCount, 1)
   assert.equal(t.totalChecked, 2)
+})
+
+test('a bot hidden after the batch started is left out of the remaining writes', () => {
+  const alpha = item('mac', 'Mac', 'b1', 'Alpha')
+  const beta = item('mac', 'Mac', 'b2', 'Beta')
+  const captured = [alpha, beta]
+  const shownAtStart = new Set(['mac/b1', 'mac/b2'])
+  const shownAfter = new Set(['mac/b2'])
+  assert.deepEqual(remainingTargets(captured, shownAtStart).map((i) => i.bot.name), ['Alpha', 'Beta'])
+  assert.deepEqual(remainingTargets(captured, shownAfter).map((i) => i.bot.name), ['Beta'])
+  assert.deepEqual(remainingTargets(captured, new Set()).map((i) => i.bot.name), [])
+})
+
+test('a successful pause still counts when the sheet has closed', () => {
+  assert.deepEqual(countedPause(true, false), { tally: 'applied', show: false })
+  assert.deepEqual(countedPause(false, false), { tally: 'failed', show: false })
+  assert.deepEqual(countedPause(true, true), { tally: 'applied', show: true })
+  assert.deepEqual(countedPause(false, true), { tally: 'failed', show: true })
 })
 
 test('rowModelPath shows agent->model, display name when known, nothing when unreadable', () => {

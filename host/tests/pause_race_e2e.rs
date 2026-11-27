@@ -132,6 +132,15 @@ async fn leaked_within(host: &Host, bot: &str, needle: &str, secs: u64) -> Optio
     }
 }
 
+/// The client shows Pause when hello says `botPause`, without this package version becoming 2.55.0.
+#[tokio::test]
+async fn a_host_that_honours_paused_says_so_in_hello() {
+    let host = Host::start().await;
+    let hello = host.call("hello", json!({})).await;
+    assert_eq!(hello["botPause"], true, "{hello}");
+    assert_ne!(hello["version"], "2.55.0", "the updater must not treat this host as the 2.55.0 release");
+}
+
 async fn routine(host: &Host, bot: &str, name: &str, instruction: &str) -> String {
     let body = json!({"botId": bot, "name": name, "instruction": instruction, "triggers": [{"type": "webhook"}]});
     host.call("saveRoutine", body).await["routine"]["id"].as_str().unwrap().to_owned()

@@ -288,7 +288,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
 
         <CardSection title="Activity" fold="bot.activity">
           {/* From a host that has it: a paused bot answers nothing and spends nothing until it is resumed. */}
-          {saved ? (
+          {saved && store.hasBotPause ? (
             <SwitchRow
               title="Paused"
               detail="It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled."

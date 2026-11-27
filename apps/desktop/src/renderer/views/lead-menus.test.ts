@@ -5,10 +5,10 @@ import type { BotStore } from '../store/bot-store'
 import { makeLeadItems, offersDelete, pauseItems, voiceTarget } from './lead-menus.ts'
 
 /** A computer's store as the menus read it, logging the bots made lead and paused. */
-function computer(hasLeadChoice = true) {
+function computer(hasLeadChoice = true, hasBotPause = true) {
   const made: string[] = []
   const paused: [string, boolean][] = []
-  const store = { hasLeadChoice, setLead: (bot: Bot) => made.push(bot.id), setPaused: (bot: Bot, p: boolean) => paused.push([bot.id, p]) } as unknown as BotStore
+  const store = { hasLeadChoice, hasBotPause, setLead: (bot: Bot) => made.push(bot.id), setPaused: (bot: Bot, p: boolean) => paused.push([bot.id, p]) } as unknown as BotStore
   return { store, made, paused }
 }
 
@@ -52,4 +52,9 @@ test('a bot row pauses and resumes it; a group has nothing to pause', () => {
   resume[0]!.action?.()
   assert.deepEqual(paused, [['bot', true], ['bot', false]])
   assert.deepEqual(pauseItems(group, store), [], 'a group has no agent')
+})
+
+test('a flagless old host has no pause: it would ignore the field', () => {
+  const { store } = computer(true, false)
+  assert.deepEqual(pauseItems({ id: 'bot', lead: false, paused: false } as Bot, store), [], 'an old host is not offered it')
 })

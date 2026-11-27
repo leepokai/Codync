@@ -84,6 +84,8 @@ pub fn events_stream(
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
         "workflows": true,
+        // Same capability as the `hello` method: this host honours `paused`. See `api/host.rs`.
+        "botPause": true,
     });
     catch_up.insert(0, hello);
 

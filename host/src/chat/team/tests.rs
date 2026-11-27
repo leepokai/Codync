@@ -568,7 +568,6 @@ async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
         session: Some("local".into()),
         process: "test".into(),
         cwd: ".".into(),
-        hint: None,
     };
     // Use the production constructor: later Session fields keep their production defaults too.
     let (session, _) =

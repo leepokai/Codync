@@ -10,8 +10,9 @@ import kotlinx.serialization.json.longOrNull
 /** Where a link lands once everything open is closed: the roster, or a sheet over it. */
 enum class LinkPage { Bots, Usage, Computers, Extensions, Workflows }
 
-/** The workflow stack item between the roster and a chat. A null id is the list. */
-data class WorkflowRoute(val id: String? = null, val runId: String? = null)
+/** The workflow stack item between the roster and a chat. A null id is the list; [stepId] is a step run on its own,
+ *  outside any run (its push opens it alone). */
+data class WorkflowRoute(val id: String? = null, val runId: String? = null, val stepId: String? = null)
 
 /**
  * The active account as the UI renders it (iOS `AccountStore`): its computers, each with its own
@@ -134,6 +135,8 @@ data class AppState(
     val threadSends: Map<String, List<PendingSend>> = emptyMap(),
     /** The computer's ended threads past the day its bots' `work` keeps, as far as the Threads list has read them; null until it does. */
     val olderThreads: OlderThreads? = null,
+    /** Counts the times [olderThreads] was dropped ([droppingOlderThreads]), so a page asked before is let go (iOS `olderThreadsGeneration`). */
+    val olderThreadsGeneration: Int = 0,
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */

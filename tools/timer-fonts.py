@@ -10,7 +10,7 @@ the widget: the working bot (`CodyncBot-<shape>-Ink` / `-Tint`) and the halftone
 The frames come from the app's own drawing code (`DottedBody.workingLoop`,
 `ThinkingOrbGeometry.workingLoop`):
 
-    cd apps/ios/Kit && TEST_RUNNER_CODYNC_FRAMES_FILE=/tmp/frames.json xcodebuild test \
+    cd apps/ios/Kit && TEST_RUNNER_CODYNC_FRAMES_FILE=/tmp/frames.json ../../../tools/xcodebuild.sh test \
       -scheme CodyncKit-Package -derivedDataPath ../../../build/dd \
       -destination 'platform=iOS Simulator,id=<sim>' '-only-testing:CodyncKitTests/exportBotFrames()'
     tools/timer-fonts.py /tmp/frames.json apps/ios/Widgets/Resources/Fonts

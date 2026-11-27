@@ -54,7 +54,7 @@ pub fn tools() -> Value {
     json!([
         {
             "name": "list_bots",
-            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then the coding agents' sessions here (tier pull: they read their mail themselves, so an answer may take a while or not come), then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
+            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then the coding agents' sessions here (tier pull: they read their mail themselves, so an answer may take a while or not come; tier turn: their hook tells them of it at their next step; tier push: told as soon as a letter comes, an idle session starts a turn), then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

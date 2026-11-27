@@ -86,6 +86,7 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
         "runWorkflowStep" => {
             hub.workflows.run_step(hub, str_arg(&b, "id")?, str_arg(&b, "nodeId")?, str_arg(&b, "requestId")?)?
         }
+        "workflowStep" => hub.workflows.step(hub, str_arg(&b, "stepId")?)?,
         "stopWorkflowStep" => hub.workflows.stop_step(hub, str_arg(&b, "stepId")?)?,
         "retryWorkflowStep" => hub.workflows.retry_step(hub, str_arg(&b, "stepId")?)?,
         _ => return Ok(ControlFlow::Continue(b)),

@@ -95,7 +95,10 @@ impl App {
             }
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("hopReview") => self.hop_review = v["enabled"].as_bool(),
-            Some("threadKeepDays") => self.thread_keep_days = super::thread_keep::days(&v["days"]),
+            Some("threadKeepDays") => {
+                self.thread_keep_days = super::thread_keep::days(&v["days"]);
+                self.relist_older();
+            }
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);

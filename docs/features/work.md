@@ -658,7 +658,9 @@ only recalled, never listed.
   `hello.threadKeepDays`, a `threadKeepDays {days}` event to connected apps) deletes a thread that many days after it
   last ended: the archived task, its parked thread bot with its transcript (`Hub::delete_bot`), its own folder (a
   thread without a bot) and an untouched worktree. A thread that worked a later task stays with it. It runs at host
-  start, once a day and as the choice changes. Writing to a thread reopens it and its clock starts again when it ends.
+  start, once a day and as the choice changes. The `threadKeepDays` event goes out after the deletion, as the choice
+  changes and whenever the daily look deleted some, and apps list their older threads again on every one, the same
+  number or not. Writing to a thread reopens it and its clock starts again when it ends.
 - **Listed.** `olderThreads {botId?, before?}` → `{threads, more}`: the ended threads of `botId`, else of every
   bot on the computer, that ended before `before` (the `endedAt` of the oldest one the app has paged; none for the
   newest), newest first, 30 a page, from the boxes and the archive; a page never splits threads that ended in the same
@@ -678,7 +680,7 @@ only recalled, never listed.
 
 - Bot: `work: [task]`: every working task (oldest first), then the waiting in dispatch order, then the tasks ended
   in the last 24 hours (newest first, at most 20). Task: `{id, title, status, activity, thread, wait, cutIn,
-  createdAt, startedAt, endedAt, result, talk, seat, folder?, source?, worktree?}`; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher); never a thread the user started), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the folder its thread began in; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
+  createdAt, startedAt, endedAt, result, talk, seat, folder?, runsOn?, source?, worktree?}`; `runsOn` the agent (backend id) its thread runs on now, else the one it ran on last: the fallback step it is on or ended on (as kept in `fallback.on.<thread>`), else the thread bot's own (`tasks::agent_of`); absent before a thread took it and on an older host. The desktop, iPhone and Android show its icon at the start of the thread's row on Threads (`runsOn`, else `agent`, else the bot's `backend`, none for the box of threads without a bot); the terminal shows no icons; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher); never a thread the user started), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the folder its thread began in; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is

@@ -10,8 +10,9 @@ const body = new AsyncFunction('args', 'agent', 'parallel', 'phase', 'log', 'wor
 const afterChange = { e2e: { checks: [{ result: 'pass' }] }, review: { confirmed: [] }, fix: {} }
 
 // Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn. The
-// 'after-change' answer is that workflow's report (afterChange when not given).
-const run = async (answers, args = {}) => {
+// 'after-change' answer is that workflow's report (afterChange when not given). It runs as a merge run unless told otherwise; `null` runs it with no args at all, as a plain "pr to main".
+const run = async (answers, extra = {}) => {
+  const args = extra === null ? {} : { merge: true, ...extra }
   const calls = []
   const seen = {}
   const agent = async (prompt, opts) => {
@@ -39,7 +40,8 @@ const ready = { status: 'ready', head: sha('a'), findings: [], detail: '' }
 const notReady = { status: 'not_ready', head: sha('b'), findings: ['ci: host clippy'], detail: '' }
 const fixed = { applied: ['fixed clippy'], rerun: [], refuted: [], needs_maintainer: [], tests: 'ok' }
 const merged = { status: 'merged', merge_commit: sha('m'), detail: '' }
-const followed = { status: 'done', detail: '' }
+const deploys = [{ target: 'relay', changed: true, result: 'deployed' }, { target: 'discord', changed: false, result: 'not_changed' }]
+const followed = { status: 'done', deploys, detail: '' }
 const base = { inspect: facts, prepare: prepared, merge: merged, 'follow-up': followed }
 const capture = (answer) => { const f = (p) => { f.prompt = p; return answer }; return f }
 
@@ -162,6 +164,49 @@ for (const status of ['timed_out', 'failed']) {
   for (const bad of [{ branch: 'dev' }, { branch: 'release/2.52.2' }]) {
     const none = await run({ ...base, prepare: { ...prepared, ...bad }, 'gate:': [ready] })
     check(none.r.outcome === 'stopped' && !none.calls.some((c) => c.startsWith('gate:')), 'a prepare result whose branch is not release/<its version> stops: ' + bad.branch)
+  }
+}
+
+{
+  const plainCall = await run({ ...base, 'gate:': [ready] }, null)
+  check(plainCall.r.outcome === 'ready' && !['cloud', 'merge', 'follow-up'].some((c) => plainCall.calls.includes(c)), 'a plain "pr to main" with no args stops at the green gate: ' + plainCall.calls)
+  const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [fixed] }, { merge: false })
+  check(r.outcome === 'ready' && r.pr === 600 && !calls.includes('merge') && !calls.includes('follow-up'), 'without merge: true it stops once the gate passes: ' + calls)
+  const cloudRun = await run({ ...base, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] }, { merge: false })
+  check(cloudRun.r.outcome === 'ready' && !cloudRun.calls.includes('cloud'), 'without merge: true the cloud check waits for the merge run')
+  const own = { number: 650, head: 'release/2.52.1', cross_repository: false }
+  const prepare = capture({ ...prepared, pr: 650 })
+  const again = await run({ ...base, prepare, 'gate:': [ready], inspect: { ...facts, open_prs: [own] } })
+  check(again.r.outcome === 'released' && /Skip this step when #650/.test(prepare.prompt), 'the merge run reuses the gated PR without rerunning the real agents')
+  const plain = capture({ ...prepared, pr: 650 })
+  const first = await run({ ...base, prepare: plain, 'gate:': [ready], inspect: { ...facts, open_prs: [own] } }, { merge: false })
+  check(first.r.outcome === 'ready' && !/Skip this step/.test(plain.prompt), 'a run without merge on an open release PR still runs the real agents')
+  const raised = { ...base, inspect: { ...facts, min_app_raised: true, min_app: '2.51.0 -> 2.52.0' }, 'gate:': [ready] }
+  const approved = await run(raised, { merge: false, allowMinAppRaise: true })
+  check(approved.r.outcome === 'ready' && /merge: true/.test(approved.r.next) && /allowMinAppRaise: true/.test(approved.r.next), 'a ready MIN_APP release names both args for the merge run: ' + approved.r.next)
+  const asked = await run(raised)
+  check(asked.r.outcome === 'ask' && /allowMinAppRaise: true/.test(asked.r.next) && /merge: true/.test(asked.r.next), 'a merge run asking about MIN_APP keeps merge in its rerun: ' + asked.r.next)
+  const both = await run(raised, { allowMinAppRaise: true })
+  check(both.r.outcome === 'released', 'both args release a MIN_APP raise')
+  const held = await run({ ...base, cloud: { status: 'needs_maintainer', main_needs: [], detail: 'secret BAR' }, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] })
+  check(/rerun with \{merge: true\}/.test(held.r.next), 'a merge run held at the cloud check reruns as a merge run')
+}
+
+{
+  const followUp = capture(followed)
+  const { r } = await run({ ...base, merge: { ...merged, merge_commit: sha('d') }, 'follow-up': followUp, inspect: { ...facts, cloud_changed: true }, cloud: { status: 'ready', main_needs: [], detail: '' }, 'gate:': [ready] })
+  const p = followUp.prompt
+  const workers = p.indexOf('Deploy each Worker')
+  const w = p.slice(workers, p.indexOf('Bring the release branch back'))
+  const cloud = p.slice(p.indexOf('cloud/ changed'), workers)
+  check(r.outcome === 'released' && workers > p.indexOf('deploy:main') && workers < p.indexOf('back into dev'), 'the Workers deploy after the cloud and before the merge back into dev')
+  check(/relay\/, discord\//.test(w) && w.includes('git diff --quiet ' + sha('d') + '^1 ' + sha('d') + ' -- <dir>') && w.includes('`npm ci`') && w.includes('`npm run deploy`'), 'each Worker deploys only when the merge changed it')
+  check(/exiting 0 means not_changed/.test(w) && /1 means changed/.test(w) && /any other exit .* failed/.test(w), 'a git diff that errors fails the Worker instead of skipping it')
+  check(/note the live version/.test(cloud) && /wrangler rollback <the noted version>/.test(cloud), 'a broken cloud deploy rolls back to the version noted before it')
+  check(w.includes('push.codync.dev/health') && w.includes('discord.codync.dev/') && /wrangler rollback/.test(w) && /stops here/.test(w), 'each Worker checks its real path and rolls back a broken version')
+  for (const [rows, why] of [[undefined, 'no rows'], [[deploys[0]], 'a Worker missing'], [[deploys[0], { target: 'discord', changed: true, result: 'rolled_back' }], 'a rolled-back Worker'], [[deploys[0], { target: 'discord', changed: true, result: 'failed' }], 'a failed Worker']]) {
+    const bad = await run({ ...base, 'follow-up': { ...followed, deploys: rows }, 'gate:': [ready] })
+    check(bad.r.outcome === 'merged_incomplete' && /Deploy each Worker/.test(bad.r.next) && /no deployed result for: [a-z, ]*discord\./.test(bad.r.next), 'a follow-up with ' + why + ' is not released and names the Worker')
   }
 }
 

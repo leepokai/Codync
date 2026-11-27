@@ -232,6 +232,8 @@ pub enum Event {
     NetworkFailed,
     /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
     NetworkSession,
+    /// `codync-host network setup` set up (or removed) one agent (`reported::SetupOutcome`).
+    NetworkSetup,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -383,6 +385,7 @@ impl Event {
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
             Self::NetworkSession => "network_session",
+            Self::NetworkSetup => "network_setup",
             Self::Exception => "$exception",
         }
     }

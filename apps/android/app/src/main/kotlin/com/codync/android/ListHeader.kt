@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -48,15 +49,18 @@ import com.kyant.shapes.Capsule
     }
 }
 
+/** A pushed page's glass Back, as the chat's header has it. */
+@Composable internal fun GlassBackButton(action: () -> Unit) = HeaderButton("chevron.left", "Back", symbolSize = 32.dp, action = action)
+
 /** A glass button in a header. */
 @Composable internal fun HeaderButton(symbol: String, title: String, modifier: Modifier = Modifier, symbolModifier: Modifier = Modifier,
-    action: () -> Unit) {
+    symbolSize: Dp = 22.dp, action: () -> Unit) {
     val (source, pressed) = rememberPress()
     val label = tr(title)
     Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
         .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = label },
         contentAlignment = Alignment.Center) {
-        Symbol(symbol, symbolModifier, size = 22.dp, tint = Palette.text)
+        Symbol(symbol, symbolModifier, size = symbolSize, tint = Palette.text)
     }
 }
 

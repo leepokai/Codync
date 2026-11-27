@@ -47,6 +47,9 @@ pub enum Event {
     ScheduledMessageRemoved,
     /// The user sent a scheduled message at once (`sendScheduledNow`).
     ScheduledMessageSentNow,
+    /// A schedule was refused, or a due message could not be handed on (`chat::schedule`).
+    /// `stage` says which, `error` is a reason code; never the message.
+    MessageScheduleFailed,
     /// The user had a queued message handled now (`agent::bot::steer`).
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
@@ -282,6 +285,7 @@ impl Event {
             Self::MessageScheduleEdited => "message_schedule_edited",
             Self::ScheduledMessageRemoved => "scheduled_message_removed",
             Self::ScheduledMessageSentNow => "scheduled_message_sent_now",
+            Self::MessageScheduleFailed => "message_schedule_failed",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
             Self::CodexSessionFiled => "codex_session_filed",

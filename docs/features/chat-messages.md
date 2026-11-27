@@ -136,7 +136,9 @@ first, and a message taken back is no longer held.
 
 Analytics: `message_scheduled` (`scheduleSend`; `kind`, `agent`, `reply`),
 `message_schedule_edited` (`what`: `time`/`text`), `scheduled_message_removed`,
-`scheduled_message_sent_now`. The delivery itself is the ordinary turn's `turn_finished`.
+`scheduled_message_sent_now`, and `message_schedule_failed` when one of those is refused
+or a due message cannot be handed on (`stage`, `error`; never the message). The delivery
+itself is the ordinary turn's `turn_finished`.
 
 Phones are unaffected by design: their code keys off exact statuses, so a scheduled entry renders
 as a plain bubble (no crash, no tray interference) and the affordance is desktop-only in v1.

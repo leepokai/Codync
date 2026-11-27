@@ -21,6 +21,7 @@ pub fn start(hub: &Arc<Hub>) {
     // is already `sent` and is not here.
     if let Err(error) = dispatch_pending(hub) {
         tracing::warn!(error = format!("{error:#}"), "couldn't recover scheduled sends");
+        count_deliver_failure(hub, "lookup");
     }
     let hub = hub.clone();
     tokio::spawn(async move {
@@ -30,6 +31,7 @@ pub fn start(hub: &Arc<Hub>) {
             tick.tick().await;
             if let Err(error) = sweep(&hub) {
                 tracing::warn!(error = format!("{error:#}"), "couldn't sweep scheduled sends");
+                count_deliver_failure(&hub, "lookup");
             }
         }
     });
@@ -50,6 +52,7 @@ pub fn dispatch_pending(hub: &Arc<Hub>) -> anyhow::Result<()> {
                 error = format!("{error:#}"),
                 "couldn't recover a scheduled message; it stays held for the next start"
             );
+            count_deliver_failure(hub, "recover");
         }
     }
     Ok(())
@@ -75,10 +78,22 @@ pub fn sweep(hub: &Arc<Hub>) -> anyhow::Result<()> {
                     error = format!("{error:#}"),
                     "couldn't fire a scheduled message"
                 );
+                count_deliver_failure(hub, "fire");
             }
         }
     }
     Ok(())
+}
+
+/// A due message that did not go out (`message_schedule_failed`). `error` is a reason code.
+/// The log above keeps the sentence; the event does not, and it carries no id and no name.
+fn count_deliver_failure(hub: &Hub, error: &'static str) {
+    let properties = serde_json::json!({"stage": "deliver", "error": error});
+    crate::analytics::capture(
+        hub,
+        crate::analytics::Event::MessageScheduleFailed,
+        properties.as_object().cloned().unwrap_or_default(),
+    );
 }
 
 #[cfg(test)]

@@ -485,3 +485,48 @@ fn a_refused_team_change_reports_why_never_what_it_said() {
     assert_eq!(reported(&denied), Some(json!("denied")));
     assert_eq!(reported(&anyhow::anyhow!("nothing to change")), Some(json!("other")));
 }
+
+#[test]
+fn a_failed_schedule_reports_the_stage_and_a_reason_never_the_message() {
+    let refused = |method: &str, body: Value, error: &'static str| {
+        let (event, p) = observe(&Caller::Local, method, &body).unwrap();
+        let err = anyhow::Error::msg(error);
+        failed(event, p, &err).map(|(event, p)| (event, Value::Object(p))).unwrap()
+    };
+    let draft = json!({
+        "botId": "bot-secret",
+        "text": "secret draft",
+        "clientNonce": "n1",
+        "notBefore": 1,
+        "replyTo": "e-secret"
+    });
+    let (event, p) = refused("scheduleSend", draft, "the scheduled time must be at least 30 seconds out");
+    assert_eq!(event, Event::MessageScheduleFailed);
+    assert_eq!(event.name(), "message_schedule_failed");
+    assert_eq!(p, json!({"reply": true, "client": "local", "stage": "schedule", "error": "too_soon"}));
+
+    let edit = json!({"botId": "bot-secret", "entryId": "e-secret", "text": "secret draft"});
+    let (event, p) = refused("updateScheduled", edit, "the message is empty");
+    assert_eq!(event.name(), "message_schedule_failed");
+    assert_eq!(p["stage"], "edit");
+    assert_eq!(p["error"], "empty");
+    assert_eq!(p["what"], json!(["text"]));
+
+    let gone = json!({"botId": "bot-secret", "entryId": "e-secret"});
+    let (_, p) = refused("cancelScheduled", gone.clone(), "that message isn't scheduled any more");
+    assert_eq!((p["stage"].clone(), p["error"].clone()), (json!("remove"), json!("gone")));
+    let (_, p) = refused("sendScheduledNow", gone, "that message changed underneath you; take another look");
+    assert_eq!((p["stage"].clone(), p["error"].clone()), (json!("send_now"), json!("conflict")));
+
+    let (event, p) = refused(
+        "scheduleSend",
+        json!({"botId": "bot-secret", "text": "secret draft", "replyTo": "e-secret"}),
+        "note about secret draft for bot-secret",
+    );
+    assert_eq!(event, Event::MessageScheduleFailed);
+    assert_eq!(p["error"], "other");
+    let encoded = p.to_string();
+    assert!(!encoded.contains("secret"), "{encoded}");
+    assert!(!encoded.contains("bot-secret"), "{encoded}");
+    assert!(!encoded.contains("e-secret"), "{encoded}");
+}

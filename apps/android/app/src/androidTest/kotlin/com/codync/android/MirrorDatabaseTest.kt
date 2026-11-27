@@ -566,8 +566,15 @@ class MirrorDatabaseTest {
             put("detail", "D".repeat(3_000_000))
             putJsonObject("thread") { put("id", "thread-real") }
             putJsonObject("metadata") { putJsonObject("thread") { put("id", "thread-nested") } }
+            // Both thread keys follow the body, so they would otherwise sit in the last PAYLOAD_TAIL_CHARS,
+            // the slice a stub is allowed to read. The trailer keeps them in the unread middle.
+            put("trailer", "T".repeat(PAYLOAD_TAIL_CHARS))
         })
         val broken = WireJson.encodeToString(approval).dropLast(1)
+        val nested = "\"thread\":{\"id\":\"thread-nested\""
+        val nestedAt = broken.indexOf(nested)
+        assertTrue("the nested marker sits in the unread middle",
+            nestedAt > PAYLOAD_HEAD_CHARS && nestedAt + nested.length <= broken.length - PAYLOAD_TAIL_CHARS)
         assertFalse("the stored head does not name the thread", broken.take(PAYLOAD_HEAD_CHARS).contains("\"thread\""))
         assertFalse("the stored tail does not name the thread", broken.takeLast(PAYLOAD_TAIL_CHARS).contains("\"thread\""))
         mirror.receive(listOf(approval))

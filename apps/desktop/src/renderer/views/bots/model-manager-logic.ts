@@ -230,6 +230,12 @@ const PATH_SEPARATOR = '->'
 export const agentNameOf = (backends: ReadonlyArray<{ id: string; name: string }>, backend: unknown): string | null =>
   typeof backend === 'string' ? (backends.find((b) => b.id === backend)?.name ?? null) : null
 
+/** The computer this row's bot runs on, not the window's first computer. */
+export const computerBackends = (
+  item: { store: { hello?: { backends?: ReadonlyArray<{ id: string; name: string; loginProfiles?: { id: string; name: string | null }[] | null }> } | null } },
+): ReadonlyArray<{ id: string; name: string; loginProfiles?: { id: string; name: string | null }[] | null }> =>
+  item.store.hello?.backends ?? []
+
 /**
  * The name of the login profile a bot runs on, when it picks one and the computer has named it. The
  * computer's own login has no id, so it adds nothing; a profile the computer hasn't named yet has

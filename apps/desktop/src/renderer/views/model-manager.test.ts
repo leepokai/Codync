@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck, PlanRow } from './bots/model-manager-logic'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countedPause, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -377,6 +377,14 @@ test('loginNameOf names the login profile a bot picked, and nothing for the comp
   assert.equal(loginNameOf(backends, 'opencode', '7b3f'), null)
   assert.equal(loginNameOf(backends, 'mystery', 'w'), null)
   assert.equal(loginNameOf([{ id: 'grok' }], 'grok', 'w'), null)
+})
+
+test('a row names the login on its own computer, not the first computer', () => {
+  const work = { store: { hello: { backends: [{ id: 'opencode', name: 'OpenCode', loginProfiles: [{ id: 'w', name: 'Work' }] }] } } }
+  const home = { store: { hello: { backends: [{ id: 'opencode', name: 'OpenCode', loginProfiles: [{ id: 'w', name: 'Home' }] }] } } }
+  assert.equal(loginNameOf(computerBackends(work), 'opencode', 'w'), 'Work')
+  assert.equal(loginNameOf(computerBackends(home), 'opencode', 'w'), 'Home')
+  assert.notEqual(loginNameOf(computerBackends(home), 'opencode', 'w'), 'Work')
 })
 
 test('modelPathWords finds a bot by its agent, provider and model, however the model is typed', () => {

@@ -21,7 +21,7 @@ import { agentModelsRequest } from './agent-models-query.ts'
 import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, countApplied, countedPause, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -213,14 +213,15 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       const item = items.find((candidate) => refKey(candidate.ref) === row.key)
       if (!item) return row
       const backend = item.bot.backend
-      const extra = modelPathWords(item.bot, agentNameOf(backends, backend), loginNameOf(backends, backend, item.bot.loginProfile))
+      const rowBackends = computerBackends(item)
+      const extra = modelPathWords(item.bot, agentNameOf(rowBackends, backend), loginNameOf(rowBackends, backend, item.bot.loginProfile))
       return { ...row, words: [...row.words, ...extra] }
     })
     const matched = new Set(matchItems(rows, query).map((row) => row.key))
     return items
       .filter((item) => matched.has(refKey(item.ref)))
       .filter((item) => !chosenProvider || item.bot.backend === chosenProvider.id)
-  }, [items, query, chosenProvider, modelSearch, backends])
+  }, [items, query, chosenProvider, modelSearch])
   const shownKeys = allKeys(shown)
   // The filter can change while a batch awaits a catalog or an earlier save. The loops read this
   // at each write, so a bot hidden since the batch started is left untouched.
@@ -441,8 +442,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           const outcome = outcomes[key]
           const line = subtitle(item, oneComputer)
           // The bot's current agent, login and model path, under the name in the app's muted small text.
-          const agentName = agentNameOf(backends, item.bot.backend)
-          const loginName = loginNameOf(backends, item.bot.backend, item.bot.loginProfile)
+          const rowBackends = computerBackends(item)
+          const agentName = agentNameOf(rowBackends, item.bot.backend)
+          const loginName = loginNameOf(rowBackends, item.bot.backend, item.bot.loginProfile)
           const modelPath = rowModelPath(item.bot, agentName, loginName)
           return (
             <button key={key} type="button" role="checkbox" aria-checked={on} className="palette-row model-manager-row" disabled={applying} onClick={() => toggle(key, !on)}>

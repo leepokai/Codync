@@ -51,6 +51,17 @@ pub(super) fn task_prompt(task: &Task, first: bool) -> String {
     )
 }
 
+/// What a thread is told when it ended its turn while `running` (words that fit "while … still runs") still runs:
+/// its task isn't done, so it waits for that and reports then (`work::hold`).
+pub(super) fn wait_for(running: &str) -> String {
+    format!(
+        "[Codync: you ended your turn while {running} still runs, so your task isn't done and nothing was reported \
+         yet. Wait for it here, in the foreground, without starting it again, then end with your report of what it \
+         found; if it already finished, end with that report now. If you end your turn again while it still runs, \
+         your task ends as stopped early.]"
+    )
+}
+
 /// The prompt of the turn the watchdog starts in the bot's chat for `task`, which looks stuck (`evidence`: what
 /// shows it).
 pub(super) fn stuck(task: &Task, evidence: &str) -> String {

@@ -219,6 +219,7 @@ impl Actor {
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
+        self.note_detached().await;
         let written = self.written_to_thread(entry_ids);
         let picked_up = self.hear_thread(&written);
         // A question of its bot's among them: the thread's next message answers it.
@@ -393,9 +394,11 @@ impl Actor {
         format!("{text}\n\n{}", worktree.brief())
     }
 
-    pub(super) fn finish_turn(&mut self, done: &Done) {
+    /// The running turn ended with `done`; `left`: what a thread's turn left running in the background
+    /// ([`Self::left_running`]). Whether the thread's task goes on with that in this session ([`Held::Background`]).
+    pub(super) fn finish_turn(&mut self, done: &Done, left: Option<String>) -> bool {
         if self.turn.is_none() {
-            return;
+            return false;
         }
         self.after_turn(done);
         self.versions.after(&self.hub);
@@ -533,10 +536,14 @@ impl Actor {
                 Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
             } else if stop_reason != "end_turn" {
                 Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+            } else if let Some(running) = left {
+                Outcome::LeftRunning { running, text: final_text.clone() }
             } else {
                 Outcome::Done(final_text.clone())
             }
         });
+        // Its task goes on with what it left running: nothing is done yet.
+        let waits = goes_on == Some(Held::Background);
         self.turn = None;
         self.reply_hops = None;
         let host_turn = self.end_host_turn(done.is_ok() && !stopped && stop_reason == "end_turn");
@@ -597,6 +604,7 @@ impl Actor {
             });
             push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
         }
+        waits
     }
 }
 

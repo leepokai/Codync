@@ -59,6 +59,12 @@
   display: flex;
   flex: none;
 }
+/* The agent's icon keeps its place when there is none, so titles line up. */
+.thread-agent {
+  display: flex;
+  flex: none;
+  width: 14px;
+}
 .thread-item + .thread-item {
   margin-top: 1px;
 }

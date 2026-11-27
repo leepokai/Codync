@@ -68,7 +68,7 @@ import com.kyant.shapes.Capsule
             if (view.sessions.isNotEmpty()) {
                 // In the host's order: running first, then the most recent.
                 val (older, recent) = view.sessions.partition { it.older }
-                CardSection("Coding agents", "Bots and other coding agents message these sessions at their address; each reads its mail itself.") {
+                CardSection("Agents", "Bots and other agents message these sessions at their address; each reads its mail itself.") {
                     for (session in recent) row { NetworkSessionRow(session) }
                     if (older.isNotEmpty()) row {
                         Disclosure(showOlder, { showOlder = !showOlder }, Modifier.semantics { testTagsAsResourceId = true }.testTag("network.olderSessions"), {

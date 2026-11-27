@@ -79,6 +79,12 @@ function openRef(app: AppModel, key: string) {
 }
 
 /** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
+/** The workflow a clicked notification opens, or null when it opens its bot's chat. */
+function alertWorkflow(c: Extract<WindowCommand, { kind: 'openAlert' }>) {
+  const ref = parseRef(c.ref)
+  return ref && c.workflowId ? { computerId: ref.computerId, workflowId: c.workflowId } : null
+}
+
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
@@ -118,7 +124,8 @@ export function ChatWindow() {
             return openRef(app, c.ref)
           case 'openAlert':
             analytics.track({ event: 'desktop_notification_opened', kind: alertAnalyticsKind(c.alert) })
-            return openRef(app, c.ref)
+            // A workflow's alert is opened on its page (ChatSplitView); any other, in its bot's chat.
+            return alertWorkflow(c) ? undefined : openRef(app, c.ref)
           case 'stopBot': {
             const ref = parseRef(c.ref)
             const store = ref && app.store(ref.computerId)
@@ -365,6 +372,11 @@ function ChatSplitView() {
         if (c.kind === 'toggleSidebar') setListHidden(!prefs.listHidden.get())
         // The window's own handler selects the bot; its chat is on the Bots page.
         if (c.kind === 'openBot') setPage('bots')
+        if (c.kind === 'openAlert') {
+          const workflow = alertWorkflow(c)
+          if (workflow) openWorkflows(workflow.computerId, workflow.workflowId)
+          else setPage('bots')
+        }
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
           setPage('bots')

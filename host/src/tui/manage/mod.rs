@@ -78,8 +78,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
-    /// A page of a bot's older threads (`olderThreads`).
-    OlderThreads(String),
+    /// A page of a bot's older threads (`olderThreads`), for that request (`older::ask`).
+    OlderThreads(String, u64),
     /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
     FollowUpCancelled(String),
     RoutineSaved,

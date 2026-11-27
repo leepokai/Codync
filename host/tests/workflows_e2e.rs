@@ -78,6 +78,85 @@ async fn an_approval_waits_until_someone_decides() {
 }
 
 #[tokio::test]
+async fn a_late_rejection_leaves_the_run_going() {
+    let host = common::host::Host::start().await;
+    let created = host.call("createWorkflow", json!({"title": "Twice"})).await;
+    let id = created["workflow"]["id"].as_str().unwrap();
+    let graph = json!({
+        "nodes": [
+            {"id": "t", "kind": "trigger", "at": {"x": 80, "y": 80}, "fields": {"trigger": "manual"}},
+            {"id": "a", "kind": "approval", "at": {"x": 480, "y": 80}, "fields": {"question": "First?"}},
+            {"id": "b", "kind": "approval", "at": {"x": 880, "y": 80}, "fields": {"question": "Second?"}}
+        ],
+        "edges": [
+            {"id": "t>a:text", "from": "t", "to": "a", "type": "text"},
+            {"id": "a>b:text", "from": "a", "to": "b", "type": "text"}
+        ]
+    });
+    host.call("saveWorkflowGraph", json!({"id": id, "baseRevision": 1, "graph": graph})).await;
+    let run = host.call("startWorkflowRun", json!({"id": id, "requestId": "twice-1"})).await;
+    let run_id = run["run"]["id"].as_str().unwrap();
+    let waiting = wait_status(&host, run_id, "approval").await;
+    let first = waiting["run"]["steps"].as_array().unwrap().iter().find(|s| s["nodeId"] == "a").unwrap()["id"].clone();
+    host.call("decideWorkflowStep", json!({"stepId": first, "approved": true})).await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !host.call("workflowRun", json!({"runId": run_id})).await["run"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s["nodeId"] == "b" && s["status"] == "approval")
+    {
+        assert!(Instant::now() < deadline, "the second approval never came");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    host.call("decideWorkflowStep", json!({"stepId": first, "approved": false})).await;
+    let after = host.call("workflowRun", json!({"runId": run_id})).await;
+    assert_eq!(after["run"]["status"], "approval", "{after}");
+}
+
+#[tokio::test]
+async fn a_step_run_on_its_own_is_picked_up_after_a_restart() {
+    let mut host = common::host::Host::start().await;
+    // The agent asks for a permission no one gives, then can't start again: the step is running when the host
+    // stops and can only end once the host picks it up again.
+    let agent = host.home.join("agent.py");
+    std::fs::copy(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_agent.py"), &agent).unwrap();
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name": "Solo", "backend": "custom", "command": common::python_agent(&agent),
+                "cwd": host.home.to_string_lossy(), "permission": "ask", "connectors": []}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let created = host.call("createWorkflow", json!({"title": "Solo"})).await;
+    let id = created["workflow"]["id"].as_str().unwrap();
+    let graph = json!({
+        "nodes": [{"id": "a", "kind": "agent", "at": {"x": 80, "y": 80}, "fields": {"botId": bot, "task": "go"}}],
+        "edges": []
+    });
+    host.call("saveWorkflowGraph", json!({"id": id, "baseRevision": 1, "graph": graph})).await;
+    let step = host.call("runWorkflowStep", json!({"id": id, "nodeId": "a", "requestId": "solo-1"})).await;
+    let step_id = step["step"]["id"].clone();
+    assert_eq!(step["step"]["status"], "running", "{step}");
+    host.crash();
+    host.restart(|home| std::fs::remove_file(home.join("agent.py")).unwrap()).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let read = host.call("workflowStep", json!({"stepId": step_id})).await;
+        if read["step"]["status"] != "running" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the step stayed running: {read}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let refused = host.refused("workflowStep", json!({"stepId": "missing"})).await;
+    assert!(refused.contains("deleted"), "{refused}");
+}
+
+#[tokio::test]
 async fn a_manual_run_starts_from_the_steps_when_there_is_no_trigger() {
     let host = common::host::Host::start().await;
     let created = host.call("createWorkflow", json!({"title": "Plain", "graph": {"nodes": [], "edges": []}})).await;

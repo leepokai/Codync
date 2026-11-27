@@ -34,6 +34,12 @@ class WorkTest {
         assertEquals(bot, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), bot)).jsonObject))
     }
 
+    @Test fun `a task names the agent its thread runs on`() {
+        val owner = bot(""","backend":"claude","work":[{"id":"a","status":"working","runsOn":"codex"},{"id":"b","status":"waiting"},{"id":"c","status":"working","agent":"gemini"}]""")
+        assertEquals(listOf("codex", "claude", "gemini"), owner.work.map { it.agentOf(owner) })
+        assertNull("the box of threads without a bot has no agent of its own", owner.work[1].agentOf(owner.copy(plain = true)))
+    }
+
     @Test fun `a host from before the box has no work and no ceiling`() {
         assertEquals(emptyList<WorkTask>(), bot().work)
         assertNull(bot().maxThreads)

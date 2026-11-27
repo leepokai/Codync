@@ -6,7 +6,8 @@ import SwiftUI
 /// order, laid out as its filter menu says. A tap pushes the task's thread chat over the list, or opens the bot's chat
 /// (on the Bots tab) at its card, or its details. Its header, the Bots tab's: the account, the title over how the
 /// computers are connected, then the desktop's buttons: the filter menu, Search (threads by title or bot, flat
-/// and newest first) and New thread, with no bot where a computer can start one so, else with a bot.
+/// and newest first) and New thread, a page pushed over the list (`NewThreadView`), with no bot where a computer can
+/// start one so, else with a bot.
 struct ThreadsTab: View {
     let roster: [RosterItem]
     @Environment(AppStore.self) private var app
@@ -18,9 +19,8 @@ struct ThreadsTab: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searching = false
     @State private var query = ""
+    /// The new-thread page pushed over the list, which becomes the thread's chat once sent.
     @State private var newThread = false
-    /// A thread just started here, opened once it has its thread.
-    @State private var starting: (computer: ComputerID, botId: String, taskId: String)?
     /// The thread pushed over the list.
     @State private var thread: ThreadTarget?
 
@@ -50,6 +50,11 @@ struct ThreadsTab: View {
             }
             .background(Palette.background)
             .threadChat($thread, store: { accounts.store(for: $0.ref.computerId) })
+            .navigationDestination(isPresented: $newThread) {
+                NewThreadView(bots: threadBots, plain: plainStore, store: { accounts.store(for: $0) },
+                              item: { accounts.item($0, botId: $1) }, openDetails: openDetails)
+                    .toolbar(.hidden, for: .tabBar)
+            }
             .navigationTitle(L10n.tr("Threads"))
             .navigationBarTitleDisplayMode(.inline)
             .navigationSubtitle(accounts.connectionSummary(hidden: hiddenComputers))
@@ -75,24 +80,6 @@ struct ThreadsTab: View {
         // Older threads, first page of each computer that lists them, again whenever a computer starts them over.
         .task(id: shownStores.map { "\($0.computer.id)/\($0.olderThreadsGeneration)/\($0.listsOlderThreads)" }) {
             shownStores.forEach { $0.loadFirstOlderThreads() }
-        }
-        .codyncSheet(isPresented: $newThread) {
-            NewThreadSheet(bots: threadBots, plain: plainStore, store: { accounts.store(for: $0) }) { computer, botId, taskId in
-                starting = (computer, botId, taskId)
-            }
-        }
-        // Its thread once it has one, else its bot's details, as on Android (a thread without a bot: nothing, it has
-        // none); leaving the tab first opens nothing.
-        .task(id: starting?.taskId) {
-            guard let (computer, botId, taskId) = starting, let store = accounts.store(for: computer) else { return }
-            let task = await store.threadStarted(botId: botId, taskId: taskId)
-            starting = nil
-            guard !Task.isCancelled, let item = accounts.item(computer, botId: botId) else { return }
-            switch (task, item.bot.plain) {
-            case let (task?, _): thread = ThreadTarget(of: item, task: task)
-            case (nil, false): openDetails(item)
-            case (nil, true): break
-            }
         }
     }
 

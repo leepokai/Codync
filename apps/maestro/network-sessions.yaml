@@ -48,7 +48,7 @@ tags:
     centerElement: true
 - tapOn: "Network"
 - extendedWaitUntil:
-    visible: "Coding agents"
+    visible: "Agents"
     timeout: 20000
 - scrollUntilVisible:
     element: ".*${output.session}.*"

@@ -4,7 +4,7 @@
 const res = http.post(`http://127.0.0.1:${HOST_PORT}/api/agentCall`, {
   headers: { Authorization: `Bearer ${HOST_TOKEN}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    agent: { kind: 'codex', session: `maestro-${Date.now()}`, process: '1-maestro', cwd: '/work/api', hint: null },
+    agent: { kind: 'codex', session: `maestro-${Date.now()}`, process: '1-maestro', cwd: '/work/api' },
     name: 'whoami',
     arguments: {},
   }),

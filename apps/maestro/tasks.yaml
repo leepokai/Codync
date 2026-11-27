@@ -53,7 +53,7 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: ${output.bot.name}
     timeout: 10000
-# Every thread, on the Threads tab: the working task is a row of its own (its title and its mark), with no Free rows.
+# Every thread, on the Threads tab: the working task is a row of its own (the coding agent's icon, its title and its mark), with no Free rows.
 # (The tab's count of working tasks may read after its name.) Its filter button offers the list's groupings. The row
 # pushes its thread over the list, in the chat's form, and Back returns to the list.
 - tapOn: "Threads(, .*)?"
@@ -81,15 +81,17 @@ onFlowComplete:
     visible: "Message this thread"
     timeout: 10000
 - assertVisible: "Details"
-- tapOn: "Back"
+- runFlow: subflows/thread-back.yaml
 - extendedWaitUntil:
     visible: ".*Audit the repo.*"
     timeout: 10000
-# New thread, in the Threads header, starts one on its first message and opens it once it has its thread: it opens on
-# No bot (as the desktop's), and the bot chip picks the bot. It ends at once, so one task still works below.
+# New thread, in the Threads header, pushes the new-thread page (a chat nothing was said in yet) and, sent, becomes the
+# thread's chat once it has its thread; Back goes to the list. It opens on No bot (as the desktop's), and the bot chip
+# in the composer's row picks the bot. It ends at once, so one task still works below.
 - runFlow: subflows/bot-list.yaml
 - tapOn: "Threads(, .*)?"
 - tapOn: "New thread"
+- assertVisible: "New thread with .*"
 - assertVisible: "No bot"
 # Without a bot, the chip beside it opens the model panel on the agent's models. A thread without a bot runs on one of
 # the computer's installed agents, not the flow's stand-in, so the flow sends with its bot (as the desktop's work.spec.ts).
@@ -114,14 +116,20 @@ onFlowComplete:
 - tapOn: ${output.bot.name}
 - tapOn: "What should it work on\\?"
 - inputText: "Say hello"
+# The page's composer sits over the keyboard: on iOS Maestro's typing hides the keyboard until the next touch, which
+# lifts the composer, so touch the text and let it settle before Send (as reply-part.yaml does).
+- tapOn: "Say hello"
+- waitForAnimationToEnd
 - tapOn: "Send"
 - extendedWaitUntil:
     visible: "Message this thread"
     timeout: 20000
-- tapOn: "Back"
+- runFlow: subflows/thread-back.yaml
 - extendedWaitUntil:
     visible: "New thread"
     timeout: 10000
+# The page became the thread's chat: Back returns to the list, not to the empty new-thread page.
+- assertNotVisible: "What should it work on\\?"
 # One task working, in the bot's chat: the capsule.
 - runFlow: subflows/bot-list.yaml
 - tapOn: ${output.bot.name}
@@ -324,7 +332,7 @@ onFlowComplete:
     timeout: 10000
 - takeScreenshot: tasks-thread-card
 - tapOn: "Allow once"
-- tapOn: "Back"
+- runFlow: subflows/thread-back.yaml
 # Its report comes back as the bot's message.
 - runFlow: subflows/bot-list.yaml
 - tapOn: ${output.bot.name}
@@ -377,7 +385,7 @@ onFlowComplete:
 - extendedWaitUntil:
     notVisible: "Stop"
     timeout: 10000
-- tapOn: "Back"
+- runFlow: subflows/thread-back.yaml
 - runFlow: subflows/bot-list.yaml
 - tapOn: ${output.bot.name}
 # A task whose agent needs signing in asks in the chat too, and its row says which agent and leads to the card.

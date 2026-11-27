@@ -532,7 +532,7 @@ async fn a_computer_in_two_networks_keeps_them_apart() {
 async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailbox() {
     let (desk, laptop, _, lead) = two_computers().await;
     let call = |session: Option<&str>, name: &str| {
-        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api"});
         json!({"agent": agent, "name": name, "arguments": {}})
     };
     let address = desk.call("agentCall", call(Some("t1"), "whoami")).await["address"].as_str().unwrap().to_owned();
@@ -613,7 +613,7 @@ async fn an_agents_hook_tells_its_session_of_new_mail_in_the_shape_its_agent_rea
         serde_json::from_str(&run(agent, &event(name, session), &[]).await).unwrap()
     };
     let tool = |kind: &str, session: &str, name: &str, arguments: Value| {
-        let agent = json!({"kind": kind, "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        let agent = json!({"kind": kind, "session": session, "process": "1-e2e", "cwd": "/work/api"});
         json!({"agent": agent, "name": name, "arguments": arguments})
     };
     let address = async |kind: &str, session: &str| {

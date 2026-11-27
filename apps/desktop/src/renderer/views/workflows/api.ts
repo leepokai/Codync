@@ -41,6 +41,8 @@ export const stopWorkflowRun = (client: HostClient, runId: string) => client.cal
 export const runWorkflowStep = (client: HostClient, id: string, nodeId: string, requestId: string) =>
   client.call<{ step: WorkflowStep }>('runWorkflowStep', { id, nodeId, requestId })
 
+export const fetchWorkflowStep = (client: HostClient, stepId: string) => client.call<{ step: WorkflowStep }>('workflowStep', { stepId })
+
 export const stopWorkflowStep = (client: HostClient, stepId: string) => client.call('stopWorkflowStep', { stepId })
 
 export const retryWorkflowStep = (client: HostClient, stepId: string) => client.call<{ step: WorkflowStep }>('retryWorkflowStep', { stepId })

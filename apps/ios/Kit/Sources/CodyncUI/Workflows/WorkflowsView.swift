@@ -5,6 +5,7 @@ import SwiftUI
 public struct WorkflowsView: View {
     var pendingWorkflowId: String?
     var pendingRunId: String?
+    var pendingStepId: String?
     var pendingToken: UUID?
     var onPendingHandled: () -> Void
     /// Search: only the workflows whose title holds it or whose id starts with it.
@@ -18,12 +19,14 @@ public struct WorkflowsView: View {
     @State private var loaded = false
     @State private var pinRevision = 0
 
-    public init(opened: Binding<OpenedWorkflow?>, pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingToken: UUID? = nil,
+    public init(opened: Binding<OpenedWorkflow?>, pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingStepId: String? = nil,
+                pendingToken: UUID? = nil,
                 query: String = "", onPendingHandled: @escaping () -> Void = {}) {
         _opened = opened
         self.query = query
         self.pendingWorkflowId = pendingWorkflowId
         self.pendingRunId = pendingRunId
+        self.pendingStepId = pendingStepId
         self.pendingToken = pendingToken
         self.onPendingHandled = onPendingHandled
     }
@@ -60,18 +63,19 @@ public struct WorkflowsView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .navigationTitle(L10n.tr("Workflows"))
         .navigationDestination(item: $opened) { item in
-            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId)
+            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId, pendingStepId: item.stepId)
                 .environment(model)
         }
         .task(id: pendingToken) {
             let pending = pendingWorkflowId
             let run = pendingRunId
+            let step = pendingStepId
             let token = pendingToken
             error = await model.reloadWorkflows()
             loaded = true
             // Coming back to the list restarts this task. A claimed link must not push the detail again.
             if let pending, let token, PendingWorkflowOpen.claim(token) {
-                opened = OpenedWorkflow(id: pending, runId: run)
+                opened = OpenedWorkflow(id: pending, runId: run, stepId: step)
                 onPendingHandled()
             }
         }
@@ -81,7 +85,7 @@ public struct WorkflowsView: View {
 
     private func row(_ workflow: WorkflowSummary) -> some View {
         Button {
-            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { opened = OpenedWorkflow(id: workflow.id, runId: nil) }
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { opened = OpenedWorkflow(id: workflow.id) }
         } label: {
             WorkflowSummaryLine(workflow: workflow, onCard: true)
         }
@@ -102,6 +106,8 @@ public struct WorkflowsView: View {
 public struct OpenedWorkflow: Identifiable, Hashable, Sendable {
     public var id: String
     public var runId: String?
+    /// A step run on its own, outside any run.
+    public var stepId: String?
 }
 
 /// One deep link opens its workflow once, even if the list is created again on the way back.

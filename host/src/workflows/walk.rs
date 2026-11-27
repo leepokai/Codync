@@ -1,9 +1,7 @@
 //! Which steps can start, given the ones already recorded for this run.
 
 use super::limits::{MAX_INPUT, MAX_PASSES};
-#[cfg(test)]
-use super::model::NodeKind;
-use super::model::{Branch, Graph, Node, StepStatus};
+use super::model::{Branch, Graph, Node, NodeKind, StepStatus};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
@@ -52,15 +50,24 @@ pub fn next_actions(
             return false;
         }
         incoming(id, false).into_iter().any(|edge| newer(latest.get(edge.from.as_str()).copied(), had))
-            || incoming(id, true).into_iter().any(|edge| newer(latest.get(edge.from.as_str()).copied(), had))
+            || incoming(id, true).into_iter().any(|edge| {
+                // A loop line on a branch restarts its target only when that branch was taken.
+                let source = latest.get(edge.from.as_str()).copied();
+                newer(source, had) && (edge.branch.is_none() || source.is_some_and(|s| s.branch == edge.branch))
+            })
     };
+    // A trigger the run did not start from never moves, so it is nothing to wait for.
+    let unselected_trigger =
+        |id: &str| !scope.contains(id) && graph.nodes.iter().any(|n| n.id == id && n.kind == NodeKind::Trigger);
     let order = topo(graph, &nodes, loops);
     let mut actions = Vec::new();
     for id in &order {
         if !due(id) {
             continue;
         }
-        let blocked = incoming(id, false).iter().any(|edge| due(&edge.from) || waiting(&edge.from));
+        let blocked = incoming(id, false)
+            .iter()
+            .any(|edge| !unselected_trigger(&edge.from) && (due(&edge.from) || waiting(&edge.from)));
         if blocked {
             continue;
         }
@@ -69,6 +76,7 @@ pub fn next_actions(
             ins.iter().filter(|edge| edge.branch.is_some()).map(|edge| edge.from.as_str()).collect();
         let order_unmet = ins.iter().any(|edge| {
             edge.id.ends_with(":order")
+                && !unselected_trigger(&edge.from)
                 && latest.get(edge.from.as_str()).is_none_or(|source| source.status != StepStatus::Done)
         });
         if order_unmet {
@@ -287,6 +295,75 @@ mod tests {
         ];
         let next = next_actions(&graph, &steps, &scope, &HashSet::new());
         assert!(next.is_empty(), "the open attempt is still the latest one");
+    }
+
+    fn done(node: &str, branch: Option<Branch>, ended_at: i64) -> Recorded {
+        Recorded {
+            id: format!("{node}{ended_at}"),
+            node_id: node.into(),
+            status: StepStatus::Done,
+            output: "x".into(),
+            branch,
+            ended_at,
+        }
+    }
+
+    #[test]
+    fn a_loop_on_the_no_branch_restarts_only_when_no_was_taken() {
+        let graph = Graph {
+            nodes: vec![
+                node("t", NodeKind::Trigger),
+                node("a", NodeKind::Agent),
+                node("c", NodeKind::Condition),
+                node("o", NodeKind::Output),
+            ],
+            edges: vec![
+                edge("t>a:text", "t", "a", None),
+                edge("a>c:text", "a", "c", None),
+                edge("c.no>a:text", "c", "a", Some(Branch::No)),
+                edge("c.yes>o:text", "c", "o", Some(Branch::Yes)),
+            ],
+            strokes: vec![],
+        };
+        let scope: HashSet<String> = graph.nodes.iter().map(|n| n.id.clone()).collect();
+        let loops = crate::workflows::graph::loop_edges(&graph);
+        assert_eq!(loops, HashSet::from(["c.no>a:text".to_owned()]));
+        let starts = |branch| {
+            let steps = [done("t", None, 1), done("a", None, 2), done("c", Some(branch), 3)];
+            next_actions(&graph, &steps, &scope, &loops)
+                .into_iter()
+                .filter_map(|a| match a {
+                    Action::Start { node_id, .. } => Some(node_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(starts(Branch::Yes), vec!["o".to_owned()]);
+        assert_eq!(starts(Branch::No), vec!["a".to_owned()]);
+    }
+
+    #[test]
+    fn an_unselected_trigger_does_not_hold_up_a_shared_step() {
+        let graph = Graph {
+            nodes: vec![node("t1", NodeKind::Trigger), node("t2", NodeKind::Trigger), node("a", NodeKind::Agent)],
+            edges: vec![edge("t1>a:text", "t1", "a", None), edge("t2>a:text", "t2", "a", None)],
+            strokes: vec![],
+        };
+        let scope = HashSet::from(["t1".into(), "a".into()]);
+        let next = next_actions(&graph, &[done("t1", None, 1)], &scope, &HashSet::new());
+        assert!(next.iter().any(|a| matches!(a, Action::Start { node_id, .. } if node_id == "a")));
+    }
+
+    #[test]
+    fn an_unapproved_step_outside_the_scope_still_holds_up_its_target() {
+        let graph = Graph {
+            nodes: vec![node("a", NodeKind::Agent), node("p", NodeKind::Approval), node("o", NodeKind::Output)],
+            edges: vec![edge("a>o:text", "a", "o", None), edge("p>o:order", "p", "o", None)],
+            strokes: vec![],
+        };
+        let scope = HashSet::from(["o".into()]);
+        let next = next_actions(&graph, &[done("a", None, 1)], &scope, &HashSet::new());
+        assert!(!next.iter().any(|a| matches!(a, Action::Start { node_id, .. } if node_id == "o")));
     }
 
     #[test]

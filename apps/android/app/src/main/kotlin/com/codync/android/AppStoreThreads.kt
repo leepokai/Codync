@@ -4,9 +4,12 @@ import com.codync.android.core.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -126,24 +129,46 @@ internal fun AppState.receivingThreadEntry(entry: Entry): AppState {
 /**
  * Reads the computer's next page of older threads (`olderThreads`): the newest first, then the ones before the oldest held.
  * Nothing on a host without them, off the link, while a page loads or once none are left. A page that lands after the
- * list was dropped (a new hello, another Delete old threads) is let go.
+ * list was dropped (a new hello, another Delete old threads), or fails after it, is let go and the first page asked again.
  */
 internal fun AppStore.loadOlderThreads() {
     val now = state.value
     if (threadKeepDays(now.hello) == null || now.actualConnection !is LinkState.Ready) return
     val held = now.olderThreads
     if (held?.more == false) return
-    val host = now.hello?.text("hostId")
     action("olderThreads") {
-        val reply = hostQuery("olderThreads", buildJsonObject { held?.before?.let { put("before", it) } })
-        val page = OlderThreads.decode(reply.jsonObject)
-        // Dropped meanwhile (a new hello, another Delete old threads): the page is let go.
-        mutableState.update {
-            if (it.hello?.text("hostId") != host || (held != null && it.olderThreads == null)) it
-            else it.copy(olderThreads = (it.olderThreads ?: OlderThreads(more = true)) + page)
+        mutableState.readOlderThreads(held?.before, now.olderThreadsGeneration) { before ->
+            hostQuery("olderThreads", buildJsonObject { before?.let { put("before", it) } })
         }
     }
 }
+
+/** [loadOlderThreads]'s pages from [from], asked under [asked], through [query] (the host's `olderThreads`). */
+internal suspend fun MutableStateFlow<AppState>.readOlderThreads(from: Long?, asked: Int, query: suspend (before: Long?) -> JsonElement) {
+    var before = from
+    var generation = asked
+    while (true) {
+        val reply = try { query(before) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { if (value.droppedOlderThreadsSince(generation)) null else throw error }
+        val next = reply?.let { page -> updateAndGet { it.takingOlderThreads(generation, OlderThreads.decode(page.jsonObject)) } } ?: value
+        // Dropped meanwhile (a new hello, another Delete old threads): the first page is asked again.
+        if (!next.droppedOlderThreadsSince(generation) || threadKeepDays(next.hello) == null) return
+        before = null
+        generation = next.olderThreadsGeneration
+    }
+}
+
+/** [page] after the older threads held, unless they were dropped since it was asked under [generation]. */
+internal fun AppState.takingOlderThreads(generation: Int, page: OlderThreads): AppState =
+    if (droppedOlderThreadsSince(generation)) this
+    else copy(olderThreads = (olderThreads ?: OlderThreads(more = true)) + page)
+
+/** Whether the older threads were dropped since a page was asked under [generation]: that page, or its failure, is let go. */
+internal fun AppState.droppedOlderThreadsSince(generation: Int): Boolean = olderThreadsGeneration != generation
+
+/** The older threads are read again from the start; a page on its way is let go. */
+internal fun AppState.droppingOlderThreads(): AppState = copy(olderThreads = null, olderThreadsGeneration = olderThreadsGeneration + 1)
 
 /** [bot] with its computer's older threads it doesn't hold among its `work`, as the Threads list and a thread's page show them. */
 internal fun AppState.withOlder(bot: Bot): Bot =

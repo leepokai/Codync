@@ -54,7 +54,7 @@ import kotlinx.coroutines.CancellationException
     back.value = {
         val (current, runs) = latest.value
         when {
-            current.runId != null -> store.showWorkflow(current.id, null)
+            current.runId != null || current.stepId != null -> store.showWorkflow(current.id, null)
             runs -> runsOn = false
             current.id != null -> store.showWorkflow(null)
             else -> store.closeWorkflows()
@@ -66,6 +66,7 @@ import kotlinx.coroutines.CancellationException
         add(WorkflowPage.Detail(id))
         if (runsOn) add(WorkflowPage.Runs(id))
         route.runId?.let { add(WorkflowPage.Run(id, it)) }
+        route.stepId?.let { add(WorkflowPage.Step(id, it)) }
     }
     NavStack(pages, key = { it.key }, pop = { back.value() }, Modifier.fillMaxSize()) { page ->
         when (page) {
@@ -73,6 +74,7 @@ import kotlinx.coroutines.CancellationException
             is WorkflowPage.Detail -> WorkflowDetailView(state, store, page.id, { back.value() }) { runsOn = true }
             is WorkflowPage.Runs -> WorkflowRunsView(state, store, page.id, { back.value() }) { store.showWorkflow(page.id, it) }
             is WorkflowPage.Run -> WorkflowRunView(state, store, page.id, page.runId) { back.value() }
+            is WorkflowPage.Step -> WorkflowStepView(state, store, page.stepId) { back.value() }
         }
     }
 }
@@ -82,11 +84,13 @@ private sealed class WorkflowPage {
     data class Detail(val id: String) : WorkflowPage()
     data class Runs(val id: String) : WorkflowPage()
     data class Run(val id: String, val runId: String) : WorkflowPage()
+    data class Step(val id: String, val stepId: String) : WorkflowPage()
     val key: String get() = when (this) {
         List -> "list"
         is Detail -> "detail:$id"
         is Runs -> "runs:$id"
         is Run -> "run:$runId"
+        is Step -> "step:$stepId"
     }
 }
 

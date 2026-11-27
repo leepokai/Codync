@@ -78,7 +78,7 @@ Clients and host that call a new route must not reach users before `api.codync.d
 
 ## Releasing Worker changes
 
-Every merge into `main` deploys, right away, everything it changed that deploys, so production always runs what `main` has (owner's rule, 2026-11-27: `relay/` was missed in 2.54.0). The `release-pr` workflow does it after the merge, from its worktree at the merged `main` (never the shared checkout), for each target that differs between the previous release tag and the merge commit:
+Every merge into `main` deploys, right away, everything it changed that deploys, so production always runs what `main` has (owner's rule, 2026-11-27: `relay/` was missed in 2.54.0). The `release-pr` workflow does it after the merge, from its worktree at the merged `main` (never the shared checkout), for each target that differs between `main` before the merge (the merge commit's first parent) and the merge commit, so a release without a version bump, which gets no tag, counts too:
 
 | Target | Deploy | Check |
 |---|---|---|
@@ -88,7 +88,7 @@ Every merge into `main` deploys, right away, everything it changed that deploys,
 
 Each also checks `npx wrangler deployments list` shows the new version. A failed deploy or check stops the release there; a new version that breaks its path is rolled back with `npx wrangler rollback <the version live before>`. Only `cloud/` has a dev env (`deploy:dev` after a merge into `dev`); `relay/` and `discord/` are one Worker each that dev shares, so a merge into `dev` deploys neither. `private-relay/` is self-hosted by whoever runs it: nothing deploys it.
 
-A target left failed, rolled back or undeployed (the run ends `merged_incomplete`) is deployed by hand right away: the next release diffs from this release's tag, so it will not see that change again.
+A target left failed, rolled back or undeployed (the run ends `merged_incomplete`) is deployed by hand right away: the next release diffs from its own merge, so it will not see that change again.
 
 ## Secrets audit
 

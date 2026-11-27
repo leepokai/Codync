@@ -200,9 +200,9 @@ for (const status of ['timed_out', 'failed']) {
   const w = p.slice(workers, p.indexOf('Bring the release branch back'))
   const cloud = p.slice(p.indexOf('cloud/ changed'), workers)
   check(r.outcome === 'released' && workers > p.indexOf('deploy:main') && workers < p.indexOf('back into dev'), 'the Workers deploy after the cloud and before the merge back into dev')
-  check(/relay\/, discord\//.test(w) && w.includes('git diff --quiet v2.52.0 ' + sha('d') + ' -- <dir>') && w.includes('`npm ci`') && w.includes('`npm run deploy`'), 'each Worker deploys only when it changed since the previous release tag')
+  check(/relay\/, discord\//.test(w) && w.includes('git diff --quiet ' + sha('d') + '^1 ' + sha('d') + ' -- <dir>') && w.includes('`npm ci`') && w.includes('`npm run deploy`'), 'each Worker deploys only when the merge changed it')
   check(/exiting 0 means not_changed/.test(w) && /1 means changed/.test(w) && /any other exit .* failed/.test(w), 'a git diff that errors fails the Worker instead of skipping it')
-  check(/wrangler rollback/.test(cloud), 'a broken cloud deploy rolls back')
+  check(/note the live version/.test(cloud) && /wrangler rollback <the noted version>/.test(cloud), 'a broken cloud deploy rolls back to the version noted before it')
   check(w.includes('push.codync.dev/health') && w.includes('discord.codync.dev/') && /wrangler rollback/.test(w) && /stops here/.test(w), 'each Worker checks its real path and rolls back a broken version')
   for (const [rows, why] of [[undefined, 'no rows'], [[deploys[0]], 'a Worker missing'], [[deploys[0], { target: 'discord', changed: true, result: 'rolled_back' }], 'a rolled-back Worker'], [[deploys[0], { target: 'discord', changed: true, result: 'failed' }], 'a failed Worker']]) {
     const bad = await run({ ...base, 'follow-up': { ...followed, deploys: rows }, 'gate:': [ready] })

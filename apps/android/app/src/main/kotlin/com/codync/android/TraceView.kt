@@ -126,9 +126,10 @@ private fun compactCount(n: Long): String {
     if (entry.isStoredStub) {
         val showStored = LocalShowStoredMessage.current
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(entry.text, style = Type.subheadline, color = Palette.text)
-            Text("Show full message", Modifier.clickable(role = Role.Button) { showStored?.invoke(entry) }
-                .semantics { contentDescription = "Show full message" }, style = Type.subheadline, color = Palette.accent)
+            val showFull = tr("Show full message")
+            Text(entry.stubLabel(), style = Type.subheadline, color = Palette.text)
+            Text(showFull, Modifier.clickable(role = Role.Button) { showStored?.invoke(entry) }
+                .semantics { contentDescription = showFull }, style = Type.subheadline, color = Palette.accent)
         }
         return
     }

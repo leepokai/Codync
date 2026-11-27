@@ -10,6 +10,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 /** Characters counted for one stored payload, however long the row in SQLite is. */
@@ -234,7 +235,11 @@ private fun boundedEntry(
     )
 }
 
-/** Fields a stub keeps from the card. The large body is replaced. `toolKind` and `title` name it; the rest say whether it can be answered or queued. */
+/**
+ * Fields a stub keeps from the card. The large body is replaced. `toolKind` and `title` name it.
+ * `status` and `options` say whether a queued row can still be sent. They do not make an approval
+ * answerable: Allow and Deny wait until the full row is read.
+ */
 private val STUB_KEPT_KEYS = setOf("status", "options", "selected", "clientNonce", "removed", "toolKind", "title")
 
 /** The fields that offer an answer. They stay off a stub whose route was not proven. */
@@ -249,7 +254,7 @@ private val HEAD_ONLY_KEYS = setOf("toolKind", "title")
  */
 internal fun retainedStubChars(entry: Entry): Int {
     fun chars(key: String) = (entry.data[key] as? JsonPrimitive)?.contentOrNull?.length ?: 0
-    return entry.text.length + chars("toolKind") + chars("title")
+    return (entry.storedStubSentence()?.length ?: entry.text.length) + chars("toolKind") + chars("title")
 }
 
 /**
@@ -267,6 +272,7 @@ private fun stubData(head: String, tail: String, fullLength: Long, thread: Strin
     return buildJsonObject {
         for ((key, value) in kept) put(key, value)
         put("text", storedStubText(fullLength))
+        put("storedChars", fullLength)
         put("storedOnly", true)
         // What a thread put in its bot's chat must stay there even when its row cannot be read: the warning card
         // belongs in the affected thread, not only in the owner's main chat.
@@ -457,8 +463,24 @@ private fun tailTimes(tail: String): Map<String, Long> {
     return times
 }
 
-/** The sentence a resident stub shows. The full payload stays in SQLite. */
-internal fun storedStubText(fullLength: Long) = "Large message kept in storage ($fullLength characters)."
+/** Id stored in place of a large body. Not a sentence, and not written back to SQLite. */
+internal const val STORED_STUB_ID = "stored-stub"
+
+/** Catalog key for the sentence a stub shows. `{count}` is the stored row's length. */
+internal const val STORED_STUB_CAPTION = "Large message kept in storage ({count} characters)."
+
+/** The id a stub stores. [fullLength] is kept beside it as `storedChars`, not inside the text. */
+internal fun storedStubText(fullLength: Long) = STORED_STUB_ID.also { check(fullLength >= 0) }
+
+/**
+ * The English sentence a stub stands in for, or null when [this] does not carry the id and a count.
+ * The budget counts this sentence. The screen translates [STORED_STUB_CAPTION] instead of storing it.
+ */
+internal fun Entry.storedStubSentence(): String? {
+    if (text != STORED_STUB_ID) return null
+    val count = (data["storedChars"] as? JsonPrimitive)?.longOrNull ?: return null
+    return "Large message kept in storage ($count characters)."
+}
 
 /** True only for a row this process built instead of decoding. Never written back to SQLite. */
 internal val Entry.isStoredStub: Boolean

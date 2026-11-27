@@ -284,15 +284,15 @@ class MirrorDatabaseTest {
         assertEquals(600L, wide.maxOf { it.seq })
         assertTrue(small.sumOf { it.text.length } < 80_000)
         assertTrue(wide.sumOf { it.text.length } < 80_000)
-        assertTrue(small.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
-        assertTrue(wide.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
+        assertTrue(small.all { filler !in it.text && it.text == STORED_STUB_ID && storedChars(it) > 60_000 })
+        assertTrue(wide.all { filler !in it.text && it.text == STORED_STUB_ID && storedChars(it) > 60_000 })
         val preview = mirror.snapshot(Residency(emptySet(), window = 300, preview = 30)).entries.filter { it.botId == "big" }
         assertEquals("a preview keeps the newest stubs and not the 60k filler", 30, preview.size)
         assertEquals(600L, preview.maxOf { it.seq })
-        assertTrue(preview.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
+        assertTrue(preview.all { filler !in it.text && it.text == STORED_STUB_ID && storedChars(it) > 60_000 })
     }
 
-    private fun notedLength(text: String) = text.substringAfter("(", "").substringBefore(" ", "").toLongOrNull() ?: 0L
+    private fun storedChars(entry: Entry) = (entry.data["storedChars"] as? JsonPrimitive)?.longOrNull ?: 0L
 
     @Test fun anOversizedRowKeepsItsTimeSoItStaysWhereItWasWritten() {
         val filler = "F".repeat(PER_MESSAGE_CHARS + 1)

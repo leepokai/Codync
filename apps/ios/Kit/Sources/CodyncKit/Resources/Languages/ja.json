@@ -2159,6 +2159,8 @@
   "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中",
   "Show the quoted message": "引用元のメッセージを表示",
   "Show full message": "メッセージ全文を表示",
+  "Stored message": "保存されたメッセージ",
+  "Large message kept in storage ({count} characters).": "大きなメッセージはストレージに保持されています（{count} 文字）。",
   "That message isn't loaded": "そのメッセージは読み込まれていません",
   "This message quotes nothing": "このメッセージは何も引用していません",
   "Saved credentials": "保存済みの認証情報",

@@ -73,23 +73,20 @@ internal val Entry.takesOwnWords: Boolean
     get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
 
 /**
- * A stored stub draws its answer rows only when its own data already holds a pending choice.
- * True when [entry] is a stub, `status` is `pending`, and `options` has at least one option with an id.
- * A missing list, an empty list, or an option with no id stays the placeholder, so the card never
- * shows a button that cannot be sent. A stub whose row could not be read stays the warning card.
- * Nothing here copies a field off a tail or fills in an option the payload did not carry.
+ * A stub never draws Allow or Deny. [MirrorDatabase.answerable] replaces the stub with the full row
+ * once that row has been read and fits; only that row carries `command`, `detail` and `diffs`.
+ * A pending status and options kept in the head are not the request, and a row that could not be
+ * read stays the warning card. Nothing here copies a field off a tail.
  */
 internal fun canAnswerStub(entry: Entry): Boolean {
     if (!entry.isStoredStub || entry.approvalReadFailed) return false
-    if (entry.data.text("status") != "pending") return false
-    val options = entry.data["options"] as? JsonArray ?: return false
-    return options.any { (it as? JsonObject)?.text("optionId")?.isNotBlank() == true }
+    return false
 }
 
 /** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
  *  numbered rows, in one tone. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
-    // Answers only when the stub itself carries them. Every other stub stays the placeholder.
+    // Allow and Deny wait until the full row replaces this stub. Until then, the placeholder.
     if (entry.isStoredStub && !canAnswerStub(entry)) return StoredApproval(entry, hostName)
     val d = entry.data
     val pending = d.text("status") == "pending"
@@ -174,9 +171,19 @@ internal fun canAnswerStub(entry: Entry): Boolean {
             Text(tr("This approval couldn't be read on this phone. Check the computer to answer it."),
                 style = Type.subheadline, color = Palette.danger)
         } else {
-            Text(entry.text, style = Type.subheadline, color = Palette.secondary)
+            Text(entry.stubLabel(), style = Type.subheadline, color = Palette.secondary)
         }
     }
+}
+
+/**
+ * The sentence a stub shows. The stored text is an id; the count sits beside it. A row that is not
+ * that id keeps its own text, which is the message and is not translated.
+ */
+@Composable internal fun Entry.stubLabel(): String {
+    val sentence = storedStubSentence() ?: return text
+    val count = (data["storedChars"] as? JsonPrimitive)?.contentOrNull ?: return text
+    return tr(STORED_STUB_CAPTION).replace("{count}", count)
 }
 
 /** What an approval asks for, in Codync's words. */

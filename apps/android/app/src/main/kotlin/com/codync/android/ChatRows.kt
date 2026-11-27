@@ -125,7 +125,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
 
 /** The text find searches (iOS `ChatView.findable`): each message's own words, not separators, notices or exchanges. */
 internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
-    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to it.entry.text } }
+    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to (it.entry.storedStubSentence() ?: it.entry.text) } }
 
 /** A chat's time separator: Today 3:27 AM. */
 @Composable internal fun TimeSeparator(at: Long) {
@@ -199,6 +199,7 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.attachments
+    val shown = entry.stubLabel()
     val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
     val showStored = LocalShowStoredMessage.current
     val bubbleClick: () -> Unit = {
@@ -207,10 +208,10 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
-        if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
-                menu.textItems(textCopyItem(context, entry.text))
-            }) { UserText(entry.text, quote, openQuote) }
+        if (shown.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
+            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { SelectionContainer { UserText(shown, quote) } }) {
+                menu.textItems(textCopyItem(context, shown))
+            }) { UserText(shown, quote, openQuote) }
         SendStatusLine(entry.status)
     }
 }
@@ -249,7 +250,8 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
 @Composable internal fun PlainMessageRow(entry: Entry, state: AppState, store: AppStore) {
     val context = LocalContext.current
     val user = entry.kind == "user"
-    val menu = { listOf(textCopyItem(context, entry.text)) }
+    val shown = entry.stubLabel()
+    val menu = { listOf(textCopyItem(context, shown)) }
     val showStored = LocalShowStoredMessage.current
     val openStub: (() -> Unit)? = if (!entry.isStoredStub) null else {
         { showStored?.let { it(entry) } }
@@ -259,10 +261,10 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
         if (user) {
             val attachments = entry.attachments
             if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, MessageMenu.copyOnly, state, store)
-            if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu, onClick = openStub)) { UserText(entry.text) }
+            if (shown.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu, onClick = openStub)) { UserText(shown) }
             SendStatusLine(entry.status)
         } else Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(preview = { AgentText(entry.text, selectable = true) }, items = menu, onClick = openStub)) { AgentText(entry.text, selectable = false) }
+            .contextActions(preview = { AgentText(shown, selectable = true) }, items = menu, onClick = openStub)) { AgentText(shown, selectable = false) }
     }
 }
 
@@ -306,7 +308,8 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     val artifact = entry.artifact
     val voiceNote = entry.voiceNote
     val menu = MessageMenu.of(entry, store, reply, openTrace, selectText)
-    val textMenu = { menu.textItems(textCopyItem(context, entry.text)) }
+    val shown = entry.stubLabel()
+    val textMenu = { menu.textItems(textCopyItem(context, shown)) }
     val showStored = LocalShowStoredMessage.current
     val bubbleClick: () -> Unit = {
         if (entry.isStoredStub) showStored?.invoke(entry) else focus.clearFocus()
@@ -327,17 +330,17 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
             val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
             Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
                 .contextActions(reactions = menu.reactions, onClick = bubbleClick,
-                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) },
-                    items = { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) })) {
-                VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false)
+                    preview = { VoiceNoteMessage(shown, voiceNote, player, download, save, selectable = true) },
+                    items = { menu.textItems(textCopyItem(context, shown), listOf(downloadItem)) })) {
+                VoiceNoteMessage(shown, voiceNote, player, download, save, selectable = false)
             }
         }
         // Each card holds its own menu: a picture's copies the picture.
         else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, menu, state, store)
-        } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
-            AgentText(entry.text, selectable = false)
+        } else if (shown.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { AgentText(shown, selectable = true) }, items = textMenu)) {
+            AgentText(shown, selectable = false)
         }
         WorkThreadLine(entry, Modifier.padding(start = 4.dp))
     }

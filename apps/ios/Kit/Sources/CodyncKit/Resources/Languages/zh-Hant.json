@@ -2159,6 +2159,8 @@
   "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 無法啟動",
   "Show the quoted message": "顯示引用的訊息",
   "Show full message": "顯示完整訊息",
+  "Stored message": "儲存的訊息",
+  "Large message kept in storage ({count} characters).": "較大的訊息保留在儲存空間（{count} 個字元）。",
   "That message isn't loaded": "那則訊息尚未載入",
   "This message quotes nothing": "這則訊息沒有引用任何內容",
   "Saved credentials": "已存憑證",

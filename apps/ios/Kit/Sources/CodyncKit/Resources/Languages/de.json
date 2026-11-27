@@ -2159,6 +2159,8 @@
   "Using {to} while {own} couldn't start": "{to} wird verwendet, da {own} nicht starten konnte",
   "Show the quoted message": "Zitierte Nachricht anzeigen",
   "Show full message": "Vollständige Nachricht anzeigen",
+  "Stored message": "Gespeicherte Nachricht",
+  "Large message kept in storage ({count} characters).": "Große Nachricht im Speicher behalten ({count} Zeichen).",
   "That message isn't loaded": "Diese Nachricht ist nicht geladen",
   "This message quotes nothing": "Diese Nachricht zitiert nichts",
   "Saved credentials": "Gespeicherte Zugangsdaten",

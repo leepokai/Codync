@@ -210,10 +210,10 @@ import kotlinx.coroutines.CancellationException
     val entry = item.entry
     val own = entry.botId != bot.id
     when {
-        own && entry.id == toldId -> Told(entry.text)
+        own && entry.id == toldId -> Told(entry.stubLabel())
         // What the host told it later (a new brief) reads as a quote, not as something the user typed.
         own && entry.isToldToThread -> SelectionContainer {
-            Text("“${entry.text}”", Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp), style = Type.subheadline, color = Palette.secondary)
+            Text("“${entry.stubLabel()}”", Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp), style = Type.subheadline, color = Palette.secondary)
         }
         own && (entry.kind == "user" || entry.kind == "agent") -> Box(Modifier.padding(top = if (item.groupStart) 12.dp else 4.dp)) {
             PlainMessageRow(entry, state, store)

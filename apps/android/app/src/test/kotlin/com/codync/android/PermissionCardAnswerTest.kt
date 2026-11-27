@@ -14,11 +14,11 @@ import org.junit.Test
 /**
  * The answer rows are Compose, and this module's Compose harness is androidTest, which needs a device.
  * This lane does not install or run on one. [canAnswerStub] is the seam [PermissionCard] uses to draw
- * those rows instead of the stored-approval placeholder.
+ * those rows instead of the stored-approval placeholder. A stub never takes that path.
  */
 class PermissionCardAnswerTest {
-    @Test fun `a pending stub that carries options draws its answers`() {
-        assertTrue(canAnswerStub(stub(status = "pending", options = choices("allow", "deny"))))
+    @Test fun `a pending stub that carries options stays the placeholder`() {
+        assertFalse(canAnswerStub(stub(status = "pending", options = choices("allow", "deny"))))
     }
 
     @Test fun `a pending stub with no answerable option stays the placeholder`() {

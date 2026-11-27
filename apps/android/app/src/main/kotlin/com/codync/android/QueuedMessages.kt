@@ -106,7 +106,8 @@ internal val AppState.supportsQueueActions: Boolean
         // Its files show as a symbol, and by name when it has no words.
         if (files.isNotEmpty()) Symbol(if (files.all { it.isImage }) "photo" else "doc", size = 13.dp, tint = Palette.secondary,
             modifier = Modifier.padding(end = 4.dp))
-        val text = entry.replyQuote.text.ifEmpty { files.joinToString(", ") { it.name } }
+        val quoted = entry.replyQuote.text
+        val text = (if (entry.isStoredStub && quoted == STORED_STUB_ID) entry.stubLabel() else quoted).ifEmpty { files.joinToString(", ") { it.name } }
         // The placeholder line opens the stored sheet. Send now and Remove stay their own buttons.
         val openStored = LocalShowStoredMessage.current?.takeIf { entry.opensQueuedStoredMessage() }
         val preview = Modifier.weight(1f).padding(vertical = if (actions) 0.dp else 9.dp)

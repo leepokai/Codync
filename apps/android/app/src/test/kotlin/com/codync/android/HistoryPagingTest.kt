@@ -11,6 +11,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
@@ -58,7 +62,10 @@ class HistoryPagingTest {
         assertFalse(filler in kept.single().text)
         assertTrue(kept.single().text.length < 200)
         assertTrue(kept.single().isStoredStub)
+        assertEquals(STORED_STUB_ID, kept.single().text)
         assertEquals(storedStubText(huge.length.toLong()), kept.single().text)
+        assertFalse(kept.single().text.contains(' '))
+        assertEquals(huge.length.toLong(), kept.single().data["storedChars"]?.jsonPrimitive?.longOrNull)
     }
 
     @Test fun `a normal row is not a stub and a tool row shows its output`() {
@@ -332,7 +339,7 @@ class HistoryPagingTest {
         assertEquals(null, kept.data["detail"])
         assertEquals(null, kept.data["command"])
         assertEquals("Wants to run a command", approvalHeadline(kept.data.text("toolKind")))
-        assertTrue(canAnswerStub(kept))
+        assertFalse(canAnswerStub(kept))
         val unnamed = kept.copy(data = JsonObject(kept.data.filterKeys { it != "options" }))
         assertFalse(canAnswerStub(unnamed))
         assertTrue(kept.withApprovalReadFailure().approvalReadFailed)
@@ -369,10 +376,19 @@ class HistoryPagingTest {
         val named = windowRows(sequenceOf(
             StoredRow(payload.take(PAYLOAD_HEAD_CHARS), payload.length.toLong(), payload.takeLast(PAYLOAD_TAIL_CHARS)),
             StoredRow(older, older.length.toLong()),
-        ), 10, kept.text.length + older.length.toLong())
+        ), 10, kept.storedStubSentence()!!.length + older.length.toLong())
         assertEquals(listOf(2L), named.map { it.entry.seq })
-        assertEquals(kept.text.length + "execute".length + "npm test".length, named.single().cost)
+        assertEquals(kept.storedStubSentence()!!.length + "execute".length + "npm test".length, named.single().cost)
         assertEquals(named.sumOf { it.cost }, named.sumOf { retainedStubChars(it.entry) })
+    }
+
+    @Test fun `stub copy is an id and every catalog has the sentence and the sheet title`() {
+        val keys = listOf("Stored message", STORED_STUB_CAPTION)
+        val dir = java.io.File("../../ios/Kit/Sources/CodyncKit/Resources/Languages")
+        for (tag in listOf("zh-Hans", "zh-Hant", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "it")) {
+            val table = Json.parseToJsonElement(java.io.File(dir, "$tag.json").readText()).jsonObject
+            for (key in keys) assertTrue("$tag is missing $key", table.containsKey(key))
+        }
     }
 
     private fun row(seq: Long, kind: String) = Entry("e-$seq", seq, "a", rev = seq, kind = kind)

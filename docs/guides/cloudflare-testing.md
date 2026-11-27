@@ -14,7 +14,7 @@ there.
 | only the apps or the host | the dev cloud as deployed | Codync Dev builds, or a worktree sandbox with `npm run dev -- --cloud` |
 | `cloud/` merged into `dev` | `dev-api.codync.dev` | `npm run deploy:dev` from a clean tree at `origin/dev` right after the merge is pushed (migrations first), so `dev-api` always runs what `dev` has ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)) |
 | `cloud/` released | `api.codync.dev` | `npm run deploy:main` right after the merge into `main` |
-| `relay/` (push) or `discord/` | their tests (`npm test`); each has a single deployment everyone uses | deploy once the change has merged, then check the real path |
+| `relay/` (push) or `discord/` | their tests (`npm test`); each has one production Worker that dev phones and hosts share too, with no dev env | `npm run deploy` from the merged `main` right after the merge into `main` (`release-pr` does it), then check the real path ([releasing Worker changes](environments-and-deployment.md#releasing-worker-changes)); nothing deploys them after a merge into `dev` |
 
 - **A worktree sandbox picks by itself**: `npm run dev` gives the sandbox its own local cloud when the branch changes
   `cloud/` against `origin/dev` (committed or not; not on Windows yet), and leaves the dev cloud off otherwise; `--local-cloud` and `--cloud`

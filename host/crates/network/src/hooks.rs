@@ -1,7 +1,7 @@
 //! The turn tier: a coding agent's hook tells its session, at its next tool call or when its turn
 //! ends, that letters wait for it. Codex, Copilot CLI and Grok run hooks the same way (a command
 //! with JSON on stdin naming `hook_event_name` and `session_id`) but read their answers differently.
-//! ([agent sessions](../../../docs/plans/agent-sessions.md#hooks-turn-tier))
+//! ([agent sessions](https://github.com/leepokai/Codync/blob/dev/docs/plans/agent-sessions.md#hooks-turn-tier))
 
 use crate::wire::AgentKind;
 use serde_json::{Value, json};

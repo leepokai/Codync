@@ -74,6 +74,7 @@ fn release(hub: &Hub, task: &mut Task, front: i64) -> Option<String> {
     if let Some(thread) = &thread {
         super::thread::carry(&hub.store, task, thread);
         super::ask::forget(hub, thread);
+        super::ask_chat::forget(hub, thread);
     }
     task.set_aside(front);
     thread

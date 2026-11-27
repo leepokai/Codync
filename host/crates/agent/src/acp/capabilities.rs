@@ -26,6 +26,8 @@ pub struct Capabilities {
     pub fork: bool,
     /// `session/delete`: a session leaves the agent's saved history.
     pub delete: bool,
+    /// It reports the work it runs in the background ([`background_tasks_meta`](super::claude::background_tasks_meta)).
+    pub tasks: bool,
     pub adapter: Adapter,
     /// The agent's name and version (`agentInfo`).
     pub name: Option<String>,
@@ -46,6 +48,7 @@ impl Capabilities {
             steering: init["_meta"]["steering"]["supported"] == true,
             fork: session("fork"),
             delete: session("delete"),
+            tasks: super::claude::reports_tasks(init),
             adapter: Adapter::of(init),
             name: info("name"),
             version: info("version"),

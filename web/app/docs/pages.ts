@@ -56,6 +56,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         description:
           "Add Codync to ChatGPT, Claude or another assistant as a connector, so it can give your bots tasks and read their answers.",
       },
+      {
+        slug: "mcp-access",
+        title: "MCP access",
+        description:
+          "Let coding agents and other apps start threads, follow them and run routines over MCP, at a level you choose.",
+      },
     ],
   },
   {

@@ -65,7 +65,13 @@ export interface WorkTask {
   seat: boolean | null
   /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
   runsOn: string | null
+  /** The outside app that started it over MCP (the name the user gave it); null for any other, and from an older host. */
+  startedBy?: string | null
 }
+
+/** "Started by <app> (MCP)" for a thread an outside app started, else null. */
+export const startedByLine = (task: WorkTask, tr: Translate): string | null =>
+  task.startedBy ? tr('Started by {name} (MCP)').replace('{name}', task.startedBy) : null
 
 /** The agent a task's thread runs on, or will: its own, else the one it was started on, else its bot's (none for the
  * box of threads without a bot). */
@@ -91,7 +97,7 @@ export interface ThreadSetup {
 }
 
 type Translate = (text: string) => string
-type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
+type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree' | 'startedBy'>> & { startedBy?: { label?: string } | null } & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
 /** `bot.work`; a host from before the box sends none, and the feature doesn't show. A task in a status this app
  * doesn't know is left out. */
@@ -120,6 +126,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
           runsOn: typeof t.runsOn === 'string' && t.runsOn ? t.runsOn : null,
+          ...(typeof t.startedBy?.label === 'string' && t.startedBy.label ? { startedBy: t.startedBy.label } : {}),
         }]
       : [],
   )

@@ -10,6 +10,7 @@ mod folders;
 mod host;
 mod http;
 mod marketplace;
+mod mcp;
 mod network;
 mod remote;
 mod workflows;
@@ -99,6 +100,10 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         ControlFlow::Continue(b) => b,
     };
     let b = match marketplace::call(hub, caller, method, b).await? {
+        ControlFlow::Break(v) => return Ok(v),
+        ControlFlow::Continue(b) => b,
+    };
+    let b = match mcp::call(hub, method, b)? {
         ControlFlow::Break(v) => return Ok(v),
         ControlFlow::Continue(b) => b,
     };

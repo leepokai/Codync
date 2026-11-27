@@ -29,6 +29,12 @@ ChatGPT / Claude ──MCP over HTTPS──▶ mcp.codync.dev (cloud Worker)
   `terminal`, `other`). With several computers online, a listing asks each; a message needs
   `computer` then. `message_bot` returns at once; the bot's reply waits on the host for `read_replies`, since
   nothing can wake a hosted assistant.
+- **Worker tools**: the thread, routine and workflow tools of [MCP access](mcp-access.md) (`thread_launch`,
+  `thread_wait`, …), as the cloud assistant principal: Read only by default (`mcpCloudAccess`), only on bots open to
+  cloud assistants. `assistant.call` carries the OAuth `client` id, kept in the host's audit log. `thread_wait` waits
+  at most 8 s here. A host that doesn't know a tool answers `unknown tool`, which the Worker turns into "update
+  Codync on <computer>". The listing tools (`worker_capabilities`, `thread_list`, `routine_list`, `workflow_list`)
+  ask every online computer when none is named; the rest need `computer`.
 - **Host** (`host/src/chat/team/assistant.rs`): the assistant messages bots like a bot does
   (`Back::Assistant`): the bot's chat shows "Message from Cloud assistant" and the reply is kept in memory (the
   newest 50 requests, at most 16 running) until read. A bot with **Reachable by cloud assistants** off
@@ -99,3 +105,4 @@ What lifts them, and in what order: [what's left](../plans/codync-network-next.m
 | Revoking: off on the computer is immediate; removing the connector or its grant in Clerk leaves an issued JWT valid until it expires (Clerk's `expires_in`, a day) | JWT access tokens are checked locally; opaque tokens (Clerk setting) would revoke at once at the cost of a Clerk call per request |
 | No self-hosted connector: it lives in Codync's cloud Worker | the only self-hosted path is running the whole `cloud/` Worker with your own Clerk and pointing the host at it with `CODYNC_CLOUD_URL` (no relay token); a lighter self-hosted connector needs its own OAuth server |
 | Not end-to-end encrypted | a hosted assistant can't hold a device key; documented in Privacy |
+| Worker tools act at most at the computer's cloud level (Read only by default) and never answer approvals | [MCP access](mcp-access.md#levels) |

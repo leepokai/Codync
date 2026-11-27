@@ -40,6 +40,11 @@ class WorkTest {
         assertNull("the box of threads without a bot has no agent of its own", owner.work[1].agentOf(owner.copy(plain = true)))
     }
 
+    @Test fun `a thread an outside app started names that app`() {
+        val work = work("""[{"id":"a","status":"working","startedBy":{"label":"Cursor","client":"c1","level":"ask"}},{"id":"b","status":"working"}]""")
+        assertEquals(listOf("Cursor", null), work.map { it.startedBy?.label })
+    }
+
     @Test fun `a host from before the box has no work and no ceiling`() {
         assertEquals(emptyList<WorkTask>(), bot().work)
         assertNull(bot().maxThreads)

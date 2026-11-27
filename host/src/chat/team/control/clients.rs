@@ -1,0 +1,464 @@
+//! The outside apps the user lets drive this computer's work over MCP: each one's grant (kv `mcp.clients`), with its
+//! token kept only as a hash, the computer's own levels (the maximum, a session on it without a token, the cloud
+//! assistant), what each app did lately (`mcp.audit`) and the launches a retry must not repeat (`mcp.request.*`).
+//! Every app is its own principal: its token works on the `codync` MCP tools alone, never on another host method
+//! (the API takes only the computer's own token).
+
+use super::access::{Code, Level, Refusal, Scope};
+use crate::LockExt;
+use crate::hub::Hub;
+use crate::store::{Store, now_ms};
+use anyhow::{Context, Result, ensure};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+const KV: &str = "mcp.clients";
+const AUDIT: &str = "mcp.audit";
+const REQUESTS: &str = "mcp.request.";
+const MAX_KV: &str = "mcp.maxAccess";
+const LOCAL_KV: &str = "mcp.localAccess";
+const CLOUD_KV: &str = "mcp.cloudAccess";
+/// What every app's token starts with, so a leaked one is recognized for what it is.
+pub const TOKEN_PREFIX: &str = "cdy_mcp_";
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+pub const DEFAULT_DAYS: i64 = 30;
+pub const MAX_DAYS: i64 = 90;
+const MAX_CLIENTS: usize = 50;
+const MAX_LABEL: usize = 60;
+/// Calls an app may make a minute.
+pub const CALLS_PER_MINUTE: usize = 60;
+/// Calls the audit keeps, newest last, and how many a listing shows per app.
+const AUDIT_KEPT: usize = 500;
+const AUDIT_SHOWN: usize = 20;
+/// How long a launch's `clientRequestId` replays it.
+const REQUEST_KEPT_MS: i64 = 7 * DAY_MS;
+
+/// The id a session on this computer without a token acts under, and the cloud assistant's.
+pub const LOCAL: &str = "local";
+pub const CLOUD: &str = "cloud";
+
+/// One app the user let in.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Client {
+    pub id: String,
+    pub label: String,
+    pub access: Level,
+    pub scopes: Vec<Scope>,
+    /// The bots whose threads it may start and see; `*` every bot.
+    pub bots: Vec<String>,
+    /// Folders beyond the bots' projects it may start a thread in, canonical.
+    #[serde(default)]
+    pub folders: Vec<String>,
+    /// It may start threads without a bot (on any agent here).
+    pub plain_threads: bool,
+    pub created_at: i64,
+    pub expires_at: i64,
+    #[serde(default)]
+    pub last_used_at: Option<i64>,
+    #[serde(default)]
+    pub revoked_at: Option<i64>,
+    /// sha256 of its token, hex.
+    token_hash: String,
+}
+
+impl Client {
+    /// What every listing shows: never the token or its hash.
+    pub fn json(&self) -> Value {
+        let mut v = serde_json::to_value(self).unwrap_or_default();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("tokenHash");
+        }
+        v
+    }
+}
+
+/// Who calls, as one call sees it.
+#[derive(Clone, Debug)]
+pub struct Principal {
+    pub id: String,
+    /// How a thread it starts shows ("Started by <label>").
+    pub label: String,
+    /// What the user approved (before the computer's maximum and its own limit).
+    pub approved: Level,
+    pub scopes: Vec<Scope>,
+    /// The bots it may reach; `None` every one.
+    pub bots: Option<Vec<String>>,
+    /// The cloud assistant reaches only the bots open to cloud assistants.
+    pub cloud: bool,
+    pub folders: Vec<PathBuf>,
+    pub plain_threads: bool,
+    /// The cloud assistant app a call came through, as the cloud names it (its OAuth client), for the record.
+    pub via: Option<String>,
+}
+
+impl Principal {
+    pub fn reaches(&self, bot: &crate::store::BotConfig) -> bool {
+        (!self.cloud || bot.reachable_by_assistants)
+            && self.bots.as_ref().is_none_or(|ids| ids.iter().any(|id| id == "*" || *id == bot.id))
+    }
+
+    pub fn may(&self, scope: Scope) -> bool {
+        self.scopes.contains(&scope)
+    }
+}
+
+fn hash(token: &str) -> String {
+    crate::chat::files::digest_hex(&Sha256::digest(token.as_bytes()))
+}
+
+fn load(store: &Store) -> Vec<Client> {
+    store.kv_get(KV).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
+/// One change at a time to the list.
+fn change<T>(store: &Store, f: impl FnOnce(&mut Vec<Client>) -> Result<T>) -> Result<T> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _g = LOCK.locked();
+    let mut all = load(store);
+    let out = f(&mut all)?;
+    store.kv_set(KV, &serde_json::to_string(&all)?)?;
+    Ok(out)
+}
+
+fn level(store: &Store, key: &str, default: Level) -> Level {
+    store.kv_get(key).as_deref().and_then(Level::parse).unwrap_or(default)
+}
+
+/// The most any app may do here, whatever it was approved (default Auto).
+pub fn max_access(store: &Store) -> Level {
+    level(store, MAX_KV, Level::Auto)
+}
+
+/// What a session on this computer that brings no token may do (default Ask). Not a boundary: any program of the
+/// user's can read the computer's own token. It only keeps a session to the least it needs unless the user says more.
+pub fn local_access(store: &Store) -> Level {
+    level(store, LOCAL_KV, Level::Ask)
+}
+
+/// What the user's cloud assistant may do here (default read only): its calls pass through the Codync cloud, which
+/// can read them.
+pub fn cloud_access(store: &Store) -> Level {
+    level(store, CLOUD_KV, Level::ReadOnly)
+}
+
+/// `mcpAccess`: the computer's own levels.
+pub fn levels(store: &Store) -> Value {
+    json!({"max": max_access(store), "local": local_access(store), "cloud": cloud_access(store)})
+}
+
+/// `setMcpAccess`: changes the levels named in `b` (`max`, `local`, `cloud`). Local only.
+pub fn set_levels(store: &Store, b: &Value) -> Result<Value> {
+    for (field, key) in [("max", MAX_KV), ("local", LOCAL_KV), ("cloud", CLOUD_KV)] {
+        if let Some(word) = b[field].as_str() {
+            let level = Level::parse(word).with_context(|| format!("{field}: readOnly, ask, auto or full"))?;
+            store.kv_set(key, level.word())?;
+        }
+    }
+    tracing::info!(levels = %levels(store), "MCP access levels changed");
+    Ok(levels(store))
+}
+
+/// `mcpClients`: every app, without its token, with what it did lately.
+pub fn list(store: &Store) -> Value {
+    let audit = audit(store);
+    let clients: Vec<Value> = load(store)
+        .iter()
+        .map(|c| {
+            let mut v = c.json();
+            v["recent"] = recent(&audit, &c.id);
+            v
+        })
+        .collect();
+    json!({"clients": clients, "levels": levels(store), "recent": {LOCAL: recent(&audit, LOCAL), CLOUD: recent(&audit, CLOUD)}})
+}
+
+/// What `mcpClientCreate` and `mcpClientUpdate` take.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Grant {
+    pub label: Option<String>,
+    pub access: Option<Level>,
+    pub scopes: Option<Vec<Scope>>,
+    pub bots: Option<Vec<String>>,
+    pub folders: Option<Vec<String>>,
+    pub plain_threads: Option<bool>,
+    /// Days from now it stops working.
+    pub days: Option<i64>,
+}
+
+impl Grant {
+    fn apply(self, store: &Store, client: &mut Client, now: i64) -> Result<()> {
+        if let Some(label) = self.label {
+            let label = label.trim();
+            ensure!(!label.is_empty() && label.chars().count() <= MAX_LABEL, "a name of 1 to {MAX_LABEL} characters");
+            label.clone_into(&mut client.label);
+        }
+        if let Some(access) = self.access {
+            client.access = access;
+        }
+        if let Some(mut scopes) = self.scopes {
+            scopes.dedup();
+            client.scopes = scopes;
+        }
+        if let Some(bots) = self.bots {
+            let known = |id: &String| id == "*" || store.bot(id).ok().flatten().is_some_and(|r| !r.deleted);
+            ensure!(bots.iter().all(known), "unknown bot");
+            client.bots = bots;
+        }
+        if let Some(folders) = self.folders {
+            client.folders = folders.iter().map(|f| allowed_folder(f)).collect::<Result<_>>()?;
+        }
+        if let Some(plain) = self.plain_threads {
+            client.plain_threads = plain;
+        }
+        if let Some(days) = self.days {
+            ensure!((1..=MAX_DAYS).contains(&days), "it lasts 1 to {MAX_DAYS} days");
+            client.expires_at = now + days * DAY_MS;
+        }
+        Ok(())
+    }
+}
+
+/// A folder the user lets an app work in: a full path to a folder that exists, canonical, never Codync's own data.
+pub fn allowed_folder(folder: &str) -> Result<String> {
+    let path = Path::new(folder);
+    ensure!(path.is_absolute(), "a folder is a full path");
+    let real = std::fs::canonicalize(path).with_context(|| format!("no folder {folder}"))?;
+    ensure!(real.is_dir(), "{folder} isn't a folder");
+    let data = std::fs::canonicalize(crate::service::data_dir()).unwrap_or_else(|_| crate::service::data_dir());
+    ensure!(
+        !real.starts_with(&data) && !data.starts_with(&real),
+        "Codync's own data folder is never an app's to work in"
+    );
+    Ok(real.to_string_lossy().into_owned())
+}
+
+/// `mcpClientCreate`: a new app, and its token, which is shown this once and never kept.
+pub fn create(hub: &Hub, grant: Grant) -> Result<(Value, String)> {
+    let now = now_ms();
+    let mut client = Client {
+        id: uuid::Uuid::new_v4().to_string(),
+        label: String::new(),
+        access: Level::Ask,
+        scopes: vec![Scope::Threads],
+        bots: Vec::new(),
+        folders: Vec::new(),
+        plain_threads: false,
+        created_at: now,
+        expires_at: now + DEFAULT_DAYS * DAY_MS,
+        last_used_at: None,
+        revoked_at: None,
+        token_hash: String::new(),
+    };
+    ensure!(grant.label.is_some(), "an app needs a name");
+    grant.apply(&hub.store, &mut client, now)?;
+    let mut secret = [0u8; 32];
+    getrandom::fill(&mut secret).map_err(|_| anyhow::anyhow!("couldn't make a token"))?;
+    let token = format!("{TOKEN_PREFIX}{}", crate::chat::files::digest_hex(&secret));
+    client.token_hash = hash(&token);
+    let shown = client.json();
+    change(&hub.store, |all| {
+        all.retain(|c| c.revoked_at.is_none() || now - c.revoked_at.unwrap_or(now) < MAX_DAYS * DAY_MS);
+        ensure!(all.iter().filter(|c| c.revoked_at.is_none()).count() < MAX_CLIENTS, "at most {MAX_CLIENTS} apps");
+        all.push(client);
+        Ok(())
+    })?;
+    crate::analytics::capture(hub, crate::analytics::Event::McpClientCreated, props(&shown));
+    Ok((shown, token))
+}
+
+fn props(client: &Value) -> serde_json::Map<String, Value> {
+    let p = json!({"access": client["access"], "scopes": client["scopes"], "plainThreads": client["plainThreads"],
+        "allBots": client["bots"].as_array().is_some_and(|b| b.iter().any(|b| b == "*"))});
+    p.as_object().cloned().unwrap_or_default()
+}
+
+/// `mcpClientUpdate`: changes what an app may do (wider or narrower), its name or how long it lasts.
+pub fn update(store: &Store, id: &str, grant: Grant) -> Result<Value> {
+    change(store, |all| {
+        let client = all.iter_mut().find(|c| c.id == id && c.revoked_at.is_none()).context("unknown app")?;
+        grant.apply(store, client, now_ms())?;
+        Ok(client.json())
+    })
+}
+
+/// `mcpClientRevoke`: the app's token stops working at once. Never capped: any device that may list apps may.
+pub fn revoke(hub: &Hub, id: &str) -> Result<()> {
+    change(&hub.store, |all| {
+        let client = all.iter_mut().find(|c| c.id == id).context("unknown app")?;
+        client.revoked_at.get_or_insert(now_ms());
+        Ok(())
+    })?;
+    crate::analytics::capture(hub, crate::analytics::Event::McpClientRevoked, serde_json::Map::new());
+    Ok(())
+}
+
+/// The app `token` stands for, while it works; refused once revoked or expired.
+fn by_token(store: &Store, token: &str) -> Result<Client> {
+    let wanted = hash(token);
+    let now = now_ms();
+    change(store, |all| {
+        // Hashes of 256-bit random tokens: a timing difference tells nothing worth having.
+        let client = all.iter_mut().find(|c| c.token_hash == wanted).ok_or_else(|| {
+            Refusal::err(Code::Revoked, "this Codync MCP token isn't valid here: make a new one in Codync's settings")
+        })?;
+        if client.revoked_at.is_some() {
+            return Err(Refusal::err(Code::Revoked, "this app's access was removed in Codync's settings"));
+        }
+        if client.expires_at <= now {
+            return Err(Refusal::err(Code::Expired, "this app's access expired: renew it in Codync's settings"));
+        }
+        client.last_used_at = Some(now);
+        Ok(client.clone())
+    })
+}
+
+/// Who a call over `codync-host mcp network` is: the app its token names, else a session on this computer.
+pub fn local(store: &Store, token: Option<&str>) -> Result<Principal> {
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return Ok(Principal {
+            id: LOCAL.into(),
+            label: "a session on this computer".into(),
+            approved: local_access(store),
+            scopes: vec![Scope::Threads, Scope::Routines, Scope::Workflows],
+            bots: None,
+            cloud: false,
+            folders: Vec::new(),
+            plain_threads: true,
+            via: None,
+        });
+    };
+    let c = by_token(store, token)?;
+    Ok(Principal {
+        id: c.id,
+        label: c.label,
+        approved: c.access,
+        scopes: c.scopes,
+        bots: Some(c.bots),
+        cloud: false,
+        folders: c.folders.into_iter().map(PathBuf::from).collect(),
+        plain_threads: c.plain_threads,
+        via: None,
+    })
+}
+
+/// The user's cloud assistant, one principal for every assistant they connected.
+pub fn cloud(store: &Store) -> Principal {
+    Principal {
+        id: CLOUD.into(),
+        label: "Cloud assistant".into(),
+        approved: cloud_access(store),
+        scopes: vec![Scope::Threads, Scope::Routines, Scope::Workflows],
+        bots: None,
+        cloud: true,
+        folders: Vec::new(),
+        plain_threads: true,
+        via: None,
+    }
+}
+
+// MARK: audit
+
+fn audit(store: &Store) -> Vec<Value> {
+    store.kv_get(AUDIT).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
+fn recent(audit: &[Value], client: &str) -> Value {
+    Value::Array(audit.iter().rev().filter(|c| c["client"] == client).take(AUDIT_SHOWN).cloned().collect())
+}
+
+/// Keeps `call` in the audit, the oldest going past [`AUDIT_KEPT`].
+pub fn record(store: &Store, call: &Value) {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _g = LOCK.locked();
+    let mut all = audit(store);
+    all.push(call.clone());
+    let over = all.len().saturating_sub(AUDIT_KEPT);
+    all.drain(..over);
+    if let Err(error) = serde_json::to_string(&all).map_err(anyhow::Error::from).and_then(|v| store.kv_set(AUDIT, &v)) {
+        tracing::warn!(error = format!("{error:#}"), "couldn't keep an MCP call in the audit");
+    }
+}
+
+// MARK: launches a retry repeats
+
+/// What a launch named `key` by `principal` became, once a launch made it (`clientRequestId`).
+fn request_key(principal: &str, key: &str) -> String {
+    let id = Sha256::digest(json!([principal, key]).to_string().as_bytes());
+    format!("{REQUESTS}{}", crate::chat::files::digest_hex(&id))
+}
+
+/// Runs `launch` once per `key` of `principal`: a retry gets what the first launch made (`replayed`), never a
+/// second one. Held across the launch, so two retries at once make one.
+pub fn once(
+    store: &Store,
+    principal: &str,
+    key: Option<&str>,
+    launch: impl FnOnce() -> Result<Value>,
+) -> Result<(Value, bool)> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let Some(key) = key.filter(|k| !k.is_empty()) else { return Ok((launch()?, false)) };
+    ensure!(key.len() <= 200, "clientRequestId is at most 200 characters");
+    let _g = LOCK.locked();
+    let k = request_key(principal, key);
+    if let Some(done) = store.kv_get(&k).and_then(|v| serde_json::from_str::<Value>(&v).ok()) {
+        return Ok((done["made"].clone(), true));
+    }
+    let made = launch()?;
+    let now = now_ms();
+    store.kv_set(&k, &json!({"made": made, "at": now}).to_string())?;
+    // ponytail: scans every kept launch on each new one; an index by time if apps launch thousands a week.
+    for old in store.kv_prefix(REQUESTS) {
+        let at = store.kv_get(&old).and_then(|v| serde_json::from_str::<Value>(&v).ok()).and_then(|v| v["at"].as_i64());
+        if at.is_none_or(|at| now - at > REQUEST_KEPT_MS) {
+            let _ = store.kv_delete(&old);
+        }
+    }
+    Ok((made, false))
+}
+
+// MARK: rate limit
+
+/// Each principal's calls in the last minute.
+#[derive(Default)]
+pub struct Calls(Mutex<HashMap<String, VecDeque<Instant>>>);
+
+impl Calls {
+    /// Counts a call of `principal`'s, refusing it past [`CALLS_PER_MINUTE`].
+    pub fn take(&self, principal: &str) -> Result<()> {
+        let now = Instant::now();
+        let mut all = self.0.locked();
+        let calls = all.entry(principal.to_owned()).or_default();
+        while calls.front().is_some_and(|at| now.duration_since(*at) > Duration::from_mins(1)) {
+            calls.pop_front();
+        }
+        if calls.len() >= CALLS_PER_MINUTE {
+            return Err(Refusal::err(
+                Code::RateLimited,
+                format!("at most {CALLS_PER_MINUTE} calls a minute: wait a little, then try again"),
+            ));
+        }
+        calls.push_back(now);
+        Ok(())
+    }
+}
+
+/// Refuses a name that isn't one of the levels.
+pub fn level_arg(args: &Value, field: &str) -> Result<Option<Level>> {
+    match args[field].as_str() {
+        None => Ok(None),
+        Some(word) => match Level::parse(word) {
+            Some(level) => Ok(Some(level)),
+            None => Err(Refusal::err(Code::InvalidRequest, format!("{field}: readOnly, ask, auto or full"))),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests;

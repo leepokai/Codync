@@ -60,6 +60,8 @@ pub enum After {
     Sheet(Reply),
     /// The network sheet's calls.
     Network(super::super::manage::NetReply),
+    /// The MCP access sheet's calls.
+    Mcp(super::super::manage::McpReply),
     /// A move in the Usage chooser, to this row.
     UsageOrder(usize),
 }

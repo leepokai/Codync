@@ -69,10 +69,11 @@ pub enum Action {
     Language,
     ThinkingDetails,
     Keys,
+    McpAccess,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 27] = [
+pub const ACTIONS: [(&str, &str, Action); 28] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -90,6 +91,7 @@ pub const ACTIONS: [(&str, &str, Action); 27] = [
     ("Computer name", "", Action::ComputerName),
     ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
+    ("MCP access: apps that drive this computer…", "", Action::McpAccess),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
@@ -448,6 +450,7 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    Mcp(Box<super::super::manage::McpSheet>),
     WhatsNew(WhatsNew),
     Workflows(Box<WorkflowSheet>),
     Kofi(KofiSheet),

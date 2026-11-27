@@ -61,6 +61,7 @@ impl App {
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
             Action::Network => self.open_network(),
+            Action::McpAccess => self.open_mcp_access(),
             Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
@@ -163,6 +164,7 @@ impl App {
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
+            Overlay::Mcp(s) => self.mcp_key(s, k),
             Overlay::WhatsNew(s) => s.key(k),
             Overlay::Kofi(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.

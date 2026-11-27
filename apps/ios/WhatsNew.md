@@ -6,6 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.55.0
+### zh-Hant
+- 由其他 App 透過 MCP 開始的 thread（例如電腦上的 coding agent 或雲端助理），會在標題下方標示是哪個 App，例如「由 Cursor 啟動（MCP）」。這些 App 在電腦版的「電腦」裡的「MCP 存取」設定，核准一律留給你在 Codync 裡處理。
+
+### en-US
+- A thread another app started over MCP (a coding agent on your computer, or a cloud assistant) says which app under its title, for example "Started by Cursor (MCP)". You set what these apps may do under MCP access on the desktop's Computers page; approvals always stay with you in Codync.
+
 ## 2.54.0
 ### zh-Hant
 - Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。

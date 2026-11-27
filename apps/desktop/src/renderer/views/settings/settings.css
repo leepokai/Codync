@@ -315,3 +315,10 @@
   flex: none;
   min-width: 14px;
 }
+
+/* An MCP app's token, shown once: selectable, wrapped anywhere. */
+.settings-token {
+  user-select: text;
+  word-break: break-all;
+  margin: 0 20px 12px;
+}

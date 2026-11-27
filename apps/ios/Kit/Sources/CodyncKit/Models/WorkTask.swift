@@ -124,6 +124,8 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var agent: String?
     /// The agent its thread runs on now, or ran on last (a backend id); nil before a thread took it, and from an older host.
     public var runsOn: String?
+    /// The outside app that started it over MCP (docs/features/mcp-access.md); nil for the user's own, and from an older host.
+    public var startedBy: String?
 
     /// The agent its thread runs on, or will: its own, else the one it was started on, else `bot`'s (none for the box
     /// of threads without a bot).
@@ -134,7 +136,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil, runsOn: String? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil, runsOn: String? = nil, startedBy: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -154,6 +156,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.seat = seat
         self.agent = agent
         self.runsOn = runsOn
+        self.startedBy = startedBy
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -180,7 +183,13 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
         agent = try? c.decodeIfPresent(String.self, forKey: .agent)
         runsOn = (try? c.decodeIfPresent(String.self, forKey: .runsOn)).flatMap { $0.isEmpty ? nil : $0 }
+        // The host's `{label, client, level}`, or the name alone as this app encodes it.
+        let started = (try? c.decodeIfPresent(StartedBy.self, forKey: .startedBy))?.label
+            ?? (try? c.decodeIfPresent(String.self, forKey: .startedBy))
+        startedBy = started.flatMap { $0.isEmpty ? nil : $0 }
     }
+
+    private struct StartedBy: Decodable { var label: String? }
 
     /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
     public var takesSeat: Bool { seat ?? status.isLive }
@@ -214,6 +223,11 @@ public extension WorkTask {
     func what(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
         if status == .needsYou { return tr("Needs you") }
         return activity.isEmpty ? title : tr(activity)
+    }
+
+    /// Which outside app started it, under the thread's title; nil for the user's own.
+    func startedByLine(_ tr: (String) -> String = { L10n.tr($0) }) -> String? {
+        startedBy.map { L10n.fill(tr("Started by {name} (MCP)"), ["name": $0]) }
     }
 
     /// Why a waiting task waits.

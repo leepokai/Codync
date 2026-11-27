@@ -23,7 +23,10 @@ const INSTRUCTIONS =
   "Codync connects you to the user's own coding bots, running on their computers. Use list_bots to find one, " +
   "message_bot to give it a self-contained task, and read_replies to collect its answer. Bots work in their own " +
   "folders with their own tools and can take minutes: after messaging one, tell the user what you asked for and " +
-  "check read_replies when they come back or ask, instead of waiting in a loop.";
+  "check read_replies when they come back or ask, instead of waiting in a loop. To run a coding agent yourself, " +
+  "call worker_capabilities (what the user lets you do on that computer: read only unless they raised it there), " +
+  "then thread_launch, thread_wait and thread_read. Approvals are always the user's, in Codync. These calls pass " +
+  "through the Codync cloud, which can read them: they are not end-to-end encrypted.";
 
 const COMPUTER = {
   type: "string",
@@ -104,6 +107,188 @@ const TOOLS = [
   },
 ];
 
+const THREAD = {
+  botId: { type: "string", description: "botId from thread_list or thread_launch." },
+  taskId: { type: "string", description: "taskId from thread_list or thread_launch." },
+  computer: COMPUTER,
+};
+const LIMIT = {
+  type: "string",
+  enum: ["readOnly", "ask", "auto", "full"],
+  description: "Act at most at this level for this call: it can narrow what the user gave cloud assistants, never widen it.",
+};
+const READS = { readOnlyHint: true, openWorldHint: false };
+const WRITES = { readOnlyHint: false, idempotentHint: false, openWorldHint: false };
+
+/** The worker tools: the computer answers each one (the host's `chat::team::control`, which describes them the same way). */
+const WORKER_TOOLS = [
+  {
+    name: "worker_capabilities",
+    title: "What you may do",
+    description:
+      "What the user lets cloud assistants do on that computer (read only unless they raised it there): your level, the bots " +
+      "and folders you may use, whether you may start threads without a bot, its coding agents, the approval levels and limits.",
+    inputSchema: { type: "object", properties: { computer: COMPUTER } },
+    annotations: READS,
+  },
+  {
+    name: "thread_list",
+    title: "List threads",
+    description:
+      "Threads you may see, newest work first, with botId, taskId, title, status (waiting, working, needsYou, done, failed, " +
+      "stopped), activity and a result excerpt. Pass next as cursor for older ones. Without computer, every online computer answers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        botId: { type: "string" },
+        status: { type: "string", enum: ["waiting", "working", "needsYou", "done", "failed", "stopped"] },
+        limit: { type: "integer", minimum: 1, maximum: 50 },
+        cursor: { type: "string" },
+        computer: COMPUTER,
+      },
+    },
+    annotations: READS,
+  },
+  {
+    name: "thread_launch",
+    title: "Start a thread",
+    description:
+      "Start a coding agent on your message, on one of the user's bots (botId) or without a bot on an agent there (agent). " +
+      "It returns at once: follow it with thread_wait and thread_read. approval: ask (default, every request is an approval " +
+      "card on the user's devices), auto (the agent's own auto mode) or full; never more than worker_capabilities allows. " +
+      "Approvals are never answered here. Give clientRequestId so a retry never starts a second thread.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "The task, relevant context, file paths and the expected result." },
+        botId: { type: "string" },
+        agent: { type: "string", description: "An agent id from worker_capabilities (needed without a bot)." },
+        folder: { type: "string", description: "Full path: one of the bot's projects or a folder worker_capabilities lists." },
+        place: { type: "string", enum: ["here", "worktree"] },
+        model: { type: "string" },
+        approval: { type: "string", enum: ["ask", "auto", "full"] },
+        loginProfile: { type: "string" },
+        clientRequestId: { type: "string" },
+        accessLimit: LIMIT,
+        computer: COMPUTER,
+      },
+      required: ["message"],
+    },
+    annotations: WRITES,
+  },
+  {
+    name: "thread_send",
+    title: "Write to a thread",
+    description: "Write to a thread as a message in it: it waits behind a running turn (queue), or steer hands it to that turn now.",
+    inputSchema: {
+      type: "object",
+      properties: { ...THREAD, message: { type: "string" }, mode: { type: "string", enum: ["queue", "steer"] }, clientRequestId: { type: "string" }, accessLimit: LIMIT },
+      required: ["botId", "taskId", "message"],
+    },
+    annotations: WRITES,
+  },
+  {
+    name: "thread_wait",
+    title: "Wait on a thread",
+    description:
+      "Wait up to 8 seconds for a thread to change (with cursor) or to end or need the user (without). Returns status, " +
+      "activity, needsYou, the result once it ended, and cursor; on timedOut call it again later with the cursor.",
+    inputSchema: {
+      type: "object",
+      properties: { ...THREAD, timeoutSecs: { type: "integer", minimum: 0, maximum: 8 }, cursor: { type: "string" } },
+      required: ["botId", "taskId"],
+    },
+    annotations: READS,
+  },
+  {
+    name: "thread_read",
+    title: "Read a thread",
+    description: "Read a thread: view summary (status, result, last reply) or steps (its transcript, a page at a time).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...THREAD,
+        view: { type: "string", enum: ["summary", "steps"] },
+        before: { type: "integer" },
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+        maxCharsPerItem: { type: "integer", minimum: 100, maximum: 4000 },
+      },
+      required: ["botId", "taskId"],
+    },
+    annotations: READS,
+  },
+  {
+    name: "thread_steer",
+    title: "Steer a thread",
+    description: "first (front of the queue), now (start it now), stop (end it), retry (a failed or stopped one) or drop (take it away).",
+    inputSchema: {
+      type: "object",
+      properties: { ...THREAD, how: { type: "string", enum: ["first", "now", "stop", "retry", "drop"] }, accessLimit: LIMIT },
+      required: ["botId", "taskId", "how"],
+    },
+    annotations: WRITES,
+  },
+  {
+    name: "thread_interrupt",
+    title: "Interrupt a thread",
+    description: "Stop the turn a thread is running now.",
+    inputSchema: { type: "object", properties: { ...THREAD, accessLimit: LIMIT }, required: ["botId", "taskId"] },
+    annotations: WRITES,
+  },
+  {
+    name: "thread_pending",
+    title: "What waits on the user",
+    description:
+      "List (or read) what waits on the user in a thread. Approval requests are shown only so you can tell the user: they " +
+      "are answered on the user's devices. A choice the thread asked (kind decision) can be answered with action answer.",
+    inputSchema: {
+      type: "object",
+      properties: { ...THREAD, action: { type: "string", enum: ["list", "read", "answer"] }, requestId: { type: "string" }, option: { type: "string" }, accessLimit: LIMIT },
+      required: ["botId", "taskId"],
+    },
+    annotations: WRITES,
+  },
+  {
+    name: "routine_list",
+    title: "List routines",
+    description: "The routines of the bots you may use, with their recent runs.",
+    inputSchema: { type: "object", properties: { botId: { type: "string" }, computer: COMPUTER } },
+    annotations: READS,
+  },
+  {
+    name: "routine_run",
+    title: "Run a routine",
+    description: "Run one of a bot's routines now (full access only).",
+    inputSchema: {
+      type: "object",
+      properties: { botId: { type: "string" }, routineId: { type: "string" }, clientRequestId: { type: "string" }, accessLimit: LIMIT, computer: COMPUTER },
+      required: ["botId", "routineId"],
+    },
+    annotations: WRITES,
+  },
+  {
+    name: "workflow_list",
+    title: "List workflows",
+    description: "The workflows on that computer.",
+    inputSchema: { type: "object", properties: { computer: COMPUTER } },
+    annotations: READS,
+  },
+  {
+    name: "workflow_run",
+    title: "Run a workflow",
+    description: "Start a workflow (full access only).",
+    inputSchema: {
+      type: "object",
+      properties: { workflowId: { type: "string" }, input: { type: "string" }, clientRequestId: { type: "string" }, accessLimit: LIMIT, computer: COMPUTER },
+      required: ["workflowId"],
+    },
+    annotations: WRITES,
+  },
+];
+
+/** Tools every online computer answers when none is named: only the ones that read. Every other needs one computer. */
+const FAN_OUT = new Set(["list_bots", "read_replies", "worker_capabilities", "thread_list", "routine_list", "workflow_list"]);
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -138,13 +323,15 @@ export async function authServerMetadata(c: Ctx) {
 }
 
 /** The account the request's token stands for, or `null` and the challenge that says where to sign in. */
-async function signedIn(c: Ctx): Promise<[string, null] | [null, Response]> {
+async function signedIn(c: Ctx): Promise<[{ user: string; client: string }, null] | [null, Response]> {
   const user = await verifyAssistant(c.req, c.env, `${c.url.origin}/mcp`);
   if (user) return [user, null];
   const metadata = `${c.url.origin}/.well-known/oauth-protected-resource/mcp`;
   const challenge = `Bearer resource_metadata="${metadata}", scope="${SCOPES.join(" ")}"`;
   return [null, json({ error: "invalid_token" }, 401, { "WWW-Authenticate": challenge })];
 }
+
+const ALL_TOOLS = [...TOOLS, ...WORKER_TOOLS];
 
 /** No server-to-client stream: everything is a POST with its JSON answer. */
 export async function mcpStream(c: Ctx): Promise<Response> {
@@ -153,9 +340,9 @@ export async function mcpStream(c: Ctx): Promise<Response> {
 }
 
 export async function mcp(c: Ctx): Promise<Response> {
-  const [user, refused] = await signedIn(c);
+  const [who, refused] = await signedIn(c);
   if (refused) return refused;
-  if (c.env.ASSISTANT_LIMITER && !(await c.env.ASSISTANT_LIMITER.limit({ key: user })).success) {
+  if (c.env.ASSISTANT_LIMITER && !(await c.env.ASSISTANT_LIMITER.limit({ key: who.user })).success) {
     return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
   }
   let msg: { id?: unknown; method?: unknown; params?: Record<string, unknown> };
@@ -198,14 +385,14 @@ export async function mcp(c: Ctx): Promise<Response> {
     case "ping":
       return json(success(id, {}));
     case "tools/list":
-      return json(success(id, { tools: TOOLS, ttlMs: TOOLS_TTL_MS, cacheScope: "public" }));
+      return json(success(id, { tools: ALL_TOOLS, ttlMs: TOOLS_TTL_MS, cacheScope: "public" }));
     case "tools/call": {
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
-      if (typeof name !== "string" || !TOOLS.some((t) => t.name === name)) return json(failure(id, -32602, `Unknown tool: ${name}`));
+      if (typeof name !== "string" || !ALL_TOOLS.some((t) => t.name === name)) return json(failure(id, -32602, `Unknown tool: ${name}`));
       if (typeof args !== "object" || Array.isArray(args)) return json(failure(id, -32602, "arguments must be an object"));
       try {
-        const result = await tool(c, user, name, args as Record<string, unknown>);
+        const result = await tool(c, who, name, args as Record<string, unknown>);
         return json(success(id, { content: [{ type: "text", text: JSON.stringify(result) }] }));
       } catch (e) {
         if (!(e instanceof ToolError)) throw e;
@@ -236,7 +423,8 @@ interface Computer {
   last_seen_at: number | null;
 }
 
-async function tool(c: Ctx, user: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+async function tool(c: Ctx, who: { user: string; client: string }, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const user = who.user;
   const { results: all } = await c.env.DB.prepare(
     "SELECT id, name, online, last_seen_at FROM computers WHERE owner_user_id = ? AND status = 'active' ORDER BY claimed_at",
   )
@@ -249,12 +437,12 @@ async function tool(c: Ctx, user: string, name: string, args: Record<string, unk
   // Every other tool (`mcp` takes only listed ones) is the computer's to answer.
   const { computer: wanted, ...rest } = args;
   const online = all.filter((x) => x.online);
-  // Every online computer answers a listing that names none.
-  if (wanted === undefined && name !== "message_bot" && online.length > 1) {
+  // Every online computer answers a listing that names none; anything that changes things needs one computer.
+  if (wanted === undefined && FAN_OUT.has(name) && online.length > 1) {
     return {
       computers: await Promise.all(
         online.map((x) =>
-          ask(c, x, user, name, rest).then(
+          ask(c, x, who, name, rest).then(
             (result) => ({ computer: x.name, ...(result as object) }),
             (e: Error) => ({ computer: x.name, error: e.message }),
           ),
@@ -262,7 +450,7 @@ async function tool(c: Ctx, user: string, name: string, args: Record<string, unk
       ),
     };
   }
-  return ask(c, pick(all, online, wanted), user, name, rest);
+  return ask(c, pick(all, online, wanted), who, name, rest);
 }
 
 function pick(all: Computer[], online: Computer[], wanted: unknown): Computer {
@@ -279,12 +467,18 @@ function pick(all: Computer[], online: Computer[], wanted: unknown): Computer {
   );
 }
 
-async function ask(c: Ctx, computer: Computer, user: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
+async function ask(
+  c: Ctx,
+  computer: Computer,
+  who: { user: string; client: string },
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
   const res = await c.env.RELAY.get(c.env.RELAY.idFromName(computer.id)).fetch(
     new Request("https://do/internal/assistant", {
       method: "POST",
       headers: { "X-Codync-Internal": "1" },
-      body: JSON.stringify({ user, tool, args }),
+      body: JSON.stringify({ user: who.user, client: who.client, tool, args }),
     }),
   );
   const a = (await res.json()) as Answer;
@@ -294,6 +488,10 @@ async function ask(c: Ctx, computer: Computer, user: string, tool: string, args:
     throw new ToolError(
       `${computer.name} didn't answer. Its Codync may be too old for cloud assistants: update it, then turn them on there (Cloud assistants in its Codync settings, or codync-host cloud --assistants on).`,
     );
+  }
+  // A Codync from before the worker tools doesn't know them.
+  if (a.error?.startsWith(`unknown tool: ${tool}`)) {
+    throw new ToolError(`${computer.name}'s Codync is too old for ${tool}: update Codync on ${computer.name}, then try again.`);
   }
   throw new ToolError(a.error ?? "Refused");
 }

@@ -40,7 +40,9 @@ pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
         Some(task) if matches!(task.source, Source::Request { .. }) => {
             hub.work.requests.locked().get(&task.id).map_or(Access::Ask, BotRequest::access)
         }
-        _ => Access::Allow,
+        // An outside app's thread works at the level it was given, kept on its task across restarts.
+        Some(task) => task.started_by.map_or(Access::Allow, |by| by.level.ceiling()),
+        None => Access::Allow,
     }
 }
 
@@ -75,7 +77,19 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 /// A thread the user starts with `bot` themselves (`startThread`): `text`, their first message, waits in its box as
 /// a task of its own, named by its first line, and starts when a place is free. `setup`: what its thread runs with
 /// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
-pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut setup: Setup) -> Result<String> {
+pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], setup: Setup) -> Result<String> {
+    add_thread_by(hub, bot, text, uploads, setup, None)
+}
+
+/// [`add_thread`], for the outside app `by` when one starts it (`external`).
+pub(super) fn add_thread_by(
+    hub: &Arc<Hub>,
+    bot: &str,
+    text: &str,
+    uploads: &[String],
+    mut setup: Setup,
+    by: Option<&super::external::StartedBy>,
+) -> Result<String> {
     let changes =
         (setup.model.is_some(), setup.approval.is_some(), setup.workflow.is_some(), setup.login_profile.is_some());
     let place = setup.place;
@@ -85,7 +99,7 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
             "folder": folder, "model": changes.0, "approval": changes.1, "workflow": changes.2, "login": changes.3, "bot": !plain,
-            "files": !uploads.is_empty(), "place": place,
+            "files": !uploads.is_empty(), "place": place, "mcp": by.is_some(),
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
@@ -128,7 +142,13 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
     // Files alone are named by the first of them.
     let named =
         title(if text.is_empty() { files.first().and_then(|f| f["name"].as_str()).unwrap_or_default() } else { text });
-    let mut task = Task { source: Source::User, setup, files, ..Task::waiting(&named, text, None, None, 0) };
+    let mut task = Task {
+        source: Source::User,
+        setup,
+        files,
+        started_by: by.cloned(),
+        ..Task::waiting(&named, text, None, None, 0)
+    };
     let id = task.id.clone();
     // A thread without a bot works in a folder of its own unless the user picked one.
     if plain && task.setup.cwd.is_none() {

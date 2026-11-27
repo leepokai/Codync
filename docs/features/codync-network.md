@@ -152,8 +152,9 @@ that was off learns of a removal.
   `codync-host mcp network` (stdio MCP, local API `agentCall`, loopback only; [sessions](#coding-agents-sessions)).
   They get the cloud assistant's tools (`chat/team/assistant.rs`) under their address ("Message from api-claude (this
   computer)"), with their own replies and no cloud switch or per-bot cloud scope; letters elsewhere are sent as
-  `<address>@<computer>`. They also get `whoami`, `set_name` and `check_inbox` (`chat/team/mailbox.rs`). Added by
-  `codync-host network setup` (below).
+  `<address>@<computer>`. They also get `whoami`, `set_name` and `check_inbox` (`chat/team/mailbox.rs`), and the
+  thread, routine and workflow tools of [MCP access](mcp-access.md), at the computer's level for sessions here, or
+  as an app when started with its token (`--token`, `CODYNC_MCP_TOKEN`). Added by `codync-host network setup` (below).
 - Agents that aren't Codync bots use the same letters: the standalone `codync-network` daemon offers Claude Code
   sessions (their inbox socket) and Codex threads (`codex queue`), see the crate README. It keeps its own key in
   `~/.codync-network` (the host's are `~/.codync/network` and `network-…`, one per network), so beside a host it is a computer of its own.

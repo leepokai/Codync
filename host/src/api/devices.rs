@@ -82,6 +82,11 @@ const LOCAL_ONLY: &[&str] = &[
     "setApproval",
     // Letting the cloud assistant in is decided at the computer, never through the cloud.
     "setAssistants",
+    // So is letting an outside app drive this computer's work over MCP, and how far: phones may only list the apps and
+    // take one's access away (`mcpClients`, `mcpClientRevoke`).
+    "mcpClientCreate",
+    "mcpClientUpdate",
+    "setMcpAccess",
     // Who is in the user's network of computers is decided at a computer.
     "networkStatus",
     "networkCreate",
@@ -286,6 +291,11 @@ mod tests {
         assert!(permit(&control, "joinWouldRemove").is_err(), "a phone doesn't learn the other phones' names");
         assert!(permit(&control, "joinAccount").is_ok(), "a paired phone can ask to add the computer");
         assert!(permit(&both, "networkView").is_ok(), "phones read the network");
+        // An outside app's MCP access is given and widened at the computer; a phone lists the apps and revokes one.
+        for m in ["mcpClientCreate", "mcpClientUpdate", "setMcpAccess", "agentCall"] {
+            assert!(permit(&control, m).is_err(), "{m} is decided at the computer");
+        }
+        assert!(permit(&control, "mcpClients").is_ok() && permit(&control, "mcpClientRevoke").is_ok());
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());
         assert!(permit(&control, "screenPrepare").is_err());

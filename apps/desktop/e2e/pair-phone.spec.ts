@@ -22,12 +22,21 @@ test('Computers › Pair phone uses device-neutral copy and closes with one Esca
     await expect(computers.getByRole('button', { name: 'Pair iPhone', exact: true })).toHaveCount(0)
     await localComputer.getByRole('button', { name: 'Pair phone', exact: true }).click()
 
-    const sheet = page.getByRole('dialog', { name: `Pair phone with ${name}`, exact: true })
+    const titlePrefix = 'Pair phone with'
+    const sheet = page.getByRole('dialog', { name: `${titlePrefix} ${name}`, exact: true })
     await expect(sheet).toBeVisible()
     await expect(sheet.getByText(/Scan with the Codync app or your phone's camera\./)).toBeVisible()
-    const localNetworkNote = `“Reach from anywhere” is off, so the phone only reaches ${name} on the same network.`
-    const iPhoneNotes = await sheet.locator('.pairing-note').filter({ hasText: /iPhone/i }).allTextContents()
-    expect(iPhoneNotes.filter((note) => note !== localNetworkNote)).toEqual([])
+
+    const renderedName = name.replace(/[ \t\r\n\f]+/g, ' ')
+    const networkPrefix = '“Reach from anywhere” is off, so the phone only reaches'
+    const networkSuffix = 'on the same network.'
+    const [sheetTitle, ...body] = (await sheet.innerText()).split('\n')
+    const networkNoteIndex = body.indexOf(`${networkPrefix} ${renderedName} ${networkSuffix}`)
+    if (networkNoteIndex !== -1) body[networkNoteIndex] = `${networkPrefix} ${networkSuffix}`
+    const fixedTitle = sheetTitle === `${titlePrefix} ${renderedName}` ? titlePrefix : sheetTitle
+    const fixedCopy = [fixedTitle, ...body].join('\n')
+    expect(/iPhone/i.test(fixedCopy), 'Pairing sheet copy should be device-neutral').toBe(false)
+
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()
     await expect(heading).toBeVisible()

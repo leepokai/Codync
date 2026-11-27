@@ -62,6 +62,11 @@ fn archived(row: &rusqlite::Row<'_>) -> rusqlite::Result<Archived> {
     Ok(Archived { bot: row.get(0)?, data: row.get(1)? })
 }
 
+fn archived_task(c: &Connection, bot: &str, task: &str) -> Result<Option<String>> {
+    Ok(c.query_row("SELECT data FROM thread_archive WHERE bot = ?1 AND task = ?2", [bot, task], |r| r.get(0))
+        .optional()?)
+}
+
 fn unpark(tx: &Connection, id: &str) -> Result<Option<BotConfig>, UnparkError> {
     let parked: Option<(String, Option<String>, i64)> = tx
         .query_row("DELETE FROM parked_threads WHERE id = ?1 RETURNING config, session_id, read_rev", [id], |r| {
@@ -132,17 +137,27 @@ impl Store {
         Ok(st.query_map(params![bot, since, limit], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// `bot`'s archived task `task`.
-    pub fn archived_task(&self, bot: &str, task: &str) -> Result<Option<String>> {
-        let c = self.db.locked();
-        Ok(c.query_row("SELECT data FROM thread_archive WHERE bot = ?1 AND task = ?2", [bot, task], |r| r.get(0))
-            .optional()?)
-    }
-
-    /// Takes `bot`'s task `task` out of the archive.
-    pub fn unarchive_task(&self, bot: &str, task: &str) -> Result<()> {
-        self.db.locked().execute("DELETE FROM thread_archive WHERE bot = ?1 AND task = ?2", [bot, task])?;
-        Ok(())
+    /// Moves an archived task and its thread into a box that the caller holds locked.
+    pub(crate) fn restore_archived_task(
+        &self,
+        bot: &str,
+        task: &str,
+        box_key: &str,
+        restore: impl FnOnce(&str) -> Result<(Option<String>, String)>,
+    ) -> Result<()> {
+        self.with_immediate(|tx| {
+            let Some(data) = archived_task(tx, bot, task)? else { return Ok(()) };
+            let (thread, box_data) = restore(&data)?;
+            if let Some(thread) = thread {
+                unpark(tx, &thread)?;
+            }
+            tx.execute("DELETE FROM thread_archive WHERE bot = ?1 AND task = ?2", [bot, task])?;
+            tx.execute(
+                "INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2",
+                params![box_key, box_data],
+            )?;
+            Ok(())
+        })
     }
 
     /// Takes expired tasks out of the archive after decoding them, keeping threads with unreadable tasks or configs.
@@ -285,6 +300,10 @@ fn unpark_failure(id: &str, error: UnparkError) -> Option<&'static str> {
 
 #[cfg(test)]
 impl Store {
+    pub(crate) fn archived_task(&self, bot: &str, task: &str) -> Result<Option<String>> {
+        archived_task(&self.db.locked(), bot, task)
+    }
+
     pub(crate) fn with_unpark_failures<T>(
         read: &'static str,
         decode: &'static str,
@@ -318,8 +337,9 @@ mod tests {
         assert_eq!(page, ["\"t2\""], "newest before the cursor first");
         assert_eq!(s.archived_of("b1", 20, 10).expect("recent"), ["\"t3\"", "\"t2\""]);
         assert_eq!(s.archived_task("b1", "t2").expect("read").as_deref(), Some("\"t2\""));
-        s.unarchive_task("b1", "t2").expect("taken");
+        s.restore_archived_task("b1", "t2", "work.b1", |data| Ok((None, data.to_owned()))).expect("restored");
         assert_eq!(s.archived_task("b1", "t2").expect("gone"), None);
+        assert_eq!(s.kv_read("work.b1").expect("box read").as_deref(), Some("\"t2\""));
         let dropped = s.drop_archived_before(20, |data| serde_json::from_str::<String>(data)).expect("dropped").tasks;
         assert_eq!(dropped, ["t1"]);
         assert_eq!(s.drop_archived_of("b1").expect("all"), ["\"t3\""]);

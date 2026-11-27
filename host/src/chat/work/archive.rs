@@ -80,23 +80,16 @@ pub(super) fn put(hub: &Hub, bot: &str, old: &[Task], left: &[Task]) -> Result<(
 /// `bot`'s task `id` back in its box from the archive, with its thread, for the user to write to it, try it again or
 /// remove it. Nothing when it is in the box.
 pub fn bring_back(hub: &Hub, bot: &str, id: &str) -> Result<()> {
-    if tasks::load(&hub.store, bot).iter().any(|i| i.id == id) {
+    let _g = tasks::lock(hub);
+    let mut tasks = tasks::load(&hub.store, bot);
+    if tasks.iter().any(|i| i.id == id) {
         return Ok(());
     }
-    // Under the box's lock: the dispatcher never sees the thread back without the task that names it, and the task
-    // leaves the archive only on its way into the box.
-    tasks::change(hub, bot, |tasks| {
-        if tasks.iter().any(|i| i.id == id) {
-            return Ok(());
-        }
-        let Some(data) = hub.store.archived_task(bot, id)? else { return Ok(()) };
-        let task: Task = serde_json::from_str(&data)?;
-        if let Some(thread) = &task.thread {
-            hub.store.unpark_thread(thread)?;
-        }
-        hub.store.unarchive_task(bot, id)?;
+    hub.store.restore_archived_task(bot, id, &tasks::key(bot), |data| {
+        let task: Task = serde_json::from_str(data)?;
+        let thread = task.thread.clone();
         tasks.push(task);
-        Ok(())
+        Ok((thread, serde_json::to_string(&tasks)?))
     })
 }
 
@@ -171,7 +164,11 @@ fn delete_old_with(hub: &Hub, decode: impl Fn(&str) -> serde_json::Result<Task>)
         return false;
     }
     let before = now_ms() - i64::from(days) * DAY_MS;
-    let Ok(expired) = hub.store.drop_archived_before(before, decode) else {
+    let expired = {
+        let _g = tasks::lock(hub);
+        hub.store.drop_archived_before(before, decode)
+    };
+    let Ok(expired) = expired else {
         host_error!(hub, "couldn't delete old threads", category = "storage");
         return false;
     };
@@ -470,6 +467,76 @@ mod tests {
         let row = hub.store.bot(THREAD).expect("read").expect("its thread bot");
         assert_eq!(row.session_id.as_deref(), Some("s1"));
         assert!(hub.store.archived_task("b1", "t1").expect("read").is_none(), "out of the archive");
+    }
+
+    #[test]
+    fn a_failed_box_write_rolls_back_the_archive_restore() {
+        use rusqlite::OptionalExtension;
+
+        let hub = ended_thread(10);
+        hub.store.set_session(THREAD, Some("s1")).expect("a session");
+        super::super::age(&hub, "b1");
+        let state = || {
+            let archived = hub.store.archived_task("b1", "t1").expect("archive read");
+            let parked = hub
+                .store
+                .with_immediate(|tx| {
+                    Ok(tx
+                        .query_row("SELECT session_id FROM parked_threads WHERE id = ?1", [THREAD], |r| {
+                            r.get::<_, String>(0)
+                        })
+                        .optional()?)
+                })
+                .expect("parked session read");
+            let active = hub.store.bot(THREAD).expect("active thread read").map(|row| row.session_id);
+            let work = hub.store.kv_read("work.b1").expect("box read");
+            (archived, parked, active, work, hub.store.current_rev())
+        };
+        let before = state();
+        assert!(before.0.is_some() && before.1.as_deref() == Some("s1") && before.2.is_none());
+        hub.store
+            .with_immediate(|tx| {
+                tx.execute_batch(
+                    "CREATE TEMP TRIGGER reject_box_write BEFORE INSERT ON kv WHEN NEW.k = 'work.b1'
+                     BEGIN SELECT RAISE(ABORT, 'synthetic box write failure'); END;",
+                )?;
+                Ok(())
+            })
+            .expect("inject the box write failure");
+
+        let error = bring_back(&hub, "b1", "t1").expect_err("the box write was rejected");
+        assert!(format!("{error:#}").contains("synthetic box write failure"), "{error:#}");
+        assert_eq!(state(), before, "archive row, parked session, active thread, box and revision roll back together");
+
+        hub.store
+            .with_immediate(|tx| {
+                tx.execute_batch("DROP TRIGGER reject_box_write")?;
+                Ok(())
+            })
+            .expect("allow the box write again");
+        bring_back(&hub, "b1", "t1").expect("retry");
+        bring_back(&hub, "b1", "t1").expect("already restored");
+        let (archived, parked, active, _, _) = state();
+        assert_eq!((archived, parked, active), (None, None, Some(Some("s1".into()))));
+        assert_eq!(tasks::load(&hub.store, "b1").iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["t1"]);
+    }
+
+    #[tokio::test]
+    async fn pruning_before_restore_leaves_the_box_untouched() {
+        let hub = ended_thread(40);
+        super::super::age(&hub, "b1");
+        hub.store.kv_delete("work.b1").expect("no live box");
+
+        set_keep_days(&hub, 30).expect("expire the task");
+        assert!(hub.store.archived_task("b1", "t1").expect("archive read").is_none());
+        assert!(hub.store.parked_thread(THREAD).expect("parked thread read").is_none());
+        assert!(hub.store.history(THREAD, i64::MAX, 10).expect("transcript read").is_empty());
+
+        bring_back(&hub, "b1", "t1").expect("a missing task is a no-op");
+        assert_eq!(hub.store.kv_read("work.b1").expect("box read"), None);
+        let error = super::super::drop_task(&hub, "b1", "t1").expect_err("the task is still missing");
+        assert_eq!(error.to_string(), "no such task");
+        assert_eq!(hub.store.kv_read("work.b1").expect("box read"), None);
     }
 
     #[tokio::test]

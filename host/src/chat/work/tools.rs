@@ -64,7 +64,7 @@ pub fn tools() -> Vec<Value> {
     vec![
         json!({
             "name": "add_task",
-            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
+            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message by itself, so no follow-up is needed to wait for it. One task per piece of work.",
             "inputSchema": {"type": "object", "properties": {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
                 "brief": {"type": "string", "description": "Everything needed to do the work, standing alone (the thread sees nothing of this chat): the goal, what you already know, the user's words that matter, what done looks like."},
@@ -172,7 +172,7 @@ fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     dispatch(hub, bot);
     let mut answer = json!({
         "taskId": id, "status": Status::Waiting,
-        "note": "It starts when this turn ends and a thread is free. Its report comes back to you later as a message.",
+        "note": "It starts when this turn ends and a thread is free. Its report comes back to you later as a message by itself: no follow-up needed.",
     });
     if let Some(note) = place_note {
         answer["placeNote"] = note.into();

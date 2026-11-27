@@ -607,6 +607,13 @@ pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
     summary(&live, cfg.max_threads, whose)
 }
 
+/// The tasks still to come whose report comes to the bot's own chat (its `add_task`'s: not a routine's run, another
+/// bot's request or a thread the user started), as `(id, title)`.
+pub fn reporting(store: &Store, bot: &str) -> Vec<(String, String)> {
+    let mine = load(store, bot).into_iter().filter(|t| t.source.is_bot() && !t.status.ended());
+    mine.map(|t| (t.id, t.title)).collect()
+}
+
 /// What one of a bot's tasks does now, for who follows the bot from outside its chat (a call's voice).
 pub struct Doing {
     pub task: String,
@@ -711,6 +718,19 @@ fn summary(live: &[(Status, &str, &str)], most: u8, whose: &str) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_bots_own_tasks_still_to_come_report_to_its_chat() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let tasks = json!([
+            {"id": "a", "title": "Mine", "brief": "x", "status": "working", "order": 1, "createdAt": 1},
+            {"id": "b", "title": "Reported", "brief": "x", "status": "done", "order": 2, "createdAt": 1},
+            {"id": "c", "title": "Run", "brief": "x", "status": "waiting", "order": 3, "createdAt": 1,
+                "source": {"kind": "routine", "id": "r", "run": "1"}},
+        ]);
+        hub.store.kv_set(&key("b1"), &tasks.to_string()).expect("saved");
+        assert_eq!(reporting(&hub.store, "b1"), [("a".to_owned(), "Mine".to_owned())]);
+    }
 
     #[test]
     fn a_task_works_in_its_folder_else_the_default_project_else_where_the_bot_lives() {

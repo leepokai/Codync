@@ -569,6 +569,7 @@ mod tests {
     fn instructions_send_a_later_look_to_follow_ups_not_the_engines_timers() {
         let system = render(&store(), &cfg("Reporter", ""));
         assert!(system.contains("set a follow-up with follow_up"), "{system}");
+        assert!(system.contains("Don't set one to wait for or check on a task you started"), "{system}");
         assert!(system.contains("Don't use your engine's own wake-ups, timers, loops, sleeps or cron"), "{system}");
     }
 

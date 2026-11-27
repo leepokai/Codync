@@ -23,6 +23,15 @@ async fn wait<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
     }
 }
 
+/// Removes `folder` once nothing holds it: Windows refuses while the run's agent still has it open (#603).
+async fn remove(folder: &Path) {
+    wait("the folder to go", async || {
+        let _ = std::fs::remove_dir_all(folder);
+        (!folder.exists()).then_some(())
+    })
+    .await;
+}
+
 async fn history(host: &Host, bot: &str) -> Vec<Value> {
     host.call("history", json!({"botId": bot})).await["entries"].as_array().unwrap().clone()
 }
@@ -935,7 +944,7 @@ async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
     let there = logged(&folder, "prompts.jsonl");
     assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
 
-    std::fs::remove_dir_all(&folder).unwrap();
+    remove(&folder).await;
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
@@ -975,7 +984,7 @@ async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routi
         there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
         "{there:?}"
     );
-    std::fs::remove_dir_all(&folder).unwrap();
+    remove(&folder).await;
 }
 
 #[tokio::test]

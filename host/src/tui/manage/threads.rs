@@ -144,6 +144,10 @@ impl ThreadSheet {
         !self.draft.text.is_empty() || !self.files.is_empty()
     }
 
+    fn send_in_flight(&self) -> bool {
+        self.sending.as_ref().is_some_and(|sent| sent.task.is_some())
+    }
+
     pub(in crate::tui) fn can_edit(&self, task: Option<&WorkTask>) -> bool {
         self.typing || self.has_draft() || task.is_some_and(|task| task.talk)
     }
@@ -408,7 +412,7 @@ impl App {
         {
             return;
         }
-        if s.sending.as_ref().is_some_and(|sent| sent.task.is_some()) {
+        if s.send_in_flight() {
             self.flash("Sending…");
             return;
         }
@@ -450,9 +454,28 @@ impl App {
         self.on_queued(act, json!({"botId": s.bot, "taskId": s.task}), id);
     }
 
+    pub(in crate::tui) fn keep_thread_overlays(&mut self) -> bool {
+        if self.overlays.iter().any(|o| matches!(o, Overlay::Thread(thread) if thread.send_in_flight())) {
+            self.flash("Sending…");
+            return true;
+        }
+        let has_draft = self.overlays.iter().any(|o| matches!(o, Overlay::Thread(thread) if thread.has_draft()));
+        if has_draft && self.hint.is_none() {
+            self.flash("Draft kept");
+        }
+        has_draft
+    }
+
     fn close_thread(&mut self, s: ThreadSheet, entry: Option<String>) -> Option<Overlay> {
+        if s.send_in_flight() {
+            self.flash("Sending…");
+            return Some(Overlay::Thread(s));
+        }
         if !s.has_draft() {
             return self.leave_thread(s, entry.as_deref());
+        }
+        if entry.is_some() && self.keep_thread_overlays() {
+            return Some(Overlay::Thread(s));
         }
         self.overlays.push(Overlay::Confirm(Confirm {
             title: tr("Discard the draft and its attachments?").into_owned(),
@@ -483,6 +506,9 @@ impl App {
         } else {
             false
         };
+        if entry.is_some() && self.keep_thread_overlays() {
+            return Some(Overlay::Thread(s));
+        }
         if !self.thread_open(&s.thread) && !self.bots.get(&s.bot).is_some_and(|b| works(&b.work, &s.thread)) {
             self.thread_entries.forget(&s.thread);
         }
@@ -561,9 +587,10 @@ impl App {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use crossterm::event::KeyEventKind;
+    use crossterm::event::{KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
 
-    use super::super::super::app::{Msg, SendReceipts, next_request, recording_host, test_app};
+    use super::super::super::app::{Click, Msg, SendReceipts, next_request, recording_host, test_app};
     use super::super::work::tests::{bot_with, key};
     use super::*;
 
@@ -686,6 +713,22 @@ mod tests {
         thread.draft = Editor::with(text);
         thread.files.push(file);
         app.overlays.push(Overlay::Thread(thread));
+    }
+
+    fn open_pending_file_send(app: &mut App, file: PathBuf) {
+        open_draft(app, "", file);
+        let Some(Overlay::Thread(thread)) = app.overlays.last_mut() else { panic!("no thread") };
+        thread.typing = false;
+        thread.sending = Some(ThreadSend {
+            text: String::new(),
+            files: std::mem::take(&mut thread.files),
+            returned_files: 0,
+            nonce: "fixture-nonce".into(),
+            thread: thread.thread.clone(),
+            request: Uuid::nil(),
+            receipt: None,
+            task: Some(tokio::spawn(std::future::pending::<()>()).abort_handle()),
+        });
     }
 
     fn append_file(app: &mut App, file: PathBuf) {
@@ -1273,6 +1316,156 @@ mod tests {
             "id": "file", "botId": "a", "seq": 1, "rev": rev, "kind": "agent", "turn": 1,
             "data": {"final": true, "thread": {"id": thread}, "files": [{"id": "f", "name": "log.txt", "size": 3}]}
         }}))
+    }
+
+    #[tokio::test]
+    async fn a_bot_click_keeps_pending_and_returned_thread_files() {
+        let file = PathBuf::from("draft.txt");
+        let go_to = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let escape = KeyEvent::from(KeyCode::Esc);
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        };
+        for (bot, delivered) in [("a", false), ("b", true)] {
+            let mut app = test_app();
+            hello(&mut app);
+            open_pending_file_send(&mut app, file.clone());
+            app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B"}})));
+            app.select("a");
+            let reply = send_reply(&app);
+            let result = if delivered { Ok(delivery(&app)) } else { Err("refused".into()) };
+
+            app.on_key(go_to);
+            app.hits.clicks.push((Rect::new(4, 2, 1, 1), Click::Bot(bot.into())));
+            app.on_mouse(click);
+            assert!(matches!(app.overlays.as_slice(), [Overlay::Thread(thread), Overlay::Goto(_)]
+                if thread.send_in_flight()));
+            assert_eq!(app.selected.as_deref(), Some("a"));
+            assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some(tr("Sending…").as_ref()));
+
+            app.on_key(escape);
+            assert!(sheet(&app).send_in_flight(), "Esc closes Go to while the thread still waits");
+            app.on_key(go_to);
+            app.on_msg(Msg::Reply(reply, result));
+            app.on_mouse(click);
+            if delivered {
+                assert!(app.overlays.is_empty());
+                assert_eq!(app.selected.as_deref(), Some("b"));
+            } else {
+                assert_eq!(app.overlays.len(), 2, "Go to and the thread stay open after refusal");
+                assert!(matches!(app.overlays.last(), Some(Overlay::Goto(_))));
+                assert_eq!(app.selected.as_deref(), Some("a"));
+                assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some("refused"));
+                app.on_key(escape);
+                assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
+                key(&mut app, 'q');
+                assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+                key(&mut app, 'd');
+                assert!(app.overlays.is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chat_reference_keeps_a_draft_in_the_thread_underneath() {
+        let file = PathBuf::from("draft.txt");
+        for delivered in [false, true] {
+            let mut app = test_app();
+            hello(&mut app);
+            open_pending_file_send(&mut app, file.clone());
+            let reply = send_reply(&app);
+            let result = if delivered { Ok(delivery(&app)) } else { Err("refused".into()) };
+            app.overlays.push(Overlay::Thread(ThreadSheet::new("a".into(), "2".into(), "thread-2".into())));
+            app.on_msg(shared_file(1, "thread-2"));
+            app.on_key(KeyEvent::from(KeyCode::Tab));
+            assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
+
+            app.on_msg(Msg::Reply(reply, result));
+            app.hint = None;
+            app.on_key(KeyEvent::from(KeyCode::Enter));
+            if delivered {
+                assert!(app.overlays.is_empty() && app.chat_page);
+                assert_eq!(app.pick.as_deref(), Some("file"));
+            } else {
+                assert_eq!(app.overlays.len(), 2, "the chat jump keeps the underlying thread open");
+                assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
+                assert_eq!(app.hint.as_ref().map(|(hint, _)| hint.as_str()), Some(tr("Draft kept").as_ref()));
+                key(&mut app, 'q');
+                assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pending_file_send_keeps_the_thread_open_until_the_receipt() {
+        let mut app = test_app();
+        let file = PathBuf::from("draft.txt");
+        hello(&mut app);
+        open_draft(&mut app, "", file.clone());
+        app.on_msg(shared_file(1, "thread-1"));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        let reply = send_reply(&app);
+        let sent = delivery(&app);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        for code in [KeyCode::Esc, KeyCode::Char('q')] {
+            app.on_key(KeyEvent::from(code));
+            assert!(sheet(&app).send_in_flight());
+        }
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(sheet(&app).send_in_flight());
+        assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
+
+        app.on_msg(Msg::Reply(reply, Err("refused".into())));
+        assert_eq!(sheet(&app).files, std::slice::from_ref(&file));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        key(&mut app, 'i');
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(delivery(&app), sent, "retry sends with the original nonce");
+        app.on_msg(Msg::Reply(send_reply(&app), Ok(sent)));
+        assert!(sheet(&app).sending.is_none() && sheet(&app).files.is_empty());
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(app.overlays.is_empty() && app.chat_page);
+        assert_eq!(app.pick.as_deref(), Some("file"));
+    }
+
+    #[tokio::test]
+    async fn a_pending_send_leaves_other_threads_alone_and_replayed_files_can_be_discarded() {
+        let mut app = test_app();
+        let file = PathBuf::from("draft.txt");
+        hello(&mut app);
+        open_draft(&mut app, "", file.clone());
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        app.on_paste("new draft");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        key(&mut app, 'q');
+        assert!(sheet(&app).send_in_flight());
+
+        let original = sheet(&app).task(&app).expect("writable task");
+        let other = WorkTask { id: "2".into(), thread: Some("thread-2".into()), ..original.clone() };
+        app.open_thread("a", &other);
+        app.on_msg(shared_file(1, "thread-2"));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(sheet(&app).thread, "thread-2");
+        assert_eq!(sheet(&app).pick.as_deref(), Some("file"));
+        key(&mut app, 'q');
+        assert_eq!(sheet(&app).thread, "thread-1");
+        assert!(sheet(&app).send_in_flight());
+
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
+        assert_eq!(sheet(&app).files, &[file]);
+        assert_eq!(sheet(&app).draft.text, "new draft");
+        key(&mut app, 'q');
+        assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+        key(&mut app, 'd');
+        assert!(app.overlays.is_empty());
     }
 
     #[tokio::test]

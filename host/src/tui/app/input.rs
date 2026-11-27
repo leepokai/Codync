@@ -429,6 +429,9 @@ impl App {
                 match hit {
                     Some(Click::LeadAgent) => self.overlays.push(Overlay::LeadAgent(0)),
                     Some(Click::Bot(id)) => {
+                        if self.keep_thread_overlays() {
+                            return;
+                        }
                         self.overlays.clear();
                         self.select(&id);
                         self.focus = Focus::Roster;

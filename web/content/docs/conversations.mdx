@@ -166,6 +166,9 @@ After the host restores a backup, the terminal reloads the thread you have open 
 
 If you close a thread with a draft or follow a line from it to the chat, press `d` to discard the draft and continue, or Esc to keep it. If a restore removes the line while the confirmation is open, the terminal shows **Draft kept**. Press Esc to return to the thread, then `i` to edit again.
 
+While a message is being sent, trying to close the thread or follow a line to the chat shows **Sending…** and keeps the thread open. If sending fails, the attachments return to the draft so you can retry or discard it.
+If a bot click or a chat reference from another thread would close a thread with a draft, the terminal keeps that thread open so you can send or discard the draft first.
+
 ### Old threads
 
 Threads are kept until you delete them. **Threads** lists the newest ones first; scroll to the end to load older ones, which open and take a message like any thread. In the terminal UI they are under **Recent** on a bot's Details page.

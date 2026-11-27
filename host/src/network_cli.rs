@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
+mod setup;
+
 #[derive(clap::Args)]
 pub struct NetworkArgs {
     /// The running host's port (also after the action).
@@ -60,6 +62,14 @@ enum Action {
     Recover { code: String },
     /// Run by a coding agent's hook: tells its session, at its next step, that letters wait for it.
     Hook { agent: HookAgent },
+    /// Gives the coding agents installed here (or the ones named) a Network mailbox: adds the
+    /// `codync` MCP server, and the hooks that tell a session of new letters, to each one's config.
+    Setup {
+        agents: Vec<setup::SetupAgent>,
+        /// Take them out again (only what this command added).
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 /// The agents whose hooks name their sessions the way their MCP servers do (checked against each).
@@ -120,6 +130,7 @@ pub async fn run(args: NetworkArgs) -> Result<()> {
             println!("{computer} is an admin.");
         }
         Action::Hook { agent } => hook(port, agent.kind()).await,
+        Action::Setup { agents, remove } => setup::run(port, agents, remove).await?,
         Action::Recover { code } => {
             local_call(port, "networkRecover", json!({"code": code, "network": network})).await?;
             println!("This computer is the owner now. Remove the lost one with `codync-host network remove <name>`.");

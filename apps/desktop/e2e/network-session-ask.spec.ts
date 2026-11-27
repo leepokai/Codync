@@ -44,7 +44,7 @@ test('a bot messages a coding agent session here by its address and gets its ans
   const script = test.info().outputPath('ask_agent.py')
   writeFileSync(script, askAgent)
   // A Codex session on this computer, as \`codync-host mcp network\` would call for it.
-  const agent = { kind: 'codex', session: `e2e-${Date.now()}`, process: `e2e-${process.pid}`, cwd: test.info().outputDir, hint: null }
+  const agent = { kind: 'codex', session: `e2e-${Date.now()}`, process: `e2e-${process.pid}`, cwd: test.info().outputDir }
   const call = <T>(name: string, args: object) => api<T>(page, 'agentCall', { agent, name, arguments: args })
   let botId: string | undefined
   try {

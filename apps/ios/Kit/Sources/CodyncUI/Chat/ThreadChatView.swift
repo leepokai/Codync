@@ -18,6 +18,35 @@ public struct ThreadTarget {
     }
 }
 
+extension View {
+    /// A pushed thread page's bar, the chat's: the system navigation bar's glass, its own back (and the swipe back) and,
+    /// given `details`, Details (`sidebar.right`) as its buttons, `title` between them; the
+    /// content scrolls under it, softly.
+    func threadBar(details: (() -> Void)? = nil, @ViewBuilder title: () -> some View) -> some View {
+        modifier(ThreadBar(title: title(), details: details))
+            .scrollEdgeEffectStyle(.soft, for: .top)
+    }
+}
+
+private struct ThreadBar<Title: View>: ViewModifier {
+    let title: Title
+    let details: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) { title }
+                if let details {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(L10n.tr("Details"), systemImage: "sidebar.right", action: details)
+                    }
+                }
+            }
+    }
+}
+
 public extension View {
     /// Pushes `thread` over this view in the chat's form (`ThreadChatView`), inside its navigation stack, with the tab
     /// bar hidden; `store` is its computer's. Put it outside what the stack swaps (a list and its empty states), so it
@@ -46,7 +75,6 @@ struct ThreadChatView: View {
     /// Details opens the bot's details over it; off where it is pushed inside those details.
     var showsDetails = true
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     /// The thread's transcript as the computer has it; nil while it loads.
     @State private var fetched: [Entry]?
     @State private var error: String?
@@ -75,10 +103,9 @@ struct ThreadChatView: View {
         let transcript = entries.threadTranscript
         ConversationList(rows: rows(transcript, steps: Entry.workingSteps(entries), of: task), following: $following)
             .background(Palette.background)
-            .safeAreaInset(edge: .top, spacing: 0) { header(task) }
             .safeAreaInset(edge: .bottom, spacing: 0) { footer(task, queued: transcript.queue(working: live)) }
             .environment(\.workThread, task.workThread(of: botId))
-            .hidesSystemNavigationBar()
+            .threadBar(details: showsDetails && bot?.plain == false ? { details = DetailsRequest() } : nil) { header(task) }
             .task(id: Load(attempt: attempt, thread: task.thread, live: live, online: model.connection == .online)) { await load(task.thread) }
             // The card it waits on is the bot's chat's, maybe further back than the pages loaded: read back to it.
             .task(id: task.status == .needsYou) { if task.status == .needsYou { _ = await model.card(for: task, in: botId) } }
@@ -98,13 +125,12 @@ struct ThreadChatView: View {
 
     private var bot: Bot? { model.bots[botId] }
 
-    /// Back, the bot (a thread without a bot: its agent) and the title over how it stands, then Details.
+    /// The bot (a thread without a bot: its agent) and the title over how it stands, between Back and Details.
     private func header(_ task: WorkTask) -> some View {
         HStack(spacing: 8) {
-            IconButton("Back", systemImage: "chevron.left") { dismiss() }
             if let bot {
                 if bot.plain {
-                    AgentIcon(registry: model.agentRegistry(task.agent ?? bot.backend), size: 18)
+                    AgentIcon(registry: model.agentRegistry(task.agent(of: bot) ?? bot.backend), size: 18)
                 } else {
                     CharacterAvatar(bot: bot, size: 22, animated: false)
                 }
@@ -118,16 +144,7 @@ struct ThreadChatView: View {
                 // Where it works sits in the composer's row; a thread without one says it here.
                 ThreadStatusLine(task: task, showsWhere: !takesMessages(task))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if showsDetails, let bot, !bot.plain {
-                IconButton("Details", systemImage: "sidebar.right") { details = DetailsRequest() }
-            }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 6)
-        .background(Palette.background)
     }
 
     private func takesMessages(_ task: WorkTask) -> Bool { task.talk && task.thread != nil }
@@ -269,7 +286,7 @@ struct ThreadComposerChips: View {
     @Environment(BotStore.self) private var model
 
     var body: some View {
-        let agent = task.agent ?? bot.backend
+        let agent = task.agent(of: bot) ?? bot.backend
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 AgentIcon(registry: model.agentRegistry(agent), size: 14)

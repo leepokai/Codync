@@ -86,7 +86,12 @@ data class WorkTask(
     val agent: String? = null,
     /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */
     val seat: Boolean? = null,
+    /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
+    val runsOn: String? = null,
 ) {
+    /** The agent its thread runs on, or will: its own, else the one it was started on, else [bot]'s (none for the box of threads without a bot). */
+    fun agentOf(bot: Bot): String? = runsOn ?: agent ?: bot.backend.takeUnless { bot.plain }
+
     /** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
     val takesSeat: Boolean get() = seat ?: status.live
 }

@@ -36,6 +36,7 @@ import com.codync.android.core.WorkflowStep
 import com.codync.android.core.stepStatusLabel
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
@@ -103,24 +104,61 @@ import kotlinx.coroutines.launch
                 val names = state::workflowBotName
                 for (step in shown.steps) {
                     val node = shown.graph.nodes.firstOrNull { it.id == step.nodeId }
-                    val title = node?.let { stepHeading(it, names) } ?: tr(step.title.ifBlank { step.kind })
+                    val title = node?.let { stepHeading(it, names) } ?: stepTitle(step)
                     RunStep(step, title, step.id in openOutput, step.id in openInput, busy, onToggle = {
                         openOutput = if (step.id in openOutput) openOutput - step.id else openOutput + step.id
                     }, onToggleInput = {
                         openInput = if (step.id in openInput) openInput - step.id else openInput + step.id
                     }, onDecide = { approved ->
-                        scope.launch {
-                            busy = true
-                            try { store.decideWorkflowStep(step.id, approved) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { error = failure.message }
-                            finally { busy = false }
-                        }
+                        scope.decideStep(store, step.id, approved, { busy = it }, { error = it })
                     })
                 }
             }
         }
     }
+}
+
+/** A step run on its own, outside any run (its push opens it): the step alone, its approval answered in place. */
+@Composable internal fun WorkflowStepView(state: AppState, store: AppStore, stepId: String, back: () -> Unit) {
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.WorkflowStep))
+    var step by remember(stepId) { mutableStateOf<WorkflowStep?>(null) }
+    var error by remember(stepId) { mutableStateOf<String?>(null) }
+    var outputOpen by remember(stepId) { mutableStateOf(true) }
+    var inputOpen by remember(stepId) { mutableStateOf(false) }
+    var busy by remember(stepId) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(stepId, state.workflowTick) {
+        try {
+            val loaded = store.fetchWorkflowStep(stepId)
+            ensureActive()
+            step = loaded
+            error = null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { if (step == null) error = failure.message }
+    }
+    val shown = step
+    WorkflowScreen(shown?.let { stepTitle(it) } ?: "", back) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            error?.let { Text(tr(it), style = Type.callout, color = Palette.danger) }
+            if (shown == null) { if (error == null) Text(tr("Loading…"), style = Type.body, color = Palette.secondary) }
+            else RunStep(shown, stepTitle(shown), outputOpen, inputOpen, busy, onToggle = { outputOpen = !outputOpen },
+                onToggleInput = { inputOpen = !inputOpen }, onDecide = { approved ->
+                    scope.decideStep(store, shown.id, approved, { busy = it }, { error = it }) { step = store.fetchWorkflowStep(stepId) }
+                })
+        }
+    }
+}
+
+@Composable private fun stepTitle(step: WorkflowStep) = tr(step.title.ifBlank { step.kind })
+
+/** Answers an approval, busy while it goes, then [after] (the screen reading the step again). */
+private fun CoroutineScope.decideStep(store: AppStore, stepId: String, approved: Boolean, busy: (Boolean) -> Unit, error: (String?) -> Unit,
+    after: suspend () -> Unit = {}) = launch {
+    busy(true)
+    try { store.decideWorkflowStep(stepId, approved); after() }
+    catch (cancelled: CancellationException) { throw cancelled }
+    catch (failure: Exception) { error(failure.message) }
+    finally { busy(false) }
 }
 
 @Composable private fun RunOverview(run: WorkflowRunDetail) {

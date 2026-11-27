@@ -21,7 +21,7 @@ use crate::store::{EntryKind, Lane, Store, now_ms, run_session_key};
 use anyhow::{Result, bail};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub struct Effects {
     pub agents: Vec<(String, String)>,
@@ -613,18 +613,7 @@ fn settle_run(hub: &Hub, run: &RunRow, steps: &[StepRow], effects: &mut Effects)
         return Ok(());
     }
     let steps = load_steps(&hub.store, &run.id)?;
-    let status = if stopping
-        || (steps.iter().any(|s| s.status == StepStatus::Stopped)
-            && steps.iter().all(|s| s.status != StepStatus::Failed))
-    {
-        RunStatus::Stopped
-    } else if let Some(failed) = steps.iter().find(|s| s.status == StepStatus::Failed) {
-        let _ = failed;
-        RunStatus::Failed
-    } else {
-        RunStatus::Done
-    };
-    let error = steps.iter().find(|s| s.status == StepStatus::Failed).and_then(|s| s.error.clone());
+    let (status, error) = outcome(stopping, &steps);
     let now = now_ms();
     hub.store.with_immediate(|tx| {
         tx.execute(
@@ -658,6 +647,27 @@ fn settle_run(hub: &Hub, run: &RunRow, steps: &[StepRow], effects: &mut Effects)
     Ok(())
 }
 
+/// The run's status and error, read from each node's latest attempt: a retried step's older attempt no longer counts.
+fn outcome(stopping: bool, steps: &[StepRow]) -> (RunStatus, Option<String>) {
+    // Rows are in attempt order: a row is its node's latest when no later row has the same node.
+    // Kept in row order so the first failed step's error is stable.
+    let latest: Vec<&StepRow> = steps
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| !steps[i + 1..].iter().any(|t| t.node_id == s.node_id))
+        .map(|(_, s)| s)
+        .collect();
+    let failed = latest.iter().find(|s| s.status == StepStatus::Failed);
+    let status = if stopping || (failed.is_none() && latest.iter().any(|s| s.status == StepStatus::Stopped)) {
+        RunStatus::Stopped
+    } else if failed.is_some() {
+        RunStatus::Failed
+    } else {
+        RunStatus::Done
+    };
+    (status, failed.and_then(|s| s.error.clone()))
+}
+
 fn write_terminal(
     hub: &Hub,
     run: &RunRow,
@@ -673,7 +683,7 @@ fn write_terminal(
 ) -> Result<()> {
     let step = new_id();
     write_step(&hub.store, run, node, &step, status, input, output.as_deref(), branch, truncated, error, passes, now)?;
-    emit_step(hub, &run.workflow, &run.id, &step);
+    emit_step(hub, &run.workflow, Some(&run.id), &step);
     Ok(())
 }
 
@@ -690,11 +700,12 @@ fn write_open(
     let step = new_id();
     let output = (status == StepStatus::Done).then_some(input);
     write_step(&hub.store, run, node, &step, status, input, output, None, truncated, None, passes, now)?;
-    emit_step(hub, &run.workflow, &run.id, &step);
+    emit_step(hub, &run.workflow, Some(&run.id), &step);
     Ok(step)
 }
 
-fn emit_step(hub: &Hub, workflow: &str, run: &str, step: &str) {
+/// `run` None: a step run on its own ("Run this step").
+pub(super) fn emit_step(hub: &Hub, workflow: &str, run: Option<&str>, step: &str) {
     hub.emit_workflow(
         json!({"type": "workflow", "change": "step", "workflowId": workflow, "runId": run, "stepId": step}),
     );
@@ -941,8 +952,22 @@ fn load_steps(store: &Store, run: &str) -> Result<Vec<StepRow>> {
                 ended: r.get(14)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+        Ok(in_attempt_order(rows))
     })
+}
+
+/// Rows come in creation order. Each node's own rows are put back in attempt order in the places they hold,
+/// so a retry written in the same millisecond, or after the clock moved back, still reads as that node's latest.
+fn in_attempt_order(rows: Vec<StepRow>) -> Vec<StepRow> {
+    let order: Vec<String> = rows.iter().map(|r| r.node_id.clone()).collect();
+    let mut by_node: HashMap<String, Vec<StepRow>> = HashMap::new();
+    for row in rows {
+        by_node.entry(row.node_id.clone()).or_default().push(row);
+    }
+    for attempts in by_node.values_mut() {
+        attempts.sort_by_key(|r| std::cmp::Reverse(r.attempt));
+    }
+    order.into_iter().filter_map(|node| by_node.get_mut(&node).and_then(Vec::pop)).collect()
 }
 
 fn recorded(steps: &[StepRow]) -> Vec<Recorded> {
@@ -1189,9 +1214,7 @@ pub fn run_solo(hub: &Hub, workflow: &str, node_id: &str, request: &str) -> Resu
         NodeKind::Output => finish_solo_output(hub, workflow, &title, &node, &step, attempt, request, &input, now)?,
         _ => bail!("This step can't run on its own"),
     }
-    hub.emit_workflow(
-        json!({"type": "workflow", "change": "step", "workflowId": workflow, "runId": Value::Null, "stepId": step}),
-    );
+    emit_step(hub, workflow, None, &step);
     step_value(hub, &step)
 }
 
@@ -1543,4 +1566,59 @@ fn upstream_text(store: &Store, workflow: &str, graph: &Graph, node: &str) -> Re
         parts.push(output);
     }
     Ok(Some(parts.join("\n\n")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, node: &str, status: StepStatus, error: Option<&str>) -> StepRow {
+        StepRow {
+            id: id.into(),
+            node_id: node.into(),
+            attempt: 1,
+            request_id: id.into(),
+            kind: "agent".into(),
+            bot: None,
+            status,
+            input: String::new(),
+            output: None,
+            branch: None,
+            passes: 1,
+            truncated: false,
+            error: error.map(str::to_owned),
+            started: None,
+            ended: None,
+        }
+    }
+
+    #[test]
+    fn a_retried_step_that_succeeds_finishes_the_run() {
+        let steps = [row("1", "a", StepStatus::Failed, Some("boom")), row("2", "a", StepStatus::Done, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Done, None));
+        let steps = [row("1", "a", StepStatus::Stopped, None), row("2", "a", StepStatus::Done, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Done, None));
+        let steps = [row("1", "a", StepStatus::Done, None), row("2", "b", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(false, &steps), (RunStatus::Failed, Some("boom".into())));
+        let steps = [row("1", "a", StepStatus::Done, None), row("2", "b", StepStatus::Stopped, None)];
+        assert_eq!(outcome(false, &steps), (RunStatus::Stopped, None));
+        let steps = [row("1", "a", StepStatus::Stopped, None), row("2", "b", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(false, &steps), (RunStatus::Failed, Some("boom".into())));
+        let steps = [row("1", "a", StepStatus::Failed, Some("boom"))];
+        assert_eq!(outcome(true, &steps), (RunStatus::Stopped, Some("boom".into())));
+    }
+
+    #[test]
+    fn rows_created_out_of_attempt_order_still_end_on_the_latest_attempt() {
+        let attempt = |id, node, n, status, error| StepRow { attempt: n, ..row(id, node, status, error) };
+        let rows = vec![
+            attempt("z", "a", 2, StepStatus::Done, None),
+            attempt("b1", "b", 1, StepStatus::Done, None),
+            attempt("y", "a", 1, StepStatus::Failed, Some("boom")),
+        ];
+        let rows = in_attempt_order(rows);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["y", "b1", "z"]);
+        assert_eq!(outcome(false, &rows), (RunStatus::Done, None));
+    }
 }

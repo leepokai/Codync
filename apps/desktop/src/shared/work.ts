@@ -63,7 +63,14 @@ export interface WorkTask {
   /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older
    * host, where every live task takes one. */
   seat: boolean | null
+  /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
+  runsOn: string | null
 }
+
+/** The agent a task's thread runs on, or will: its own, else the one it was started on, else its bot's (none for the
+ * box of threads without a bot). */
+export const agentOf = (task: WorkTask, bot: { backend: string; plain?: boolean }) =>
+  task.runsOn ?? task.agent ?? (bot.plain ? null : bot.backend)
 
 export type ThreadPlace = 'here' | 'worktree'
 
@@ -112,6 +119,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           agent: typeof t.agent === 'string' ? t.agent : null,
           talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
+          runsOn: typeof t.runsOn === 'string' && t.runsOn ? t.runsOn : null,
         }]
       : [],
   )

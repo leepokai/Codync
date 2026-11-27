@@ -155,7 +155,8 @@ class MainActivity : ComponentActivity() {
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) {
             val workflowId = intent.getStringExtra(NotificationDisplay.WORKFLOW_ID) ?: uri.getQueryParameter("workflow")
             val runId = intent.getStringExtra(NotificationDisplay.RUN_ID) ?: uri.getQueryParameter("run")
-            if (uri.host == "bot" && !workflowId.isNullOrBlank()) accounts.openWorkflowLink(uri, workflowId, runId)
+            val stepId = intent.getStringExtra(NotificationDisplay.STEP_ID) ?: uri.getQueryParameter("step")
+            if (uri.host == "bot" && !workflowId.isNullOrBlank()) accounts.openWorkflowLink(uri, workflowId, runId, stepId)
             else accounts.openLink(uri)
         }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; accounts.finishConnectorSignIn(uri) }

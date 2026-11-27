@@ -17,7 +17,7 @@ import {
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import { HostError, type HostClient, type HostRoute, type HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
-import type { RunDetail, WorkflowDetail, WorkflowSummary } from '../views/workflows/workflow'
+import type { RunDetail, WorkflowDetail, WorkflowStep, WorkflowSummary } from '../views/workflows/workflow'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
@@ -121,6 +121,10 @@ export class BotMirror extends Observable {
   workflowDetailToken = 0
   workflowRunToken = 0
   workflowRun: RunDetail | null = null
+  /** The latest state of a step run on its own ("Run this step"): it belongs to no run, so `workflowRun` never carries it. */
+  workflowSoloStep: WorkflowStep | null = null
+  /** The host predates `workflowStep`: a solo step's event can't be read back, while every other workflow method works. */
+  workflowStepMissing = false
   workflowDeleted: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
@@ -455,6 +459,8 @@ export class BotMirror extends Observable {
     this.workflowSession = null
     this.workflowDetail = null
     this.workflowRun = null
+    this.workflowSoloStep = null
+    this.workflowStepMissing = false
     this.workflowDeleted = null
     if (this.quietError) {
       this.quietError = false

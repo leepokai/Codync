@@ -95,6 +95,8 @@ public final class BotStore {
     public internal(set) var screen: ScreenState?
     /// The computer's network of the user's computers (`nil`: the host predates it).
     public internal(set) var network: NetworkView?
+    /// The apps given MCP access here, as last read (`nil`: not read yet).
+    public internal(set) var mcpApps: [McpApp]?
     /// Installed on the computer, for the Plugins screen and bot settings.
     public internal(set) var installedConnectors: [InstalledConnector] = []
     public internal(set) var installedSkills: [InstalledSkill] = []

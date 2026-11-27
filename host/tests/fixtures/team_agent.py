@@ -131,10 +131,13 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ", "ASK_TWICE ")):
+    asks = ("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ", "ASK_TWICE ")
+    # An app's message in a thread follows a note naming the app, and Codync's note comes after it.
+    asked = next((line for line in reversed(text.split("\n")) if line.startswith(asks)), None)
+    if asked:
         # ASK <question>|<option>|<option>[|<recommended>]: one card, and its answer as this turn's reply.
         # ASK_TWICE asks again when the first call comes back.
-        command, body = text.split("\n\n")[-1].split(" ", 1)
+        command, body = asked.split(" ", 1)
         if command == "ASK_AFTER_MESSAGE":
             sent = mcp_call("chat", "send_message", {"text": "Here are your choices"})
             assert not sent.get("isError"), sent

@@ -63,14 +63,14 @@ impl Actor {
                 let _ = reply.send(self.send_to_user(text, quote));
             }
             Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
-            Cmd::Decision { entry_id, choice, reply } => {
+            Cmd::Decision { entry_id, choice, by, reply } => {
                 if !reply.is_closed() {
                     // A call that just ran out leaves its card open: a press on it is the user's next message.
                     self.expire_abandoned_decisions();
                     let answer = if self.open_card.as_deref() == Some(&entry_id) {
-                        self.answer_open_card(&entry_id, &choice)
+                        self.answer_open_card(&entry_id, &choice, by.as_ref())
                     } else {
-                        self.decided(&entry_id, &choice, None)
+                        self.decided(&entry_id, &choice, None, by.as_ref())
                     };
                     let _ = reply.send(answer);
                 }

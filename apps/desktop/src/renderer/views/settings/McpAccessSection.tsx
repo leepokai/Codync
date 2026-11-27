@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { HostError } from '../../client/host-client'
 import { CardSection, ChoicePicker, IconButton, ValueRow } from '../../components/Controls'
 import { Dialog, DialogField } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
@@ -13,7 +14,7 @@ import { errorText, liveClient } from './parts'
 export function McpAccessSection({ store }: { store: BotStore }) {
   const tr = useTr()
   useModel(store)
-  // `null` while loading or on a host from before MCP access, which shows nothing.
+  // `null` while loading, or on a host from before MCP access, which shows nothing.
   const [access, setAccess] = useState<McpAccess | null>(null)
   const [naming, setNaming] = useState<string | null>(null)
   // The command with a new app's token, shown this once.
@@ -26,8 +27,10 @@ export function McpAccessSection({ store }: { store: BotStore }) {
     if (!client) return
     try {
       setAccess(readMcpAccess(await client.call('mcpClients')))
-    } catch {
-      setAccess(null)
+    } catch (e) {
+      // A host from before MCP access shows nothing; any other failure keeps what showed and says why.
+      if (e instanceof HostError && e.message === 'unknown method') setAccess(null)
+      else store.setError(errorText(e))
     }
   }, [store])
   useEffect(() => void load(), [load, online])

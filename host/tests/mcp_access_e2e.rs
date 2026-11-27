@@ -132,3 +132,35 @@ async fn an_app_with_full_access_stops_its_thread_and_a_revoked_token_stops_at_o
     host.call("mcpClientRevoke", json!({"id": client["id"]})).await;
     assert!(refused("thread_list", json!({})).await.contains("revoked"));
 }
+
+#[tokio::test]
+async fn an_apps_answer_to_a_choice_is_marked_as_the_apps_never_the_users_words() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Ada", "team_agent.py", "").await;
+    // An agent with no modes runs only a thread that approves by itself.
+    host.call("setMcpAccess", json!({"max": "full"})).await;
+    let (token, _) = app(&host, "Picker", "full").await;
+    let tool = async |name: &str, arguments: Value| host.call("agentCall", call(&token, name, arguments)).await;
+
+    let launched =
+        tool("thread_launch", json!({"message": "ASK Which?|Left|Right", "botId": bot, "approval": "full"})).await;
+    let thread = launched["thread"].clone();
+    let id = thread["taskId"].as_str().unwrap().to_owned();
+    // It waits until the thread needs someone: the bot's question.
+    let mut waited = tool("thread_wait", with(&thread, json!({"timeoutSecs": 10}))).await;
+    while waited["needsYou"].as_array().is_none_or(Vec::is_empty) {
+        assert_eq!(waited["timedOut"], false, "no card: {waited}");
+        waited = tool("thread_wait", with(&thread, json!({"timeoutSecs": 10, "cursor": waited["cursor"]}))).await;
+    }
+    let card = tool("thread_pending", thread.clone()).await["pending"][0].clone();
+    let answer = with(&thread, json!({"action": "answer", "requestId": card["requestId"], "option": "Right"}));
+    assert_eq!(tool("thread_pending", answer).await["choice"], "Right");
+
+    task(&host, &bot, &id, |t| t["status"] == "done").await;
+    // A thread's card, and so the choice, is in its bot's chat.
+    let history = host.call("history", json!({"botId": bot})).await;
+    let entries = history["entries"].as_array().unwrap();
+    let said = entries.iter().find(|e| e["data"]["from"] == "decision").unwrap_or_else(|| panic!("{history}"));
+    assert_eq!((&said["data"]["text"], &said["data"]["mcp"]["label"]), (&json!("Right"), &json!("Picker")), "{said}");
+    assert_eq!(said["data"]["pasted"], json!(["Right"]), "memory never takes it as the user's own words");
+}

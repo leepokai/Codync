@@ -78,11 +78,13 @@ pub fn once(
     let Some(key) = key.filter(|k| !k.is_empty()) else { return Ok((write()?, false)) };
     ensure!(key.len() <= 200, "clientRequestId is at most 200 characters");
     let k = format!("{REQUESTS}{}", request_key(p, tool, key));
-    if let Some(done) = store.kv_get(&k).and_then(|v| serde_json::from_str::<Value>(&v).ok()) {
+    let now = now_ms();
+    // One kept past its days counts as never made, though no newer write has swept it away yet.
+    let kept = store.kv_get(&k).and_then(|v| serde_json::from_str::<Value>(&v).ok());
+    if let Some(done) = kept.filter(|d| d["at"].as_i64().is_some_and(|at| now - at <= REQUEST_KEPT_MS)) {
         return Ok((done["made"].clone(), true));
     }
     let made = write()?;
-    let now = now_ms();
     store.kv_set(&k, &json!({"made": made, "at": now}).to_string())?;
     // ponytail: scans every kept write on each new one; an index by time if apps write thousands a week.
     for old in store.kv_prefix(REQUESTS) {
@@ -178,6 +180,24 @@ mod tests {
         let (_, replayed) = once(&hub.store, &a, "thread_launch", None, &mut launch).unwrap();
         assert!(!replayed);
         assert_eq!(made, 5);
+    }
+
+    #[test]
+    fn a_retry_past_seven_days_makes_new_work_even_before_any_other_write() {
+        let hub = hub();
+        let mut made = 0;
+        let mut launch = || {
+            made += 1;
+            Ok(json!({"taskId": format!("t{made}")}))
+        };
+        let a = app("app");
+        let (first, _) = once(&hub.store, &a, "thread_launch", Some("k1"), &mut launch).unwrap();
+        // Kept eight days ago, and nothing since swept it away.
+        let k = format!("{REQUESTS}{}", request_key(&a, "thread_launch", "k1"));
+        hub.store.kv_set(&k, &json!({"made": first, "at": now_ms() - 8 * DAY_MS}).to_string()).unwrap();
+        let (again, replayed) = once(&hub.store, &a, "thread_launch", Some("k1"), &mut launch).unwrap();
+        assert!(!replayed && again != first, "too old to answer for: new work");
+        assert_eq!(made, 2);
     }
 
     #[test]

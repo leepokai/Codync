@@ -67,14 +67,17 @@ in `control/schema.rs`. The cloud's copy is in `cloud/src/routes/assistant.ts`.
 - **Refusals** carry a code: `capability_denied`, `mode_escalation_denied`, `not_found` (also for a thread the
   caller can't see), `invalid_request`, `rate_limited`, `revoked`, `expired`.
 - **Idempotency**: `thread_launch`, `thread_send`, `routine_run` and `workflow_run` take `clientRequestId`. The same
-  id from the same principal returns the first result with `replayed: true` (kept 7 days).
+  id from the same principal and tool returns the first result with `replayed: true` (kept 7 days: an older one counts as
+  never made, even before a newer write sweeps it away).
 - **Limits**: 8 live threads per app, 32,000 characters a message, `thread_wait` up to 50 s locally and 8 s over the
   cloud (its 10 s call timeout).
 - **Folders**: a folder must be under one the app was given, or one of the reachable bots' projects and folders. A
   folder is resolved through symlinks, must exist, and can't be in or contain Codync's data folder.
 - **Framing**: the thread's context says it was started by an outside app and that its messages aren't the user's
-  own words. Each message it sends reaches the agent prefixed with the app's name and is kept out of memory as user
-  input (`pasted`).
+  own words. Each message it sends, and each choice it answers with `thread_pending`, is marked with the app's name
+  (`mcp`) and kept out of memory as user input (`pasted`); a message also reaches the agent prefixed with that name.
+- **Reading**: `thread_read` `view: "steps"` gives each step's text, and a tool step's `status` and `output` (its result,
+  a failed command's error say), each held to `maxCharsPerItem`.
 
 ## What the user sees
 

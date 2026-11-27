@@ -559,6 +559,19 @@ extension BotStore {
         if let view = try? await client.networkView(), !Task.isCancelled { network = view }
     }
 
+    /// Reads the apps given MCP access again (the sheet opening). A failure shows in the dialog and keeps the list.
+    public func loadMcpApps() async {
+        await attempt { mcpApps = try await $0.mcpApps().active }
+    }
+
+    /// Its token stops working right away; the list is read again.
+    public func revokeMcpApp(_ id: String) async {
+        await attempt { client in
+            try await client.revokeMcpApp(id: id)
+            mcpApps = try await client.mcpApps().active
+        }
+    }
+
     public func loadOlder(_ botId: String) async {
         // Held while everything is fetched again, like `canLoadOlder`.
         guard let client, refetched == nil, !historyComplete.contains(botId) else { return }

@@ -344,3 +344,20 @@ async fn thread_wait_sees_progress_on_any_entry_not_only_the_newest() {
     let since = json!({"botId": "b1", "taskId": "mine", "timeoutSecs": 0, "cursor": before});
     assert_eq!(call(&hub, &a, "thread_wait", &since).await.unwrap()["timedOut"], false, "it answers at once");
 }
+
+#[tokio::test]
+async fn thread_read_steps_show_what_a_tool_returned_held_to_the_size_asked() {
+    let hub = hub();
+    hub.store.save_bot(&bot_cfg("b1")).unwrap();
+    put_task(&hub, "b1", "mine", "thread-r", Some(("a", Level::Ask)), json!({}));
+    let a = app("a", Level::Ask, &[Scope::Threads]);
+    let failed = format!("error[E0425]: cannot find value `x`{}", " in this scope".repeat(40));
+    let tool = json!({"title": "cargo build", "status": "failed", "output": failed});
+    hub.add_entry(&Lane::main("thread-r"), EntryKind::Tool, 1, &tool).unwrap();
+    let read = json!({"botId": "b1", "taskId": "mine", "view": "steps", "maxCharsPerItem": 100});
+    let steps = call(&hub, &a, "thread_read", &read).await.unwrap();
+    let step = &steps["steps"][0];
+    assert_eq!((&step["text"], &step["status"]), (&json!("cargo build"), &json!("failed")), "{steps}");
+    let output = step["output"].as_str().unwrap();
+    assert!(output.starts_with("error[E0425]") && output.chars().count() <= 101, "{output}");
+}

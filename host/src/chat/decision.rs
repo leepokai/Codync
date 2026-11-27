@@ -259,11 +259,17 @@ pub fn left_open() -> Value {
 }
 
 /// An API success means the actor delivered this answer to its live tool waiter.
-pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Value> {
+/// `by`: the outside app that picked it, whose choice is marked as its own (never the user's words).
+pub async fn respond(
+    hub: &Arc<Hub>,
+    entry_id: &str,
+    option: &str,
+    by: Option<crate::chat::work::external::StartedBy>,
+) -> Result<Value> {
     let card = pending_card(&hub.store, entry_id)?;
     let owner = crate::chat::work::card_actor(&card);
     let (reply, received) = tokio::sync::oneshot::channel();
-    hub.send_cmd(owner, Cmd::Decision { entry_id: entry_id.to_owned(), choice: option.to_owned(), reply })?;
+    hub.send_cmd(owner, Cmd::Decision { entry_id: entry_id.to_owned(), choice: option.to_owned(), by, reply })?;
     tokio::time::timeout(Duration::from_secs(10), received)
         .await
         .map_err(|_| anyhow!("the bot did not acknowledge the choice"))?

@@ -480,7 +480,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         // A press on a decision card (`request_decision`): the choice is the bot's answer and the user's message.
         "respondDecision" => {
-            crate::chat::decision::respond(hub, str_arg(&b, "entryId")?, str_arg(&b, "option")?).await?
+            crate::chat::decision::respond(hub, str_arg(&b, "entryId")?, str_arg(&b, "option")?, None).await?
         }
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;

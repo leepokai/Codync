@@ -12,24 +12,15 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.McpApp
 import com.codync.android.core.fill
 import com.codync.android.design.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 
 /**
  * The apps given MCP access on a computer: each one's level and expiry, and Revoke (iOS `McpAccessSheet`). Apps are
  * added and their access set on the computer itself (the host takes those calls from loopback only).
  */
 @Composable internal fun McpAccessSheet(store: AppStore) {
-    var apps by remember { mutableStateOf<List<McpApp>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val state by store.state.collectAsState()
     var revoking by remember { mutableStateOf<McpApp?>(null) }
-    val scope = rememberCoroutineScope()
-    suspend fun load() {
-        try { apps = McpApp.active(store.hostQuery("mcpClients", body())); error = null }
-        catch (e: CancellationException) { throw e }
-        catch (e: Exception) { error = e.message ?: e.toString() }
-    }
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) { store.loadMcpApps() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader({
             Text(tr("MCP access"), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -37,12 +28,16 @@ import kotlinx.coroutines.launch
         CardForm {
             CardSection(footer = "Approvals are never answered through MCP: every request still comes to your devices.",
                 modifier = Modifier.animateContentSize(Motion.layoutSize)) {
-                error?.let { row { Text(it, style = Type.subheadline, color = Palette.danger) } }
-                val shown = apps
+                val apps = state.mcpApps
                 when {
-                    shown == null -> if (error == null) row { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() } }
-                    shown.isEmpty() -> row { Text(tr("No apps yet. They're added on the computer."), style = Type.subheadline, color = Palette.secondary) }
-                    else -> for (app in shown) row { McpAppRow(app) { revoking = app } }
+                    // A first read that failed says why here; a later failure keeps the list and shows as the store's error.
+                    apps == null -> row {
+                        val error = state.error
+                        if (error != null) Text(error, style = Type.subheadline, color = Palette.danger)
+                        else Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
+                    }
+                    apps.isEmpty() -> row { Text(tr("No apps yet. They're added on the computer."), style = Type.subheadline, color = Palette.secondary) }
+                    else -> for (app in apps) row { McpAppRow(app) { revoking = app } }
                 }
             }
         }
@@ -50,15 +45,7 @@ import kotlinx.coroutines.launch
     val target = revoking
     CodyncDialog(fill(tr("Revoke {name}?"), mapOf("name" to (target?.label ?: ""))), target != null, { revoking = null },
         "Its token stops working right away.") {
-        listOfNotNull(target?.let { app ->
-            DialogAction("Revoke", destructive = true) {
-                scope.launch {
-                    try { store.hostQuery("mcpClientRevoke", body("id" to app.id)); load() }
-                    catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { error = e.message ?: e.toString() }
-                }
-            }
-        })
+        listOfNotNull(target?.let { app -> DialogAction("Revoke", destructive = true) { store.revokeMcpApp(app.id) } })
     }
 }
 

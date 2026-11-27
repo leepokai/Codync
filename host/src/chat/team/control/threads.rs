@@ -446,7 +446,15 @@ pub fn read(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Value> {
     let next = (i64::try_from(steps.len()).unwrap_or(0) == limit).then(|| steps.first().map(|e| e.seq)).flatten();
     let steps: Vec<Value> = steps
         .iter()
-        .map(|e| json!({"seq": e.seq, "kind": e.kind, "at": e.created_at, "text": clip(&entry_text(e))}))
+        .map(|e| {
+            let mut step = json!({"seq": e.seq, "kind": e.kind, "at": e.created_at, "text": clip(&entry_text(e))});
+            // A tool's result (a failed command's error, say) and how it ended, held to the same size.
+            if e.kind == "tool" {
+                step["status"] = e.data["status"].clone();
+                step["output"] = clip(e.data["output"].as_str().unwrap_or_default()).into();
+            }
+            step
+        })
         .collect();
     Ok(json!({"thread": summary, "steps": steps, "next": next}))
 }
@@ -509,7 +517,8 @@ pub async fn pending(hub: &Arc<Hub>, me: &Caller<'_>, args: &Value) -> Result<Va
                 )));
             }
             let option = text(args, "option")?;
-            crate::chat::decision::respond(hub, &found.id, option).await
+            // Its choice is marked as its own, as its messages are: never taken for the user's words.
+            crate::chat::decision::respond(hub, &found.id, option, Some(by(me, target.level))).await
         }
         _ => Err(invalid("action: list, read or answer")),
     }

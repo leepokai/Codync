@@ -2158,6 +2158,7 @@
   "Using {to} while {own} is signed out": "Используется {to}: {own} вышел из аккаунта",
   "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить",
   "Show the quoted message": "Показать цитируемое сообщение",
+  "Show full message": "Показать полное сообщение",
   "That message isn't loaded": "Это сообщение не загружено",
   "This message quotes nothing": "Это сообщение ничего не цитирует",
   "Saved credentials": "Сохранённые учётные данные",

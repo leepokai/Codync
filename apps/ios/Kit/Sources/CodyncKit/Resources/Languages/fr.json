@@ -2158,6 +2158,7 @@
   "Using {to} while {own} is signed out": "Utilisation de {to} : {own} est déconnecté",
   "Using {to} while {own} couldn't start": "Utilisation de {to} : {own} n'a pas pu démarrer",
   "Show the quoted message": "Afficher le message cité",
+  "Show full message": "Afficher le message complet",
   "That message isn't loaded": "Ce message n’est pas chargé",
   "This message quotes nothing": "Ce message ne cite rien",
   "Saved credentials": "Identifiants enregistrés",

@@ -2158,6 +2158,7 @@
   "Using {to} while {own} is signed out": "Usando {to} porque {own} ha cerrado la sesión",
   "Using {to} while {own} couldn't start": "Usando {to} porque {own} no pudo iniciarse",
   "Show the quoted message": "Mostrar el mensaje citado",
+  "Show full message": "Mostrar el mensaje completo",
   "That message isn't loaded": "Ese mensaje no está cargado",
   "This message quotes nothing": "Este mensaje no cita nada",
   "Saved credentials": "Credenciales guardadas",

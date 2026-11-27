@@ -25,6 +25,7 @@ import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
 import { noteActiveDay } from '../lib/use-kofi-ask'
+import { cachedAttachment, cacheAttachment } from './attachment-cache'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -160,7 +161,7 @@ export class BotStore extends BotSync {
   }
 
   private async cachedFile(id: string, fetch: (client: HostClient) => Promise<Uint8Array>): Promise<Uint8Array | null> {
-    const cached = attachmentCache.get(id)
+    const cached = cachedAttachment(id)
     if (cached) return cached
     const client = this.live
     if (!client) return null
@@ -788,8 +789,6 @@ export class BotStore extends BotSync {
   }
 }
 
-// ponytail: in-memory attachment cache; a disk cache (main process) if relaunches refetching hurts.
-const attachmentCache = new Map<string, Uint8Array>()
 /** Uploads `files` for one message (to the thread of `taskId` when given), each cached as sent; their upload ids. */
 async function uploadFiles(client: HostClient, botId: string, files: OutgoingFile[], taskId?: string): Promise<string[]> {
   const ids: string[] = []
@@ -800,10 +799,6 @@ async function uploadFiles(client: HostClient, botId: string, files: OutgoingFil
     ids.push(id)
   }
   return ids
-}
-
-function cacheAttachment(id: string, data: Uint8Array) {
-  attachmentCache.set(id, data)
 }
 
 export { isWorking, needsInput }

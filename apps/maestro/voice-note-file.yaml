@@ -1,0 +1,57 @@
+# A sound a bot sends on its own (send_file with no text), on the phones: the same player as a voice note inside a
+# message, the file's name under the row, and no Download button on the row — Download is in the message's menu, as
+# for a voice note inside a message. The phone must already be signed in and paired with the host (a worktree's
+# sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that;
+# the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags attachments \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - attachments
+onFlowComplete:
+  - runScript:
+      file: voice-note.js
+      env:
+        CLEANUP: "true"
+---
+- runScript:
+    file: voice-note.js
+    env:
+      MODE: voice-file
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+# One element, "<file name>, <its clock>", as a voice note in a message reads "Voice note, <its clock>".
+- extendedWaitUntil:
+    visible: "note.wav, 0:00 / 0:04.*"
+    timeout: 20000
+# The row is one element, "<file name>, <clock>" — not the file card's "<file name>, <size>": that label, and a
+# separate Download row or button, are what the old card read ("note.wav, 62.6 kB"). The space before the unit is
+# a non-breaking one where the platform's formatter uses it (iOS's ByteCountFormatter does).
+- assertNotVisible: 'note.wav,[  ]*[0-9.]+[  ]*(bytes|B|kB|KB|MB|GB)'
+- assertNotVisible: "^Download .*"
+# The message's menu carries Download, after Copy, as it does for a voice note inside a message; its own text is
+# only the computer's fallback (the file's name and size), so it offers no Select Text.
+- longPressOn:
+    text: "note.wav, .*"
+- extendedWaitUntil:
+    visible: "Download"
+    timeout: 5000
+- assertNotVisible: "Select Text"

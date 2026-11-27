@@ -82,23 +82,56 @@
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
-/* A message's voice note, at the top of its bubble: no card of its own, the text follows under it. The row keeps the
-   text bubble's padding: the play glyph sits on the text's edge, its button's hover chip inside the bubble. */
+/* A voice note's player. Inside a message it opens the bubble (no card of its own, the text follows under it) and
+   keeps the bubble's padding, the play glyph on the text's edge; sent on its own it is a bubble of its own with the
+   file's name under the row. */
 .voice-note {
   min-width: 220px;
   margin-bottom: 8px;
   border-radius: var(--radius-m);
 }
+.voice-note.bubble {
+  margin-bottom: 0;
+  max-width: 380px;
+  border-radius: var(--radius-l);
+}
 .voice-note:focus-visible {
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
+/* The voice note's play slot is the glyph's own width (18 px), so the bar sits the row's 10 px gap from it and
+   from the clock. */
 .voice-note .file-card-play {
-  width: 21px;
+  width: 18px;
   height: 24px;
 }
 .voice-note .file-card-play > button {
-  margin: -6px -7.5px;
+  margin: -6px -9px;
+}
+/* Hover lays a soft round chip behind the outline glyph, as on other icon buttons, and press deepens it; a 28 px
+   circle, clear of the bar beside it. */
+.voice-note-glyph.icon-button,
+.voice-note-glyph.icon-button:hover:not(:disabled),
+.voice-note-glyph.icon-button:active:not(:disabled) {
+  background: none;
+  transform: none;
+}
+.voice-note-glyph::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  transition: background-color var(--hover);
+}
+.voice-note-glyph > * {
+  grid-area: 1 / 1;
+}
+.voice-note-glyph:hover::before {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.voice-note-glyph:active::before {
+  background: rgba(var(--text-rgb), 0.14);
 }
 .voice-note .file-card-progress {
   flex: 1;
@@ -108,6 +141,14 @@
 /* Steady digits, so the bar's end doesn't move as the clock runs. */
 .voice-note .file-card-detail {
   font-variant-numeric: tabular-nums;
+}
+/* A note that can't play: the error takes the bar's place, centred in it with the row's 10 px gap on both sides
+   of the text. */
+.voice-note .file-card-detail.voice-note-error {
+  flex: 1;
+  min-width: 0;
+  padding-right: 10px;
+  text-align: center;
 }
 .file-card-image-menu {
   display: flex;

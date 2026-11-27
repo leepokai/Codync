@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -301,23 +302,14 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
         // instead plays inside its bubble, over the message it captions.
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,
             onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }, items = textMenu))
-        else if (voiceNote != null) {
-            val player = rememberSharedAudio(entry, voiceNote, store)
-            val download = state.fileDownloads[voiceNote.id]
-            val busy = download is FileDownloadState.Downloading
-            val save = { store.toggleFile(entry.id, entry.botId, voiceNote) }
-            // Its Download follows Copy, as on desktop and iPhone.
-            val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
-            Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-                .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
-                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) },
-                    items = { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) })) {
-                VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false)
-            }
-        }
-        // Each card holds its own menu: a picture's copies the picture.
+        else if (voiceNote != null) AudioBubble(entry, voiceNote, menu, state, store, focus, attachment = false)
+        // Each card holds its own menu: a picture's copies the picture; a sound the computer marked playable is
+        // the same bubble a voice note in a message gets, its name under the row.
         else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (file in files) FileDownloadCard(entry, file, menu, state, store)
+            for (file in files) {
+                if (file.playsInChat) AudioBubble(entry, file, menu, state, store, focus, attachment = true)
+                else FileDownloadCard(entry, file, menu, state, store)
+            }
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
             .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
             AgentText(entry.text, selectable = false)
@@ -327,12 +319,35 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
 }
 
 /**
- * A reply carrying a voice note, as a messaging app shows one with a caption: the player at the top of its bubble,
- * the message under it. The player row is one element — "Voice note, <caption>" — with the card's play and download
- * actions; download has no button here, the bubble's menu and those actions carry it.
+ * A reply carrying a voice note, or a sound sent as a file (`attachment`), as a messaging app shows one with a
+ * caption: the player at the top of the bubble, the message (or a file's name) under it. Download lives in the
+ * bubble's menu, after Copy, as on desktop and iPhone.
+ */
+@Composable private fun AudioBubble(entry: Entry, file: SharedFile, menu: MessageMenu, state: AppState, store: AppStore,
+    focus: FocusManager, attachment: Boolean) {
+    val context = LocalContext.current
+    val player = rememberSharedAudio(entry, file, store, state.actualConnection is LinkState.Ready)
+    val download = state.fileDownloads[file.id]
+    val busy = download is FileDownloadState.Downloading
+    val save = { store.toggleFile(entry.id, entry.botId, file) }
+    val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
+    Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+        .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
+            preview = { VoiceNoteMessage(entry.text, file, player, download, save, attachment, selectable = true) },
+            items = if (attachment) { { menu.items(listOf(textCopyItem(context, entry.text), downloadItem)) } }
+                else { { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) } })) {
+        VoiceNoteMessage(entry.text, file, player, download, save, attachment, selectable = false)
+    }
+}
+
+/**
+ * Inside [AudioBubble]'s chrome: the shared player row, then the message — or the file's name, truncated to one
+ * line, for a sound sent as a file (whose message is only the computer's fallback). The player row is one element —
+ * "<name>, <caption>" — with the play and download actions; download has no button here, the bubble's menu and
+ * those actions carry it.
  */
 @Composable private fun VoiceNoteMessage(text: String, file: SharedFile, audio: SharedAudio, download: FileDownloadState?,
-    save: () -> Unit, selectable: Boolean) {
+    save: () -> Unit, attachment: Boolean, selectable: Boolean) {
     val scope = rememberCoroutineScope()
     val translate = translator()
     val busy = download is FileDownloadState.Downloading
@@ -340,8 +355,10 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     val play = { scope.launch { audio.toggle() }; Unit }
     Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val failed = audio.phase == AudioPhase.Failed
+        val downloadFailed = download is FileDownloadState.Failed
         Row(Modifier.fillMaxWidth().clearAndSetSemantics {
-            contentDescription = "${translate("Voice note")}, $caption"
+            contentDescription = "${translate(if (attachment) file.name else "Voice note")}, $caption"
             audioSeek(audio)
             customActions = listOf(
                 CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true },
@@ -349,12 +366,17 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
             onClick(label = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true }
         }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SharedAudioButton(audio, play)
-            if (audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
-            // Steady digits, so the bar's end doesn't move as the clock runs.
+            // A note that can't play hides the bar and puts the error in its place.
+            if (!failed && audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
+            // Steady digits, so the bar's end doesn't move as the clock runs. A failure's text fills the bar's
+            // slot and centres in it, the row's 12 dp gap on both sides of the text.
             Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
-                color = if (audio.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
+                color = if (failed || downloadFailed) Palette.danger else Palette.secondary,
+                textAlign = if (failed) TextAlign.Center else null,
+                modifier = if (failed) Modifier.weight(1f).padding(end = 12.dp) else Modifier)
         }
-        if (text.isNotEmpty()) MarkdownText(text, selectable)
+        if (attachment) Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        else if (text.isNotEmpty()) MarkdownText(text, selectable)
     }
 }
 

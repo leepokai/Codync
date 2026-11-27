@@ -29,6 +29,15 @@ export function clock(seconds: number) {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
+/** A sound's clock, `elapsed / duration`, its elapsed half written in its length's shape (`0:00:05 / 1:02:00`), so
+ *  with steady digits the clock keeps one width as it runs. */
+export function soundClock(elapsed: number, duration: number) {
+  const length = clock(duration)
+  const played = clock(elapsed)
+  const pad = length.slice(0, Math.max(0, length.length - played.length)).replace(/\d/g, '0')
+  return `${pad}${played} / ${length}`
+}
+
 /** What the download button does now (also the Library's file rows). */
 export function downloadAction(state: DownloadState | undefined) {
   return state?.kind === 'downloading' ? trNow('Cancel download') : state?.kind === 'failed' ? trNow('Retry download') : state?.kind === 'saved' ? trNow('Save again') : trNow('Download')
@@ -99,6 +108,6 @@ export function downloadDetail(state: DownloadState | undefined, file: SharedFil
 export function cardDetail(state: DownloadState | undefined, file: SharedFile, audio?: AudioSnapshot, tr = trNow) {
   if (audio?.phase === 'failed') return tr("Couldn't play. Click to retry.")
   if (state?.kind === 'downloading' || state?.kind === 'failed') return downloadDetail(state, file)
-  if (audio && audio.duration > 0) return `${clock(audio.elapsed)} / ${clock(audio.duration)}`
+  if (audio && audio.duration > 0) return soundClock(audio.elapsed, audio.duration)
   return downloadDetail(state, file)
 }

@@ -4,12 +4,15 @@ import Testing
 @testable import CodyncKit
 @testable import CodyncUI
 
-/// A sound's fetches from the computer that the test answers when it chooses, newest first.
+/// A sound's fetches from the computer that the test answers when it chooses, newest first. Like the store, it
+/// keeps the bytes it answered and hands them out again without a fetch; `calls` counts only real fetches.
 @MainActor private final class HeldLoad {
     private var waiting: [CheckedContinuation<Data?, Never>] = []
     private(set) var calls = 0
+    private var cached: Data?
 
     func call() async -> Data? {
+        if let cached { return cached }
         calls += 1
         return await withCheckedContinuation { waiting.append($0) }
     }
@@ -17,6 +20,7 @@ import Testing
     func asked() async -> Bool { await until { !self.waiting.isEmpty } }
 
     func answer(_ data: Data?) {
+        cached = data
         waiting.popLast()?.resume(returning: data)
     }
 }
@@ -97,16 +101,98 @@ private func silentWAV() -> Data {
         }
     }
 
-    @Test func aStaleLoadFinishingAfterANewerTapLeavesThatTapPlaying() async {
+    @Test func aPreloadedVoiceNotePlaysAtOnceSoATapFetchesNothing() async {
         await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.state == .idle, "the preload only fetches: nothing plays")
+            #expect(audio.duration == 1, "the preload read the length off the bytes, so the clock shows")
+
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(load.calls == 1)
+            #expect(audio.state == .playing)
+        }
+    }
+
+    @Test func aTapWhileTheSoundPreloadsWaitsForTheSameFetchAndPlays() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await until { audio.state == .loading })
+            await audio.toggle(note, entryId: "entry", model: store)
+            load.answer(silentWAV())
+            await preloading.value
+            await tap.value
+
+            #expect(load.calls == 1)
+            #expect(audio.state == .playing)
+        }
+    }
+
+    @Test func aFailedPreloadStaysQuietAndTheTapFetchesAgain() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(nil)
+            await preloading.value
+            #expect(audio.state == .idle, "a failed fetch stays quiet until a tap")
+            #expect(audio.duration == nil)
+
+            // The failed fetch is forgotten: the tap fetches again and reports it.
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await until { load.calls == 2 })
+            load.answer(silentWAV())
+            await tap.value
+            #expect(audio.state == .playing)
+        }
+    }
+
+    @Test func aCardGoneWhileItsSoundPreloadsPlaysNothing() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            audio.stop()
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.state == .idle)
+            #expect(audio.duration == nil)
+        }
+    }
+
+    @Test func aVoiceNoteFailingAfterItsPreloadKeepsTheLengthItRead() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.duration == 1)
+
+            // The preload's fetch answered and is forgotten, so the tap fetches again (the held answer cleared):
+            // that fetch fails, and the failure drops the player but keeps the length the preload read.
+            load.answer(nil)
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(nil)
+            await tap.value
+            #expect(audio.state == .failed)
+            #expect(audio.duration == 1)
+        }
+    }
+
+    @Test func aStaleFetchLandingAfterAStopLeavesTheNewerTapPlaying() async {
+        await playing { audio, load, store, note in
+            // The first tap's fetch stays the newer tap's: every asker shares it, and the tap the card outlived
+            // reads its answer late without touching state.
             let old = Task { await audio.toggle(note, entryId: "entry", model: store) }
             #expect(await load.asked())
             audio.stop()
             let new = Task { await audio.toggle(note, entryId: "entry", model: store) }
-            #expect(await until { load.calls == 2 })
+            #expect(load.calls == 1, "a tap waits on the fetch already running")
             load.answer(silentWAV())
             await new.value
-            load.answer(silentWAV())
             await old.value
 
             #expect(audio.state == .playing)
@@ -132,6 +218,23 @@ private func silentWAV() -> Data {
             audio.seek(to: 9)
             #expect(abs(audio.elapsed - (audio.duration ?? 0)) < 0.01)
             #expect(audio.state == .paused)
+        }
+    }
+
+    @Test func aSeekBeforeTheFirstPlayStartsTheVoiceNoteThere() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.duration == 1)
+
+            audio.seek(to: 0.4)
+            #expect(abs(audio.elapsed - 0.4) < 0.01, "the bar shows where the first play will start")
+            // The preload's fetch answered and is forgotten; the store hands the bytes back for the tap.
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(audio.state == .playing)
+            #expect(abs(audio.elapsed - 0.4) < 0.01)
         }
     }
 
@@ -264,5 +367,21 @@ private func silentWAV() -> Data {
     #expect(FileDownloadCard.detail(.saved, play: .paused, elapsed: 7, duration: 48, size: size) == "0:07 / 0:48")
     #expect(FileDownloadCard.detail(nil, play: .playing, duration: 12, size: size) == "0:00 / 0:12")
     #expect(FileDownloadCard.detail(nil, play: .paused, elapsed: 7, duration: 48, size: size) == "0:07 / 0:48")
+    #expect(FileDownloadCard.detail(nil, play: .paused, elapsed: 3, duration: 10, size: size) == "0:03 / 0:10")
+    #expect(FileDownloadCard.detail(nil, play: .paused, elapsed: 5, duration: 720, size: size) == "00:05 / 12:00",
+            "the elapsed count fills the duration's shape, so the clock keeps one width as it runs")
+    #expect(FileDownloadCard.detail(nil, play: .paused, elapsed: 750, duration: 3720, size: size) == "0:12:30 / 1:02:00")
+    #expect(FileDownloadCard.detail(nil, play: .playing, elapsed: 5, duration: 3720, size: size) == "0:00:05 / 1:02:00")
     #expect(FileDownloadCard.detail(nil, size: size) == "1.3 MB")
+}
+
+@MainActor @Test func aCardPreloadsItsSoundUnlessTheFetchWouldCost() {
+    let big = SharedAudio.preloadLimit + 1, small = SharedAudio.preloadLimit - 1
+    #expect(SharedAudio.preloads(online: true, expensive: true, bytes: big) == false)
+    #expect(SharedAudio.preloads(online: true, expensive: true, bytes: small) == true)
+    #expect(SharedAudio.preloads(online: true, expensive: false, bytes: big) == true)
+    #expect(SharedAudio.preloads(online: false, expensive: false, bytes: small) == false)
+    // Before the network's first report, only a small note preloads; a big one waits for the path.
+    #expect(SharedAudio.preloads(online: true, expensive: nil, bytes: big) == false)
+    #expect(SharedAudio.preloads(online: true, expensive: nil, bytes: small) == true)
 }

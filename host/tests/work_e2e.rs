@@ -848,7 +848,11 @@ async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
     let there = logged(&folder, "prompts.jsonl");
     assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
 
-    std::fs::remove_dir_all(&folder).unwrap();
+    // The run's thread stops its agent after the run is recorded; Windows can't remove a folder a process is still in.
+    wait("the run's agent to leave the folder", async || {
+        (std::fs::remove_dir_all(&folder).is_ok() || !folder.exists()).then_some(())
+    })
+    .await;
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");

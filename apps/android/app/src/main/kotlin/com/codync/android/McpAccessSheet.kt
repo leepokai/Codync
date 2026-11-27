@@ -37,7 +37,7 @@ import com.codync.android.design.*
                         else Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
                     }
                     apps.isEmpty() -> row { Text(tr("No apps yet. They're added on the computer."), style = Type.subheadline, color = Palette.secondary) }
-                    else -> for (app in apps) row { McpAppRow(app) { revoking = app } }
+                    else -> for (app in apps) row { McpAppRow(app, state.revokingMcpApp(app.id)) { revoking = app } }
                 }
             }
         }
@@ -49,7 +49,8 @@ import com.codync.android.design.*
     }
 }
 
-@Composable private fun McpAppRow(app: McpApp, revoke: () -> Unit) {
+/** [busy]: its revoke is on its way, so the button waits. */
+@Composable private fun McpAppRow(app: McpApp, busy: Boolean, revoke: () -> Unit) {
     val left = app.daysLeft()
     val until = if (left == 0) tr("Expired") else fill(tr("Expires in {count} days"), mapOf("count" to "$left"))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -57,6 +58,6 @@ import com.codync.android.design.*
             Text(app.label, style = Type.body, color = Palette.text)
             Text("${tr(app.levelName)} · $until", style = Type.footnote, color = Palette.secondary)
         }
-        IconButton("Revoke access", "xmark.circle", action = revoke)
+        IconButton("Revoke access", "xmark.circle", enabled = !busy, action = revoke)
     }
 }

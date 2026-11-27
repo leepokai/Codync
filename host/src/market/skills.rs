@@ -415,44 +415,44 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
 /// Skills saved by a thread before #584 recorded the thread as `written_by` and were never turned on for its bot:
 /// turn each on for its bot first, then hand ownership over so an interrupted run retries cleanly.
 pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
-    let mut by_owner: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
-    for s in skills(store) {
+    let _guard = SKILLS_LOCK.locked();
+    let mut all = skills(store);
+    let mut by_owner: std::collections::BTreeMap<String, Vec<&mut Skill>> = std::collections::BTreeMap::new();
+    for s in &mut all {
         let Some(writer) = s.written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
             continue;
         };
-        let owner = crate::chat::work::owner(store, writer);
-        if owner != writer {
-            by_owner.entry(owner).or_default().push(s.id);
+        let owner = match store.bot(writer)? {
+            Some(row) => row.config.thread_of,
+            None => store.parked_thread(writer)?.and_then(|cfg| cfg.thread_of),
+        };
+        if let Some(owner) = owner {
+            by_owner.entry(owner).or_default().push(s);
         }
     }
-    if by_owner.is_empty() {
-        return Ok(());
-    }
-    for (bot, ids) in &by_owner {
-        let Some(row) = store.bot(bot)? else { continue };
+    let mut changed = false;
+    for (bot, pending) in by_owner {
+        let Some(row) = store.bot(&bot)? else { continue };
         let mut cfg = row.config;
-        if row.deleted || cfg.is_group() || ids.iter().all(|id| cfg.skills.contains(id)) {
+        if row.deleted || cfg.is_group() || cfg.is_thread() {
             continue;
         }
-        for id in ids {
-            if !cfg.skills.contains(id) {
-                cfg.skills.push(id.clone());
+        let enabled = cfg.skills.len();
+        for s in pending {
+            if !cfg.skills.contains(&s.id) {
+                cfg.skills.push(s.id.clone());
             }
+            s.written_by = Some(bot.clone());
         }
-        store.save_bot(&cfg)?;
+        if cfg.skills.len() != enabled {
+            store.save_bot(&cfg)?;
+        }
+        changed = true;
     }
-    update_skills(store, |all| {
-        for s in all.iter_mut() {
-            let Some(writer) = s.written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
-                continue;
-            };
-            let owner = crate::chat::work::owner(store, writer);
-            if by_owner.get(&owner).is_some_and(|ids| ids.contains(&s.id)) {
-                s.written_by = Some(owner);
-            }
-        }
-        Ok(())
-    })
+    if changed {
+        save(store, "skills", &all)?;
+    }
+    Ok(())
 }
 
 /// The skills block of a bot's profile: what each is for and where to read it.
@@ -581,6 +581,46 @@ mod tests {
         store.save_bot(&cfg).expect("save bot");
         turn_on_installed_once(&store).expect("second run");
         assert!(skills_of(&store).is_empty(), "a skill turned off afterwards stays off");
+    }
+
+    #[test]
+    fn parked_thread_skills_keep_their_author_until_their_parent_can_adopt_them() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str, kind: &str| -> crate::store::BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "kind": kind, "backend": "fixture", "cwd": "/tmp"}))
+                .unwrap()
+        };
+        store.save_bot(&config("group", "group")).unwrap();
+        store.save_bot(&config("deleted", "agent")).unwrap();
+        store.delete_bot("deleted").unwrap();
+        store.save_bot(&config("unrelated", "agent")).unwrap();
+        let legacy = ["missing", "group", "deleted"].map(|parent| {
+            let mut thread = config(&format!("thread-{parent}"), "agent");
+            thread.thread_of = Some(parent.into());
+            store.save_bot(&thread).unwrap();
+            store.park_thread(&thread).unwrap();
+            Skill {
+                id: format!("skill-{parent}"),
+                name: parent.into(),
+                description: "Old skill".into(),
+                source: CUSTOM.into(),
+                written_by: Some(thread.id),
+            }
+        });
+        save(&store, "skills", &legacy).unwrap();
+
+        adopt_thread_skills(&store).unwrap();
+        assert_eq!(skills(&store), legacy, "ineligible parents leave each original author intact");
+        for id in ["group", "deleted", "unrelated"] {
+            assert!(store.bot(id).unwrap().unwrap().config.skills.is_empty(), "{id} received no skill");
+        }
+
+        store.save_bot(&config("missing", "agent")).unwrap();
+        adopt_thread_skills(&store).unwrap();
+        let after = skills(&store);
+        assert_eq!(after[0].written_by.as_deref(), Some("missing"));
+        assert_eq!(after[1..], legacy[1..]);
+        assert_eq!(store.bot("missing").unwrap().unwrap().config.skills, ["skill-missing"]);
     }
 
     #[test]

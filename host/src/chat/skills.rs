@@ -145,6 +145,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_adopts_a_skill_saved_by_an_archived_thread() {
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let dir = std::env::temp_dir().join(format!("codync-archived-skills-{tag}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": &dir})).unwrap()
+        };
+        let parent = "owner";
+        store.save_bot(&config(parent)).unwrap();
+        store.save_bot(&config("other")).unwrap();
+        let mut thread = config("thread-archived");
+        thread.thread_of = Some(parent.into());
+        store.save_bot(&thread).unwrap();
+        let name = format!("Archived {tag}");
+        let legacy = market::add_custom_skill(&store, &name, "Legacy skill.", "Old.", Some(&thread.id)).unwrap();
+        store.park_thread(&thread).unwrap();
+        assert!(store.bot(&thread.id).unwrap().is_none());
+
+        let hub =
+            Hub::new(store, "archived-skills-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let rewrite = json!({"id": legacy.id, "name": name, "description": "Adopted skill.", "instructions": "New."});
+        assert!(call(&hub, parent, &rewrite).await.is_err(), "runtime cannot claim a parked author's skill");
+        hub.start().unwrap();
+
+        let read_parent = || hub.store.bot(parent).unwrap().unwrap().config;
+        let mut adopted = read_parent();
+        assert_eq!(adopted.skills, [legacy.id.as_str()], "startup enables the parked thread's skill for its parent");
+        let author = || market::skills(&hub.store).pop().unwrap().written_by;
+        assert_eq!(author().as_deref(), Some(parent));
+        assert_eq!(hub.store.bot("other").unwrap().unwrap().config.skills, Vec::<String>::new());
+
+        adopted.skills.clear();
+        hub.store.save_bot(&adopted).unwrap();
+        market::adopt_thread_skills(&hub.store).unwrap();
+        assert!(read_parent().skills.is_empty(), "a second migration leaves the skill off");
+        assert_eq!(author().as_deref(), Some(parent));
+        assert!(call(&hub, &thread.id, &rewrite).await.is_err(), "the parked thread still cannot save a skill");
+        assert!(call(&hub, "other", &rewrite).await.is_err(), "another bot cannot rewrite it");
+        let rewritten = call(&hub, parent, &rewrite).await.unwrap();
+        assert_eq!(rewritten["skill"]["id"], legacy.id);
+        assert!(std::fs::read_to_string(legacy.dir().join("SKILL.md")).unwrap().ends_with("New.\n"));
+
+        hub.shutdown().await;
+        market::remove_skill(&hub.store, &legacy.id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn a_thread_saves_and_updates_skills_as_its_bot() {
         let dir = std::env::temp_dir().join(format!("codync-thread-skills-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();

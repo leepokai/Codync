@@ -49,6 +49,7 @@ import { WorkflowList, type WorkflowPlace } from './workflows/WorkflowList'
 import { computerSymbol } from './ComputerBadge'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
+import { extensionsTarget } from './extensions-target'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -325,6 +326,9 @@ function ChatSplitView() {
   const [barEnd, setBarEnd] = useState<HTMLElement | null>(null)
   /** The rail: another page, or, on the entry of the page shown, its list folded away and brought back. */
   const go = (next: AppPage) => {
+    // The rail's Extensions follows what is selected now: a computer asked for earlier (a heading, a deep link)
+    // must not keep the page on that computer after the user picked another bot.
+    if (next === 'extensions') setExtensionsOf(null)
     if (next !== page) setPage(next)
     else if (listed) setListHidden(!listHidden)
   }
@@ -424,7 +428,13 @@ function ChatSplitView() {
   // The header's + on Workflows: the computers listed that take a new workflow, picked from a menu when there are several.
   const workflowHomes = shownStores.filter(canOpenWorkflows)
   const newWorkflowItems = (): MenuItem[] => workflowHomes.map((s) => ({ title: s.hostName, verbatim: true, icon: computerSymbol(s.computer.device), action: () => newWorkflow(s.computer.id) }))
-  const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
+  const extensionsComputer = extensionsTarget(
+    extensionsOf,
+    selectedStore?.computer.id,
+    app.local?.computer.id,
+    onlineStores[0]?.computer.id,
+  )
+  const extensionsStore = (extensionsComputer ? app.store(extensionsComputer) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
   const extensionsChoice = computerChoice(onlineStores, extensionsStore?.computer.id, setExtensionsOf)
 
   // One plain list. The lead stays in sight: no hide.

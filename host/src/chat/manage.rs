@@ -294,12 +294,24 @@ async fn delete(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     approve_destructive(hub, source, format!("Delete bot {name}"), detail, deadline).await?;
     // The bot may have gone while the card waited; the store is the authority when we delete.
     let target = agent_bot(hub, &id)?;
+    if target.lead {
+        bail!("the current lead can't be deleted by a bot: the user deletes it in settings");
+    }
     let name = target.name;
     let deleting = hub.clone();
     let id = id.clone();
     tokio::task::spawn_blocking(move || deleting.delete_bot(&id)).await??;
     notice(hub, &source.id, &format!("Deleted {name}"));
     Ok(json!({"deleted": true}))
+}
+
+/// How an approval card is gated: a normal change may skip the card when the manager
+/// approves by itself under its ceilings, while a destructive one (a delete) always
+/// waits for the user's Allow.
+#[derive(Clone, Copy)]
+enum ApprovalKind {
+    Normal,
+    Destructive,
 }
 
 /// Unless the bot approves by itself (`Ceilings::approves_by_itself`), the change waits for the user's Allow on an
@@ -311,7 +323,7 @@ pub(crate) async fn approve(
     detail: String,
     deadline: Instant,
 ) -> Result<()> {
-    approval(hub, source, title, detail, deadline, false).await
+    approval(hub, source, title, detail, deadline, ApprovalKind::Normal).await
 }
 
 /// A delete never skips its card: even an Auto manager has to wait for the user's Allow.
@@ -322,7 +334,7 @@ pub(crate) async fn approve_destructive(
     detail: String,
     deadline: Instant,
 ) -> Result<()> {
-    approval(hub, source, title, detail, deadline, true).await
+    approval(hub, source, title, detail, deadline, ApprovalKind::Destructive).await
 }
 
 async fn approval(
@@ -331,9 +343,9 @@ async fn approval(
     title: String,
     detail: String,
     deadline: Instant,
-    force: bool,
+    kind: ApprovalKind,
 ) -> Result<()> {
-    if !force && hub.ceilings.approves_by_itself(source) {
+    if !matches!(kind, ApprovalKind::Destructive) && hub.ceilings.approves_by_itself(source) {
         return Ok(());
     }
     if detail.encode_utf16().count() > MAX_CARD_DETAIL {

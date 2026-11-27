@@ -52,7 +52,9 @@ pub(super) async fn change(
         }
     } else if set.is_some() || options.is_some() {
         // A change that only moves the model probes agents that are here; settings need the list either way.
-        if options.is_some() || codync_agent::backends::installed(backend) {
+        // `installed` stats every candidate on PATH. That runs off this worker, so a slow folder there
+        // cannot stall other tasks. Same rule as a save's folder check.
+        if options.is_some() || cli_installed(backend).await? {
             match catalog(hub, &mut fetched, backend, login_profile, deadline).await {
                 Ok(catalog) => {
                     if let Some(m) = set {
@@ -86,7 +88,7 @@ pub(super) async fn change(
         if fallback.command.as_deref().is_some_and(|c| !c.trim().is_empty()) {
             continue;
         }
-        if !codync_agent::backends::installed(&fallback.backend) {
+        if !cli_installed(&fallback.backend).await? {
             tracing::warn!(
                 backend = %fallback.backend,
                 model = m,
@@ -125,6 +127,29 @@ fn engine_hint(model: &str, backend: &str) -> String {
         }
         _ => String::new(),
     }
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    static INSTALL_CHECK_THREAD: std::sync::mpsc::Sender<std::thread::ThreadId>;
+}
+
+/// Whether `id`'s CLI is on this computer. `backends::installed` searches PATH and stats each candidate
+/// (`which` → `is_file`), which is blocking filesystem work, so it runs on the blocking pool. A join
+/// error is returned: the check did not run, and a model change must not proceed as if it had.
+async fn cli_installed(id: &str) -> Result<bool> {
+    let id = id.to_owned();
+    #[cfg(test)]
+    let observer = INSTALL_CHECK_THREAD.try_with(Clone::clone).ok();
+    let found = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        if let Some(observer) = observer {
+            let _ = observer.send(std::thread::current().id());
+        }
+        codync_agent::backends::installed(&id)
+    })
+    .await?;
+    Ok(found)
 }
 
 /// `agent`'s model catalog on its login profile, loaded at most once per call. `Err` says why it didn't load: the
@@ -175,5 +200,18 @@ mod tests {
         );
         assert_eq!(engine_hint("claude-sonnet-4-6", "claude"), String::new(), "its own family says nothing");
         assert_eq!(engine_hint("opus", "claude"), String::new(), "an unrecognized id says nothing");
+    }
+
+    /// The PATH search has to leave the async worker. An unknown id is not installed, and the thread
+    /// that answered is the blocking pool's, not the one polling this test.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_install_check_leaves_the_async_worker() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::current().id();
+        let found =
+            INSTALL_CHECK_THREAD.scope(tx, cli_installed("not-a-real-codync-agent")).await.expect("install check");
+        assert!(!found, "an unknown agent is not installed");
+        let ran_on = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the check recorded its thread");
+        assert_ne!(ran_on, worker, "the PATH search must not run on the async worker");
     }
 }

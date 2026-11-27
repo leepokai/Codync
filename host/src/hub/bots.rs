@@ -8,6 +8,18 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+/// Clears a bot's "being deleted" mark on every exit, including an error or a panic mid-cleanup.
+struct DeletingGuard<'a> {
+    hub: &'a Hub,
+    id: String,
+}
+
+impl Drop for DeletingGuard<'_> {
+    fn drop(&mut self) {
+        self.hub.deleting.locked().remove(&self.id);
+    }
+}
+
 impl Hub {
     /// Makes `cfg` ready to save over `before` (none: a new bot). Called under `emit_lock`, with the save: its login
     /// profile can't be removed in between (`login_profiles::remove`).
@@ -107,7 +119,11 @@ impl Hub {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             check(&row.config)?;
+            // Mark under the same lock `make_lead` takes, so no lead pick can land in the
+            // unlocked cleanup window below. The guard clears it on any exit.
+            self.deleting.locked().insert(id.to_owned());
         }
+        let _marked = DeletingGuard { hub: self, id: id.to_owned() };
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in threads {
             self.delete_owned_thread(&thread.id)?;

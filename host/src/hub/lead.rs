@@ -21,6 +21,11 @@ impl Hub {
     /// Sets `id`'s lead flag and clears every other live bot's, then reconfigures each changed bot; returns their ids.
     fn save_lead(&self, id: &str) -> Result<Vec<String>> {
         let _g = self.emit_lock.locked();
+        // A bot mid-deletion has had its actor, runtime and resources torn down across the unlocked
+        // cleanup window. Promoting it now would leave a lead in the store with no working runtime.
+        if self.deleting.locked().contains(id) {
+            bail!("{id} is being deleted and can't be made lead");
+        }
         let bots: Vec<BotConfig> = self.store.bots()?.into_iter().filter(|r| !r.deleted).map(|r| r.config).collect();
         let mut target = bots.iter().find(|b| b.id == id).cloned().ok_or_else(|| anyhow!("unknown bot"))?;
         if target.is_group() {

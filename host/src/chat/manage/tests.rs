@@ -1,6 +1,7 @@
 use super::*;
 use crate::remote::identity::Identity;
 use crate::store::{Permission, Store};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn hub(dir: &std::path::Path) -> Arc<Hub> {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -290,6 +291,40 @@ async fn a_delete_card_names_the_bot_id_so_twins_can_be_told_apart() {
     assert!(!hub.store.bot("twin-a").unwrap().unwrap().deleted);
     assert!(!hub.store.bot("twin-b").unwrap().unwrap().deleted);
     drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The delete marks its target under `emit_lock` before the unlocked cleanup. A lead pick that
+/// lands in that window must be refused: a lead in the store with its runtime already torn down is
+/// worse than a refused pick.
+#[tokio::test]
+async fn a_lead_pick_during_the_cleanup_window_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-lead-window-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let signalled = AtomicBool::new(false);
+    let delete_hub = hub.clone();
+    let task = tokio::task::spawn_blocking(move || {
+        delete_hub.delete_bot_if("dev", |_| {
+            // First check (under emit_lock): the target is about to be marked. Wake the picker;
+            // it blocks on emit_lock until the mark is in place, then runs in the cleanup window.
+            if !signalled.swap(true, Ordering::SeqCst) {
+                let _ = entered_tx.send(());
+            }
+            Ok(())
+        })
+    });
+    entered_rx.recv().await.unwrap();
+
+    let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
+    assert!(err.contains("being deleted"), "{err}");
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead, "no half-promoted lead in the store");
+
+    task.await.unwrap().unwrap();
+    let row = hub.store.bot("dev").unwrap().unwrap();
+    assert!(row.deleted && !row.config.lead, "the delete still completed cleanly");
+    assert!(!hub.is_deleting("dev"), "the mark is cleared after the delete");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

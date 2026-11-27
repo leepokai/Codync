@@ -12,7 +12,7 @@ use crate::usage::Usage;
 use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -138,6 +138,9 @@ pub struct Hub {
     /// Held across "mutate store + broadcast" so events leave in rev order. A bot's config is also settled and
     /// saved under it: `login_profiles::remove` checks a profile's bots and marks it as being removed under it.
     pub(crate) emit_lock: Mutex<()>,
+    /// Bots mid-deletion. Checked by `make_lead` under `emit_lock`, so a lead pick can't land in the
+    /// unlocked cleanup window and leave a lead in the store whose runtime is already torn down.
+    deleting: Mutex<BTreeSet<String>>,
     bots: Mutex<HashMap<String, BotHandle>>,
     runtime: Mutex<HashMap<String, Runtime>>,
     /// Bot → the status its Live Activities last heard (`outside_changed`).
@@ -179,6 +182,12 @@ fn entry_event(e: &Entry) -> Value {
 }
 
 impl Hub {
+    /// Whether `id` is marked mid-deletion (see [`Hub::deleting`]). Test-only: the check lives inside `save_lead`.
+    #[cfg(test)]
+    pub(crate) fn is_deleting(&self, id: &str) -> bool {
+        self.deleting.locked().contains(id)
+    }
+
     pub fn busy(&self) -> bool {
         self.runtime.locked().values().any(|r| matches!(r.status, BotStatus::Working | BotStatus::NeedsInput))
             || self.terms.busy()
@@ -207,6 +216,7 @@ impl Hub {
             port,
             events,
             emit_lock: Mutex::new(()),
+            deleting: Mutex::default(),
             bots: Mutex::default(),
             runtime: Mutex::default(),
             outside: Mutex::default(),

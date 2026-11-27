@@ -83,6 +83,7 @@ impl App {
                 self.pending_history.clear();
                 self.history_done.clear();
                 self.mirror_epoch += 1;
+                self.rewind_threads();
                 self.send_receipts = send_receipts;
                 self.send_receipt_ready = false;
                 self.floors.clear();
@@ -131,6 +132,9 @@ impl App {
                     }
                 }
                 self.start_send_checks();
+                if !self.host_version.is_empty() {
+                    self.reload_thread_details();
+                }
             }
             Msg::Connected { since, connection, send_receipts } => {
                 self.reset_send_checks(since);
@@ -176,6 +180,7 @@ impl App {
                 self.replay_rev = v["rev"].as_i64().unwrap_or_default();
                 self.catch_up_left = v["catchUp"].as_u64();
                 self.send_receipt_ready = true;
+                self.send_receipts.received_hello(self.send_receipt_connection);
                 self.replayed_deletions.clear();
                 self.completions_before_live.clear();
                 if self.catch_up_left.is_some() {
@@ -190,6 +195,9 @@ impl App {
                     self.usage = v["usage"].clone();
                 }
                 self.start_send_checks();
+                if !self.host_version.is_empty() {
+                    self.reload_thread_details();
+                }
             }
             // Not a rev event. An open workflow page loads again; every other screen ignores it.
             Some("workflow") => self.on_workflow_event(v),
@@ -216,7 +224,7 @@ impl App {
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => self.on_bot_event(v, catch_up_left),
             Some("artifact") => self.artifact_changed(&v["artifact"]),
-            Some("threadEntry") => self.thread_entries.keep(v["thread"].as_str(), &v["entry"]),
+            Some("threadEntry") => self.thread_changed(v["thread"].as_str(), &v["entry"]),
             Some("entry") => self.on_entry_event(&v["entry"]),
             _ => {}
         }
@@ -518,10 +526,10 @@ impl App {
         }
         if let Some(old) = self.bots.insert(new.id.clone(), new.clone()) {
             self.threads_ended(&old.work, &new.work);
-            self.follow_threads(&new.id);
             self.keep_details_cursor(&new.id, (&old.work, old.max_threads));
             self.notify_bot_change(&old, &new, live);
         }
+        self.follow_threads(&new.id);
         if let Some(replies) = self.legacy_replies.get_mut(id) {
             let entries = self.entries.get(id);
             replies.retain(|seq, observed| {
@@ -637,6 +645,11 @@ impl App {
         {
             return;
         }
+        if let After::Queued(epoch) = after
+            && !self.accepts_mirror_reply(epoch)
+        {
+            return;
+        }
         let v = match r {
             Ok(v) => v,
             Err(e) => {
@@ -673,6 +686,7 @@ impl App {
         };
         match after {
             After::Nothing
+            | After::Queued(_)
             | After::Tracked
             | After::Answered(_)
             | After::Sheet(_)

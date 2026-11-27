@@ -42,16 +42,20 @@ fn read_only(task: &WorkTask) -> Option<Cow<'static, str>> {
 enum Keys {
     /// The composer's: the message waits behind a turn that runs.
     Typing,
+    EditingDuringReplay,
     /// A line of what the thread put in the chat is picked.
     Picked,
     /// The page's, with `tab` when it has such lines.
-    Reading { lines: bool },
+    Reading {
+        lines: bool,
+    },
 }
 
 /// The transcript's keys, on its last line.
 fn thread_keys(live: bool, keys: Keys) -> String {
     let lines = match keys {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
+        Keys::EditingDuringReplay => return " esc".into(),
         Keys::Picked => return " ↵ shows it in the chat · tab ⇧tab another · esc".into(),
         Keys::Reading { lines } => lines,
     };
@@ -116,6 +120,8 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     let task = s.task(app);
     let live = task.is_some_and(|task| task.status.live());
     let talks = task.is_some_and(|task| task.talk);
+    let replaying = app.replaying_mirror();
+    let editing = s.typing && (talks || replaying);
     if let Some(task) = task {
         put(
             buf,
@@ -139,7 +145,9 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     }
     hline(buf, inner.x, inner.y + 2, inner.width, t.dim.patch(t.panel));
     let foot = inner.bottom() - 1;
-    let keys = if talks && s.typing {
+    let keys = if editing && replaying {
+        Keys::EditingDuringReplay
+    } else if editing {
         Keys::Typing
     } else if s.pick.is_some() {
         Keys::Picked
@@ -149,7 +157,7 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     put(buf, inner.x, foot, inner.width, &thread_keys(live, keys), t.dim.patch(t.panel));
     // Between the transcript and the keys: what waits in the thread over its composer, or why it has none.
     let mut bottom = foot;
-    if talks {
+    if talks || editing {
         bottom = thread_composer(buf, inner, app, s, foot);
     } else if let Some(why) = task.and_then(read_only) {
         bottom = foot - 1;
@@ -234,7 +242,7 @@ fn told(out: &mut Vec<Line<'static>>, e: &Entry, width: usize, full: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::{Msg, screen, test_app};
+    use crate::tui::app::{Msg, SendReceipts, screen, test_app};
     use serde_json::json;
 
     fn text(lines: &[Line<'_>]) -> Vec<String> {
@@ -397,5 +405,10 @@ mod tests {
         );
         let asked = draw(&app, &ThreadSheet::new("a".into(), "m".into(), "thread-3".into()));
         assert!(at(&asked, "Read only: another bot's request").is_some(), "{asked:?}");
+
+        app.on_msg(Msg::Rewind(SendReceipts::default()));
+        let rebuilding = draw(&app, &own);
+        let composer = at(&rebuilding, "› one more").expect("the draft stays visible during recovery");
+        assert_eq!(rebuilding[composer + 1], "esc");
     }
 }

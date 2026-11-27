@@ -254,16 +254,16 @@ impl Client {
                 |recovery: &mut Recovery, mirror_rev: &mut i64, send_receipts: &mut SendReceipts, connection| {
                     *recovery = Recovery::Rebuilding;
                     *mirror_rev = 0;
-                    send_receipts.invalidate_connection();
+                    send_receipts.invalidate_mirror();
                     *send_receipts = SendReceipts::for_connection(connection);
                     c.rev.store(0, Ordering::Relaxed);
                     tx.send(Msg::Rewind(send_receipts.clone())).is_ok()
                 };
             'connect: loop {
                 let since = c.rev.load(Ordering::Relaxed);
-                // A send can commit after the host has read the catch-up window.
-                let (connection, receipt_rev) = send_receipts.begin_request();
-                let before_request = since.max(mirror_rev).max(receipt_rev);
+                // This request can only judge RPC revisions accepted before it began.
+                let (connection, rpc_rev) = send_receipts.begin_request();
+                let before_request = since.max(mirror_rev).max(rpc_rev);
                 let url = format!("{}/events?since={since}&client=tui", c.base);
                 if let Some(token) = c.token()
                     && let Ok(res) = crate::http().get(url).bearer_auth(token).send().await

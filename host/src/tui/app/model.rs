@@ -45,13 +45,16 @@ pub enum Msg {
     Term(String, Value),
 }
 
-/// Connection and unstreamed send evidence for this mirror.
+/// Connection and RPC revision evidence for this mirror.
 #[derive(Clone, Default)]
 pub struct SendReceipts(Arc<Mutex<SendReceiptState>>);
 
 #[derive(Default)]
 struct SendReceiptState {
     connection: u64,
+    awaiting_hello: bool,
+    rewound: bool,
+    thread_rev: i64,
     rows: HashMap<String, HashMap<i64, SendReceipt>>,
 }
 
@@ -62,18 +65,54 @@ struct SendReceipt {
 
 impl SendReceipts {
     pub(in crate::tui) fn for_connection(connection: u64) -> Self {
-        Self(Arc::new(Mutex::new(SendReceiptState { connection, ..SendReceiptState::default() })))
+        Self(Arc::new(Mutex::new(SendReceiptState { connection, awaiting_hello: true, ..SendReceiptState::default() })))
     }
 
     pub(in crate::tui) fn begin_request(&self) -> (u64, i64) {
         let mut state = self.0.locked();
         state.connection += 1;
+        state.awaiting_hello = true;
         let rev = state.rows.values().flat_map(HashMap::values).filter_map(|r| r.rev).max().unwrap_or_default();
-        (state.connection, rev)
+        (state.connection, rev.max(state.thread_rev))
     }
 
     pub(in crate::tui) fn invalidate_connection(&self) {
-        self.0.locked().connection += 1;
+        let mut state = self.0.locked();
+        state.connection += 1;
+        state.awaiting_hello = false;
+    }
+
+    pub(super) fn received_hello(&self, connection: u64) {
+        let mut state = self.0.locked();
+        if state.connection == connection {
+            state.awaiting_hello = false;
+        }
+    }
+
+    pub(in crate::tui) fn thread_read_connection(&self) -> Option<u64> {
+        let state = self.0.locked();
+        (!state.awaiting_hello && !state.rewound).then_some(state.connection)
+    }
+
+    /// The next request samples this revision under the same lock that accepts the rows.
+    pub(in crate::tui) fn accept_thread_rows(&self, connection: u64, rev: i64) -> bool {
+        let mut state = self.0.locked();
+        if state.connection != connection || state.awaiting_hello || state.rewound {
+            return false;
+        }
+        state.thread_rev = state.thread_rev.max(rev);
+        true
+    }
+
+    /// Marks the old mirror before the app drains its queued replies.
+    pub(in crate::tui) fn invalidate_mirror(&self) {
+        let mut state = self.0.locked();
+        state.connection += 1;
+        state.rewound = true;
+    }
+
+    pub(super) fn rewound(&self) -> bool {
+        self.0.locked().rewound
     }
 
     pub(super) fn is_current(&self, connection: u64) -> bool {
@@ -124,6 +163,7 @@ impl SendReceipts {
 #[derive(Clone)]
 pub enum After {
     Nothing,
+    Queued(u64),
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
     Sent {

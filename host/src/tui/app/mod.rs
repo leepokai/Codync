@@ -156,7 +156,7 @@ pub struct App {
     /// Each artifact's newest title, for its cards.
     pub artifact_titles: super::manage::ArtifactTitles,
     sends: HashMap<String, PendingSend>,
-    send_receipts: SendReceipts,
+    pub(in crate::tui) send_receipts: SendReceipts,
     send_receipt_connection: u64,
     send_receipt_ready: bool,
     replay_sends: Option<HashSet<(String, String)>>,
@@ -344,6 +344,22 @@ impl App {
         // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
         let (method, body) = super::net::old_host::outgoing(&self.host_version, method, body);
         self.client.spawn_call(method, body, after, self.tx.clone());
+    }
+
+    pub(in crate::tui) fn mirror_epoch(&self) -> u64 {
+        self.mirror_epoch
+    }
+
+    pub(in crate::tui) fn accepts_mirror_reply(&self, epoch: u64) -> bool {
+        epoch == self.mirror_epoch && !self.send_receipts.rewound()
+    }
+
+    pub(in crate::tui) fn replaying_mirror(&self) -> bool {
+        self.replay_sends.is_some()
+    }
+
+    pub(in crate::tui) fn confirmed_thread_connection(&self) -> Option<u64> {
+        (self.send_receipt_ready && !self.replaying_mirror()).then_some(self.send_receipt_connection)
     }
 
     /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.

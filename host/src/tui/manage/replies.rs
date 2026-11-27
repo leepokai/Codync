@@ -9,6 +9,11 @@ use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
     pub(in crate::tui) fn on_sheet_reply(&mut self, r: Reply, res: Result<Value, String>) {
+        if let Reply::ThreadEntries { epoch, .. } | Reply::ThreadSent { epoch, .. } = &r
+            && !self.accepts_mirror_reply(*epoch)
+        {
+            return;
+        }
         let v = match res {
             Ok(v) => v,
             Err(e) => {
@@ -61,8 +66,10 @@ impl App {
             Reply::CallEntries(call) => {
                 self.call_entries.insert(call, entries_of(&v));
             }
-            Reply::ThreadEntries(thread) => self.thread_fetched(&thread, Ok(&v)),
-            Reply::ThreadSent(task) => self.thread_sent(&task, Ok(())),
+            Reply::ThreadEntries { bot, thread, connection, .. } => {
+                self.thread_fetched(&bot, &thread, connection, Ok(&v));
+            }
+            Reply::ThreadSent { request, connection, .. } => self.thread_sent(request, connection, Ok(&v)),
             Reply::DevServerLogs(id) => {
                 let text = v["text"].as_str().unwrap_or_default().to_owned();
                 self.dev_server_logs(&id, Ok(text));
@@ -335,8 +342,10 @@ impl App {
                 self.unfolded.retain(|id| !lines.contains(id));
                 self.flash(&e);
             }
-            Reply::ThreadEntries(thread) => self.thread_fetched(thread, Err(e)),
-            Reply::ThreadSent(task) => self.thread_sent(task, Err(e)),
+            Reply::ThreadEntries { bot, thread, connection, .. } => {
+                self.thread_fetched(bot, thread, *connection, Err(&e));
+            }
+            Reply::ThreadSent { request, connection, .. } => self.thread_sent(*request, *connection, Err(e)),
             Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {

@@ -23,6 +23,9 @@ struct RoutineEditorView: View {
     @State private var confirmDelete = false
     @State private var started = false
     @State private var pickingZone = false
+    /// Where its runs work; nil = the bot's folder.
+    @State private var folder: String?
+    @State private var pickingFolder = false
     /// Any text field is being edited; cleared on save so nothing sits under the keyboard.
     @FocusState private var typing: Bool
 
@@ -76,10 +79,17 @@ struct RoutineEditorView: View {
                 pickingZone = false
             }
         }
+        .codyncSheet(isPresented: $pickingFolder) {
+            FolderPicker(start: folder ?? model.hello?.home) {
+                folder = $0
+                pickingFolder = false
+            }
+        }
         .task {
             if let routine {
                 name = routine.name
                 instruction = routine.instruction
+                folder = routine.folder
                 timeout = String(routine.timeoutSeconds ?? 3600)
             }
             await loadSchedule()
@@ -102,6 +112,7 @@ struct RoutineEditorView: View {
                         TextField("Instruction", text: $instruction, prompt: Text(L10n.tr("Describe what this bot should do each time it runs.")).foregroundStyle(Palette.secondary), axis: .vertical)
                             .lineLimit(3...8).routineInput().focused($typing)
                     }
+                    if model.hello?.routineFolder == true { folderField }
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     Field("When to run") {
@@ -140,6 +151,43 @@ struct RoutineEditorView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The folder its runs work in, each in a thread of its own: the bot's own unless one is chosen.
+    private var folderField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Field("Folder") {
+                HStack(spacing: 8) {
+                    Button { pickingFolder = true } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "folder").foregroundStyle(Palette.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(folder?.folderName ?? L10n.tr("Bot's folder")).lineLimit(1)
+                                if let folder {
+                                    Text(folder).font(.caption).foregroundStyle(Palette.secondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(Palette.tertiary)
+                        }
+                        .foregroundStyle(Palette.text)
+                        .routineInput()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(folder ?? L10n.tr("Bot's folder"))
+                    if folder != nil {
+                        IconButton("Use the bot's folder", systemImage: "xmark.circle") {
+                            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { folder = nil }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+            }
+            Text(L10n.tr("Each run works here in a thread of its own."))
+                .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+        }
     }
 
     private func checkSchedule() async {
@@ -223,7 +271,7 @@ struct RoutineEditorView: View {
         case "daily", "weekdays":
             timeField
         case "weekly":
-            Field("On") {
+            Field("Weekday") {
                 // Monday first; the host counts 0 = Sunday … 6 = Saturday, like cron.
                 ChoicePicker(selection: $schedule.weekday,
                              options: [1, 2, 3, 4, 5, 6, 0].map { (id: $0, label: Calendar.current.standaloneWeekdaySymbols[$0]) })
@@ -280,11 +328,9 @@ struct RoutineEditorView: View {
         } else if let preview {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
+                Text(preview.draft.spoken).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    let when = Date(milliseconds: next).formatted(
-                        Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)
-                    )
-                    Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
+                    Text(scheduleNextLine(next))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 if let warning = preview.warning {
@@ -370,11 +416,37 @@ struct RoutineEditorView: View {
             defer { busy = false }
             do {
                 let result = try await client.saveRoutine(botId: botId, id: routine?.id, name: name,
-                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout)
+                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout,
+                    folder: folder)
                 saved(result)
             } catch { self.error = error.localizedDescription }
         }
     }
+}
+
+extension RoutineScheduleDraft {
+    /// The editor's line. The host's cron sentence stays English, so this uses the same words as the fields.
+    var spoken: String {
+        let time = String(format: "%02d:%02d", hour, minute)
+        let minuteText = String(format: "%02d", minute)
+        switch calendarStyle {
+        case "hourly": return "\(L10n.tr("Hourly")) · :\(minuteText) · \(zone)"
+        case "daily": return "\(L10n.tr("Daily")) · \(time) · \(zone)"
+        case "weekdays": return "\(L10n.tr("Weekdays")) · \(time) · \(zone)"
+        case "weekly":
+            let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            let day = names.indices.contains(weekday) ? L10n.tr(names[weekday]) : L10n.tr("Mon")
+            return "\(L10n.tr("Weekly")) · \(day) · \(time) · \(zone)"
+        default:
+            let written = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+            return written.isEmpty ? zone : "\(written) · \(zone)"
+        }
+    }
+}
+
+func scheduleNextLine(_ at: Int64) -> String {
+    let when = Date(milliseconds: at).formatted(date: .abbreviated, time: .shortened)
+    return L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when)
 }
 
 private extension View {

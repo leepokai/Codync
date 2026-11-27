@@ -1,0 +1,91 @@
+# The model chip in a bot's message box (docs/design/ui-conventions.md): it opens the agent and model picker, and a
+# pick is saved to the bot a moment later, the sheet closed right after; a group's box has no chip. The phone must
+# already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
+# run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot and group there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags model-chip \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - model-chip
+onFlowComplete:
+  - runScript:
+      file: model-chip.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: model-chip.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "Model"
+# The panel opens straight on the agent's models, its search behind a button; the agent's default model is one every
+# agent lists.
+- assertVisible: "Search models"
+# A bot's chat sets its approvals here too.
+- assertVisible: "Approvals"
+# A model ID the agent doesn't list: typed in the search field the button opens, picked from the row offered for it,
+# and saved.
+- tapOn: "Search models"
+- inputText: "e2e-typed"
+# Case-sensitive (Maestro matches text ignoring case): the field's own label, "Search or enter a model ID", would match.
+- tapOn: "(?-i).*Model ID"
+- runScript:
+    file: model-chip.js
+    env:
+      STEP: saved
+      MODEL: e2e-typed
+- scrollUntilVisible:
+    element: "Default(?! login profile).*"
+- tapOn: "Default(?! login profile).*"
+- takeScreenshot: model-chip-sheet
+# Closed before the save goes out: the chip keeps it.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # From the panel's top row (search is still open), not its list, whose pull reads the models again.
+      - swipe:
+          from: "Close search"
+          direction: DOWN
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runScript:
+    file: model-chip.js
+    env:
+      STEP: saved
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: true
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: true
+- tapOn: ${output.group.name}
+- extendedWaitUntil:
+    visible: "Ask everyone.*"
+    timeout: 5000
+- assertNotVisible: "Model"

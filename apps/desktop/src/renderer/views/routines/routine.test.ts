@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, followUpLine, repeatChoice, runLabel, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, folderField, followUpLine, repeatChoice, runLabel, scheduleCaption, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -49,6 +49,17 @@ test('styles the editor has no choice for open as Custom', () => {
   for (const style of ['minutes', 'days', 'monthly', 'custom']) assert.equal(repeatChoice(style), 'custom')
 })
 
+test('the editor line uses the draft, so it can be translated', () => {
+  const tr = (key: string) => ({ Hourly: '每小时', Daily: '每天', Weekdays: '工作日', Weekly: '每周', Mon: '周一' })[key] ?? key
+  const base = { ...emptyDraft(), zone: 'Asia/Shanghai', hour: 9, minute: 0 }
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekly', weekday: 1 }, tr), '每周 · 周一 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'daily' }, tr), '每天 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'hourly', minute: 5 }, tr), '每小时 · :05 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekdays' }, tr), '工作日 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'custom', expression: '0 9 * * 1' }, tr), '0 9 * * 1 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekly', weekday: 9 }, tr), '每周 · 周一 · 09:00 · Asia/Shanghai')
+})
+
 test('Custom starts from the cron the host compiled', () => {
   const preview = (triggers: RoutineSchedulePreview['triggers']) => ({ triggers }) as RoutineSchedulePreview
   assert.equal(compiledCron(preview([{ type: 'cron', expression: '0 9 * * 1-5', timeZone: 'Asia/Taipei' }])), '0 9 * * 1-5')
@@ -74,4 +85,12 @@ test('a waiting follow-up says when it happens: the time today, the date too on 
   assert.equal(followUpLine(followUp(tomorrow), 'zh-Hant', now), `Follow-up at ${dated}`)
   // Due, and waiting its turn behind what the bot is doing.
   assert.equal(followUpLine(followUp(now - 1), 'en-GB', now), 'Follow-up due now')
+})
+
+test("saving sends the routine's folder on a host that has it: the path, or null for the bot's own", () => {
+  assert.deepEqual(folderField('/Users/me/repo', true), { folder: '/Users/me/repo' })
+  assert.deepEqual(folderField(null, true), { folder: null })
+  assert.deepEqual(folderField('', true), { folder: null })
+  // An older host never hears of it.
+  assert.deepEqual(folderField('/Users/me/repo', false), {})
 })

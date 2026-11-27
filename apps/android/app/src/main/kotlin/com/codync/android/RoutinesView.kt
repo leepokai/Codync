@@ -53,6 +53,7 @@ import com.codync.android.core.RoutineSchedulePreview
 import com.codync.android.core.RoutineWebhook
 import com.codync.android.core.TimeoutUnit
 import com.codync.android.core.canEdit
+import com.codync.android.core.folderName
 import com.codync.android.core.routineRepeats
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -139,7 +140,8 @@ import kotlinx.coroutines.launch
 /** Set up or edit one routine (iOS `RoutineEditorView`); `saved` gets the routine, or null once it's deleted. */
 @Composable private fun RoutineEditor(botId: String, routine: Routine?, state: AppState, store: AppStore, saved: (Routine?) -> Unit) {
     var draft by remember(routine?.id) {
-        mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(), timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString()))
+        mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(), timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString(),
+            folder = routine?.folder))
     }
     var loaded by remember(routine?.id) { mutableStateOf(false) }
     var loadAttempt by remember { mutableIntStateOf(0) }
@@ -151,6 +153,7 @@ import kotlinx.coroutines.launch
     var advanced by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var choosingZone by remember { mutableStateOf(false) }
+    var choosingFolder by remember { mutableStateOf(false) }
     var started by remember { mutableStateOf(false) }
     val busy = "routines:$botId" in state.busy
     val online = state.actualConnection is LinkState.Ready
@@ -188,6 +191,11 @@ import kotlinx.coroutines.launch
                 Field("Instruction") {
                     FieldBox(draft.instruction, { draft = draft.copy(instruction = it) }, "Describe what this bot should do each time it runs.", 3, 8, fill = Palette.bubbleUser)
                 }
+                // Only from a host that has it (its hello says).
+                if (state.routineFolders) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Field("Folder") { FolderButton(draft.folder, { choosingFolder = true }) { draft = draft.copy(folder = null) } }
+                    Note("Each run works here in a thread of its own.")
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Field("When to run") {
@@ -206,7 +214,7 @@ import kotlinx.coroutines.launch
                             "hourly" -> Field("At minute") { ChoicePicker(schedule.minute, MINUTES, { change(schedule.copy(minute = it)) }, label = "At minute") }
                             "daily", "weekdays" -> TimeField(schedule) { change(it) }
                             "weekly" -> {
-                                Field("On") { ChoicePicker(schedule.weekday, WEEKDAYS, { change(schedule.copy(weekday = it)) }, label = "On") }
+                                Field("Weekday") { ChoicePicker(schedule.weekday, WEEKDAYS, { change(schedule.copy(weekday = it)) }, label = "Weekday") }
                                 TimeField(schedule) { change(it) }
                             }
                             else -> Field("Cron") {
@@ -268,6 +276,10 @@ import kotlinx.coroutines.launch
     CodyncDialog("Delete routine?", confirmDelete, { confirmDelete = false }, "This deletes the routine and stops its future runs. This can't be undone.") {
         listOf(DialogAction("Delete routine", destructive = true) { routine?.let { store.routineAction(botId, it.id, "deleteRoutine") { saved(null) } } })
     }
+    CodyncSheet(choosingFolder, { choosingFolder = false }) {
+        FolderPicker(draft.folder ?: state.home.ifEmpty { null }, online, state.computerName,
+            store::listDirs, store::selectWorkspace) { draft = draft.copy(folder = it); choosingFolder = false }
+    }
     CodyncSheet(choosingZone, { choosingZone = false }) {
         ZonePicker(draft.schedule.zone) { draft = draft.copy(schedule = draft.schedule.copy(zone = it)); choosingZone = false }
     }
@@ -295,6 +307,19 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
     }
 }
 
+/** The editor's line. The host's cron sentence stays English, so this uses the same words as the fields. */
+@Composable private fun RoutineScheduleDraft.caption(): String {
+    val time = "%02d:%02d".format(hour, minute)
+    val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    return when (calendarStyle) {
+        "hourly" -> "${tr("Hourly")} · :${"%02d".format(minute)} · $zone"
+        "daily" -> "${tr("Daily")} · $time · $zone"
+        "weekdays" -> "${tr("Weekdays")} · $time · $zone"
+        "weekly" -> "${tr("Weekly")} · ${tr(names.getOrElse(weekday) { "Mon" })} · $time · $zone"
+        else -> expression.trim().let { written -> if (written.isEmpty()) zone else "$written · $zone" }
+    }
+}
+
 /** One quiet line under the schedule fields: what the host read, or why it can't (with the cron fields' order while it checks a Custom one). */
 @Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
     Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -302,6 +327,7 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
             error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
                 Text(tr(preview.summary), style = Type.caption.medium, color = Palette.text)
+                Text(preview.draft.caption(), style = Type.caption.medium, color = Palette.text)
                 preview.nextRunAt?.let {
                     val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, appLocale()).format(Date(it))
                     Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)
@@ -310,6 +336,23 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
             }
             cronHint -> Text("minute  hour  day  month  weekday", style = Type.caption.monospaced, color = Palette.tertiary)
         }
+    }
+}
+
+/** The routine's run folder: its name over its full path, or "Bot's folder"; the x puts it back to the bot's folder. */
+@Composable private fun FolderButton(folder: String?, choose: () -> Unit, clear: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.weight(1f).clip(RoundedRectangle(12.dp)).background(Palette.bubbleUser).plainButton(action = choose)
+            .padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Symbol("folder", size = 15.dp, tint = Palette.secondary)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(folder?.let(::folderName) ?: tr("Bot's folder"),
+                    style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                folder?.let { Text(it, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.MiddleEllipsis) }
+            }
+            Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
+        }
+        if (folder != null) IconButton("Use the bot's folder", "xmark.circle", action = clear)
     }
 }
 

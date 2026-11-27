@@ -20,6 +20,7 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
       # On Windows the crate builds; its tests haven't been run there yet.
-      - run: cargo test
+      - run: cargo test --all-features
         if: runner.os != 'Windows'

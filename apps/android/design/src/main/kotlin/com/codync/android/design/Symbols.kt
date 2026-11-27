@@ -6,6 +6,7 @@ import androidx.annotation.DrawableRes
 /** The drawable for an SF Symbol name the iOS app uses, or null when Android has none. */
 @DrawableRes fun symbolRes(name: String): Int? = when (name) {
     "app" -> R.drawable.sf_app
+    "app.dashed" -> R.drawable.sf_app_dashed
     "arrow.clockwise" -> R.drawable.sf_arrow_clockwise
     "arrow.counterclockwise" -> R.drawable.sf_arrow_counterclockwise
     "arrow.down" -> R.drawable.sf_arrow_down
@@ -108,6 +109,8 @@ import androidx.annotation.DrawableRes
     "keyboard.chevron.compact.down" -> R.drawable.sf_keyboard_chevron_compact_down
     "laptopcomputer" -> R.drawable.sf_laptopcomputer
     "line.3.horizontal" -> R.drawable.sf_line_3_horizontal
+    "line.3.horizontal.decrease" -> R.drawable.sf_line_3_horizontal_decrease
+    "line.3.horizontal.decrease.circle.fill" -> R.drawable.sf_line_3_horizontal_decrease_circle_fill
     "list.bullet" -> R.drawable.sf_list_bullet
     "list.bullet.rectangle" -> R.drawable.sf_list_bullet_rectangle
     "lock.display" -> R.drawable.sf_lock_display
@@ -166,6 +169,7 @@ import androidx.annotation.DrawableRes
     "safari" -> R.drawable.sf_safari
     "shift" -> R.drawable.sf_shift
     "shippingbox" -> R.drawable.sf_shippingbox
+    "sidebar.right" -> R.drawable.sf_sidebar_right
     "slider.horizontal.3" -> R.drawable.sf_slider_horizontal_3
     "square.and.arrow.down" -> R.drawable.sf_square_and_arrow_down
     "square.and.arrow.up" -> R.drawable.sf_square_and_arrow_up
@@ -181,7 +185,6 @@ import androidx.annotation.DrawableRes
     "text.bubble" -> R.drawable.sf_text_bubble
     "trash" -> R.drawable.sf_trash
     "tray" -> R.drawable.sf_tray
-    "tray.full" -> R.drawable.sf_tray_full
     "waveform" -> R.drawable.sf_waveform
     "wifi" -> R.drawable.sf_wifi
     "wifi.exclamationmark" -> R.drawable.sf_wifi_exclamationmark

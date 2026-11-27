@@ -31,10 +31,10 @@ test("Advisor mode sets the threads' own agent and fallbacks, keeps them, and tu
     await expect.poll(async () => (await saved()).threadAgent?.backend).toBe('kimi')
     expect((await saved()).threadFallbacks?.map((f) => f.backend)).toEqual(['codex'])
 
-    // Another agent for the threads, picked in place; the chat keeps its own.
-    await threadsAgent.locator('.agent-picker-summary').click()
-    await threadsAgent.locator('.agent-picker-choice').first().click()
-    await threadsAgent.locator('.agent-picker-item[aria-pressed="false"]').first().click()
+    // Another agent for the threads, from the model panel's rail; the chat keeps its own.
+    await threadsAgent.locator('.model-picker-field').click()
+    await page.locator('.model-picker .model-picker-agent[aria-pressed="false"]:not(.model-picker-add)').first().click()
+    await page.keyboard.press('Escape')
     await expect.poll(async () => (await saved()).threadAgent?.backend).not.toBe('kimi')
     const picked = await saved()
     expect([picked.backend, picked.fallbacks.map((f) => f.backend)]).toEqual(['kimi', ['codex']])
@@ -43,6 +43,8 @@ test("Advisor mode sets the threads' own agent and fallbacks, keeps them, and tu
     const before = picked.threadFallbacks?.length ?? 0
     await panel.getByRole('button', { name: 'Add fallback' }).last().click()
     await expect.poll(async () => (await saved()).threadFallbacks?.length).toBe(before + 1)
+    // The new step opens its model panel over the page; it closes as any panel does.
+    await page.keyboard.press('Escape')
     const kept = await saved()
     expect(kept.fallbacks.map((f) => f.backend)).toEqual(['codex'])
 

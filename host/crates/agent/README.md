@@ -1,7 +1,64 @@
+<div align="center">
+
+<img src="assets/icon.png" width="128" height="128" alt="codync-agent: a lowercase a with a plug's two prongs">
+
 # codync-agent
 
-Coding agents on one computer, for an app that runs them. It is the part of [Codync](https://github.com/leepokai/Codync)'s
-host that is true of the agents themselves, with no app in it:
+**Every coding agent, one interface.**<br>
+Find, install and run Claude Code, Codex and 40+ more from your app, and hear back in typed events.
+
+[Install](#install) · [Architecture](#architecture) · [Events](#events) · [API reference](https://docs.rs/codync-agent) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
+
+[![Crates.io](https://img.shields.io/crates/v/codync-agent?label=crates.io&style=flat&color=30343B&labelColor=202328)](https://crates.io/crates/codync-agent) [![CI](https://img.shields.io/github/actions/workflow/status/leepokai/codync-agent/ci.yml?branch=main&label=CI&style=flat&color=30343B&labelColor=202328)](https://github.com/leepokai/codync-agent/actions/workflows/ci.yml) [![Docs](https://img.shields.io/docsrs/codync-agent?label=docs.rs&style=flat&color=30343B&labelColor=202328)](https://docs.rs/codync-agent) [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-30343B?label=license&style=flat&color=30343B&labelColor=202328)](LICENSE)
+
+</div>
+
+---
+
+**The agent layer of an agent app.** Everything an app needs to run the coding agents already on a computer, with
+no app in it. It is how the bots in [Codync](https://github.com/leepokai/Codync) find, start and talk to their
+agents, as a standalone crate.
+
+- **Bring any agent.** Claude Code, Codex, OpenCode, Gemini CLI, Cursor, Pi and everything in the
+  [ACP registry](https://agentclientprotocol.com/registry): found where they are installed, fetched on first use
+  when they aren't, with a Node.js provided for npm agents on a computer without one.
+- **One protocol, typed.** Every agent speaks the Agent Client Protocol; what it says arrives as typed `Event`s
+  (reply, reasoning, tool calls with diffs, plans, usage, compactions, modes, commands). A kind this crate doesn't
+  know yet stays `Event::Other`, so a newer adapter never breaks your app.
+- **Requests that can't hang.** A permission or question the agent asks is a `Request` you answer once; drop it and
+  it answers itself, so an agent never waits on a request no one holds.
+- **Each agent's quirks, handled.** What an agent can do (`Capabilities`), how it fails (signed out, exited, timed
+  out), its permission modes, and facts only its own adapter reports, such as which subagent made a tool call.
+- **Nothing left running.** Each agent's whole process tree is owned and stopped with it: a session of its own on
+  Unix, a job object on Windows.
+- **More than one login.** Several accounts of the same agent side by side, each in a folder of its own; the
+  agent's own CLI signs in, and this crate never reads or stores a token.
+- **Plan limits.** With the `usage` feature, each agent's plan usage the way the agent itself reports it.
+
+## Architecture
+
+The app owns policy: which agent a chat uses, what to show, what to allow. `codync-agent` owns the facts about
+the agents and the connection to them.
+
+![codync-agent between your app and the coding agents: find, install and start each one, talk ACP, report typed events.](assets/architecture.svg)
+
+Diagram source: [architecture](assets/architecture.mmd). Render it with the shared [theme](assets/diagram-theme.json)
+and a white background.
+
+## Status
+
+0.x, developed inside Codync and mirrored here read-only. The API changes with Codync. Report issues here;
+send pull requests to [Codync's `dev` branch](https://github.com/leepokai/Codync) (`host/crates/agent`).
+
+## Install
+
+```sh
+cargo add codync-agent
+# with each agent's plan usage
+cargo add codync-agent --features usage
+```
+
+## Modules
 
 - **`backends`** knows the agent CLIs (Claude Code, Codex, OpenCode, Gemini CLI, Cursor, Devin, Pi, …): where each one
   is installed, how to install and update it, how it signs in, and what its exit means when it quits at start.
@@ -9,11 +66,21 @@ host that is true of the agents themselves, with no app in it:
   its binary or npm package; **`node`** provides a Node.js for npm agents on a computer without one.
 - **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent: what it can do (`Capabilities`),
   a session's controls (`Session`: prompt, cancel, steer) and why a turn ended (`StopReason`), and it tells failures
-  apart (signed out, exited, timed out, a model or mode it lacks); **`events`** types what the agent says (below);
+  apart (signed out, exited, timed out, a model or mode it lacks), with the sign-in methods it advertises (`acp::auth`),
+  the models it offers and their settings (`acp::models`) and claude-agent-acp's session `_meta` (`acp::claude`);
+  **`events`** types what the agent says (below);
   **`process`** owns the process tree each agent starts,
   so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
 - **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
+- **`own_memory`** turns each harness's own memory off for a launch where it can be, and says which can't.
+- **`mcp_names`** renames an app's MCP servers that Codex's or pi's own config would hide; **`pi`** hands pi the
+  servers pi-acp drops, and the error a failed turn ends in.
 - **`accounts`** gives an agent more than one login on the same computer (below).
+- **`usage`** (the `usage` feature) reads each agent's plan limits the way the agent itself reports them (below);
+  **`codex_app`** is Codex's own API (`codex app-server`), which it reads Codex's through, and which files a session in
+  a section of Codex's own apps.
+
+## Use
 
 ```rust,no_run
 use std::path::PathBuf;
@@ -89,6 +156,45 @@ let ended = StopReason::of(&turn.response().await?);
 # }
 ```
 
+## Usage
+
+With the `usage` feature, `codync_agent::usage` reads how much of its plan each agent has used, as `Window`s (an id, a
+label, the share used, when it resets, or a `text` note such as a balance). No reading starts a model turn. Each agent
+has its module and its own `collect`:
+
+| How it reads | Agents |
+|---|---|
+| Files on this computer | OpenCode (its database), Mistral Vibe (its session logs), Junie (the `JetBrains` IDE quota file) |
+| The agent's CLI | Claude Code (`claude -p /usage`), Amp (`amp usage`), Auggie (`auggie account status`), Hermes (`hermes usage`), Kilo (`kilo profile`), Kiro (`kiro-cli` `/usage`), oh-my-pi (`omp usage`), Kimi Code (its `kimi` screen, in a terminal) |
+| The agent's own server, which asks its provider with its own login | Codex (`codex app-server`), GitHub Copilot (its headless server), Grok Build (its ACP billing extension), Google Antigravity (its ACP `/usage` command, or the running app's language server) |
+| The provider's service | Cursor: its saved CLI or app login's token goes to Cursor's dashboard service, or to cursor.com's usage summary for legacy plans. This is the only reader that sends an agent's login anywhere, and the token is never logged |
+
+A reader returns `None` when it has no reading this time (the CLI isn't installed, it's signed out, its report changed);
+Copilot's returns an `Outcome`, which can also be a skip, as it starts its server at most every 30 minutes. The blocking ones (files, Kimi's terminal) are plain functions to run off the async workers. Which agents
+to read, how often, and what to keep and show are the app's. The feature reads SQLite files through `rusqlite` and
+leaves linking SQLite to the app: turn on `rusqlite`'s `bundled` feature, or have a system SQLite.
+
+```rust,no_run
+use codync_agent::usage::{self, Window};
+
+# async fn run() {
+// The computer's own Claude login; a second login passes the variables that point the CLI at its folder.
+if let Some(windows) = usage::claude::collect(Vec::new()).await {
+    for Window { label, percent, resets_at, .. } in windows {
+        println!("{label}: {percent}% used, resets at {resets_at:?}");
+    }
+}
+// A database on this computer: blocking.
+let opencode = tokio::task::spawn_blocking(usage::opencode::collect).await;
+# let _ = opencode;
+# }
+```
+
+The readers that start an agent's ACP server (Antigravity, Grok Build) or tell how a check ended (those and Copilot,
+Auggie, Hermes, Kilo) take the app as `usage::App`: it starts the agent the way the app does (its keys and login), keeps
+the one session an agent's readings share, and is told where a failing check stopped (`Stage`), so a changed report
+format shows up as `Stage::Parse`. `usage::busy` says whether an agent is being read already: one is read at a time.
+
 ## Accounts
 
 More than one login to the same coding agent on one computer, so several agents can run at once on different
@@ -131,3 +237,7 @@ its CLI's sign-in check (`Agent::signed_in`; `Agent::signed_in_on_disk` answers 
 
 Folders are linked (a junction on Windows, which needs no privilege), so both sides see one copy. Files an agent
 rewrites by rename are copied before each start, since a rename replaces a link.
+
+## License
+
+Apache-2.0

@@ -1,14 +1,15 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
-In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
+In the chat: `ADD title|brief[|hold][|after=<title>][|folder=<path>][|place=<here or worktree>]`, `STEER how|title[|brief, or the title that gives way]`,
+`TELL title|words[|now]` (passes words on to a task), `ASKTASK title|question` (asks a working task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
 `RECALL words` (looks back at the first task `recall_task` finds with them: its status, result and thread's steps). In a thread, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
-times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
+times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
@@ -22,9 +23,10 @@ What the user writes to a thread is a turn of its own: it answers `Thread <their
 notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
-Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
-be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
-ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
+Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
+session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+ends with `joined <the message>`; the bot's question (`ask_task`) it answers at once with `Answer: <the question>` (`SLOW` in it: after 62 seconds), and
+a late answer's turn in the chat replies `Late: <the answer>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
 turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
 says `SIGNIN` does that once: its turn leaves a `sign-in-asked` file and fails asking to sign in, and the message,
@@ -45,7 +47,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
-CAN_FORK = "no-fork" not in sys.argv
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
@@ -57,6 +58,10 @@ LIMIT = {
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
     "data": {"errorKind": "rate_limit"},
 }
+LONG_COMMAND = (
+    "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
+    " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
+)
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -86,7 +91,10 @@ def chat_tool(tool, arguments):
 
 
 def server_tool(name, tool, arguments):
-    server = next(s for s in servers if s["name"] == name)
+    server = next((s for s in servers if s["name"] == name), None)
+    if server is None:
+        # A thread isn't given that server at all.
+        return {"isError": True, "content": [{"type": "text", "text": f"no {name} server"}]}
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE, encoding="utf-8") as mcp:
         def rpc(identifier, method, params):
@@ -96,7 +104,8 @@ def server_tool(name, tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert name != "chat" or {"add_task", "steer_task", "tell_task", "work_status", "recall_task"} <= listed, listed
+        # A thread's chat server leaves out what only the chat may call; the host still refuses a call to it.
+        log("listed.jsonl", {"server": name, "tool": tool, "listed": tool in listed})
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -177,6 +186,11 @@ def work(text, session):
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
                 "sessionUpdate": "tool_call", "toolCallId": f"loop-{n}", "title": "Read the log", "status": "completed"}}})
+    if "COMMAND" in brief:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "command", "title": LONG_COMMAND, "kind": "execute",
+            "status": "in_progress",
+        }}})
     if "PERMISSION" in brief:
         later = re.search(r"PERMISSION:(\w+)", brief)
         if later:
@@ -214,8 +228,26 @@ def thread(text):
     return f"Thread {' + '.join(words)}: " + "; ".join(notes)
 
 
+ASKED = "[Codync: the bot that gave you this task asks you this"
+
+
+def answer_asked(session, question):
+    """The bot's question, steered into a running turn: one short message, closed by a step, then on with the task.
+    `SLOW` in it answers after the bot's call stopped waiting."""
+    if "SLOW" in question:
+        cancel.wait(62)
+    for update in ({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Answer: " + question}},
+                   {"sessionUpdate": "tool_call", "toolCallId": "after-answer", "title": "Go on", "status": "completed"}):
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+
+
 def answer(text, session):
     """What this turn replies."""
+    if ASKED in text:
+        # An agent that can't take it mid-turn: the question is a turn of its own.
+        return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
+    if "answered the question you asked it" in text:
+        return "Late: " + re.search(r"after your call stopped waiting\.\]\n([^\n]*)", text).group(1)
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
@@ -230,7 +262,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|ASKTASK|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -243,6 +275,10 @@ def answer(text, session):
         for flag in flags:
             if flag.startswith("after="):
                 arguments["after"] = task_id(flag.removeprefix("after="))
+            if flag.startswith("folder="):
+                arguments["folder"] = flag.removeprefix("folder=")
+            if flag.startswith("place="):
+                arguments["place"] = flag.removeprefix("place=")
         added = said(chat_tool("add_task", arguments), "Added: ")
         while "hold" in flags and not cancel.wait(0.01):
             pass
@@ -262,6 +298,9 @@ def answer(text, session):
         title, words, *flags = rest.split("|")
         arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
         return said(chat_tool("tell_task", arguments), "Told: ")
+    if name == "ASKTASK":
+        title, question = rest.split("|", 1)
+        return said(chat_tool("ask_task", {"task": task_id(title), "question": question}), "Asked: ")
     if name == "RECALL":
         found = json.loads(chat_tool("recall_task", {"query": rest})["content"][0]["text"])["tasks"]
         if not found:
@@ -301,11 +340,8 @@ for line in sys.stdin:
     method = message.get("method")
     params = message.get("params") or {}
     if method == "initialize":
-        capabilities = {"close": {}}
-        if CAN_FORK:
-            capabilities["fork"] = {}
         initialized = {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": CAN_LOAD, "sessionCapabilities": capabilities}}
+            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
         if CAN_STEER:
             initialized["_meta"] = {"steering": {"supported": True}}
         send({"id": message["id"], "result": initialized})
@@ -315,6 +351,8 @@ for line in sys.stdin:
         if method == "session/fork":
             forked.add(session)
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
+        if method != "session/load":
+            log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
         send({"id": message["id"], "result": {}})
@@ -325,8 +363,12 @@ for line in sys.stdin:
         threading.Thread(target=prompt, args=(message,), daemon=True).start()
     elif method == "_session/steering" and CAN_STEER:
         # The user's words, between Codync's own lines (the message's id before them, a thread's note after).
-        words = [line for line in params["prompt"][0]["text"].splitlines() if line and not line.startswith("[Codync:")]
-        joined.append(words[-1])
+        text = params["prompt"][0]["text"]
+        words = [line for line in text.splitlines() if line and not line.startswith("[Codync:")]
+        if ASKED in text:
+            threading.Thread(target=answer_asked, args=(params["sessionId"], words[-1]), daemon=True).start()
+        else:
+            joined.append(words[-1])
         send({"id": message["id"], "result": {"outcome": "injected"}})
     elif method == "session/cancel":
         cancel.set()

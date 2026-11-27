@@ -25,6 +25,8 @@ pub enum App {
     #[default]
     Desktop,
     Tui,
+    /// A `codync-host` command at a terminal (`network setup`).
+    Cli,
     #[serde(other)]
     Other,
 }
@@ -175,6 +177,32 @@ pub enum Reported {
         opened: bool,
     },
     WhatsNewShown,
+    /// `codync-host network setup` for one agent: what it did to that agent's config.
+    NetworkSetup {
+        agent: codync_network::AgentKind,
+        outcome: SetupOutcome,
+        /// What refused, when it failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<SetupFailure>,
+    },
+    /// The desktop's details panel: split into two panes (`on`) or joined.
+    PanelSplit {
+        on: bool,
+    },
+    /// The desktop's details panel: over the conversation (`on`) or restored.
+    PanelMaximized {
+        on: bool,
+    },
+    /// A page opened in the details panel's Browser tab.
+    PreviewOpened {
+        from: PreviewFrom,
+    },
+    /// Group by computer or Sort by status switched on a desktop list.
+    ListLayoutChanged {
+        list: ListName,
+        option: ListOption,
+        on: bool,
+    },
     DesktopNotificationsSet {
         on: bool,
     },
@@ -311,6 +339,8 @@ pub enum Screen {
     Trace,
     BotDetails,
     BotComputer,
+    /// The details panel's Browser tab (desktop).
+    BotBrowser,
     Memory,
     Routines,
     Marketplace,
@@ -330,6 +360,38 @@ pub enum Screen {
     Thread,
     /// Every bot's work on one page.
     AllWork,
+    #[serde(other)]
+    Other,
+}
+
+/// Where the Browser tab's page came from: an address typed, or one of the bot's dev servers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewFrom {
+    Address,
+    DevServer,
+    #[serde(other)]
+    Other,
+}
+
+/// The desktop list whose layout changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ListName {
+    Bots,
+    Threads,
+    #[serde(other)]
+    Other,
+}
+
+/// Which of a list's layout choices changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ListOption {
+    Bot,
+    Computer,
+    Status,
+    Activity,
     #[serde(other)]
     Other,
 }
@@ -456,6 +518,34 @@ pub enum CloudProvider {
     Boat,
     Instabox,
     #[default]
+    #[serde(other)]
+    Other,
+}
+
+/// What `network setup` did for an agent: wrote its MCP server or hooks (`added`), found them as
+/// they should be (`current`), left a `codync` server that isn't this host's (`foreign`), took
+/// them out (`removed`), or couldn't (`failed`: the agent's CLI or file refused).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupOutcome {
+    Added,
+    Current,
+    Foreign,
+    Removed,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Why `network setup` failed for an agent: a config file it can't read or edit (one with comments,
+/// say), the agent's CLI refusing or not starting, or a file it couldn't write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupFailure {
+    UnreadableConfig,
+    CliRefused,
+    CliMissing,
+    Write,
     #[serde(other)]
     Other,
 }
@@ -645,6 +735,22 @@ mod tests {
                 Event::KofiInviteAnswered,
             ),
             (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
+            (
+                json!({"event": "network_setup", "app": "cli", "agent": "codex", "outcome": "added"}),
+                Event::NetworkSetup,
+            ),
+            (
+                json!({"event": "network_setup", "app": "cli", "agent": "opencode", "outcome": "failed",
+                    "error": "unreadable_config"}),
+                Event::NetworkSetup,
+            ),
+            (json!({"event": "panel_split", "app": "desktop", "on": true}), Event::PanelSplit),
+            (json!({"event": "panel_maximized", "app": "desktop", "on": false}), Event::PanelMaximized),
+            (json!({"event": "preview_opened", "app": "desktop", "from": "dev_server"}), Event::PreviewOpened),
+            (
+                json!({"event": "list_layout_changed", "app": "desktop", "list": "threads", "option": "computer", "on": true}),
+                Event::ListLayoutChanged,
+            ),
             (
                 json!({"event": "desktop_notifications_set", "app": "desktop", "on": true}),
                 Event::DesktopNotificationsSet,

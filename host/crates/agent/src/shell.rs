@@ -195,6 +195,26 @@ pub fn program(name: &str) -> PathBuf {
     crate::backends::which(name).unwrap_or_else(|| name.into())
 }
 
+/// Drop CSI colour sequences (`ESC [ … m`). Other characters stay, including
+/// the cursor-position query a Windows console sends.
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for d in chars.by_ref() {
+                if d.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// The command that runs a Python test fixture.
 #[cfg(any(test, feature = "test-support"))]
 pub fn python(script: &std::path::Path) -> String {
@@ -229,6 +249,12 @@ fn split_env(line: &str) -> (Vec<(String, String)>, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colour_codes_drop_out_of_a_usage_line() {
+        let raw = "Credits \u{1b}[32m(12 of 100\u{1b}[0m covered)";
+        assert_eq!(strip_ansi(raw), "Credits (12 of 100 covered)");
+    }
 
     #[test]
     fn splits_leading_assignments() {

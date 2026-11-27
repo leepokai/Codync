@@ -1,0 +1,14 @@
+# Closes an open menu: Back on Android, a tap on the bar's title (outside the menu) on iPhone.
+appId: com.pokai.Codync.ios.dev
+---
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          point: "50%,7%"

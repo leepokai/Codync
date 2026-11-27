@@ -104,21 +104,16 @@ struct BotSettingsForm: View {
     }
 
     private var modelPicker: some View {
-        AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions,
+        AgentModelPicker(backend: draft.backend, loginProfile: draft.loginProfile, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
                          }), bot: bot,
-                         agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
-                         onAgentChange: { draft.setAgent($0) }, command: $draft.command,
+                         agents: model.loginSeats(model.hello?.backends ?? [], on: draft.login)
+                             + [LoginSeat(login: AgentLogin(backend: "custom"), name: L10n.tr("Custom command"))],
+                         onAgentChange: { draft.setAgent($0) },
+                         command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
-    }
-
-    /// Only when the host has login profiles (an older one sends none).
-    @ViewBuilder private var loginProfilePicker: some View {
-        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.loginProfiles != nil {
-            LoginProfileRow(backend: backend, loginProfile: $draft.loginProfile)
-        }
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 })
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -135,16 +130,19 @@ struct BotSettingsForm: View {
         }
     }
 
-    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on, in its row (one
+    /// setting, no lines inside it).
     @ViewBuilder private var advisor: some View {
         if draft.threadFallbacks != nil {
-            SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
-                      isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
-                          withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
-                      }))
-            if draft.threadAgent != nil {
-                ThreadsAgentRow(draft: $draft, bot: bot)
-                FallbackList(draft: $draft, bot: bot, threads: true)
+            VStack(alignment: .leading, spacing: 16) {
+                SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
+                          isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
+                              withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
+                          }))
+                if draft.threadAgent != nil {
+                    ThreadsAgentRow(draft: $draft, bot: bot)
+                    FallbackList(draft: $draft, bot: bot, threads: true)
+                }
             }
         }
     }
@@ -157,20 +155,49 @@ struct BotSettingsForm: View {
         }
     }
 
+    /// The bot's one folder, on a host without projects: its own, or a project the user picks.
+    @ViewBuilder private var folderPicker: some View {
+        ValueRow("Workspace", detail: draft.cwd.isEmpty
+                 ? "This bot has its own space for files. It can work in other folders when you ask."
+                 : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
+            DropdownMenu {
+                [
+                    MenuItem("Own folder", selected: draft.cwd.isEmpty) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
+                    },
+                    MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
+                    },
+                ]
+            } label: {
+                HStack(spacing: 6) {
+                    Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
+                }
+                .foregroundStyle(Palette.text)
+                .outlinedPill()
+            }
+            .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
+        }
+        // From a host that says, for any folder (one Codync made too).
+        if let bot, bot.threadWorktrees != nil {
+            GitStateRow(state: bot.gitState)
+        }
+    }
+
     private var sections: some View {
         VStack(alignment: .leading, spacing: 30) {
-            CardSection("Instructions") { instructions }
-            CardSection("Agent") {
+            CardSection("Instructions", fold: "bot.instructions") { instructions }
+            CardSection("Agent", fold: "bot.agent") {
                 fallbackBanner
                 modelPicker
-                loginProfilePicker
                 fallbackList
                 advisor
                 compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
-            CardSection("Profile") {
+            CardSection("Profile", fold: "bot.profile") {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
@@ -200,35 +227,14 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Workspace") {
+            CardSection("Workspace", fold: "bot.workspace") {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
                 }
-                ValueRow("Workspace", detail: draft.cwd.isEmpty
-                         ? "This bot has its own space for files. It can work in other folders when you ask."
-                         : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
-                    DropdownMenu {
-                        [
-                            MenuItem("Own folder", selected: draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
-                            },
-                            MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
-                            },
-                        ]
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
-                        }
-                        .foregroundStyle(Palette.text)
-                        .outlinedPill()
-                    }
-                    .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
-                }
-                // From a host that says, for any folder (one Codync made too).
-                if let bot, bot.threadWorktrees != nil {
-                    GitStateRow(state: bot.gitState)
+                if model.hello?.projects == true {
+                    BotProjects(draft: $draft, bot: bot)
+                } else {
+                    folderPicker
                 }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
@@ -244,13 +250,13 @@ struct BotSettingsForm: View {
                 }
                 // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
                 // from a host that has the setting.
-                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.threadWorktrees {
+                if model.hello?.projects != true, bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.threadWorktrees {
                     SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
                               isOn: Binding(get: { worktrees }, set: { draft.threadWorktrees = $0 }))
                 }
             }
 
-            CardSection("Activity") {
+            CardSection("Activity", fold: "bot.activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {

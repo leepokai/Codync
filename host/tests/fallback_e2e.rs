@@ -556,3 +556,158 @@ async fn a_turn_pi_ended_in_an_error_says_so() {
     let notice = wait_for(&host, &bot, "error notice", |e| e["data"]["style"] == "error").await;
     assert!(notice["data"]["text"].as_str().unwrap().contains("upstream busy"), "{notice}");
 }
+
+#[tokio::test]
+async fn a_switch_the_user_makes_carries_the_conversation_and_says_so() {
+    let host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    let line = wait_for(&host, &bot, "pending line", manual).await;
+    assert_eq!(line["data"]["agentSwitch"]["state"], "pending", "{line}");
+    assert_eq!(line["data"]["text"], "Context handoff pending: Custom command → Codex");
+
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "standin");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    let done = wait_for(&host, &bot, "handed-off line", |e| state(e, "handedOff")).await;
+    assert_eq!(done["id"], line["id"], "the same line moves on");
+    assert_eq!(done["data"]["text"], "Context handed off: Custom command → Codex");
+    assert!(done["data"]["agentSwitch"]["carried"].as_str().is_some_and(|c| c.contains("Fix the login tests")));
+
+    // Switched back, then a new session: nothing is carried, and the line says so.
+    host.call("updateBot", json!({"id": bot, "backend": "custom", "command": agent("primary")})).await;
+    let back = wait_for(&host, &bot, "second line", |e| manual(e) && e["id"] != line["id"]).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "Fresh start").await;
+    let last = last_prompt(&host, &bot, "primary");
+    assert!(!last.contains("<handoff>") && !last.contains("Fix the login tests"), "{last}");
+    let dropped = wait_for(&host, &bot, "dropped line", |e| e["id"] == back["id"] && state(e, "switched")).await;
+    assert_eq!(dropped["data"]["text"], "Switched: Codex → Custom command");
+}
+
+#[tokio::test]
+async fn a_switch_the_user_makes_outlives_a_second_switch_and_a_host_restart() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    let line = wait_for(&host, &bot, "pending line", manual).await;
+    // Only the model: the same login, so nothing more is said, and the recap stays owed.
+    host.call("updateBot", json!({"id": bot, "model": "bigger"})).await;
+    host.call("updateBot", json!({"id": bot, "model": null})).await;
+    // Back before the next message: the same line names the login it just left.
+    host.call("updateBot", json!({"id": bot, "backend": "custom", "command": agent("primary")})).await;
+    let moved =
+        wait_for(&host, &bot, "moved line", |e| e["data"]["text"] == "Context handoff pending: Codex → Custom command")
+            .await;
+    assert_eq!(moved["id"], line["id"], "one line per handoff");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| manual(e)).count(), 1, "{history}");
+
+    host.restart(|_| {}).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    let done = wait_for(&host, &bot, "handed-off line", |e| state(e, "handedOff")).await;
+    assert_eq!(done["id"], line["id"]);
+}
+
+#[tokio::test]
+async fn a_command_right_after_the_users_switch_leaves_the_recap_for_the_next_message() {
+    let host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    std::fs::write(host.workspace(&bot).join("standin.commands"), "").unwrap();
+    host.reply(&bot, "Fix the login tests").await;
+
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    wait_for(&host, &bot, "pending line", manual).await;
+    host.reply(&bot, "/review the login tests").await;
+    assert_eq!(last_prompt(&host, &bot, "standin"), "/review the login tests", "the command goes as typed");
+    let line = wait_for(&host, &bot, "line", manual).await;
+    assert_eq!(line["data"]["agentSwitch"]["state"], "pending", "{line}");
+    host.reply(&bot, "Thanks").await;
+    let last = last_prompt(&host, &bot, "standin");
+    assert!(last.contains("<handoff>") && last.contains("Fix the login tests"), "{last}");
+    wait_for(&host, &bot, "handed-off line", |e| state(e, "handedOff")).await;
+}
+
+/// The host moves `bot`, which works in a project, to its own folder (`hub::projects::migrate`, at a host start):
+/// its store is set back to before projects, and the host starts again.
+async fn moved_home(host: &mut Host, bot: &str) {
+    let project = host.home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    host.restart(|home| {
+        let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
+        let old = "UPDATE bots SET config = json_set(config, '$.cwd', ?2, '$.projects', json('[]')) WHERE id = ?1";
+        db.execute(old, rusqlite::params![bot, project.to_string_lossy()]).unwrap();
+        db.execute("DELETE FROM kv WHERE k = 'projects.migrated'", []).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_move_to_its_own_folder_carries_the_conversation_once() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    // The agent starts again in its own folder, in a new session: the next message carries the chat.
+    moved_home(&mut host, &bot).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("in another working folder") && !prompt.contains("another agent"), "{prompt}");
+    host.reply(&bot, "Thanks").await;
+    assert!(!last_prompt(&host, &bot, "primary").contains("<handoff>"), "carried once");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(manual), "a move shows no switch line: {history}");
+}
+
+#[tokio::test]
+async fn a_switch_after_a_move_to_its_own_folder_says_so_and_names_the_agent_left() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    moved_home(&mut host, &bot).await;
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    wait_for(&host, &bot, "pending line", manual).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = last_prompt(&host, &bot, "standin");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("another agent") && !prompt.contains("another working folder"), "{prompt}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| manual(e)).count(), 1, "{history}");
+}
+
+#[tokio::test]
+async fn a_new_session_after_a_move_to_its_own_folder_carries_nothing() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    moved_home(&mut host, &bot).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "Fresh start").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(!prompt.contains("<handoff>") && !prompt.contains("Fix the login tests"), "{prompt}");
+}
+
+async fn relay_bot(host: &Host) -> String {
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
+}
+
+/// A line of a switch the user made.
+fn manual(e: &Value) -> bool {
+    e["data"]["agentSwitch"]["manual"] == true
+}
+
+/// A line of a switch the user made, in `state`.
+fn state(e: &Value, state: &str) -> bool {
+    manual(e) && e["data"]["agentSwitch"]["state"] == state
+}

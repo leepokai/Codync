@@ -42,6 +42,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case notificationOpened(NotificationKind)
     case iconBadgeFailed(IconBadgeFailure)
     case settingChanged(Setting, on: Bool)
+    /// How a list is laid out, a choice in its filter menu (the desktop's): grouped, sorted.
+    case listLayoutChanged(ListName, option: ListOption, on: Bool)
     case linkOpened(Link)
     case voiceCallStarted(VoiceEngine)
     /// How one engine of a call fared, when it's replaced or the call ends: milliseconds until it was ready (nil:
@@ -85,6 +87,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum PromptSource: String, Sendable { case settings, widgets }
     public enum IconBadgeFailure: String, Sendable { case notAllowed = "not_allowed", other }
     public enum Setting: String, Sendable { case push, liveActivities = "live_activities", iconBadge = "icon_badge" }
+    public enum ListName: String, Sendable { case bots, threads }
+    public enum ListOption: String, Sendable { case folder, bot, computer, status, activity }
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link",
              whatsNewFilm = "whats_new_film", docs
@@ -127,6 +131,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", botComputer = "bot_computer", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
         case library, artifact, network, thread, allWork = "all_work"
+        case workflows, workflow, workflowRun, workflowStep
     }
 
     public enum NotificationKind: String, Sendable {
@@ -262,6 +267,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .notificationOpened: "notification_opened"
         case .iconBadgeFailed: "icon_badge_failed"
         case .settingChanged: "setting_changed"
+        case .listLayoutChanged: "list_layout_changed"
         case .linkOpened: "link_opened"
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
@@ -319,6 +325,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .notificationOpened(kind): return ["kind": .string(kind.rawValue)]
         case let .iconBadgeFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .settingChanged(setting, on): return ["setting": .string(setting.rawValue), "on": .bool(on)]
+        case let .listLayoutChanged(list, option, on): return ["list": .string(list.rawValue), "option": .string(option.rawValue), "on": .bool(on)]
         case let .linkOpened(link): return ["link": .string(link.rawValue)]
         case let .voiceCallStarted(engine): return ["engine": .string(engine.rawValue)]
         case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure, searches):

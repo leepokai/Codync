@@ -38,8 +38,9 @@ impl App {
                 ACTIONS
                     .iter()
                     .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
-                    .filter(|(label, _, _)| {
-                        let translated = super::super::l10n::tr(label);
+                    .filter(|(_, _, a)| !matches!(a, Action::ThreadKeep(_)) || self.thread_keep_days.is_some())
+                    .filter(|(label, _, a)| {
+                        let translated = super::palette_label(label, *a);
                         fuzzy(q, &[label, translated.as_ref()])
                     })
                     .map(|(_, _, a)| GotoItem::Action(*a)),
@@ -64,6 +65,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::ThreadKeep(days) => self.set_thread_keep(days),
             Action::ComputerName => self.ask_computer_name(),
             Action::ResetCredentials => self.ask_reset_credentials(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
@@ -123,6 +125,16 @@ impl App {
                             self.call("resetCredentials", json!({}), After::CredentialsReset);
                         }
                         ConfirmAct::StopWork { bot, task } => self.stop_work(bot, task),
+                        ConfirmAct::DeleteWorkflow(id) => {
+                            self.call(
+                                "deleteWorkflow",
+                                json!({"id": id}),
+                                After::Sheet(Reply::Workflow(super::super::manage::WorkflowReply::Deleted)),
+                            );
+                        }
+                        ConfirmAct::RejectWorkflowStep(id) => {
+                            self.call("decideWorkflowStep", json!({"stepId": id, "approved": false}), changed);
+                        }
                     }
                     None
                 }
@@ -161,6 +173,7 @@ impl App {
                 // Answering the last question closes a sheet opened only for it.
                 (!(matches!(o, Overlay::Pair(PairCode::QuestionOnly)) && self.pairing_requests.is_empty())).then_some(o)
             }
+            Overlay::Workflows(sheet) => self.workflows_key(*sheet, k),
             // A new code: after a failure, or in place of the one shown.
             o @ Overlay::Pair(PairCode::QuestionOnly) if k.code == KeyCode::Char('r') => Some(o),
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
@@ -357,7 +370,11 @@ impl App {
             return;
         }
         if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
-            f.cwd = path;
+            if f.projects.is_some() {
+                f.add_project(path);
+            } else {
+                f.cwd = path;
+            }
         }
     }
 }

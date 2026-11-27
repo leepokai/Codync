@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.DirListing
+import com.codync.android.core.folderName
 import com.codync.android.design.*
 import kotlinx.coroutines.launch
 
@@ -69,7 +70,7 @@ import kotlinx.coroutines.launch
                                     .plainButton(enabled = !state.saving) { state.selected = item.path }.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Symbol("folder", size = 18.dp, tint = Palette.secondary)
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(item.path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: item.path, style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(folderName(item.path), style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Text(item.path, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     if (state.selected == item.path) Symbol("checkmark", size = 16.dp)

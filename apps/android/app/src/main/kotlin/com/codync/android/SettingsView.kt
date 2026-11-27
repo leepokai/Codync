@@ -35,12 +35,15 @@ import com.codync.android.design.*
  * analytics, Start over; iOS `SettingsView`). Each computer's own settings (voice chat, push, connection,
  * hidden bots) are in Computer management (`ComputersView`).
  */
-@Composable internal fun SettingsView(state: AccountContext, computers: List<AppState>, store: AccountStore, bottomInset: Dp) {
+@Composable internal fun SettingsView(state: AccountContext, computers: List<AppState>, store: AccountStore, bottomInset: Dp, status: () -> Unit) {
     val uri = LocalUriHandler.current
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
     CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset)) {
         Text(tr("Settings"), Modifier.semantics { heading() }, style = Type.largeTitle.bold, color = Palette.text)
+        CardSection {
+            row { RowLabel("Show status", "rectangle.stack.fill", chevron = true, modifier = Modifier.plainButton(action = status)) }
+        }
         AppearanceSettings()
         val appLanguage = LocalAppLanguage.current
         val setAppLanguage = LocalSetAppLanguage.current

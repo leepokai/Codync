@@ -34,6 +34,27 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
   return { mounted, shown }
 }
 
+/**
+ * A sheet is portaled onto `document.body`, so it is not inside the title-bar drag strips.
+ * Electron treats those strips as window drags and ignores whatever is painted on top.
+ * While a sheet, dialog, or menu is open, every drag strip stands down.
+ */
+let overlayDepth = 0
+export function useSuspendWindowDrag(active: boolean) {
+  useLayoutEffect(() => {
+    if (!active) return
+    overlayDepth += 1
+    document.documentElement.classList.add('overlay-open')
+    return () => {
+      overlayDepth -= 1
+      if (overlayDepth <= 0) {
+        overlayDepth = 0
+        document.documentElement.classList.remove('overlay-open')
+      }
+    }
+  }, [active])
+}
+
 /** Closes the modal the view is in (kit's `\.dismissModal`). */
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
@@ -146,6 +167,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   children: ReactNode
 }) {
   const { mounted, shown } = usePresence(open)
+  useSuspendWindowDrag(mounted)
   const last = useRef(children)
   const layer = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -176,7 +198,7 @@ export interface DialogAction {
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCancel, onClose, children }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCancel, onClose, cardClassName, children }: {
   open: boolean
   title: string
   message?: string | null
@@ -185,10 +207,13 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
   /** Closed without an action; `onClose` follows, as it does after an action. */
   onCancel?: () => void
   onClose: () => void
+  /** Extra class on the card, for a dialog that needs a different size. */
+  cardClassName?: string
   /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
   children?: ReactNode
 }) {
   const { mounted, shown } = usePresence(open, 120)
+  useSuspendWindowDrag(mounted)
   const tr = useTr()
   const last = useRef({ title, message, actions, children })
   const layer = useRef<HTMLDivElement>(null)
@@ -205,7 +230,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
   return createPortal(
     <div ref={layer} className={`dialog ${shown ? 'shown' : ''}`} role="alertdialog" aria-modal aria-labelledby={`${id}-title`} aria-describedby={shownContent.message ? `${id}-message` : undefined}>
       <div className="dialog-dim" onClick={() => cancel !== null && dismiss()} />
-      <div className="dialog-card" data-modal-card tabIndex={-1}>
+      <div className={`dialog-card${cardClassName ? ` ${cardClassName}` : ''}`} data-modal-card tabIndex={-1}>
         <div className="dialog-text">
           {/* Callers translate the sentence, then insert names. A second pass would also translate a device named "Done". */}
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
@@ -258,6 +283,8 @@ export function DialogField({ value, onChange, onSubmit, placeholder, label, inp
   )
 }
 
+export { AnchoredMenu, type MenuItem } from './Menu'
+
 /** A sheet's content: a full-height column on the page color, usually a ModalHeader and a body. */
 export function SheetPage({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={`sheet-page${className ? ` ${className}` : ''}`}>{children}</div>
@@ -297,12 +324,14 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen, tabIndex }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, iconSize, disabled, className, buttonRef, menuOpen, tabIndex, systemTip = true }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void
   selected?: boolean
   size?: number
+  /** Point size of the symbol. Defaults to half the button. */
+  iconSize?: number
   disabled?: boolean
   className?: string
   buttonRef?: RefObject<HTMLButtonElement | null>
@@ -310,6 +339,8 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
   menuOpen?: boolean
   /** -1 for a pointer-only button whose action its container offers to the keyboard. */
   tabIndex?: number
+  /** Set when a parent draws the hover tip, so the system tooltip does not appear as well. */
+  systemTip?: boolean
 }) {
   const tr = useTr()
   const label = tr(title)
@@ -318,7 +349,7 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       ref={buttonRef}
       className={`icon-button ${selected ? 'selected' : ''} ${className ?? ''}`}
       style={{ width: size, height: size, borderRadius: size * 0.28 }}
-      title={label}
+      title={systemTip ? label : undefined}
       aria-label={label}
       aria-haspopup={menuOpen === undefined ? undefined : 'menu'}
       aria-expanded={menuOpen}
@@ -326,7 +357,7 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       onClick={onClick}
       tabIndex={tabIndex}
     >
-      <Icon name={icon} size={size / 2} weight="medium" />
+      <Icon name={icon} size={iconSize ?? size / 2} weight="medium" />
     </button>
   )
 }

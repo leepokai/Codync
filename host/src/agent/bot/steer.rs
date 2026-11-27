@@ -78,13 +78,16 @@ impl Actor {
         };
         let (acp, hub, bot) = (conn.acp.clone(), self.hub.clone(), self.cfg.id.clone());
         // What the user wrote to a thread says so, as when it starts a turn of its own.
-        let threaded =
-            self.cfg.is_thread() && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
+        let threaded = self.cfg.is_thread()
+            && !self.cfg.plain
+            && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
         let text = if threaded { crate::chat::work::in_thread(text, None) } else { text.to_owned() };
         // A turn that just ended doesn't take it: it stays queued for the next one.
         let prompt = json!([{"type": "text", "text": text}]);
         // What the agent writes from here may answer it: a reply of its own, after the message in the chat.
         self.close_seg();
+        // A question of its bot's: what the thread writes from here answers it, unless the agent leaves it for later.
+        crate::chat::work::ask::heard(&self.hub, &self.cfg, std::slice::from_ref(&entry_id));
         self.steers_in_flight.insert(entry_id.clone(), InFlight { taken_back: false });
         tokio::spawn(async move {
             let answer = tokio::time::timeout(STEER_ANSWER, acp.session(&sid).steer(prompt)).await;
@@ -162,6 +165,9 @@ impl Actor {
         }
         let how = steer_outcome(outcome);
         analytics::message_steered(&self.hub, &self.cfg.backend, how);
+        if how != Steer::Joined {
+            crate::chat::work::ask::unheard(&self.hub, &self.cfg, entry_id);
+        }
         // A Stop meanwhile dropped it from the queue (and marked it cancelled).
         let Some(at) = self.queued_at(entry_id) else { return };
         if how != Steer::Joined {

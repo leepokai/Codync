@@ -15,8 +15,9 @@ import {
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import { HostError, type HostClient, type HostRoute, type HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
+import type { RunDetail, WorkflowDetail, WorkflowStep, WorkflowSummary } from '../views/workflows/workflow'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
@@ -27,6 +28,8 @@ import { fromOldBot, fromOldEntry } from '@shared/old-host'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
 import { ThreadTranscripts } from './thread-transcripts'
+import { OlderThreads } from './older-threads'
+import type { AgentModels } from '@shared/agent-models'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -74,6 +77,7 @@ export class BotMirror extends Observable {
 
   /** Stores a bot the host sent, with its custom icon. */
   protected putHostBot(bot: Bot): Bot {
+    this.olderThreads.keep(bot.id, this.bots.get(bot.id)?.work, bot.work)
     const stored = this.withIcon(bot)
     this.bots.set(stored.id, stored)
     return stored
@@ -91,7 +95,11 @@ export class BotMirror extends Observable {
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   private threadTranscripts = new ThreadTranscripts()
+  /** Ended threads from before the last day, listed on the Threads page (`hello.threadKeepDays` hosts). */
+  readonly olderThreads = new OlderThreads(() => this.changed())
   usage: Usage = { providers: [] }
+  /** The agents' model lists this computer gave, by agent and login profile: a model picker opens on one at once. */
+  private readonly modelLists = new Map<string, AgentModels>()
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
   pairingRequests: PairingRequest[] = []
@@ -103,6 +111,20 @@ export class BotMirror extends Observable {
   historyComplete = new Set<string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
+  /** Set when `lastError` must not open the generic failure dialog. */
+  quietError = false
+  workflows: WorkflowSummary[] = []
+  workflowMethodMissing = false
+  workflowSession: { id: string; dirty: boolean; runId: string | null; followLive: boolean } | null = null
+  workflowDetail: WorkflowDetail | null = null
+  workflowDetailToken = 0
+  workflowRunToken = 0
+  workflowRun: RunDetail | null = null
+  /** The latest state of a step run on its own ("Run this step"): it belongs to no run, so `workflowRun` never carries it. */
+  workflowSoloStep: WorkflowStep | null = null
+  /** The host predates `workflowStep`: a solo step's event can't be read back, while every other workflow method works. */
+  workflowStepMissing = false
+  workflowDeleted: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
   /** Permission cards whose answer is on its way, with the chosen option. */
@@ -163,6 +185,25 @@ export class BotMirror extends Observable {
   showAutoOrder(on: boolean) {
     if (!this.hello || this.hello.autoOrder === on) return
     this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
+  }
+
+  /** When old threads are deleted as the computer has it: chosen here, or its `threadKeepDays` event (another device). */
+  showThreadKeepDays(days: number) {
+    if (!this.hello || this.hello.threadKeepDays === days) return
+    this.hello = { ...this.hello, threadKeepDays: days }
+    // The computer deletes what the new choice no longer keeps: list them again.
+    this.olderThreads.reset()
+    this.changed()
+  }
+
+  /** `backend`'s model list for `loginProfile` (null: the default login) as this computer gave it last. */
+  modelsFor(backend: string, loginProfile: string | null): AgentModels | null {
+    return this.modelLists.get(`${backend}/${loginProfile ?? ''}`) ?? null
+  }
+
+  keepModels(backend: string, loginProfile: string | null, list: AgentModels) {
+    this.modelLists.set(`${backend}/${loginProfile ?? ''}`, list)
     this.changed()
   }
 
@@ -255,7 +296,12 @@ export class BotMirror extends Observable {
   }
 
   get hiddenBots(): Bot[] {
-    return [...this.bots.values()].filter((b) => b.hidden).sort((a, b) => a.name.localeCompare(b.name))
+    return [...this.bots.values()].filter((b) => b.hidden && !b.plain).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** The computer's box for threads without a bot, once the first one started. */
+  get plainBox(): Bot | undefined {
+    return [...this.bots.values()].find((b) => b.plain)
   }
 
   backendName(id: string) {
@@ -354,8 +400,66 @@ export class BotMirror extends Observable {
   }
 
   setError(message: string | null) {
+    this.quietError = false
     this.lastError = message
     this.changed()
+  }
+
+  /** The open workflow. Dirty flips do not re-render the rest of the window. */
+  setWorkflowSession(session: { id: string; dirty: boolean; runId: string | null; followLive: boolean } | null) {
+    const idChanged = this.workflowSession?.id !== session?.id
+    this.workflowSession = session
+    if (idChanged) this.changed()
+  }
+
+  upsertWorkflow(workflow: WorkflowSummary) {
+    const summary = { id: workflow.id, title: workflow.title, revision: workflow.revision, enabled: workflow.enabled, updatedAt: workflow.updatedAt, running: workflow.running, lastRun: workflow.lastRun }
+    this.workflows = [summary, ...this.workflows.filter((item) => item.id !== workflow.id)].sort((a, b) => b.updatedAt - a.updatedAt)
+    this.changed()
+  }
+
+  removeWorkflow(id: string) {
+    this.workflows = this.workflows.filter((item) => item.id !== id)
+    this.changed()
+  }
+
+  clearWorkflowDeleted() {
+    this.workflowDeleted = null
+  }
+
+  /** The detail the open canvas already applied. Does not count as a remote graph change. */
+  rememberWorkflowDetail(workflow: WorkflowDetail) {
+    this.workflowDetail = workflow
+    this.changed()
+  }
+
+  /** A host without the workflow methods hides the entry and keeps the sentence off the generic dialog. */
+  reportWorkflowFailure(error: unknown) {
+    if (!(error instanceof HostError) || error.message !== 'unknown method') {
+      console.error('workflow', error)
+      return false
+    }
+    this.workflowMethodMissing = true
+    this.quietError = true
+    this.lastError = error.message
+    this.workflows = []
+    this.changed()
+    return true
+  }
+
+  protected resetWorkflowMirror() {
+    this.workflows = []
+    this.workflowMethodMissing = false
+    this.workflowSession = null
+    this.workflowDetail = null
+    this.workflowRun = null
+    this.workflowSoloStep = null
+    this.workflowStepMissing = false
+    this.workflowDeleted = null
+    if (this.quietError) {
+      this.quietError = false
+      this.lastError = null
+    }
   }
 
   setNetwork(network: NetworkView | null) {

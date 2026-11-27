@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +51,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -192,8 +190,7 @@ import kotlinx.coroutines.delay
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
         // A card is in this chat: another bot's details (a group member's) have none to go to.
-        if (shown != null) BotDetailsView(shown, request, state, store, openInChat = { details = null; reveal(it.id) },
-            openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
+        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
@@ -208,11 +205,7 @@ import kotlinx.coroutines.delay
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
 @Composable private fun ChatHeader(bot: Bot, state: AppState, store: AppStore, openFind: () -> Unit, openDetails: () -> Unit) {
     Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp)) {
-        val (source, pressed) = rememberPress()
-        Box(Modifier.align(Alignment.CenterStart).size(44.dp).glass(Capsule(), pressed = pressed)
-            .then(Modifier.plainButton { store.openBot(null) }).semantics { contentDescription = "Back" }, contentAlignment = Alignment.Center) {
-            Symbol("chevron.left", size = 32.dp, tint = Palette.text)
-        }
+        Box(Modifier.align(Alignment.CenterStart)) { GlassBackButton { store.openBot(null) } }
         val label = tr("{name}, view details").replace("{name}", bot.name)
         Box(Modifier.align(Alignment.Center).plainButton(action = openDetails).semantics { contentDescription = label }) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -235,18 +228,6 @@ import kotlinx.coroutines.delay
     }
 }
 
-/** A glass button in the header's corner. */
-@Composable private fun HeaderButton(symbol: String, title: String, modifier: Modifier = Modifier, symbolModifier: Modifier = Modifier,
-    action: () -> Unit) {
-    val (source, pressed) = rememberPress()
-    val label = tr(title)
-    Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
-        .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = label },
-        contentAlignment = Alignment.Center) {
-        Symbol(symbol, symbolModifier, size = 22.dp, tint = Palette.text)
-    }
-}
-
 /** Find in the open conversation (iOS `FindBar`): the text, where the shown match stands, previous / next and close. */
 @Composable private fun FindBar(find: ConversationFind, matches: List<ConversationFind.Match>, type: (String) -> Unit,
     step: (Boolean) -> Unit, close: () -> Unit) {
@@ -265,7 +246,7 @@ import kotlinx.coroutines.delay
 @Composable private fun ComputerButton(operating: Boolean, modifier: Modifier, action: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "Operating").animateFloat(1f, 0.35f,
         infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Pulse")
-    HeaderButton("desktopcomputer", "Computer", modifier, Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, action)
+    HeaderButton("desktopcomputer", "Computer", modifier, Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, action = action)
 }
 
 /** The link to the computer: route icon (or a spinner) and a word, then what the bot keeps running. */

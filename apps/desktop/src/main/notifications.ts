@@ -1,6 +1,6 @@
 import { app, ipcMain, Notification } from 'electron'
 import type { DesktopAlert } from '../shared/alerts'
-import type { ErrorReport } from '../shared/error-report'
+import { notificationFailure, type ErrorReport } from '../shared/error-report'
 import type { WindowCommand } from '../shared/ipc'
 import { identity } from './environment'
 import { prefs } from './host-controller'
@@ -21,14 +21,14 @@ function show(alert: DesktopAlert, send: (command: WindowCommand) => void, repor
   const forget = () => void shown.delete(notification)
   notification.on('click', () => {
     forget()
-    send({ kind: 'openAlert', ref: alert.ref, alert: alert.kind })
+    send({ kind: 'openAlert', ref: alert.ref, alert: alert.kind, workflowId: alert.workflowId })
   })
   notification.on('close', forget)
   notification.on('failed', (_e, error) => {
     forget()
     console.error(`notifications: couldn't show one: ${error}`)
-    // The system's message stays here: a report carries no error text.
-    report({ process: 'desktop-main', type: 'NotificationFailed', mechanism: 'notification', frames: [] })
+    // Electron's message stays here; the report carries only the step that failed and its result code.
+    report({ process: 'desktop-main', type: 'NotificationFailed', mechanism: 'notification', value: notificationFailure(String(error)), frames: [] })
   })
   shown.add(notification)
   notification.show()

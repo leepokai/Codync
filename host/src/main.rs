@@ -34,6 +34,7 @@ mod update;
 mod usage;
 mod voice;
 mod watchdog;
+mod workflows;
 
 use codync_agent::{backends, shell};
 use local_api::local_call;
@@ -217,6 +218,9 @@ enum Sub {
     /// service there).
     #[command(hide = true)]
     Keeper,
+    /// One workflow script, outside the host process. The host spawns this itself.
+    #[command(hide = true)]
+    WorkflowScript,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -244,6 +248,13 @@ enum McpServer {
     },
     /// Invite the user to connect services securely.
     Connectors {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Workflows on this computer, as a script a bot can read and rewrite.
+    Workflows {
         #[arg(long)]
         bot: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -284,13 +295,11 @@ enum McpServer {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
-    /// For a Claude Code, Codex or other agent session on this computer that isn't a Codync bot:
-    /// list the user's bots (here and on their other computers), message one, read its reply.
-    /// Add it to the agent, for example `claude mcp add codync -- codync-host mcp network --name "Claude Code"`.
+    /// For a Claude Code, Codex or other coding agent's session on this computer that isn't a Codync
+    /// bot: each session gets its own Network address and mailbox, lists the user's bots and the
+    /// other sessions (here and on their other computers), messages them and reads its mail.
+    /// `codync-host network setup` adds it to the agents installed here.
     Network {
-        /// How the bots' chats show this agent.
-        #[arg(long, default_value = "Agent")]
-        name: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
@@ -496,17 +505,19 @@ async fn main() -> Result<()> {
             println!("Token rotated. Restart the host so local helpers pick it up.");
             Ok(())
         }
+        Sub::WorkflowScript => workflows::script_worker(),
         Sub::Mcp { server: McpServer::Connectors { bot, port } } => {
             mcp::serve(bot, port, mcp::Server::Connectors).await
         }
         Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
         Sub::Mcp { server: McpServer::Routines { bot, port } } => mcp::serve(bot, port, mcp::Server::Routines).await,
+        Sub::Mcp { server: McpServer::Workflows { bot, port } } => mcp::serve(bot, port, mcp::Server::Workflows).await,
         Sub::Mcp { server: McpServer::Chat { bot, port } } => mcp::serve(bot, port, mcp::Server::Chat).await,
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
         Sub::Mcp { server: McpServer::Memory { bot, port } } => mcp::serve(bot, port, mcp::Server::Memory).await,
         Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
-        Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
+        Sub::Mcp { server: McpServer::Network { port } } => mcp::serve(String::new(), port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
         Sub::Tui { url, token, port } => tui::run(url, port, token).await,

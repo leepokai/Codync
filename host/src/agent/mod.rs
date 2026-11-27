@@ -3,7 +3,6 @@
 
 pub mod auth;
 pub mod bot;
-pub mod codex_app;
 pub mod elicitation;
 pub mod fallback;
 pub mod gear;
@@ -13,6 +12,15 @@ pub mod own_memory;
 pub mod term;
 pub mod versions;
 pub mod workspace;
+
+/// How the host names itself to an agent where the agent crate asks: renamed MCP servers (`codync-notion`), pi's
+/// launcher and its notice.
+pub const APP: &str = "codync";
+
+/// Who the host is to Codex's own API (`codync_agent::codex_app`): the plan windows and where a bot's session is
+/// listed.
+pub const CODEX_CLIENT: codync_agent::codex_app::ClientInfo =
+    codync_agent::codex_app::ClientInfo { name: "codync", title: "Codync", version: env!("CARGO_PKG_VERSION") };
 
 /// Gives the agent runtime the host's data directory, binary and HTTP client: `main` at start, and tests, which
 /// never run it.

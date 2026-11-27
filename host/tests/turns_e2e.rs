@@ -48,14 +48,12 @@ impl Host {
         v
     }
 
-    /// A bot running `fixture` in its own folder (`home/<name>`).
+    /// A bot running `fixture` in its own folder (`common::folder`).
     async fn bot(&self, name: &str, fixture: &str) -> String {
-        let cwd = self.home.join(name);
-        std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture);
         let bot = json!({
             "name": name, "backend": "custom", "command": common::python_agent(&agent),
-            "cwd": cwd, "permission": "ask", "notify": false,
+            "permission": "ask", "notify": false,
         });
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
@@ -134,7 +132,7 @@ async fn stop_ends_a_turn_whose_agent_left_a_process_holding_its_output() {
     }
     let host = Host::start().await;
     let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
-    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    let _escaped = Escaped(common::folder(&host.home, "Escaped").join("escaped.pid"));
     assert_stop_ends_the_turn(&host, &bot).await;
 }
 
@@ -147,7 +145,7 @@ async fn a_turn_ends_when_its_agent_exits_leaving_a_process_holding_its_output()
     }
     let host = Host::start().await;
     let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
-    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    let _escaped = Escaped(common::folder(&host.home, "Escaped").join("escaped.pid"));
     host.call("send", json!({"botId": bot, "text": "leave"})).await;
     host.wait_for(&bot, Duration::from_secs(20), |e| {
         e["data"]["text"].as_str().is_some_and(|t| t.starts_with("The agent failed"))
@@ -164,7 +162,7 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
     }
     let host = Host::start().await;
     let member = host.bot("Member", "tests/fixtures/team_agent.py").await;
-    let folder = host.home.join("Member");
+    let folder = common::folder(&host.home, "Member");
     let group =
         host.call("createBot", json!({"name": "Room", "kind": "group", "members": [member]})).await["bot"]["id"]
             .as_str()
@@ -268,7 +266,7 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
     }
     let host = Host::start().await;
     let bot = host.bot("Quick", "tests/fixtures/fast_mode_agent.py").await;
-    let calls = host.home.join("Quick").join("calls.jsonl");
+    let calls = common::folder(&host.home, "Quick").join("calls.jsonl");
     let log = || std::fs::read_to_string(&calls).unwrap();
 
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
@@ -297,7 +295,7 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
     }
     let host = Host::start().await;
     let bot = host.bot("Plain", "tests/fixtures/fast_mode_agent.py").await;
-    std::fs::write(host.home.join("Plain").join("plain"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "Plain").join("plain"), "").unwrap();
     let support =
         || async { common::bot(&common::snapshot(&host.base, &host.token).await, &bot)["fastModeSupport"].clone() };
     assert_eq!(support().await, "unknown", "clients offer /fast until a session says");
@@ -314,7 +312,7 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
     }
     let host = Host::start().await;
     let bot = host.bot("Refused", "tests/fixtures/fast_mode_agent.py").await;
-    let folder = host.home.join("Refused");
+    let folder = common::folder(&host.home, "Refused");
     std::fs::write(folder.join("refuse"), "").unwrap();
     let log = || std::fs::read_to_string(folder.join("calls.jsonl")).unwrap();
 
@@ -345,13 +343,12 @@ async fn a_new_bot_works_in_its_agents_auto_mode_until_the_user_picks_another() 
         return;
     }
     let host = Host::start().await;
-    let cwd = host.home.join("Moded");
-    std::fs::create_dir_all(&cwd).unwrap();
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mode_agent.py");
+    let bot = json!({"name": "Moded", "backend": "custom", "command": common::python_agent(&agent), "notify": false});
+    let created = host.call("createBot", bot).await["bot"].clone();
+    let cwd = common::folder(&host.home, "Moded");
     // The agent leaves the mode by itself during a turn, as Claude leaves Plan.
     std::fs::write(cwd.join("planless"), "").unwrap();
-    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mode_agent.py");
-    let bot = json!({"name": "Moded", "backend": "custom", "command": common::python_agent(&agent), "cwd": cwd, "notify": false});
-    let created = host.call("createBot", bot).await["bot"].clone();
     assert_eq!(
         (&created["permission"], &created["mode"]),
         (&json!("ask"), &json!("auto")),
@@ -388,7 +385,7 @@ async fn a_mode_switch_leaves_fast_mode_to_its_own() {
     }
     let host = Host::start().await;
     let bot = host.bot("Both", "tests/fixtures/fast_mode_agent.py").await;
-    let folder = host.home.join("Both");
+    let folder = common::folder(&host.home, "Both");
     std::fs::write(folder.join("moded"), "").unwrap();
     host.call("updateBot", json!({"id": bot, "fastMode": true, "mode": "auto"})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
@@ -406,7 +403,7 @@ async fn a_bot_never_works_in_a_mode_its_agent_refused_to_switch_to() {
     }
     let host = Host::start().await;
     let bot = host.bot("Stuck", "tests/fixtures/mode_agent.py").await;
-    let folder = host.home.join("Stuck");
+    let folder = common::folder(&host.home, "Stuck");
     std::fs::write(folder.join("stuck"), "").unwrap();
     host.call("updateBot", json!({"id": bot, "mode": "auto"})).await;
 

@@ -16,6 +16,7 @@ import urllib.request
 # SF Symbol name -> Material Symbols name ("+" suffix: filled variant).
 MAP = {
     "app": "apps",
+    "app.dashed": "select",
     "apple.logo": None,  # drawn from the bundled brand mark, not a symbol
     "arrow.clockwise": "refresh",
     "arrow.counterclockwise": "replay",
@@ -119,6 +120,8 @@ MAP = {
     "keyboard.chevron.compact.down": "keyboard_hide",
     "laptopcomputer": "laptop_mac",
     "line.3.horizontal": "menu",
+    "line.3.horizontal.decrease": "filter_list",
+    "line.3.horizontal.decrease.circle.fill": "filter_alt+",
     "list.bullet": "format_list_bulleted",
     "list.bullet.rectangle": "list_alt",
     "lock.display": "screen_lock_landscape",
@@ -187,11 +190,11 @@ MAP = {
     "square.on.square": "content_copy",
     "star": "star",
     "star.fill": "star+",
+    "sidebar.right": "right_panel_open",
     "stop.fill": "stop+",
     "tab": "keyboard_tab",
     "terminal": "terminal",
     "text.bubble": "chat",
-    "tray.full": "inbox",
     "trash": "delete",
     "waveform": "graphic_eq",
     "wifi": "wifi",

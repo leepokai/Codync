@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn the_tools_allowed_under_a_ceiling_exist() {
         let offered: Vec<String> = [
-            crate::mcp::chat_tools(),
+            crate::mcp::chat_tools(false),
             crate::routines::tools(),
             crate::chat::team::tools(),
             crate::chat::manage::tools(),

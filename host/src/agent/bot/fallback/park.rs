@@ -6,7 +6,7 @@
 use super::super::Actor;
 use crate::agent::fallback;
 use crate::hub::{AgentStep, Hub};
-use crate::store::BotConfig;
+use crate::store::{BotConfig, Store};
 
 fn on_key(bot: &str) -> String {
     format!("fallback.on.{bot}")
@@ -28,15 +28,21 @@ pub(super) fn fresh_key(bot: &str) -> String {
 }
 
 /// This bookkeeping failing costs a resume or a catch-up, not the turn: logged.
-fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
+pub(super) fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
     if let Err(error) = result {
         tracing::warn!(bot, error = format!("{error:#}"), "couldn't {what}");
     }
 }
 
+/// The step of its chain the bot's main session is on, or was on when it last ran (0: its own agent), as kept for a
+/// host restart.
+pub(crate) fn kept_step(store: &Store, base: &BotConfig) -> usize {
+    store.kv_get(&on_key(&base.id)).and_then(|b| fallback::step_of(base, &b)).unwrap_or(0)
+}
+
 /// The bot as the agent its main session was on when the host stopped runs it.
 pub(in crate::agent::bot) fn resume_step(hub: &Hub, base: &BotConfig) -> BotConfig {
-    let step = hub.store.kv_get(&on_key(&base.id)).and_then(|b| fallback::step_of(base, &b)).unwrap_or(0);
+    let step = kept_step(&hub.store, base);
     let cfg = fallback::effective(base, step);
     if step > 0 {
         hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, step, None)));
@@ -127,6 +133,7 @@ impl Actor {
             logged(&bot, "forget a parked session", forgot);
         }
         self.relay.recap = None;
+        self.handed_off(false);
         logged(
             &bot,
             "mark the new session",

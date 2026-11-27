@@ -94,8 +94,31 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // The user can start a thread with a bot themselves (`startThread`).
+                "startThread": true,
+                // A thread may start without a bot, on an agent the user names (`startThread` without `botId`).
+                "threadsWithoutBot": true,
+                // A thread may be started to build one workflow (`startThread` with `setup.workflow`).
+                "workflowThreads": true,
+                // A thread may be started on a login of its agent (`startThread` with `setup.loginProfile`).
+                "threadLogins": true,
+                // A thread may start with files (`startThread` with `attachments`, uploaded without `botId` for one
+                // without a bot).
+                "threadFiles": true,
+                "routineFolder": true,
+                // Bots have `projects` and `worktreeMode`, and `add_task` takes a folder.
+                "projects": true,
+                // `startThread`'s `setup.place` (`here` | `worktree`) picks where a thread works over its bot's worktree mode.
+                "threadPlace": true,
+                // A new worktree gets the main checkout's `.worktreeinclude` files and the bot's `sharedFolders` linked.
+                "worktreeFill": true,
+                // A thread without a bot and no folder picked works in a folder of its own: the app sends no `cwd`.
+                "threadFolders": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // How many days after it last ended a thread is deleted, 0 never (`setThreadKeepDays`); a host that
+                // says it also lists older threads (`olderThreads`).
+                "threadKeepDays": crate::chat::work::archive::keep_days(&hub.store),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
                 "credentialsReset": !crate::remote::managed::is_managed(&hub.store),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
@@ -105,6 +128,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
+                "workflows": true,
             })
         }
         "refreshBackends" => {
@@ -202,7 +226,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             };
             json!({"term": term})
         }
-        "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
+        "agentModels" => {
+            use crate::agent::auth::ModelListWanted;
+            let wanted = if b["refresh"] == true { ModelListWanted::New } else { ModelListWanted::Kept };
+            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?, wanted).await?
+        }
         // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
         "agentAuth" if b["loginProfile"].is_string() => {
             let id = str_arg(&b, "loginProfile")?;
@@ -301,6 +329,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::remote::managed::rename(hub, b["name"].as_str().unwrap_or_default())?;
             json!({"name": crate::remote::managed::computer_name(&hub.store)})
         }
+        "setThreadKeepDays" => {
+            let days = b["days"].as_u64().and_then(|d| u32::try_from(d).ok()).context("days must be a whole number")?;
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || crate::chat::work::archive::set_keep_days(&hub, days)).await??;
+            json!({"days": days})
+        }
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
             json!({"enabled": hub.auto_order()})
@@ -325,7 +359,29 @@ fn agents(hub: &Hub) -> Vec<Value> {
     agents
 }
 
-fn term_size(b: &Value) -> (u16, u16) {
+pub(super) fn term_size(b: &Value) -> (u16, u16) {
     let dim = |k: &str, default: u16| b[k].as_u64().and_then(|v| u16::try_from(v).ok()).unwrap_or(default);
     (dim("cols", 80), dim("rows", 24))
+}
+
+fn login_profile_arg(b: &Value) -> Result<Option<&str>> {
+    match &b["loginProfile"] {
+        Value::Null => Ok(None),
+        Value::String(s) => Ok((!s.is_empty()).then_some(s.as_str())),
+        _ => bail!("`loginProfile` must be a string"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_models_login_profile_arg_is_backward_compatible() {
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini"})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": null})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": ""})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": "prof-1"})).unwrap(), Some("prof-1"));
+        assert!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": 123})).is_err());
+    }
 }

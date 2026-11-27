@@ -128,20 +128,23 @@ git config core.hooksPath .githooks
 ```
 
 It runs CI's checks for each part a commit touches, so a failure shows up before the push:
-host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile ci` as CI
-runs them: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
+host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile precommit`, CI's profile without the five tests that wait out the
+270-second choice deadline, which CI still runs: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
 relay, discord and private-relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
 the app and its instrumentation tests, with JDK 21), Linux screen helper formatting, a parse of the macOS
 screen helper's Swift sources (on macOS), the PR validation script against the PR template
 (`tools/pr-validation-test.py`, which no CI job runs), and the website's user manual (`npm run check:docs` in `web/`: pages
-compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot`,
+compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot` of the main checkout, shared with its worktrees (only changed files are rewritten, so cargo rebuilds only what changed),
 so other agents' uncommitted edits in the same checkout neither break nor rescue a commit; the
-host builds into `host/target/precommit`. Its unit tests always run; its end-to-end tests run for the
-areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, or a changed test and
-the tests sharing a changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates,
-usage, remote, analytics, service), and all of them for anything else (the hub, store, API, bots, agents and chats,
-or the tests' shared helpers). nextest runs them side by side, retries a flaky one, and stops one that hangs
-(`host/.config/nextest.toml`); the whole run is stopped after 15 minutes. Host CI runs only on pull requests, so a
+host builds into the main checkout's `host/target/precommit`, one warm cache for every worktree. Its unit tests always run; its end-to-end tests run for the
+areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, threads, teams,
+management, choice cards, workflows, fallbacks, dev servers, the vault, or a changed test and the tests sharing a
+changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates, usage, remote,
+analytics, service, Markdown, a version-only Cargo bump), the basic ones (`host/tests/e2e.rs`) for code every
+end-to-end test goes through (the hub, store, API, bot actor, agents, the rest of chat), and all of them only for
+the tests' shared helpers or a dependency change. nextest runs them side by side, retries a flaky one, and stops one that hangs
+(`host/.config/nextest.toml`); the whole run is stopped only after 45 minutes, a backstop for nextest itself
+hanging, since a loaded machine can take well over 15 minutes without anything being stuck. Host CI runs only on pull requests, so a
 host change that skipped end-to-end tests here is fully tested when its PR into `main` opens. The npm checks reuse each package's `node_modules`
 (run `npm ci` there first). Each worker package is checked only when its own folder (or the
 shared relay vectors) changes. The interface catalogs and What's new announcements in
@@ -181,7 +184,7 @@ Greptile reviews every PR into `dev` or `main` when it opens and on each push (`
 A release runs end to end through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". It:
 
 1. Reads what `dev` holds against `main`: the version, whether shipped code (`apps/`, `host/`, `packaging/`) changed, `MIN_APP`, `cloud/`, the crates, the store notes and the open PRs into `main`. A `MIN_APP` raise stops it to ask first (rerun with `{allowMinAppRaise: true}`).
-2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. An open `release/X.Y.Z` PR of our own is picked up instead of cutting a new one, and a release PR opened straight from `dev` is closed as superseded; any other PR into `main` is neither gated nor merged, only reported. On that branch it bumps the version when shipped code changed and the version isn't ahead of the latest tag (docs, `web/`, `cloud/`, `relay/` and CI-only releases don't bump, so they get no tag), raises the crates, writes the missing WhatsNew sections, runs the real agents once when shipped code changed ([test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
+2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. An open `release/X.Y.Z` PR of our own is picked up instead of cutting a new one, and a release PR opened straight from `dev` is closed as superseded; any other PR into `main` is neither gated nor merged, only reported. On that branch it bumps the version when shipped code changed and the version isn't ahead of the latest tag (docs, `web/`, `cloud/`, `relay/` and CI-only releases don't bump, so they get no tag), raises the crates, writes the missing WhatsNew sections, runs the agent check once when shipped code changed (aimock for every covered agent, a real turn only for Cursor: [test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
 3. Works the gate, at most four rounds: `tools/pr-gate.py` on the head, then every failing check, the findings in Greptile's summary of that head and every unresolved Greptile review thread, whatever commit it was left on (a later push doesn't fix it), are checked against the code and fixed on the release branch, not routed to the owning agent, and those fixes go through `after-change` before the next round commits them; each thread fixed or refuted gets a reply and is resolved, and a known flaky test is rerun once. It stops to ask about a finding that needs a product decision, and stops when the gate still fails after four rounds or when a failing round leaves nothing fixed or rerun.
 4. When `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
 5. Merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
@@ -213,7 +216,7 @@ To bump, set `version` in `host/crates/memory/Cargo.toml` (patch for fixes, mino
 
 `codync-network` (`host/crates/network`) ships the same way as codync-mem, through `.github/workflows/network-crate.yml`: a pull request into `main` that changes it must raise its 0.x `version`, and the push to `main` mirrors it to [leepokai/codync-network](https://github.com/leepokai/codync-network) (deploy key in `CODYNC_NETWORK_DEPLOY_KEY`) and publishes the version on crates.io by trusted publishing (`leepokai/Codync`, `network-crate.yml`). Bump with `cargo check -p codync-network` in `host/`. Its `.github` folder is the mirror's own CI and pull-request redirect, inert in Codync.
 
-`codync-agent` (`host/crates/agent`: finding, installing and starting the agents, ACP, their process trees, and the account kind of [login profiles](../features/login-profiles.md)) ships the same way through `.github/workflows/agent-crate.yml`: mirror [leepokai/codync-agent](https://github.com/leepokai/codync-agent), deploy key in `CODYNC_AGENT_DEPLOY_KEY`, trusted publishing for `leepokai/Codync` with `agent-crate.yml`. Bump with `cargo check -p codync-agent` in `host/`. It replaced `codync-accounts` (0.1.0, yanked; its mirror is archived).
+`codync-agent` (`host/crates/agent`: finding, installing and starting the agents, ACP, their process trees, the account kind of [login profiles](../features/login-profiles.md), and each agent's plan usage, the `usage` feature) ships the same way through `.github/workflows/agent-crate.yml`: mirror [leepokai/codync-agent](https://github.com/leepokai/codync-agent), deploy key in `CODYNC_AGENT_DEPLOY_KEY`, trusted publishing for `leepokai/Codync` with `agent-crate.yml`. Bump with `cargo check -p codync-agent` in `host/`. It replaced `codync-accounts` (0.1.0, yanked; its mirror is archived).
 
 The mirror only fast-forwards: the crate's commits must reach `main` as they are. Merge a branch that touches a crate (no rebase or squash after its commits were mirrored or published), or the next push to the mirror is refused. 0.1.0 was published and mirrored by hand from `feat/codync-network` on 2026-10-26, ahead of its Codync release.
 

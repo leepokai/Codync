@@ -17,7 +17,8 @@ impl App {
         };
         let bot = b.id.clone();
         self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
-        self.overlays.push(Overlay::Details(DetailsPage { bot, ..Default::default() }));
+        let older = Box::new(self.first_older(&bot));
+        self.overlays.push(Overlay::Details(DetailsPage { bot, older, ..Default::default() }));
     }
 
     /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
@@ -51,7 +52,10 @@ impl App {
             (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(DetailRow::FollowUp(_))) => {
                 self.flash("A follow-up is the bot's own: x cancels it");
             }
-            (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
+            (KeyCode::Down | KeyCode::Char('j'), _) => {
+                l.cursor = (l.cursor + 1).min(n.saturating_sub(1));
+                self.more_older(&mut l, n);
+            }
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {
                 self.overlays.push(Overlay::Details(l));
@@ -61,6 +65,7 @@ impl App {
                     name: Editor::default(),
                     instruction: Editor::default(),
                     when: Editor::default(),
+                    folder: self.routine_folder.then(Editor::default),
                     original: Value::Null,
                     original_text: String::new(),
                     field: RoutineField::Name,
@@ -82,6 +87,7 @@ impl App {
                     name: Editor::with(&s(r, "name")),
                     instruction: Editor::with(&s(r, "instruction")),
                     when: Editor::with(text.as_deref().unwrap_or_default()),
+                    folder: self.routine_folder.then(|| Editor::with(r["folder"].as_str().unwrap_or_default())),
                     original: if text.is_some() { Value::Null } else { triggers },
                     original_text,
                     field: RoutineField::Name,
@@ -143,7 +149,7 @@ impl App {
     }
 
     pub(in crate::tui) fn routine_key(&mut self, mut f: Box<RoutineForm>, k: KeyEvent) -> Option<Overlay> {
-        use RoutineField::{Instruction, Name, When};
+        use RoutineField::When;
         // Tab finishes a time zone being typed after the schedule before it moves on.
         if k.code == KeyCode::Tab
             && f.field == When
@@ -154,30 +160,15 @@ impl App {
         }
         match k.code {
             KeyCode::Esc => return None,
-            _ if newline(k) && f.field == Instruction => f.instruction.insert("\n"),
+            _ if newline(k) && f.field == RoutineField::Instruction => f.instruction.insert("\n"),
             KeyCode::Enter => self.save_routine(&mut f),
             KeyCode::Char('s') if ctrl(k) => self.save_routine(&mut f),
-            KeyCode::Tab | KeyCode::Down => {
-                f.field = match f.field {
-                    Name => Instruction,
-                    Instruction => When,
-                    When => Name,
-                };
-            }
-            KeyCode::BackTab | KeyCode::Up => {
-                f.field = match f.field {
-                    Name => When,
-                    Instruction => Name,
-                    When => Instruction,
-                };
-            }
+            KeyCode::Tab | KeyCode::Down => f.step(1),
+            KeyCode::BackTab | KeyCode::Up => f.step(-1),
             _ => {
-                let ed = match f.field {
-                    Name => &mut f.name,
-                    Instruction => &mut f.instruction,
-                    When => &mut f.when,
-                };
-                ed.key(k);
+                if let Some(ed) = f.editor() {
+                    ed.key(k);
+                }
             }
         }
         Some(Overlay::Routine(f))
@@ -204,17 +195,104 @@ impl App {
                 }
             }
         };
-        let mut body = json!({"botId": f.bot, "name": name, "instruction": instruction, "triggers": triggers});
-        if let Some(id) = &f.id {
-            body["id"] = id.clone().into();
-        }
+        let body = f.body(&triggers);
         f.saving = true;
         f.error = None;
         self.sheet("saveRoutine", body, Reply::RoutineSaved);
     }
 }
 
+impl RoutineForm {
+    /// The fields in the order tab visits them: the folder only on a host that has it.
+    fn fields(&self) -> Vec<RoutineField> {
+        let mut out = vec![RoutineField::Name, RoutineField::Instruction];
+        if self.folder.is_some() {
+            out.push(RoutineField::Folder);
+        }
+        out.push(RoutineField::When);
+        out
+    }
+
+    fn step(&mut self, by: isize) {
+        let fields = self.fields();
+        let at = fields.iter().position(|f| *f == self.field).unwrap_or(0);
+        self.field = fields[(at.cast_signed() + by).rem_euclid(fields.len().cast_signed()).cast_unsigned()];
+    }
+
+    pub(in crate::tui) fn editor(&mut self) -> Option<&mut Editor> {
+        match self.field {
+            RoutineField::Name => Some(&mut self.name),
+            RoutineField::Instruction => Some(&mut self.instruction),
+            RoutineField::Folder => self.folder.as_mut(),
+            RoutineField::When => Some(&mut self.when),
+        }
+    }
+
+    /// `saveRoutine`'s body. The folder goes whole each time, as typed (a space at either end is part of a name):
+    /// blank clears it (null).
+    fn body(&self, triggers: &Value) -> Value {
+        let mut body = json!({"botId": self.bot, "name": self.name.text.trim(),
+            "instruction": self.instruction.text.trim(), "triggers": triggers});
+        if let Some(id) = &self.id {
+            body["id"] = id.clone().into();
+        }
+        if let Some(folder) = &self.folder {
+            let path = &folder.text;
+            body["folder"] = if path.trim().is_empty() { Value::Null } else { path.as_str().into() };
+        }
+        body
+    }
+}
+
 /// A routine with a webhook (or event) trigger, which has a URL and key.
 fn has_webhook(r: &Value) -> bool {
     r["triggers"].as_array().into_iter().flatten().any(|t| matches!(t["type"].as_str(), Some("webhook" | "event")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn form(folder: Option<&str>) -> RoutineForm {
+        RoutineForm {
+            bot: "a".into(),
+            id: Some("r".into()),
+            name: Editor::with("Digest"),
+            instruction: Editor::with("Sum up"),
+            when: Editor::default(),
+            folder: folder.map(Editor::with),
+            original: Value::Null,
+            original_text: String::new(),
+            field: RoutineField::Name,
+            error: None,
+            saving: false,
+        }
+    }
+
+    #[test]
+    fn the_folder_goes_as_a_path_or_null_and_not_at_all_on_a_host_without_it() {
+        let triggers = json!([]);
+        assert_eq!(form(Some("/work/site ")).body(&triggers)["folder"], "/work/site ");
+        let cleared = form(Some("  ")).body(&triggers);
+        assert!(cleared.get("folder").is_some_and(Value::is_null), "empty: back to the bot's folder");
+        assert!(form(None).body(&triggers).get("folder").is_none(), "an older host keeps what it has");
+    }
+
+    #[test]
+    fn tab_visits_the_folder_only_when_the_host_has_it() {
+        use RoutineField::{Folder, Instruction, Name, When};
+        let mut f = form(Some(""));
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            f.step(1);
+            seen.push(f.field);
+        }
+        assert_eq!(seen, [Instruction, Folder, When, Name]);
+        f.step(-1);
+        assert_eq!(f.field, When);
+        let mut old = form(None);
+        old.field = Instruction;
+        old.step(1);
+        assert_eq!(old.field, When);
+    }
 }

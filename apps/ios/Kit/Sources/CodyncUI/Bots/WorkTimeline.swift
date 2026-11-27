@@ -3,32 +3,23 @@ import SwiftUI
 
 /// What a bot does, on its details: Threads (the ones that run now, and the ones not in use) and the event
 /// box (what waits for one) above `between` (what it does later and keeps running), Recent below. A row opens its
-/// task's thread (`openThread`); one that needs the user goes to its card in the chat. `plain` (the view of all bots' work):
-/// only the rows of what runs and what waits, in one card.
+/// task's thread (`openThread`); one that needs the user goes to its card in the chat.
 struct WorkTimeline<Between: View>: View {
     let bot: Bot
     /// Shows the bot's chat at the card a task waits on; nil where the details aren't over that chat.
     let openCard: ((WorkTask) -> Void)?
     /// Shows the thread that has or had a task.
     let openThread: (WorkTask) -> Void
-    var plain = false
     @ViewBuilder let between: Between
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The task Stop or Cut in asks about.
-    @State private var asked: WorkTask?
-    @State private var confirmingStop = false
-    @State private var pickingCutIn = false
+    /// What Stop or Cut in asks about.
+    @State private var question: WorkQuestion?
 
     var body: some View {
         let work = WorkSections(bot.work)
         VStack(alignment: .leading, spacing: 28) {
-            if plain {
-                CardSection {
-                    rows(work.live, in: work)
-                    rows(work.waiting, in: work, numbered: true)
-                }
-            } else if !work.isIdle {
+            if !work.isIdle {
                 CardSection("Threads") {
                     rows(work.live, in: work)
                     ForEach(0..<work.free(maxThreads: bot.maxThreads), id: \.self) { _ in FreeRow() }
@@ -37,28 +28,18 @@ struct WorkTimeline<Between: View>: View {
                 }
                 .transition(.opacity)
             }
-            if !plain, !work.waiting.isEmpty {
+            if !work.waiting.isEmpty {
                 CardSection("Event box") { rows(work.waiting, in: work, numbered: true) } accessory: { count("\(work.waiting.count)") }
                     .transition(.opacity)
             }
             between
-            if !plain, !work.recent.isEmpty {
+            if !work.recent.isEmpty {
                 CardSection("Recent") { rows(work.recent, in: work) }.transition(.opacity)
             }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot.work.map(\.id))
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot.work.map(\.status))
-        .stopWorkDialog(isPresented: $confirmingStop) {
-            if let asked { model.stopWork(bot.id, task: asked.id) }
-        }
-        .codyncDialog(L10n.fill(L10n.tr("Let \"{title}\" cut in"), ["title": asked?.title ?? ""]), isPresented: $pickingCutIn,
-                      message: "Every thread is busy. Pick the task that gives way: its thread closes and the task starts again later.") {
-            work.givingWay.map { giving in
-                DialogAction(cutInChoice(giving)) {
-                    if let asked { model.workCutIn(bot.id, task: asked.id, insteadOf: giving.id) }
-                }
-            }
-        }
+        .workQuestion($question)
     }
 
     /// `numbered`: the order the box is taken in, in the mark's place.
@@ -67,7 +48,7 @@ struct WorkTimeline<Between: View>: View {
             let card = task.status == .needsYou ? model.chat(bot.id).card(for: task) : nil
             WorkRow(task: task, number: numbered ? index + 1 : nil, subtitle: card?.ask ?? task.line(),
                     actions: work.actions(for: task, maxThreads: bot.maxThreads),
-                    open: opener(task, card: card)) { run($0, on: task) }
+                    open: opener(task, card: card)) { model.run($0, on: task, of: bot) { question = $0 } }
         }
     }
 
@@ -79,34 +60,6 @@ struct WorkTimeline<Between: View>: View {
     private func opener(_ task: WorkTask, card: Entry?) -> (() -> Void)? {
         if task.status == .needsYou, let openCard { return { openCard(task) } }
         return task.thread == nil ? nil : { openThread(task) }
-    }
-
-    private func run(_ action: WorkAction, on task: WorkTask) {
-        switch action {
-        case .stop:
-            asked = task
-            confirmingStop = true
-        case .cutIn:
-            asked = task
-            pickingCutIn = true
-        case .first: model.workFirst(bot.id, task: task.id)
-        case .drop: model.dropWork(bot.id, task: task.id)
-        case .retry: model.retryWork(bot.id, task: task.id)
-        }
-    }
-
-    /// A working task in the cut-in dialog: its title, what it does, how long.
-    private func cutInChoice(_ task: WorkTask) -> String {
-        let elapsed = task.startedAt.map { Duration.seconds(max(0, Date.now.timeIntervalSince(Date(milliseconds: $0)))).formatted(.time(pattern: .minuteSecond)) }
-        return [task.title, task.status == .needsYou || !task.activity.isEmpty ? task.what() : nil, elapsed]
-            .compactMap(\.self).joined(separator: " · ")
-    }
-}
-
-extension WorkTimeline where Between == EmptyView {
-    /// A bot's rows in the view of all bots' work.
-    init(plain bot: Bot, openCard: @escaping (WorkTask) -> Void, openThread: @escaping (WorkTask) -> Void) {
-        self.init(bot: bot, openCard: openCard, openThread: openThread, plain: true) {}
     }
 }
 
@@ -130,7 +83,7 @@ private struct WorkRow: View {
         }
         .contextActions {
             actions.map { action in
-                MenuItem(action.title, icon: action.symbol, destructive: action == .stop || action == .drop, enabled: !offline) { run(action) }
+                MenuItem(action.title, icon: action.symbol, destructive: action.destructive, enabled: !offline) { run(action) }
             }
         }
     }

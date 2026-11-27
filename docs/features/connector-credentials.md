@@ -30,7 +30,7 @@ its selected host.
   with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
   A production build ignores the switch.
 
-`resetCredentials` (loopback only: desktop Settings → Computers → Reset → Saved credentials, asked twice, the terminal palette's *Reset saved
+`resetCredentials` (loopback only: the desktop's Computers page, Reset, Saved credentials, asked twice, the terminal palette's *Reset saved
 credentials…*) is the way out when the key is gone but sealed records remain (data moved to a new computer without its
 keychain, which otherwise fails every unlock with *the key … is missing*): it deletes every `vault:v1:` row,
 `vault.id` and `vault.initialized` and drops the cached key and a folder key; the next unlock makes a new key under a

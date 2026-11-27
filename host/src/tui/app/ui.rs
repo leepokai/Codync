@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
-    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet, WorkflowSheet,
 };
 use super::{Editor, KofiSheet, Mark, WhatsNew};
 
@@ -62,6 +62,8 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    /// "Delete old threads" set to these days (0: keep forever).
+    ThreadKeep(u32),
     ComputerName,
     ResetCredentials,
     Language,
@@ -70,7 +72,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 23] = [
+pub const ACTIONS: [(&str, &str, Action); 27] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -80,6 +82,11 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
+    // Each choice its own row, as the apps' menus offer them: nothing changes on the way to another.
+    ("Delete old threads: Keep forever", "", Action::ThreadKeep(0)),
+    ("Delete old threads: After 7 days", "", Action::ThreadKeep(7)),
+    ("Delete old threads: After 30 days", "", Action::ThreadKeep(30)),
+    ("Delete old threads: After 90 days", "", Action::ThreadKeep(90)),
     ("Computer name", "", Action::ComputerName),
     ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
@@ -127,6 +134,8 @@ pub enum ConfirmAct {
         bot: String,
         task: String,
     },
+    DeleteWorkflow(String),
+    RejectWorkflowStep(String),
 }
 
 pub struct Confirm {
@@ -203,6 +212,13 @@ pub enum Field {
     ThreadAgent,
     /// In Advisor mode, the threads' fallbacks.
     ThreadFallbacks,
+    /// The folders its threads work in, the first its default; only on a host with projects (`hello.projects`).
+    Projects,
+    /// The picked git project's shared folders; only on a host that fills worktrees (`hello.worktreeFill`).
+    SharedFolders,
+    /// When a thread gets a worktree; only on a host with projects, for a bot with a project in a git repository.
+    WorktreeMode,
+    /// Its project folder or its own (an older host); on a host with projects, its home, read only.
     Folder,
     /// The most threads it runs at once; only on a host that sends `maxThreads`.
     MaxThreads,
@@ -221,7 +237,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 26] = [
+pub const FIELDS: [Field; 29] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -235,6 +251,9 @@ pub const FIELDS: [Field; 26] = [
     Field::ThreadAgent,
     Field::ThreadFallbacks,
     Field::Compaction,
+    Field::Projects,
+    Field::SharedFolders,
+    Field::WorktreeMode,
     Field::Folder,
     Field::MaxThreads,
     Field::ThreadWorktrees,
@@ -279,8 +298,18 @@ pub struct Form {
     pub cwd: String,
     /// The most threads it runs at once; `None`: the host has no event box.
     pub max_threads: Option<u8>,
-    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository, or the
+    /// host has projects (`worktree_mode` then).
     pub thread_worktrees: Option<bool>,
+    /// Its projects, the first its default; `None`: the host has no projects.
+    pub projects: Option<Vec<String>>,
+    pub worktree_mode: crate::store::WorktreeMode,
+    /// Per git project, the folders linked into its new worktrees; `None`: the host doesn't fill worktrees.
+    pub shared_folders: Option<BTreeMap<String, Vec<String>>>,
+    /// The project picked on the Projects field, whose shared folders the next field edits.
+    pub project: usize,
+    /// A shared folder's name being typed.
+    pub shared_name: Editor,
     /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
@@ -420,6 +449,7 @@ pub enum Overlay {
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
     WhatsNew(WhatsNew),
+    Workflows(Box<WorkflowSheet>),
     Kofi(KofiSheet),
 }
 

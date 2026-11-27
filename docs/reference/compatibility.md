@@ -32,7 +32,7 @@ reason to lock someone out.
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
-| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
+| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards on the Computers page | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
 Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
@@ -93,7 +93,12 @@ in **one release** that raises the floor, and updates are held back only as long
 couldn't get the matching side yet.
 
 - **Additive changes need no floor change**: new fields (clients decode leniently; new
-  Swift fields are optional), new methods, new enum values (kept as strings).
+  Swift fields are optional), new methods, new enum values (kept as strings). A new field may stand in for an old one
+  while the old one keeps its meaning for older apps: a bot's `projects` and `worktreeMode` came with the
+  host still taking an older app's `cwd` (as the first project) and `threadWorktrees`, and still sending
+  `threadWorktrees` and `gitRepo` ([where a thread works](../features/work.md#where-a-thread-works)). Such an older app
+  can't change the worktree setting on a newer host: every bot there says `managedWorkspace`, which hides its
+  Worktree per thread switch.
 - **Renaming, removing or changing the meaning** of anything an older client reads or sends:
   change it, set `MIN_APP` to this release (the phone apps ship with it: `Submit iOS` and
   `Submit Android` ship any release whose `MIN_APP` is above their store's version, even
@@ -103,7 +108,8 @@ couldn't get the matching side yet.
   isn't there yet.
 - **Raise `minHost`** when the client's core flows need something older hosts lack. Hosts
   update without review, so this only asks the person to update the computer. An optional
-  feature that needs a newer host hides its control instead. A client's `minHost` never rises to
+  feature that needs a newer host hides its control instead (a new thread's login
+  profiles: without `hello.threadLogins` the desktop lists each agent on its default login only, the bot's on its own). A client's `minHost` never rises to
   a release the gate holds ([below](#holding-releases-for-the-stores)): not in the release that
   raises `MIN_APP`, nor in one published while an earlier raise still waits for a store. Each
   store publishes its app the moment its own review passes, so the faster store's phones would
@@ -213,6 +219,8 @@ Update this table in the release that changes a floor, with the reason.
 Releases that kept the floor on purpose:
 
 - 2.52.0 (`minApp` stays 2.51.0): an agent's own question (ACP elicitation) that has options comes with `ownWords: false`. Apps older than 2.52.0 ignore the field and still show **Something else** on it; words typed there match no option, so they cancel the question and reach the bot as the next message. Kept because the question is new (older apps lose nothing they had), its options still answer it, and the agent hears `cancel` rather than a wrong answer.
+
+- 2.54.0 (`minApp` stays 2.51.0): `agentModels` answers from the list the host kept, and a refresh asks for a new read with `refresh: true`; a list read again behind a kept one goes out only as a `models` event. Older apps send no `refresh` and pass the event over, so their Refresh may show the kept list (for 10 minutes, or until a second press once it's older). Kept because nothing breaks: the list is the one the host last read, and the next open shows the new one.
 
 ## Trying it on a simulator
 

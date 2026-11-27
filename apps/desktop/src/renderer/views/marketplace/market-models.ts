@@ -256,11 +256,18 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
 
-export type ExtensionSection = 'agents' | 'connectors' | 'skills'
+export type ExtensionSection = 'agents' | 'logins' | 'connectors' | 'skills'
+
+/** Where Extensions opens: a tab, and on Login profiles the agent to scroll to. */
+export interface ExtensionFocus {
+  section: ExtensionSection
+  agent?: string
+}
 
 /** Each section with the line saying where its items come from. */
 export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
   { id: 'agents', label: 'Agents', source: 'Agents come from the ACP registry and install on {name}.' },
+  { id: 'logins', label: 'Login profiles', source: 'Each agent runs on the login {name} already has, or on a login profile of its own: another account or an API key.' },
   { id: 'connectors', label: 'Connectors', source: 'Connectors come from the official MCP Registry and install on {name}.' },
   { id: 'skills', label: 'Skills', source: 'Skills come from Anthropic and install on {name}.' },
 ]

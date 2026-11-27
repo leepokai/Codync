@@ -64,11 +64,8 @@ impl App {
             Overlay::Market(m) => Some(&mut m.query),
             Overlay::Thread(s) if s.typing => Some(&mut s.draft),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
-            Overlay::Routine(f) => Some(match f.field {
-                super::super::manage::RoutineField::Name => &mut f.name,
-                super::super::manage::RoutineField::Instruction => &mut f.instruction,
-                super::super::manage::RoutineField::When => &mut f.when,
-            }),
+            Overlay::Workflows(sheet) => sheet.text_editor(),
+            Overlay::Routine(f) => f.editor(),
             _ => None,
         }
     }
@@ -336,6 +333,7 @@ impl App {
                 }
                 self.focus = Focus::Trace;
             }
+            KeyCode::Char('f') => self.open_workflows(),
             KeyCode::Char('b') => self.compact = !self.compact,
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),

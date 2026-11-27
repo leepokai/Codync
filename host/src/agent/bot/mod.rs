@@ -18,7 +18,6 @@
 
 mod background_work;
 mod cmd;
-mod codex_names;
 mod codex_section;
 mod commands;
 mod compaction;
@@ -31,7 +30,6 @@ mod inflight;
 mod launch;
 mod lifecycle;
 mod modes;
-mod pi_tools;
 mod queue;
 mod session;
 mod sign_in;
@@ -42,9 +40,10 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
+use codync_agent::mcp_names::Renamed;
 pub use commands::listed as agent_commands;
-pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
+pub(crate) use fallback::{kept_step, owe_move};
 use inflight::Inflight;
 pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
@@ -104,6 +103,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         turn_session: None,
         active_group: None,
         active_routine: None,
+        active_workflow: None,
         routine_deadline: None,
         routine_timed_out: false,
         routine_completion: None,
@@ -213,8 +213,8 @@ pub(crate) struct Conn {
     /// Each session's context use and window size at its last `usage_update` that reported use (a stream's
     /// provisional zero is skipped, see `record_usage`).
     usage: HashMap<String, (u64, u64)>,
-    /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
-    renamed: HashMap<String, codex_names::Renamed>,
+    /// Codync's MCP servers each session knows by another name (`codync_agent::mcp_names`), as it was created or loaded with.
+    renamed: HashMap<String, Renamed>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
     /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.
@@ -288,6 +288,7 @@ struct Actor {
     turn_session: Option<String>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
+    active_workflow: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
@@ -374,7 +375,7 @@ struct Actor {
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
-    /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
+    /// The error the agent said its turn ended in while answering it as a success (pi, `codync_agent::pi::turn_result`).
     agent_error: Option<String>,
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
@@ -411,7 +412,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
-        let done = pi_tools::turn_result(done, self.agent_error.take());
+        let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -457,7 +458,7 @@ impl Actor {
                         self.set_inflight(false);
                         self.next_in_queue(&done_tx).await;
                     }
-                    if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
+                    if (self.active_routine.is_some() || self.active_workflow.is_some()) && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }

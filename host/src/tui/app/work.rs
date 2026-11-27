@@ -68,7 +68,7 @@ pub struct WorkTask {
 
 impl WorkTask {
     /// A task with an id and a status this terminal knows; any other is left out.
-    fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let text = |key: &str| v[key].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
@@ -141,10 +141,11 @@ impl WorkTask {
             && !matches!(self.source, Some(Source::Request(_)))
     }
 
-    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
-    /// another bot's request is stopped, never set aside.
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A
+    /// routine's run or another bot's request is stopped, never set aside, and a thread the user started holds no
+    /// seat (`seat` false), so it never gives way.
     pub fn gives_way(&self) -> bool {
-        self.status.live() && self.source.is_none()
+        self.takes_seat() && self.source.is_none()
     }
 }
 
@@ -241,7 +242,7 @@ impl Background {
 
 /// What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
 /// artifact) says in that thread: one dim line, its mark and its words, where the entry itself stays in the
-/// chat, which `↵` on the line opens. None for anything else. The apps' `sharedLine`.
+/// chat, which `↵` on the line opens. None for anything else. The apps show the entry itself instead.
 pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
     let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
     let text = |key: &str| e.data[key].as_str().unwrap_or_default();

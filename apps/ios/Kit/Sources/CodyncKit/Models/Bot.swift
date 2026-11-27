@@ -81,6 +81,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var memoryRev: Int64?
     /// Created without a name: the host names it after its first few conversations.
     public var autoName: Bool = false
+    /// The box of threads that run without a bot: the Threads tab's "No bot". False from an older host.
+    public var plain: Bool = false
     public var createdAt: Int64
 
     // Runtime, filled in by the host.
@@ -109,6 +111,22 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var threadWorktrees: Bool?
     /// Its folder is in a git repository: where `threadWorktrees` matters.
     public var gitRepo: Bool = false
+    /// The user's folders it sends work to, the first its default; `cwd` is then always its own folder. Nil from an
+    /// older host, where `cwd` is the project.
+    public var projects: [String]?
+    /// Whether each of `projects` is in a git repository, in the same order.
+    public var projectGitRepos: [Bool] = []
+    /// When its threads get a git worktree. Nil from an older host (`threadWorktrees`) or a mode this app doesn't know.
+    public var worktreeMode: WorktreeMode?
+    /// Per project path: folders of its main checkout, relative to it, linked into each new worktree of it
+    /// (`node_modules`). Nil from an older host: no setting to show.
+    public var sharedFolders: [String: [String]]?
+
+    /// `path` is one of its projects and in a git repository: looked up by path, so a reorder or an unsaved add in
+    /// a form can't shift it.
+    public func isGitProject(_ path: String) -> Bool {
+        zip(projects ?? [], projectGitRepos).contains { $0 == path && $1 }
+    }
     /// Whether the computer has git. Nil from an older host: it reads as installed.
     public var gitInstalled: Bool?
     /// How it stands outside its chat (`Bot.Outside`). Nil from an older host: the chat's own status.
@@ -122,6 +140,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var lastAt: Int64
 
     public var isGroup: Bool { kind == "group" }
+    /// Counted and listed by the widgets and the Control Center control: a group room isn't a bot.
+    public var showsInWidgets: Bool { !hidden && !isGroup }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
     /// Working right now in this chat (not in a group it's in, or the reverse).
     public func isWorking(in chat: String) -> Bool {
@@ -130,8 +150,11 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var needsInput: Bool { status == "needsInput" }
     /// Its band in the list: pinned bots, then the rest. Dragging stays inside a band.
     public var band: Int { pinned ? 0 : 1 }
-    /// Where it works, as a list shows it: its own folder, or its project folder's name.
-    public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
+    /// Where it works, as a list shows it: its default project's name, else its own folder, or (an older host) its
+    /// project folder's name.
+    public var folderName: String {
+        projects?.first?.folderName ?? (managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent)
+    }
 }
 
 extension Bot {
@@ -189,6 +212,7 @@ extension Bot {
         compactionTokens = try? c.decodeIfPresent(TokenRange.self, forKey: .compactionTokens)
         memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false
+        plain = (try? c.decodeIfPresent(Bool.self, forKey: .plain)) ?? false
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
         rev = try c.decodeIfPresent(Int64.self, forKey: .rev) ?? 0
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "idle"
@@ -204,11 +228,45 @@ extension Bot {
         maxThreads = ((try? c.decodeIfPresent(Int.self, forKey: .maxThreads)) ?? OldHostWire.value(Int.self, "maxAgents", from: decoder)).map { min(max($0, Bot.maxThreadsRange.lowerBound), Bot.maxThreadsRange.upperBound) }
         threadWorktrees = (try? c.decodeIfPresent(Bool.self, forKey: .threadWorktrees)) ?? OldHostWire.value(Bool.self, "taskWorktrees", from: decoder)
         gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
+        projects = try? c.decodeIfPresent([String].self, forKey: .projects)
+        projectGitRepos = (try? c.decodeIfPresent([Bool].self, forKey: .projectGitRepos)) ?? []
+        worktreeMode = try? c.decodeIfPresent(WorktreeMode.self, forKey: .worktreeMode)
+        sharedFolders = try? c.decodeIfPresent([String: [String]].self, forKey: .sharedFolders)
         gitInstalled = try? c.decodeIfPresent(Bool.self, forKey: .gitInstalled)
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt
+    }
+}
+
+/// When a bot's threads get a git worktree of their own, in a project that is a git repository.
+public enum WorktreeMode: String, Codable, CaseIterable, Sendable {
+    case off, sideBySide, always
+
+    /// Its name, a phrase to look up.
+    public var title: String {
+        switch self {
+        case .off: "Off"
+        case .sideBySide: "Side by side"
+        case .always: "Always"
+        }
+    }
+
+    /// What it does, in one line: a phrase to look up.
+    public var line: String {
+        switch self {
+        case .off: "Threads work in the project itself"
+        case .sideBySide: "A thread gets its own worktree when another thread works in the same repository"
+        case .always: "Every thread works in a worktree of its own; your checkout is never touched"
+        }
+    }
+}
+
+extension String {
+    /// A folder path's name: its last component (`/` or `\` separated), or the path itself.
+    public var folderName: String {
+        split { $0 == "/" || $0 == "\\" }.last.map(String.init) ?? self
     }
 }

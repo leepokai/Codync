@@ -21,6 +21,7 @@ mod memory;
 mod network;
 mod network_rules;
 mod network_setup;
+mod older;
 mod pages;
 mod replies;
 mod routines;
@@ -29,6 +30,10 @@ mod skill;
 mod threads;
 mod when;
 mod work;
+mod workflow_edit;
+mod workflow_outline;
+mod workflow_sync;
+mod workflows;
 
 pub use all_work::{AllWork, AllWorkRow};
 pub use analytics::AnalyticsSheet;
@@ -40,14 +45,18 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
-pub use network_rules::{LEVELS, RuleField, RuleForm, level_detail, level_name};
+pub use network_rules::{RuleField, RuleForm, label, level_detail, level_name};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
+pub use older::OlderThreads;
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
 pub use threads::{Fetched, ThreadEntries, ThreadSheet};
 pub use when::complete_zone;
 pub use work::{CutIn, DetailRow, DetailSection, WorkAct, giving_way};
+pub(in crate::tui) use workflow_edit::{Lane, step_rows};
+pub(in crate::tui) use workflow_outline::{add_kinds, feeds, field_rows, kind_name};
+pub use workflows::{WorkflowAdd, WorkflowDetail, WorkflowEdit, WorkflowPage, WorkflowRun, WorkflowSheet};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -69,6 +78,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// A page of a bot's older threads (`olderThreads`), for that request (`older::ask`).
+    OlderThreads(String, u64),
     /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
     FollowUpCancelled(String),
     RoutineSaved,
@@ -116,10 +127,30 @@ pub enum Reply {
         to: Option<String>,
     },
     SignIn,
-    Models(String),
+    Models(super::app::ModelKey),
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
+    /// A workflow sheet's command.
+    Workflow(WorkflowReply),
+}
+
+/// Which workflow command the reply belongs to.
+#[derive(Clone)]
+pub enum WorkflowReply {
+    List,
+    /// `id` empty: the workflow just created.
+    Open {
+        id: String,
+        edit: bool,
+    },
+    Refresh(String),
+    Runs(String),
+    Saved(String),
+    Started,
+    Run(String),
+    Deleted,
+    Versions(String),
 }
 
 /// A read-only conversation between `bot` and `peer`, scrolled from the bottom.
@@ -152,6 +183,8 @@ pub struct DetailsPage {
     pub runs: Vec<Value>,
     /// The follow-ups the bot set for itself that still wait.
     pub follow_ups: Vec<Value>,
+    /// The bot's threads that ended before its `work` carries them, listed under Recent.
+    pub older: Box<OlderThreads>,
     /// Over `rows`.
     pub cursor: usize,
 }
@@ -160,6 +193,7 @@ pub struct DetailsPage {
 pub enum RoutineField {
     Name,
     Instruction,
+    Folder,
     When,
 }
 
@@ -169,6 +203,8 @@ pub struct RoutineForm {
     pub name: Editor,
     pub instruction: Editor,
     pub when: Editor,
+    /// The full path its runs work in, empty for the bot's own folder; `None` on a host without `routineFolder`.
+    pub folder: Option<Editor>,
     /// What an edited routine runs on; kept when `when` stays empty.
     pub original: Value,
     pub original_text: String,
@@ -409,17 +445,43 @@ impl App {
 
     // ---------- model picker ----------
 
-    /// Loads the models `backend` offers, once per run.
-    pub(super) fn want_models(&mut self, backend: &str) {
-        if !backend.is_empty() && !self.models.contains_key(backend) {
-            self.models.insert(backend.to_owned(), None);
-            self.sheet("agentModels", json!({"backend": backend}), Reply::Models(backend.to_owned()));
+    /// The key a model list is kept under; an empty login profile is the default login.
+    pub(in crate::tui) fn model_key(backend: &str, login_profile: Option<&str>) -> super::app::ModelKey {
+        (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned))
+    }
+
+    /// The model list `backend` on `login_profile` offers: `Some(None)` while it loads.
+    pub(in crate::tui) fn models_for(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+    ) -> Option<&Option<Vec<super::app::AgentModel>>> {
+        self.models.get(&Self::model_key(backend, login_profile))
+    }
+
+    /// Whether that model list came with Fast mode.
+    pub(in crate::tui) fn has_fast_mode(&self, backend: &str, login_profile: Option<&str>) -> bool {
+        self.fast_mode.contains(&Self::model_key(backend, login_profile))
+    }
+
+    /// Loads the models `backend` (on `login_profile`, if any) offers, once per run.
+    pub(super) fn want_models(&mut self, backend: &str, login_profile: Option<&str>) {
+        let key = Self::model_key(backend, login_profile);
+        if !backend.is_empty() && !self.models.contains_key(&key) {
+            self.models.insert(key.clone(), None);
+            self.sheet("agentModels", json!({"backend": backend, "loginProfile": key.1}), Reply::Models(key));
         }
     }
 
     /// ←→ on the model field: "default", then each advertised model.
-    pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
-        let list = self.models.get(backend)?.as_ref()?;
+    pub(super) fn cycle_model(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        current: &str,
+        d: isize,
+    ) -> Option<String> {
+        let list = self.models_for(backend, login_profile)?.as_ref()?;
         let mut ids = vec![String::new()];
         ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
@@ -427,8 +489,13 @@ impl App {
     }
 
     /// The settings (effort, fast…) `backend`'s `model` offers.
-    pub(crate) fn model_settings(&self, backend: &str, model: &str) -> &[super::app::ModelOption] {
-        let list = self.models.get(backend).and_then(Option::as_ref);
+    pub(crate) fn model_settings(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        model: &str,
+    ) -> &[super::app::ModelOption] {
+        let list = self.models_for(backend, login_profile).and_then(Option::as_ref);
         list.and_then(|l| l.iter().find(|m| m.id == model)).map_or(&[], |m| &m.options)
     }
 }

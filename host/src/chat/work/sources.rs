@@ -3,8 +3,8 @@
 //! `maxThreads`. Their result takes no turn of the bot's: a run's last message is the routine's message in the chat,
 //! as a run in the chat posted it, and a request's is the reply the asking bot gets.
 
-use super::tasks::{self, Source, Status, Task};
-use super::{Failure, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
+use super::tasks::{self, FolderKind, Setup, Source, Status, Task};
+use super::{Failure, MAX_BRIEF, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::analytics::errors::host_error;
@@ -13,7 +13,7 @@ use crate::chat::team::{BotRequest, no_reply};
 use crate::hub::Hub;
 use crate::routines;
 use crate::store::{BotConfig, EntryKind, Lane, Store};
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use codync_network::Access;
 use serde_json::json;
 use std::sync::Arc;
@@ -44,13 +44,6 @@ pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
     }
 }
 
-/// Whether a thread that takes a task from `source` starts from the chat (a fork of its session, else the chat so
-/// far). A routine's run doesn't: in the chat it had a session of its own with only its prompt, and it costs and
-/// sees the same here.
-pub fn from_chat(source: &Source) -> bool {
-    !matches!(source, Source::Routine { .. })
-}
-
 /// `work_added` for a task that came from `source`.
 fn added(hub: &Hub, source: &Source) {
     let properties = json!({"outcome": "added", "after": false, "source": source.kind()});
@@ -77,6 +70,90 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
     }
     dispatch(hub, bot);
     Ok(())
+}
+
+/// A thread the user starts with `bot` themselves (`startThread`): `text`, their first message, waits in its box as
+/// a task of its own, named by its first line, and starts when a place is free. `setup`: what its thread runs with
+/// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
+pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut setup: Setup) -> Result<String> {
+    let changes =
+        (setup.model.is_some(), setup.approval.is_some(), setup.workflow.is_some(), setup.login_profile.is_some());
+    let place = setup.place;
+    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
+    let plain = cfg.as_ref().is_some_and(|cfg| cfg.plain);
+    let outcome = |outcome: &str, folder: Option<FolderKind>| {
+        let properties = json!({
+            "outcome": outcome, "after": false, "source": Source::User.kind(),
+            "folder": folder, "model": changes.0, "approval": changes.1, "workflow": changes.2, "login": changes.3, "bot": !plain,
+            "files": !uploads.is_empty(), "place": place,
+        });
+        analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
+    };
+    let text = text.trim();
+    // A workflow's chat works in that workflow's own folder unless the user picked another.
+    if let Some(workflow) = setup.workflow.as_deref().filter(|_| setup.cwd.is_none()) {
+        uuid::Uuid::parse_str(workflow).context("a workflow's id")?;
+        ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
+        let dir = crate::agent::workspace::workflow_path(workflow);
+        std::fs::create_dir_all(&dir).context("creating the workflow's folder")?;
+        setup.cwd = Some(dir.to_string_lossy().into_owned());
+    }
+    let checked = (|| {
+        let Some(cfg) = cfg.as_ref().filter(|cfg| !cfg.is_thread() && !cfg.is_group()) else { bail!("unknown bot") };
+        ensure!(
+            (!text.is_empty() || !uploads.is_empty()) && text.len() <= MAX_BRIEF,
+            "a thread starts with a message of at most {MAX_BRIEF} bytes"
+        );
+        ensure!(!cfg.plain || setup.backend.is_some(), "a thread without a bot names its agent");
+        let full = |cwd: &str| std::path::Path::new(cwd).is_absolute();
+        ensure!(setup.cwd.as_deref().is_none_or(full), "a thread's folder is a full path");
+        if let Some(workflow) = &setup.workflow {
+            ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
+        }
+        // As its thread will run it (`dispatch`): in Advisor mode on the threads' agent.
+        let run = setup.over(&crate::agent::fallback::threads(cfg));
+        let login = crate::agent::login_profiles::of_bot(&hub.store, &run.backend, &run);
+        ensure!(run.login_profile.as_deref() == login, "unknown login profile");
+        crate::hub::validate(&run)?;
+        // Its files, as they were uploaded to the bot (`upload`).
+        crate::chat::uploads::resolve_all(&crate::chat::uploads::root(cfg), uploads)
+    })();
+    let files: Vec<serde_json::Value> = match checked {
+        Ok(files) => files,
+        Err(error) => {
+            outcome("invalid", None);
+            return Err(error);
+        }
+    };
+    // Files alone are named by the first of them.
+    let named =
+        title(if text.is_empty() { files.first().and_then(|f| f["name"].as_str()).unwrap_or_default() } else { text });
+    let mut task = Task { source: Source::User, setup, files, ..Task::waiting(&named, text, None, None, 0) };
+    let id = task.id.clone();
+    // A thread without a bot works in a folder of its own unless the user picked one.
+    if plain && task.setup.cwd.is_none() {
+        let dir = super::plain::own_folder(&id)?;
+        std::fs::create_dir_all(&dir).context("creating the thread's own folder")?;
+        task.setup.cwd = Some(dir.to_string_lossy().into_owned());
+    }
+    let folder = match cfg
+        .as_ref()
+        .map(|cfg| task.existing_folder(cfg).map(|folder| FolderKind::of(cfg, &folder)))
+        .transpose()
+    {
+        Ok(folder) => folder,
+        Err(error) => {
+            outcome("invalid", None);
+            return Err(error);
+        }
+    };
+    if let Err(error) = put(hub, bot, task.clone()) {
+        super::plain::forget_folders(std::slice::from_ref(&task));
+        return Err(error);
+    }
+    outcome("added", folder);
+    dispatch(hub, bot);
+    Ok(id)
 }
 
 /// Another bot's request waits in `bot`'s box. One that can't be saved is dropped, which tells the asking bot it
@@ -110,7 +187,7 @@ pub fn routines_changed(hub: &Arc<Hub>, bot: &str) {
 /// deleted), or its request went with the last host process.
 pub(super) fn withdrawn(hub: &Hub, task: &Task) -> bool {
     match &task.source {
-        Source::Bot => false,
+        Source::Bot | Source::User => false,
         Source::Routine { run, .. } => !hub.routines.waits(run),
         Source::Request { .. } => !hub.work.requests.locked().contains_key(&task.id),
     }
@@ -134,17 +211,25 @@ pub(super) fn held(hub: &Hub, task: &Task) -> bool {
 /// A thread is about to take `task`: its source is told, and a routine run gets its prompt and its line in the chat.
 pub(super) fn begin(hub: &Hub, bot: &str, task: &mut Task) -> Result<Begin> {
     match &task.source {
-        Source::Bot => {}
+        Source::Bot | Source::User => {}
         // The host is stopping: the run stays queued for the next start. Or a run of its routine has started.
         Source::Routine { .. } if held(hub, task) => {
             return Ok(Begin::Later);
         }
         Source::Routine { run, .. } => {
             let Some(prepared) = hub.routines.begin(hub, bot, run)? else { return Ok(Begin::Gone) };
+            // Its folder went since it was saved: the run fails and says so, rather than work somewhere else.
+            if let Some(folder) = prepared.folder.as_deref().filter(|f| !std::path::Path::new(f).is_dir()) {
+                let detail = routines::could_not_start(format!("its folder {folder} is gone"));
+                let ran = routines::Ran { timed_out: false, thread: None };
+                hub.routines.complete(hub, run, routines::Status::Failed, Some(detail), None, &ran)?;
+                return Ok(Begin::Gone);
+            }
             if let Err(error) = hub.routines.mark_started(&hub.store, run) {
                 tracing::warn!(run, error = format!("{error:#}"), "couldn't mark a routine run started");
             }
             task.brief = prepared.prompt;
+            task.setup.cwd = prepared.folder;
         }
         Source::Request { .. } => match hub.work.requests.locked().get_mut(&task.id) {
             Some(request) => request.mark_started(),
@@ -199,7 +284,7 @@ pub(super) fn resumed(hub: &Arc<Hub>, cfg: &BotConfig) {
 /// if not, its report stays for the next host start.
 pub(super) fn deliver(hub: &Hub, bot: &str, task: &Task) -> bool {
     match &task.source {
-        Source::Bot => true,
+        Source::Bot | Source::User => true,
         Source::Routine { run, .. } => routine_result(hub, bot, task, run)
             .inspect_err(|error| host_error!(hub, "couldn't save a run's result", run, error = format!("{error:#}")))
             .is_ok(),
@@ -269,7 +354,7 @@ pub(super) fn forget_requests(hub: &Hub, tasks: &[Task]) {
 /// request can't, since the bot that asked already has its answer.
 pub(super) fn run_again(hub: &Arc<Hub>, bot: &str, task: &Task) -> Result<()> {
     match &task.source {
-        Source::Bot => Ok(()),
+        Source::Bot | Source::User => Ok(()),
         Source::Routine { id, run } => {
             let again = hub.routines.run_again(hub, bot, id, run)?;
             tasks::change(hub, bot, |tasks| {

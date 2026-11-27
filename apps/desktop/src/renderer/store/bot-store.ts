@@ -17,7 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/threads'
-import { pendingCards } from '@shared/work'
+import { pendingCards, type ThreadSetup } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -230,6 +230,69 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Whether this computer starts a thread the user asks for themselves; false before hello or on older hosts. */
+  get startsThreads() {
+    return this.hello?.startThread === true
+  }
+
+  /** Threads may start without a bot here (`startThread` without `botId`). */
+  get startsThreadsWithoutBot() {
+    return this.hello?.threadsWithoutBot === true
+  }
+
+  /** A workflow can be built by talking to a thread here (`startThread` with `setup.workflow`). */
+  get buildsWorkflowsInThreads() {
+    return this.hello?.workflowThreads === true
+  }
+
+  /** A thread can be started on a login of its agent here (`startThread` with `setup.loginProfile`). */
+  get startsThreadsOnLogins() {
+    return this.hello?.threadLogins === true
+  }
+
+  /** A thread can start with files here (`startThread` with `attachments`). */
+  get startsThreadsWithFiles() {
+    return this.hello?.threadFiles === true
+  }
+
+  /** Bots have a list of projects and a worktree mode here; their `cwd` is always their own folder. */
+  get hasProjects() {
+    return this.hello?.projects === true
+  }
+
+  /** A new thread can name its place in a git project here (`startThread` with `setup.place`). */
+  get startsThreadsInPlace() {
+    return this.hello?.threadPlace === true
+  }
+
+  /** Bots have shared folders here, linked into each new worktree of a project. */
+  get fillsWorktrees() {
+    return this.hello?.worktreeFill === true
+  }
+
+  /** A thread without a bot sent no folder gets one of its own here (an older host: the home folder). */
+  get givesThreadsOwnFolders() {
+    return this.hello?.threadFolders === true
+  }
+
+  /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
+  get routinesHaveFolders() {
+    return this.hello?.routineFolder === true
+  }
+
+  /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
+   *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
+   *  and the task's. */
+  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}, files: OutgoingFile[] = []): Promise<{ botId: string; taskId: string }> {
+    // Its files go to the bot first (without one, to the computer's box of threads without a bot).
+    const started = await this.withLink(async (c) => {
+      const attachments = files.length ? await uploadFiles(c, botId ?? '', files) : undefined
+      return c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup, ...(attachments ? { attachments } : {}) })
+    })
+    noteActiveDay()
+    return started
+  }
+
   /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */
   get autoOrder() {
     return this.hello?.autoOrder
@@ -244,6 +307,38 @@ export class BotStore extends BotSync {
       this.showAutoOrder(!enabled)
       throw e
     }
+  }
+
+  /** Days after a thread last ended that this computer deletes it (0: never); undefined before hello or on older hosts. */
+  get threadKeepDays() {
+    return this.hello?.threadKeepDays
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setThreadKeepDays(days: number) {
+    const before = this.hello?.threadKeepDays
+    this.showThreadKeepDays(days)
+    try {
+      const res = await (await this.ready()).call<{ days: number }>('setThreadKeepDays', { days })
+      this.showThreadKeepDays(res.days)
+    } catch (e) {
+      if (before !== undefined) this.showThreadKeepDays(before)
+      throw e
+    }
+  }
+
+  /** The Threads list's first page of older threads on this computer, once. */
+  loadFirstOlderThreads() {
+    if (!this.olderThreads.started) this.loadOlderThreads()
+  }
+
+  /** The Threads list's next page of older threads, as the list reaches its end. Only while connected to a host that
+   * lists them. */
+  loadOlderThreads() {
+    if (this.hello?.threadKeepDays === undefined || this.connection.kind !== 'online') return
+    this.olderThreads
+      .loadNext(async (before) => (await this.ready()).call('olderThreads', before === undefined ? {} : { before }))
+      .catch((e: unknown) => this.setError(errorText(e)))
   }
 
   /** The user's name for this computer, empty for its hostname (a cloud computer is named in Codync Cloud). */
@@ -553,7 +648,8 @@ export class BotStore extends BotSync {
 
   /** Takes a waiting task, or one that ended, out of the box. */
   dropWork(botId: string, taskId: string) {
-    this.perform((c) => c.call('dropWork', { botId, taskId }))
+    // An older thread leaves the list at once; it comes back if the computer refuses.
+    this.perform((c) => c.call('dropWork', { botId, taskId }), false, this.olderThreads.drop(botId, taskId))
   }
 
   /** Puts a stopped or failed task back in the box, last. */

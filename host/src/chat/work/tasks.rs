@@ -1,15 +1,15 @@
 //! A bot's box: its tasks (kv `work.<bot>`, one JSON list), how they read on the wire and to the bot itself.
 
 use super::dispatch::{self, Standing, Wait};
-use super::worktree::{Left, Place, Worktree};
-use super::{Failure, Report, Start};
+use super::worktree::{Left, Place, PlaceChoice, Worktree};
+use super::{Failure, Report};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Store, now_ms};
-use anyhow::{Result, anyhow};
+use crate::store::{BotConfig, Permission, Store, now_ms};
+use anyhow::{Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
 /// An ended task shows on the wire and in `work_status` this long.
@@ -51,6 +51,9 @@ pub enum Source {
     /// The bot added it (`add_task`).
     #[default]
     Bot,
+    /// The user started it themselves, as a thread with the bot (`startThread`): what it comes to is read in that
+    /// thread, and never becomes a turn in the chat.
+    User,
     /// A run of one of the bot's routines: `id` is the routine.
     Routine { id: String, run: String },
     /// Another bot's `message_bot` request: `id` is the asking bot, when it is one of this computer's.
@@ -65,25 +68,125 @@ impl Source {
         *self == Self::Bot
     }
 
+    /// A thread the user started: theirs, so the bot doesn't see or steer it.
+    pub fn is_user(&self) -> bool {
+        *self == Self::User
+    }
+
+    /// It takes one of the bot's seats under `maxThreads` while it works: everything but a thread the user started.
+    pub fn seated(&self) -> bool {
+        !self.is_user()
+    }
+
+    /// The bot's own work, whoever added it (the bot, or the user as a thread): the user may steer it, try it again
+    /// and write to it, where a routine's run or another bot's request has an owner elsewhere.
+    pub fn own(&self) -> bool {
+        matches!(self, Self::Bot | Self::User)
+    }
+
     /// `work_added` and `work_finished`'s `source`.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Bot => "bot",
+            Self::User => "user",
             Self::Routine { .. } => "routine",
             Self::Request { .. } => "request",
         }
     }
 
-    /// `work[].source`: `{kind, id?}`; none for the bot's own, so a client that doesn't know sources shows the row.
+    /// `work[].source`: `{kind, id?}`; none for the bot's own (a thread the user started is one to every client), so a
+    /// client that doesn't know sources shows the row.
     fn wire(&self) -> Option<Value> {
         match self {
-            Self::Bot => None,
+            Self::Bot | Self::User => None,
             Self::Routine { id, .. } => Some(json!({"kind": self.kind(), "id": id})),
             Self::Request { id } => Some(match id {
                 Some(id) => json!({"kind": self.kind(), "id": id}),
                 None => json!({"kind": self.kind()}),
             }),
         }
+    }
+}
+
+/// What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the
+/// agent (a thread without a bot names it) and its login, the folder it works in, its model and how it is approved.
+/// What it leaves out is the bot's.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Setup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    /// The agent's login profile; `""` its default login. None: the bot's (another agent's default login).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<Model>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval: Option<Approval>,
+    /// A thread opened beside a workflow to build it by talking (`BotConfig::workflow`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+    /// Where its thread works, its folder or a worktree, when the task names it (`add_task`'s and `startThread`'s
+    /// `place`); none: the bot's worktree mode decides (`worktree::wanted`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<PlaceChoice>,
+}
+
+/// A model with its own settings (`BotConfig::model`, `model_options`): they go together, as in a bot's setup.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Model {
+    /// None: the agent's default.
+    pub id: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, String>,
+}
+
+/// How its requests are approved (`BotConfig::permission`, `mode`).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Approval {
+    pub permission: Permission,
+    /// None: the agent's default mode.
+    pub mode: Option<String>,
+}
+
+impl Setup {
+    pub fn is_bots(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// `cfg` with what this changes.
+    pub fn over(&self, cfg: &BotConfig) -> BotConfig {
+        let mut cfg = cfg.clone();
+        // Another agent runs on its own login, without the bot's fallbacks, command or Fast mode.
+        if let Some(backend) = self.backend.as_ref().filter(|b| **b != cfg.backend) {
+            backend.clone_into(&mut cfg.backend);
+            cfg.login_profile = None;
+            cfg.command = None;
+            cfg.fast_mode = false;
+            cfg.fallbacks.clear();
+        }
+        // A login the bot's chain falls back to is the thread's own now: that step goes.
+        if let Some(profile) = &self.login_profile {
+            cfg.login_profile = Some(profile.clone()).filter(|p| !p.is_empty());
+            crate::agent::fallback::tidy(&mut cfg);
+        }
+        if let Some(cwd) = &self.cwd {
+            cfg.cwd.clone_from(cwd);
+        }
+        if let Some(model) = &self.model {
+            cfg.model.clone_from(&model.id);
+            cfg.model_options.clone_from(&model.options);
+        }
+        if let Some(approval) = &self.approval {
+            cfg.permission = approval.permission;
+            cfg.mode.clone_from(&approval.mode);
+        }
+        if self.workflow.is_some() {
+            cfg.workflow.clone_from(&self.workflow);
+        }
+        cfg
     }
 }
 
@@ -98,6 +201,9 @@ pub(super) struct Task {
     pub brief: String,
     #[serde(default, skip_serializing_if = "Source::is_bot")]
     pub source: Source,
+    /// What its task runs with in place of its bot's setup.
+    #[serde(default, skip_serializing_if = "Setup::is_bots")]
+    pub setup: Setup,
     /// The user's own words that led to it, word for word.
     #[serde(default)]
     pub words: Option<String>,
@@ -144,15 +250,9 @@ pub(super) struct Task {
     /// the task as it ends, never saved.
     #[serde(skip)]
     pub undispatched: bool,
-    /// How its thread's session began, once known.
+    /// Its thread's session began on it (or on the task it follows, in the same session).
     #[serde(default)]
-    pub start: Option<Start>,
-    /// Its bot's main session, for its new thread to fork; none when it starts from a brief.
-    #[serde(default)]
-    pub fork_from: Option<String>,
-    /// The agent refused or didn't answer the fork, so its thread started from a brief.
-    #[serde(default)]
-    pub fork_failed: bool,
+    pub began: bool,
     /// Where its new thread works: in a git worktree of its own when another thread of the bot worked in the
     /// repository as it began, or when it has one from before.
     #[serde(default)]
@@ -167,9 +267,61 @@ pub(super) struct Task {
     /// What it reported before the user wrote to it again: a new session that picks the work up is told.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub said: Option<String>,
+    /// The files the user started it with (`startThread`), as uploaded to its bot (`{id, name, size}`): its thread
+    /// gets a copy of each as it starts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<Value>,
+}
+
+/// Where a task's thread works, as `work_added` says it (`folder`), never the path: the bot's own folder, one of
+/// its projects, or another folder; for a thread without a bot, its own folder or another.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(super) enum FolderKind {
+    Home,
+    Project,
+    Own,
+    Other,
+}
+
+impl FolderKind {
+    /// What `folder` is to bot `cfg`.
+    pub(super) fn of(cfg: &BotConfig, folder: &str) -> Self {
+        if cfg.plain {
+            return if super::plain::is_own_folder(folder) { Self::Own } else { Self::Other };
+        }
+        if cfg.projects.iter().any(|p| p == folder) {
+            Self::Project
+        } else if folder == cfg.cwd {
+            Self::Home
+        } else {
+            Self::Other
+        }
+    }
 }
 
 impl Task {
+    /// The folder its new thread works in (`cfg`: its bot): the one it names, else for the bot's own work and the
+    /// user's the bot's default project, else the bot's own folder (a routine's run and another bot's request work
+    /// where the bot lives).
+    pub(super) fn folder(&self, cfg: &BotConfig) -> String {
+        let project = self.source.own().then(|| crate::agent::workspace::default_project(cfg)).flatten();
+        self.setup.cwd.as_deref().or(project).unwrap_or(&cfg.cwd).to_owned()
+    }
+
+    /// [`Self::folder`], refused once it is gone (a project unmounted or renamed since it was added): its thread
+    /// couldn't start there.
+    pub(super) fn existing_folder(&self, cfg: &BotConfig) -> Result<String> {
+        let folder = self.folder(cfg);
+        ensure!(std::path::Path::new(&folder).is_dir(), "project folder does not exist: {folder}");
+        Ok(folder)
+    }
+
+    /// Whether its thread works in a git worktree of its own (one to come, or one it has), not in its folder.
+    pub(super) fn in_worktree(&self) -> bool {
+        self.place == Place::Worktree || self.worktree.as_ref().is_some_and(|w| w.left == Left::InUse)
+    }
+
     /// A new task, waiting; its place is its box's to give.
     pub(super) fn waiting(title: &str, brief: &str, words: Option<String>, after: Option<&str>, hops: u8) -> Self {
         Self {
@@ -177,6 +329,7 @@ impl Task {
             title: title.to_owned(),
             brief: brief.to_owned(),
             source: Source::Bot,
+            setup: Setup::default(),
             words,
             notes: Vec::new(),
             relayed: Vec::new(),
@@ -194,13 +347,12 @@ impl Task {
             report: None,
             failure: None,
             undispatched: false,
-            start: None,
-            fork_from: None,
-            fork_failed: false,
+            began: false,
             place: Place::Folder,
             worktree: None,
             told: Vec::new(),
             said: None,
+            files: Vec::new(),
         }
     }
 
@@ -210,8 +362,7 @@ impl Task {
         self.order = front;
         self.thread = None;
         self.started_at = None;
-        self.start = None;
-        self.fork_from = None;
+        self.began = false;
     }
 }
 
@@ -240,50 +391,21 @@ pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Task>
     Ok(out)
 }
 
-/// A deleted bot's box goes with it, and its past tasks.
+/// A deleted bot's box goes with it.
 pub(super) fn forget(store: &Store, bot: &str) {
-    for key in [key(bot), past_key(bot)] {
-        if let Err(error) = store.kv_delete(&key) {
-            tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
-        }
+    if let Err(error) = store.kv_delete(&key(bot)) {
+        tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
     }
 }
 
-/// Where a bot's tasks that ended over a week ago wait for `recall_task`: out of its box, which the wire and every
-/// change read whole.
-const PAST_PREFIX: &str = "work-past.";
 /// How long an ended task can still be recalled.
 pub(super) const PAST_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-/// Past tasks a bot keeps at most, the newest.
-const PAST_MOST: usize = 200;
-
-fn past_key(bot: &str) -> String {
-    format!("{PAST_PREFIX}{bot}")
-}
-
-/// `bot`'s tasks that left its box, ended within [`PAST_MS`].
-pub(super) fn past(store: &Store, bot: &str, now: i64) -> Vec<Task> {
-    let all: Vec<Task> =
-        store.kv_get(&past_key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
-    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| within_past(at, now))).collect()
-}
+/// Tasks out of the box (`archive`) `recall_task` reads at most, the newest.
+pub(super) const PAST_MOST: usize = 200;
 
 /// Whether a task that ended `at` can still be recalled `now`.
 pub(super) fn within_past(at: i64, now: i64) -> bool {
     now - at <= PAST_MS
-}
-
-/// Keeps `old`, ended tasks leaving `bot`'s box, for `recall_task`, with the past ones still young enough.
-pub(super) fn put_past(store: &Store, bot: &str, old: Vec<Task>, now: i64) -> Result<()> {
-    if old.is_empty() {
-        return Ok(());
-    }
-    let mut all = past(store, bot, now);
-    all.extend(old.into_iter().map(|task| Task { report: None, ..task }));
-    all.retain(|i| i.ended_at.is_some_and(|at| within_past(at, now)));
-    all.sort_by_key(|i| std::cmp::Reverse(i.ended_at));
-    all.truncate(PAST_MOST);
-    store.kv_set(&past_key(bot), &serde_json::to_string(&all)?)
 }
 
 /// An order before every waiting task's.
@@ -362,6 +484,11 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
         .collect()
 }
 
+/// What the bot sees of its box: [`shown`] without the threads the user started, which are theirs.
+pub(super) fn seen_by_bot(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
+    shown(hub, cfg).into_iter().filter(|s| !s.task.source.is_user()).collect()
+}
+
 /// Where `task`'s thread works, of its row's folder `cwd`: not a worktree that had nothing in it and went.
 fn folder_of<'a>(task: &Task, cwd: Option<&'a String>) -> Option<&'a String> {
     let gone = |worktree: &Worktree| worktree.left == Left::Removed && cwd == Some(&worktree.cwd);
@@ -373,55 +500,88 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     let shown = shown(hub, cfg);
     // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::free_seats`).
     let mut lent = false;
-    // Where each thread works: a worktree's folder, or the bot's as it was when the thread began.
-    let folders: HashMap<String, String> = if shown.is_empty() {
+    // Each thread: where it works (a worktree's folder, or the bot's as it was when the thread began) and on what agent.
+    let threads: HashMap<String, BotConfig> = if shown.is_empty() {
         HashMap::new()
     } else {
-        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id, thread.cwd)).collect()
+        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id.clone(), thread)).collect()
     };
     Value::Array(
         shown
             .into_iter()
             .map(|Shown { task, status, activity, wait }| {
                 // It takes one of the bot's seats.
-                let seat = match status {
-                    Status::Working => true,
-                    Status::NeedsYou => std::mem::replace(&mut lent, true),
-                    _ => false,
-                };
-                let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
-                let folder = folder_of(&task, cwd);
-                let talk = task.source.is_bot() && cwd.is_some();
-                let mut row = json!({
-                    "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
-                    "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
-                    "endedAt": task.ended_at,
-                    "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
-                    // The user may write to its thread: the bot's own work, whose thread is still there; with files
-                    // too, which a host from before them doesn't say.
-                    "talk": talk,
-                    "talkFiles": talk,
-                    "seat": seat,
-                });
-                if let Some(folder) = folder {
-                    row["folder"] = folder.clone().into();
-                }
-                if let Some(source) = task.source.wire() {
-                    row["source"] = source;
-                }
-                if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
-                    row["worktree"] = worktree;
-                }
-                row
+                let seat = task.source.seated()
+                    && match status {
+                        Status::Working => true,
+                        Status::NeedsYou => std::mem::replace(&mut lent, true),
+                        _ => false,
+                    };
+                let thread = task.thread.as_ref().and_then(|thread| threads.get(thread));
+                // A task waiting for its thread already knows the agent that thread will start on.
+                let runs_on = thread.map_or_else(
+                    || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
+                    |t| agent_of(&hub.store, t),
+                );
+                row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on))
             })
             .collect(),
     )
 }
 
+/// The agent `thread` runs on now, else the one it ran on last (a backend id): the fallback it is on or ended on, else
+/// its own.
+pub(super) fn agent_of(store: &Store, thread: &BotConfig) -> String {
+    crate::agent::fallback::effective(thread, crate::agent::bot::kept_step(store, thread)).backend
+}
+
+/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot and `runs_on` the agent
+/// its thread runs on (or will), when known.
+pub(super) fn row(
+    task: Task,
+    status: Status,
+    activity: &str,
+    wait: Option<Wait>,
+    seat: bool,
+    cwd: Option<&String>,
+    runs_on: Option<String>,
+) -> Value {
+    let folder = folder_of(&task, cwd);
+    let writable = task.source.own() && cwd.is_some();
+    let mut row = json!({
+        "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
+        "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
+        "endedAt": task.ended_at,
+        "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
+        // The user may write to its thread: the bot's own work, whose thread is still there (parked too); with files
+        // too, which a host from before them doesn't say.
+        "talk": writable,
+        "talkFiles": writable,
+        "seat": seat,
+    });
+    if let Some(folder) = folder {
+        row["folder"] = folder.clone().into();
+    }
+    if let Some(runs_on) = runs_on {
+        row["runsOn"] = runs_on.into();
+    }
+    if let Some(source) = task.source.wire() {
+        row["source"] = source;
+    }
+    if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
+        row["worktree"] = worktree;
+    }
+    // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
+    if let Some(agent) = &task.setup.backend {
+        row["agent"] = agent.clone().into();
+    }
+    row
+}
+
 /// The box in a few lines: counts and the ceiling, then the live and waiting titles with their ids. None when
 /// nothing is live or waiting. `whose`: `Your` for the bot's own turns, `Its` for who asks about the bot (a call).
 pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
-    let live: Vec<Shown> = shown(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
+    let live: Vec<Shown> = seen_by_bot(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
     let live: Vec<_> = live.iter().map(|s| (s.status, s.task.title.as_str(), s.task.id.as_str())).collect();
     summary(&live, cfg.max_threads, whose)
 }
@@ -481,6 +641,22 @@ pub fn working_threads(store: &Store) -> Vec<BotConfig> {
         .collect()
 }
 
+/// The setups the user's waiting threads will run with (`Setup::over` their bot's) where they name a login, each named
+/// by its bot (a thread without one by its title): a login profile they run on must still be there when they start.
+pub fn waiting_threads(store: &Store) -> Vec<BotConfig> {
+    let bots = store.bots().unwrap_or_default().into_iter().filter(|row| !row.deleted);
+    bots.flat_map(|row| {
+        let cfg = row.config;
+        let waiting = load(store, &cfg.id).into_iter();
+        let named = waiting.filter(|t| t.status == Status::Waiting && t.setup.login_profile.is_some());
+        let name = |t: &Task| if cfg.plain { t.title.clone() } else { cfg.name.clone() };
+        named
+            .map(|t| BotConfig { name: name(&t), ..t.setup.over(&crate::agent::fallback::threads(&cfg)) })
+            .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
 /// Puts a task that `thread` works on in `bot`'s box.
 #[cfg(test)]
 pub fn put_working_for_test(store: &Store, bot: &str, thread: &str) {
@@ -514,6 +690,81 @@ fn summary(live: &[(Status, &str, &str)], most: u8, whose: &str) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_task_works_in_its_folder_else_the_default_project_else_where_the_bot_lives() {
+        let bot: BotConfig = serde_json::from_value(
+            json!({"id": "b", "name": "B", "backend": "claude", "cwd": "/home", "projects": ["/p1", "/p2"]}),
+        )
+        .expect("a bot");
+        let task = |source: Source, cwd: Option<&str>| Task {
+            source,
+            setup: Setup { cwd: cwd.map(str::to_owned), ..Setup::default() },
+            ..Task::waiting("t", "b", None, None, 0)
+        };
+        assert_eq!(task(Source::Bot, None).folder(&bot), "/p1");
+        assert_eq!(task(Source::User, None).folder(&bot), "/p1");
+        assert_eq!(task(Source::Bot, Some("/p2")).folder(&bot), "/p2");
+        assert_eq!(
+            task(Source::Request { id: None }, None).folder(&bot),
+            "/home",
+            "a request works where the bot lives"
+        );
+        let alone = BotConfig { projects: Vec::new(), ..bot.clone() };
+        assert_eq!(task(Source::Bot, None).folder(&alone), "/home");
+
+        let kind = |folder| FolderKind::of(&bot, folder);
+        assert_eq!(
+            (kind("/p2"), kind("/home"), kind("/tmp")),
+            (FolderKind::Project, FolderKind::Home, FolderKind::Other)
+        );
+    }
+
+    #[test]
+    fn a_threads_setup_changes_only_what_it_names() {
+        let bot: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "cwd": "/bot",
+            "model": "m1", "modelOptions": {"effort": "low"}, "permission": "auto", "createdAt": 0}))
+        .expect("a bot");
+        let setup: Setup = serde_json::from_value(json!({"model": {"id": null}, "approval": {"permission": "ask",
+            "mode": "plan"}}))
+        .expect("a setup");
+        let run = setup.over(&bot);
+        assert_eq!((run.cwd.as_str(), run.model, run.model_options.len()), ("/bot", None, 0));
+        assert_eq!((run.permission, run.mode.as_deref()), (Permission::Ask, Some("plan")));
+        assert!(Setup::default().is_bots() && !setup.is_bots());
+        let on =
+            |login: &str| Setup { login_profile: Some(login.to_owned()), ..Setup::default() }.over(&bot).login_profile;
+        assert_eq!((on("work"), on("")), (Some("work".to_owned()), None), "a login profile, or the default login");
+        // The login it picks leaves the bot's chain; another agent leaves the bot's Fast mode too.
+        let chained = BotConfig {
+            fast_mode: true,
+            fallbacks: vec![
+                serde_json::from_value(json!({"backend": "claude", "loginProfile": "work"})).expect("a step"),
+            ],
+            ..bot.clone()
+        };
+        let work = Setup { login_profile: Some("work".into()), ..Setup::default() }.over(&chained);
+        assert!(work.fallbacks.is_empty() && work.fast_mode, "{work:?}");
+        let codex = Setup { backend: Some("codex".into()), ..Setup::default() }.over(&chained);
+        assert!(!codex.fast_mode && codex.fallbacks.is_empty());
+        assert_eq!(serde_json::to_value(Setup::default().over(&bot)).ok(), serde_json::to_value(&bot).ok());
+    }
+
+    #[test]
+    fn a_waiting_thread_on_a_login_is_named_with_it() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let on = |login: Option<&str>, status| Task {
+            setup: Setup { login_profile: login.map(str::to_owned), ..Setup::default() },
+            status,
+            ..Task::waiting("Fix it", "x", None, None, 0)
+        };
+        let tasks = [on(Some("work"), Status::Waiting), on(None, Status::Waiting), on(Some("old"), Status::Done)];
+        hub.store.kv_set(&key("b1"), &serde_json::to_string(&tasks).expect("json")).expect("saved");
+        let waiting: Vec<_> = waiting_threads(&hub.store).into_iter().map(|c| (c.name, c.login_profile)).collect();
+        assert_eq!(waiting, [("Mika".to_owned(), Some("work".to_owned()))]);
+    }
 
     #[test]
     fn the_bot_reads_its_box_in_a_few_lines() {
@@ -632,6 +883,31 @@ mod tests {
     }
 
     #[test]
+    fn a_row_names_the_agent_its_thread_runs_on() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let mut cfg = crate::chat::calls::context::tests::bot("b-agent", "Mika", "/tmp");
+        let mut thread = crate::chat::calls::context::tests::bot("thread-a", "Mika", "/tmp");
+        thread.thread_of = Some(cfg.id.clone());
+        thread.backend = "claude".into();
+        thread.fallbacks = vec![crate::store::Fallback { backend: "codex".into(), ..Default::default() }];
+        hub.store.save_bot(&cfg).expect("saved");
+        hub.store.save_bot(&thread).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-a"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let runs_on = || wire(&hub, &cfg)[0]["runsOn"].clone();
+        assert_eq!(runs_on(), "claude", "its own agent");
+        // On its fallback, as the actor keeps it: still so once the thread's actor and its runtime are gone.
+        hub.store.kv_set("fallback.on.thread-a", &crate::agent::fallback::login(&thread, 1)).expect("saved");
+        assert_eq!(runs_on(), "codex", "the fallback it switched to");
+        // Waiting for a seat, without a thread yet: the agent its thread will start on, in Advisor mode the threads'.
+        cfg.thread_agent = Some(crate::store::Fallback { backend: "gemini".into(), ..Default::default() });
+        let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
+    }
+
+    #[test]
     fn only_one_thread_waiting_on_the_user_lends_its_seat() {
         let hub = crate::chat::calls::context::tests::hub();
         let cfg = crate::chat::calls::context::tests::bot("b-seat", "Mika", "/tmp");
@@ -648,6 +924,13 @@ mod tests {
         hub.set_runtime("thread-a", |r| r.status = BotStatus::NeedsInput);
         hub.set_runtime("thread-b", |r| r.status = BotStatus::NeedsInput);
         assert_eq!(seats(), [false, true, true], "one seat is lent, as the dispatcher counts it");
+
+        let mut tasks = tasks;
+        tasks[2]["source"] = json!({"kind": "user"});
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        hub.set_runtime("thread-c", |r| r.status = BotStatus::NeedsInput);
+        hub.set_runtime("thread-a", |r| r.status = BotStatus::Working);
+        assert_eq!(seats(), [true, false, false], "the user's thread takes no seat and leaves the lent one to b");
     }
 
     #[test]

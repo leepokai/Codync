@@ -14,6 +14,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Write or refactor code in any module | [Clean code](guides/clean-code.md) |
 | Change something users see or do (keep the codync.dev manual current) | [User docs](guides/user-docs.md) |
 | Change an iPhone or desktop screen or button | [UI conventions](design/ui-conventions.md) |
+| Decide how something looks (color, type, spacing, cards) | [Visual language](design/visual-language.md) |
 | Change the composer | [Composer behavior and checks](guides/composer.md) |
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
 | Add, rotate or remove a key or secret | [Secrets](reference/secrets.md) |
@@ -52,6 +53,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Work: tasks and threads](features/work.md) (a bot puts long work in its event box as tasks, its threads take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
 - [Follow-ups](features/follow-ups.md) (a bot sets itself one later turn in its chat, to look at something again)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
+- [Workflows](features/workflows.md)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
@@ -74,6 +76,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Android parity and acceptance](plans/android-app.md)
 - [Event box](plans/event-box.md) (a bot's long work as tasks in a box, taken by a bounded number of its threads; the host and the apps being built, other sources and the rest in its stages)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
+- [Agent sessions](plans/agent-sessions.md) (per coding agent: where its session id, title and busy state come from, its hooks, plugins and MCP config; research for a Network mailbox per session)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
 - [Codync Cloud](plans/codync-cloud.md) (a cloud computer Codync runs on the user's own cloud provider account, Boat or InstaBox, bring your own cloud; phase 1 built), its [provider survey](plans/codync-cloud-providers.md), [Boat trial log](plans/codync-cloud-boat-trial.md) and a not-adopted alternative for [updates](plans/codync-cloud-updates.md)

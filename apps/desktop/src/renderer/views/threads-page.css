@@ -1,0 +1,94 @@
+/* The Threads page (ThreadsPage.tsx): a chat app's sidebar of threads in the list column, a thread beside it. */
+/* A small grey label over each part of the list: Needs you, Folders, Routines, Bots, Recent. */
+.thread-label {
+  padding: 14px 10px 4px;
+}
+/* A row: a thread's title and its mark at the end; a group's heading is a row too. */
+.thread-row {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: var(--text-body);
+  text-align: left;
+  border-radius: var(--radius-s);
+  transition: background-color var(--hover);
+}
+.thread-row:hover:not(:disabled) {
+  background: var(--field);
+}
+.thread-row.selected {
+  background: var(--roster-selected);
+}
+/* Two highlighted rows never touch: a gap between every row, a group's heading and its threads too. */
+.thread-row + .thread-row,
+.thread-group + .thread-group,
+.thread-group-rows {
+  margin-top: 2px;
+}
+/* A group's threads sit under its name. */
+.thread-group-rows .thread-row {
+  padding-left: 30px;
+}
+/* A bot's group: a `+` beside its heading shows while the heading is hovered or has the keyboard. */
+.thread-section-heading {
+  padding-right: 4px;
+}
+.thread-section-toggle {
+  flex: 1;
+  min-width: 0;
+}
+.thread-section-new {
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.thread-section-heading:hover .thread-section-new,
+.thread-section-new:focus-visible {
+  opacity: 1;
+}
+
+/* A thread's row and its `…`: the `…` takes the mark's place while the row is hovered, has the keyboard or its menu is
+   open (ThreadRow). */
+.thread-item {
+  position: relative;
+}
+/* Holds the mark as a box of its own, so its size holds. */
+.thread-mark {
+  display: flex;
+  flex: none;
+}
+/* The agent's icon keeps its place when there is none, so titles line up. */
+.thread-agent {
+  display: flex;
+  flex: none;
+  width: 14px;
+}
+.thread-item + .thread-item {
+  margin-top: 1px;
+}
+.thread-more {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.thread-item:hover .thread-more,
+.thread-item.menu-open .thread-more,
+.thread-more:focus-visible {
+  opacity: 1;
+}
+.thread-item:hover .thread-mark,
+.thread-item.menu-open .thread-mark {
+  visibility: hidden;
+}
+.thread-item:hover .thread-row,
+.thread-item.menu-open .thread-row {
+  padding-right: 32px;
+}
+.thread-item.menu-open .thread-row {
+  background: var(--field);
+}

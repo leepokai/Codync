@@ -14,16 +14,35 @@ use std::sync::Arc;
 /// The methods a bot's MCP servers call the host's tools through.
 const BOT_TOOL_CALLS: [&str; 5] = ["routineCall", "memoryCall", "chatCall", "teamCall", "manageCall"];
 
-/// Where a message's files go and are read back from: the chat's (`botId`), or with `taskId` the thread of that task of
-/// the bot's, which the thread's agent reads them from.
-fn uploads_root(hub: &Hub, b: &Value) -> Result<std::path::PathBuf> {
-    let bot = str_arg(b, "botId")?;
-    let id = match b["taskId"].as_str() {
+/// Where a message's files go and are read back from: `bot`'s chat, or with `task` the thread of that task of the
+/// bot's, which the thread's agent reads them from.
+fn uploads_root(hub: &Hub, bot: &str, task: Option<&str>) -> Result<std::path::PathBuf> {
+    let id = match task {
         Some(task) => work::thread_of(hub, bot, task)?,
         None => bot.to_owned(),
     };
-    let row = hub.store.bot(&id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-    Ok(crate::chat::uploads::root(&row.config))
+    // A thread that ended over a week ago is parked: its files are still read back.
+    let cfg = match hub.store.bot(&id)?.filter(|r| !r.deleted) {
+        Some(row) => row.config,
+        None => hub.store.parked_thread(&id)?.ok_or_else(|| anyhow!("unknown bot"))?,
+    };
+    Ok(crate::chat::uploads::root(&cfg))
+}
+
+/// A message's `attachments`: upload ids.
+/// The app's terminal tab `tab` names (`terminal:<id>`), when given: short, of letters, digits, `:`, `-` and `_`.
+fn tab_arg(b: &Value) -> Result<Option<&str>> {
+    let tab = b["tab"].as_str();
+    if tab.is_some_and(|t| {
+        t.is_empty() || t.len() > 64 || !t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_'))
+    }) {
+        bail!("not a terminal tab");
+    }
+    Ok(tab)
+}
+
+fn attachment_ids(b: &Value) -> Vec<&str> {
+    b["attachments"].as_array().into_iter().flatten().filter_map(Value::as_str).collect()
 }
 
 /// What the user does to a task of a bot's box.
@@ -114,8 +133,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
             work::refuse_chat_only(hub, bot, name)?;
             if work::TOOLS.contains(&name) {
-                let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), b["arguments"].clone());
-                tokio::task::spawn_blocking(move || work::call(&hub, &bot, &name, &args)).await??
+                work::call(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
             } else if name == crate::chat::decision::TOOL {
@@ -132,10 +150,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
         }
-        // An agent on this computer that isn't a bot (`codync-host mcp network`).
+        // A coding agent's session on this computer that isn't a bot (`codync-host mcp network`).
         "agentCall" => {
-            crate::chat::team::assistant::local_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])
-                .await?
+            let caller: crate::network::sessions::Caller =
+                serde_json::from_value(b["agent"].clone()).context("agent is {kind, session, process, cwd}")?;
+            crate::chat::team::assistant::local_call(hub, &caller, str_arg(&b, "name")?, &b["arguments"]).await?
+        }
+        // The turn tier: a coding agent's hook asks whether letters wait (`codync-host network hook`).
+        "networkHook" => {
+            use crate::network::sessions;
+            let kind: codync_network::AgentKind = serde_json::from_value(b["kind"].clone()).context("kind")?;
+            let ask = crate::chat::team::mailbox::HookAsk {
+                told: b["told"].as_str(),
+                failed: b["failed"].as_str(),
+                tier: if b["push"] == true { sessions::Tier::Push } else { sessions::Tier::Turn },
+                wait: std::time::Duration::from_secs(b["waitSecs"].as_u64().unwrap_or(0)),
+            };
+            crate::chat::team::mailbox::hook(hub, kind, str_arg(&b, "session")?, ask).await?
         }
         "teamCall" => {
             let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
@@ -146,6 +177,35 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
             work::refuse_in_thread(hub, bot, name)?;
             crate::chat::manage::call(hub, bot, name, &b["arguments"]).await?
+        }
+        // A thread the user starts themselves: its first message, as a task of the bot's box, or with no `botId`
+        // of the computer's box of threads without a bot, on the agent its setup names.
+        "startThread" => {
+            let text = str_arg(&b, "text")?.to_owned();
+            // One that can't be read is refused: a thread never starts on other approvals than the user chose.
+            let setup: work::Setup = match &b["setup"] {
+                Value::Null => work::Setup::default(),
+                setup => serde_json::from_value(setup.clone()).context("a thread's setup")?,
+            };
+            let bot = match b["botId"].as_str() {
+                Some(bot) => bot.to_owned(),
+                None if setup.backend.is_some() => work::plain::owner(hub).await?,
+                None => bail!("a thread without a bot names its agent"),
+            };
+            // Its files, uploaded to that bot (or the box) first.
+            let uploads: Vec<String> = attachment_ids(&b).into_iter().map(str::to_owned).collect();
+            let (hub, owner) = (hub.clone(), bot.clone());
+            let id =
+                tokio::task::spawn_blocking(move || work::add_thread(&hub, &owner, &text, &uploads, setup)).await??;
+            // The box a thread without a bot went to is named, so the app can show it.
+            json!({"botId": bot, "taskId": id})
+        }
+        // Ended threads older than the bots' `work` carries (of `botId`, else of every bot), newest first, a page at a
+        // time: `before` the `endedAt` of the oldest the app has.
+        "olderThreads" => {
+            let (before, only) = (b["before"].as_i64(), b["botId"].as_str().map(str::to_owned));
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || work::archive::older(&hub, only.as_deref(), before)).await??
         }
         // A thread's transcript, for its details: no chat an app holds has it.
         "threadEntries" => work::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "threadId")?, 500)?,
@@ -198,6 +258,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
         }
+        // A terminal where the bot's code work is (its default project, else its own folder): the user's own shell there (`termInput` / `termResize` / `termClose` and
+        // `/term/<id>` as for a setup terminal), one per app tab (`tab`, optional). Opening it again while it runs returns the same one.
+        "botTerminal" => {
+            let bot_id = str_arg(&b, "botId")?;
+            let cfg = hub.store.bot(bot_id)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
+            let (cols, rows) = super::host::term_size(&b);
+            let folder = std::path::Path::new(crate::agent::workspace::work_folder(&cfg));
+            json!({"term": hub.terms.shell(bot_id, tab_arg(&b)?, folder, cols, rows)?})
+        }
+        // The app closed terminal tab `tab`: its shells end, on every bot it was shown for.
+        "botTerminalClose" => {
+            hub.terms.close_shells(tab_arg(&b)?.context("`tab` is required")?);
+            json!({})
+        }
         // The apps name a dev server, and never send a command.
         "devServerStop" => {
             crate::dev_servers::stop(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?, "user").await?;
@@ -230,7 +304,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {
             use base64::Engine as _;
-            let root = uploads_root(hub, &b)?;
+            // Without a bot: a file a thread without one starts with, in the computer's box of them.
+            let bot = match b["botId"].as_str() {
+                Some(bot) => bot.to_owned(),
+                None => work::plain::owner(hub).await?,
+            };
+            // A file for an archived thread's message: the thread comes back first, as the message brings it.
+            if let Some(task) = b["taskId"].as_str() {
+                work::archive::bring_back(hub, &bot, task)?;
+            }
+            let root = uploads_root(hub, &bot, b["taskId"].as_str())?;
             let (id, name) = (str_arg(&b, "uploadId")?.to_owned(), str_arg(&b, "name")?.to_owned());
             let data =
                 base64::engine::general_purpose::STANDARD.decode(str_arg(&b, "data")?).context("invalid data")?;
@@ -244,7 +327,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // A sent file, back in chunks (chat previews on other devices).
         "readUpload" => {
             use base64::Engine as _;
-            let root = uploads_root(hub, &b)?;
+            let root = uploads_root(hub, str_arg(&b, "botId")?, b["taskId"].as_str())?;
             let id = str_arg(&b, "uploadId")?.to_owned();
             let offset = b["offset"].as_u64().unwrap_or(0);
             let (data, size) =
@@ -255,8 +338,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "send" => {
             let bot = str_arg(&b, "botId")?;
             let text = b["text"].as_str().unwrap_or_default().trim();
-            let uploads: Vec<&str> =
-                b["attachments"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let uploads = attachment_ids(&b);
             if text.is_empty() && uploads.is_empty() {
                 bail!("empty message");
             }
@@ -286,13 +368,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id, b["replyPart"].as_str())?),
                 None => None,
             };
-            let mut attachments = Vec::new();
-            if !uploads.is_empty() {
-                let root = crate::chat::uploads::root(&row.config);
-                for id in uploads {
-                    attachments.push(crate::chat::uploads::resolve(&root, id)?.1);
-                }
-            }
+            let attachments = crate::chat::uploads::resolve_all(&crate::chat::uploads::root(&row.config), &uploads)?;
             let mut data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
             // What the user pasted rather than typed: memory never takes it as the user's own words.
             let pasted: Vec<&str> = b["pasted"]

@@ -6,3 +6,8 @@
 .handoff-text { margin: 0; font-size: var(--text-callout); color: var(--secondary); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; line-height: 1.45; }
 .handoff-carried { font-family: var(--mono, ui-monospace, monospace); max-height: 320px; overflow: auto; }
 .agent-switch-carried { font-size: var(--text-caption); padding: 10px 12px; border-radius: var(--radius-m); background: var(--bubble-agent); max-height: 320px; overflow: auto; }
+.switch-divider { display: flex; align-items: center; gap: 12px; color: var(--secondary); font-size: var(--text-caption); }
+.switch-divider::before, .switch-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.switch-divider-line { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.switch-divider-toggle { display: inline-flex; color: inherit; font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.switch-side { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }

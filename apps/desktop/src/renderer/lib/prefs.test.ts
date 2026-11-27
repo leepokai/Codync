@@ -6,7 +6,7 @@ test('A stored preference of another kind reads as the fallback', async () => {
   const stored = new Map<string, string>([
     ['hiddenComputers', 'null'],
     ['computerOrder', '{"a":1}'],
-    ['sidebarCompact', '"yes"'],
+    ['listHidden', '"yes"'],
     ['desktopSidebarWidth', '300'],
     ['computerAccessSetup', '"ready"'],
   ])
@@ -20,7 +20,7 @@ test('A stored preference of another kind reads as the fallback', async () => {
   const { prefs } = await import('./prefs.ts')
   assert.equal(prefs.hiddenComputers.get(), '')
   assert.deepEqual(prefs.computerOrder.get(), [])
-  assert.equal(prefs.sidebarCompact.get(), false)
+  assert.equal(prefs.listHidden.get(), false)
   assert.equal(prefs.sidebarWidth.get(), 300)
   assert.equal(prefs.computerAccessSetup.get(), 'ready')
 })

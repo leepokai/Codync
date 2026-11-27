@@ -1,5 +1,5 @@
 //! A bot's box against a real host and its `chat` MCP server, with a scripted ACP agent: the bot adds tasks, threads
-//! take them up to `maxThreads` (a fork of the chat's session, or from a brief), raise their approval cards in the
+//! take them up to `maxThreads` (each from its brief, in a session of its own), raise their approval cards in the
 //! chat and report back as turns there; the user and the bot move, cut in, replace, stop and retry tasks.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -83,9 +83,15 @@ fn task_prompts(host: &Host, bot: &str, title: &str) -> Vec<Value> {
     task_prompts_in(&host.workspace(bot), title)
 }
 
+/// The servers the session `prompt` went to was given, by name.
+fn servers_of(host: &Host, bot: &str, prompt: &Value) -> Vec<String> {
+    let started = host.log(bot, "servers.jsonl").into_iter().find(|s| s["session"] == prompt["session"]).unwrap();
+    started["servers"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
+}
+
 /// The prompts the threads working in `dir` got for `title`, oldest first.
 fn task_prompts_in(dir: &Path, title: &str) -> Vec<Value> {
-    let named = format!(": \"{title}\".");
+    let named = format!(" \"{title}\".");
     let of_title = |p: &Value| p["text"].as_str().is_some_and(|t| t.contains("[Task]") && t.contains(&named));
     logged(dir, "prompts.jsonl").into_iter().filter(of_title).collect()
 }
@@ -157,7 +163,7 @@ async fn a_watchdog_turn_that_passes_leaves_nothing_in_the_chat() {
 }
 
 #[tokio::test]
-async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
+async fn a_task_starts_from_its_brief_alone_and_its_report_comes_back_as_a_turn() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
     host.reply(&bot, "hello").await;
@@ -165,20 +171,24 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 
     host.reply(&bot, "ADD Fix the login|Find why the redirect drops the path").await;
     let relayed = reply(&host, &bot, "Relayed:").await;
-    assert_eq!(relayed, "Relayed: Report Fix the login: forked; no chat", "its last message reached the chat's turn");
+    assert_eq!(relayed, "Relayed: Report Fix the login: briefed; no chat", "its last message reached the chat's turn");
 
-    // The fork was taken from the chat's session, by the thread's own agent process.
-    let forks = host.log(&bot, "forks.jsonl");
-    assert_eq!(forks.len(), 1);
+    // A new session of the thread's own, never a fork of the chat's, told the task and nothing of the chat.
+    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0]);
     let prompts = host.log(&bot, "prompts.jsonl");
     let chat_session = prompts[0]["session"].as_str().unwrap();
-    assert_eq!(forks[0]["from"], chat_session);
     let thread_prompt = &task_prompts(&host, &bot, "Fix the login")[0];
-    assert_eq!(thread_prompt["session"], forks[0]["to"]);
+    assert_ne!(thread_prompt["session"], chat_session);
     let text = thread_prompt["text"].as_str().unwrap();
     assert!(text.contains("Find why the redirect drops the path"));
     assert!(text.contains("[The user's own words: «ADD Fix the login|Find why the redirect drops the path»]"));
-    assert!(!text.contains("<bot-profile>"), "a fork already holds the instructions");
+    assert!(text.contains("<bot-profile>") && text.contains("You are doing one task"), "its own instructions: {text}");
+    assert!(!text.contains("Title: Mika") && !text.contains("add_task"), "nothing of the chat's: {text}");
+    assert_eq!(
+        servers_of(&host, &bot, thread_prompt),
+        ["connectors", "chat", "memory", "workflows"],
+        "nor its servers"
+    );
 
     // No client lists the thread as a bot or mixes its transcript into a chat.
     let snapshot = host.snapshot().await;
@@ -188,7 +198,7 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 
     // The task stays in the box as done, with what its thread reported and the thread that had it.
     let done = task(&host, &bot, "Fix the login", "done").await;
-    assert_eq!(done["result"], "Report Fix the login: forked; no chat");
+    assert_eq!(done["result"], "Report Fix the login: briefed; no chat");
     assert!(done["wait"].is_null() && done["cutIn"] == false && done["endedAt"].is_i64(), "{done}");
     let threads = no_thread_bot_reached(&mut events).await;
     assert_eq!(
@@ -201,7 +211,6 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
     let details = host.call("threadEntries", json!({"botId": bot, "threadId": done["thread"]})).await;
     assert_eq!(details["thread"]["title"], "Fix the login");
     assert_eq!(details["thread"]["status"], "done");
-    assert_eq!(details["thread"]["start"], "fork");
     let finals: Vec<&str> = details["entries"]
         .as_array()
         .unwrap()
@@ -209,7 +218,7 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
         .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
         .filter_map(|e| e["data"]["text"].as_str())
         .collect();
-    assert_eq!(finals, ["Report Fix the login: forked; no chat"]);
+    assert_eq!(finals, ["Report Fix the login: briefed; no chat"]);
 
     host.reply(&bot, "STATUS").await;
     let status = reply(&host, &bot, "Status:").await;
@@ -221,16 +230,15 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 }
 
 #[tokio::test]
-async fn an_agent_that_cannot_fork_starts_the_task_from_the_chat_so_far() {
+async fn a_thread_hears_nothing_of_the_chat_it_was_handed_out_in() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Mika", "work_agent.py", "no-fork").await;
-    host.reply(&bot, "hello").await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "Remember the blue theme").await;
     host.reply(&bot, "ADD Update the docs|Rewrite the install steps").await;
-    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Update the docs: briefed; saw the chat");
-    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0]);
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Update the docs: briefed; no chat");
     let text = task_prompts(&host, &bot, "Update the docs")[0]["text"].as_str().unwrap().to_owned();
-    assert!(text.contains("<bot-profile>"), "a new session gets the bot's instructions");
-    assert!(text.contains("hello"), "and what the chat said");
+    assert!(text.contains("<bot-profile>"), "a new session gets its instructions");
+    assert!(!text.contains("blue theme"), "but not what the chat said: {text}");
 }
 
 #[tokio::test]
@@ -270,6 +278,14 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
     let relayed = reply(&host, &bot, "Relayed:").await;
     assert!(relayed.contains("Refused: add_task isn't available in a thread"), "{relayed}");
     assert!(relayed.ends_with("approved"), "{relayed}");
+    // The chat's `chat` server lists `add_task`; the thread's leaves it out, and the host refused the call anyway.
+    let listed: Vec<bool> = host
+        .log(&bot, "listed.jsonl")
+        .iter()
+        .filter(|l| l["tool"] == "add_task")
+        .map(|l| l["listed"].as_bool().unwrap())
+        .collect();
+    assert_eq!(listed, [true, false]);
 }
 
 #[tokio::test]
@@ -412,7 +428,7 @@ async fn a_task_cuts_in_and_the_one_that_gave_way_starts_again_in_a_new_thread()
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Report Urgent: forked; no chat", "Relayed: Report Slow: forked; no chat; again"]
+        ["Relayed: Report Urgent: briefed; no chat", "Relayed: Report Slow: briefed; no chat; again"]
     );
     let prompts = task_prompts(&host, &bot, "Slow");
     assert_eq!(prompts.len(), 2);
@@ -451,7 +467,7 @@ async fn a_replaced_brief_is_what_the_task_starts_from_waiting_or_working() {
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Report Working: forked; no chat", "Relayed: Report Waiting: forked; no chat"]
+        ["Relayed: Report Working: briefed; no chat", "Relayed: Report Waiting: briefed; no chat"]
     );
     let again = task(&host, &bot, "Working", "done").await;
     assert_ne!(again["thread"], working["thread"]);
@@ -494,7 +510,7 @@ async fn the_chat_passes_words_on_to_a_task_and_its_one_report_comes_after_them(
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Heard and the tests", "Relayed: Report Waiting: forked; no chat"],
+        ["Relayed: Heard and the tests", "Relayed: Report Waiting: briefed; no chat"],
         "one report a task: the last turn's"
     );
     let heard = logged(&host.workspace(&bot), "prompts.jsonl");
@@ -516,14 +532,13 @@ async fn in_advisor_mode_tasks_run_on_the_threads_agent() {
     host.call("updateBot", json!({"id": bot, "threadAgent": {"backend": "custom", "command": worker}})).await;
     host.reply(&bot, "ADD Fix|x").await;
     wait("its report", async || (relayed(&host, &bot).await.len() == 1).then_some(())).await;
-    // Another agent can't take the chat's session: it starts from a brief that tells it the chat.
-    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; saw the chat; on worker"]);
+    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; no chat; on worker"]);
 
-    // Off: the chat's own agent again, on a fork of its session.
+    // Off: the chat's own agent again.
     host.call("updateBot", json!({"id": bot, "threadAgent": null})).await;
     host.reply(&bot, "ADD Again|x").await;
     wait("its report", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
-    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: forked; no chat");
+    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: briefed; no chat");
 }
 
 #[tokio::test]
@@ -540,7 +555,7 @@ async fn a_task_that_follows_another_runs_in_its_session_when_it_is_done() {
     wait("every report", async || (relayed(&host, &bot).await.join(" ").matches("Report ").count() == 3).then_some(()))
         .await;
     let reports = relayed(&host, &bot).await.join(" | ");
-    assert!(reports.contains("Report First: forked; no chat"), "{reports}");
+    assert!(reports.contains("Report First: briefed; no chat"), "{reports}");
     assert!(reports.contains("Report Second: next; no chat"), "{reports}");
 
     // The same thread and session took it, ahead of the ordinary task that was before it in the box.
@@ -552,7 +567,7 @@ async fn a_task_that_follows_another_runs_in_its_session_when_it_is_done() {
     let prompts = host.log(&bot, "prompts.jsonl");
     let at = |prompt: &Value| prompts.iter().position(|p| p == prompt).unwrap();
     assert!(at(second) < at(&task_prompts(&host, &bot, "Other")[0]), "it had the place its thread kept");
-    assert_eq!(host.log(&bot, "forks.jsonl").len(), 2, "one fork per thread");
+    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0], "no thread forks the chat");
 
     // Once that thread has ended, a task can't follow into it.
     host.reply(&bot, "ADD Third|more|after=First").await;
@@ -598,7 +613,7 @@ async fn tasks_stop_one_or_all_without_a_report_and_a_stopped_one_is_tried_again
     release(&host, &bot, "one");
     host.call("retryWork", json!({"botId": bot, "taskId": id(&one)})).await;
     wait("its report", async || {
-        relayed(&host, &bot).await.iter().any(|r| r == "Relayed: Report One: forked; no chat").then_some(())
+        relayed(&host, &bot).await.iter().any(|r| r == "Relayed: Report One: briefed; no chat").then_some(())
     })
     .await;
     let done = task(&host, &bot, "One", "done").await;
@@ -699,6 +714,69 @@ async fn said(host: &Host, bot: &str, kind: &str, prefix: &str) -> Vec<Value> {
 }
 
 #[tokio::test]
+async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let folder = std::env::temp_dir().join(format!("codync-routine-folder-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let relative = json!({"botId": bot, "name": "Nope", "instruction": "PASS", "triggers": [{"type": "webhook"}],
+        "folder": "relative/path"});
+    assert_eq!(host.refused("saveRoutine", relative).await, "folder must be the full path of an existing folder");
+    let body = json!({"botId": bot, "name": "Elsewhere", "instruction": "PASS", "triggers": [{"type": "webhook"}],
+        "folder": folder});
+    let saved = host.call("saveRoutine", body).await;
+    assert_eq!(saved["routine"]["folder"], json!(folder));
+    let id = saved["routine"]["id"].as_str().unwrap().to_owned();
+
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    run(&host, &bot, &id, "succeeded").await;
+    let there = logged(&folder, "prompts.jsonl");
+    assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
+
+    std::fs::remove_dir_all(&folder).unwrap();
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    let failed = run(&host, &bot, &id, "failed").await;
+    assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
+    // Gone, it is kept by a save that leaves it out or sends it unchanged (a drive not mounted); a new one must exist.
+    let edit = |folder: Option<Value>| {
+        let mut body = json!({"botId": bot, "id": id, "name": "Elsewhere", "instruction": "PASS",
+            "triggers": [{"type": "webhook"}]});
+        if let Some(folder) = folder {
+            body["folder"] = folder;
+        }
+        body
+    };
+    assert_eq!(host.call("saveRoutine", edit(None)).await["routine"]["folder"], json!(folder));
+    assert_eq!(host.call("saveRoutine", edit(Some(json!(folder)))).await["routine"]["folder"], json!(folder));
+    let elsewhere = folder.with_extension("other");
+    let refused = host.refused("saveRoutine", edit(Some(json!(elsewhere)))).await;
+    assert_eq!(refused, "folder must be the full path of an existing folder");
+    // Cleared, it runs in the bot's folder again.
+    assert_eq!(host.call("saveRoutine", edit(Some(Value::Null))).await["routine"]["folder"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routines_in_its_chat() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
+    let folder = std::env::temp_dir().join(format!("codync-routine-folder-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let body = json!({"botId": bot, "name": "Team elsewhere", "instruction": "PASS",
+        "triggers": [{"type": "webhook"}], "folder": folder});
+    let id = host.call("saveRoutine", body).await["routine"]["id"].as_str().unwrap().to_owned();
+
+    host.call("runRoutine", json!({"botId": bot, "id": id})).await;
+    run(&host, &bot, &id, "succeeded").await;
+    let there = logged(&folder, "prompts.jsonl");
+    assert!(
+        there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
+        "{there:?}"
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+}
+
+#[tokio::test]
 async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in_the_chat() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
@@ -722,7 +800,7 @@ async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in
     // What a run may not do in the chat it may not do here, and its progress note is its routine's.
     assert!(result.contains("Progress: {\"ok\":true"), "{result}");
     assert!(result.contains("Refused: request_decision works only in the current turn of your own chat"), "{result}");
-    assert!(result.contains("Refused: send_message isn't available in this turn"), "{result}");
+    assert!(result.contains("Refused: send_message isn't available in a thread"), "{result}");
     assert!(result.contains("Refused: add_task isn't available in a thread"), "{result}");
     let posted = said(&host, &bot, "agent", "Routine done:").await.remove(0);
     assert_eq!(posted["turn"], line["turn"], "in the turn its line took");
@@ -743,7 +821,9 @@ async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in
     // It starts as a run in the chat did: a new session with only its own prompt, though the agent can fork.
     assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0], "a run never forks the chat");
     assert_ne!(ran["session"], prompts[0]["session"], "nor works in the chat's session");
-    assert!(!ran["text"].as_str().unwrap().contains("[The chat you come from, so far]"), "{ran}");
+    assert!(ran["text"].as_str().unwrap().contains("running one of your routines"), "a run's instructions: {ran}");
+    let servers = servers_of(&host, &bot, ran);
+    assert!(servers.contains(&"routines".to_owned()) && servers.contains(&"team".to_owned()), "{servers:?}");
     let threads = no_thread_bot_reached(&mut events).await;
     assert!(threads.iter().any(|thread| Some(thread.as_str()) == done["thread"].as_str()), "its trace is its thread's");
 
@@ -857,9 +937,15 @@ async fn another_bots_request_is_a_task_and_its_last_message_is_the_reply() {
     assert!(prompt.contains("Request done:"), "{prompt}");
     // What a request's turn may not do in the chat it may not do here.
     assert!(prompt.contains("Refused: request_decision works only in the current turn of your own chat"), "{prompt}");
-    assert!(prompt.contains("Refused: send_message isn't available in a bot request"), "{prompt}");
+    assert!(prompt.contains("Refused: send_message isn't available in a thread"), "{prompt}");
     assert!(prompt.contains("Refused: follow_up works only in your own chat"), "{prompt}");
     assert!(prompt.contains("Refused: add_task isn't available in a thread"), "{prompt}");
+    let prompts = host.log(&bot, "prompts.jsonl");
+    let answered = prompts.iter().find(|p| p["text"].as_str().unwrap().contains("sent you this request")).unwrap();
+    assert!(
+        answered["text"].as_str().unwrap().contains("another bot asked you"),
+        "a request's instructions: {answered}"
+    );
     let notice = said(&host, &bot, "notice", "Message from Ada").await.remove(0);
     assert_eq!(notice["data"]["status"], "completed");
     assert!(notice["data"]["botMessage"]["reply"].as_str().unwrap().starts_with("Request done:"), "{notice}");
@@ -1102,7 +1188,7 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
     .await;
     assert!(told.contains("you work in a git worktree of your own") && told.contains("codync/second-thread"), "{told}");
     assert_eq!(task_prompts_in(&dir, "Second thread"), [] as [Value; 0], "not in the bot's folder");
-    assert_eq!(logged(&dir, "forks.jsonl").len(), 1, "only the first forked: a worktree's thread starts anew");
+    assert!(logged(&dir, "forks.jsonl").is_empty(), "no thread forks the chat");
 
     // Nothing changed in it: the worktree and its branch go, and the report says so.
     std::fs::write(folder(&second).join("release-second"), "").unwrap();
@@ -1142,7 +1228,7 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
     // Codync keeps versions in: all the bot's work stays there.
     let (plain, plain_dir) = project_bot(&host, 3).await;
     let own = bot_with(&host, 3).await;
-    wait("its own folder to keep versions", async || (row(&host, &own).await["gitRepo"] == true).then_some(())).await;
+    wait("its own folder to keep versions", async || host.workspace(&own).join(".git").exists().then_some(())).await;
     for (bot, dir) in [(&plain, plain_dir), (&own, host.workspace(&own))] {
         host.reply(bot, "ADD One|HOLD:one").await;
         task(&host, bot, "One", "working").await;
@@ -1152,6 +1238,55 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
         assert!(work(&host, bot).await.iter().all(|i| i["worktree"].is_null()));
     }
     assert_eq!(row(&host, &plain).await["gitRepo"], false);
+}
+
+#[tokio::test]
+async fn a_bot_lives_at_home_and_sends_work_to_its_projects_by_its_worktree_mode() {
+    let host = Host::start().await;
+    assert_eq!(host.call("hello", json!({})).await["projects"], true);
+    let bot = bot_with(&host, 3).await;
+    let projects = host.home.join("projects");
+    let (a, b) = (projects.join("a"), projects.join("b"));
+    for dir in [&a, &b] {
+        std::fs::create_dir_all(dir).unwrap();
+        if !git_repo(dir) {
+            return;
+        }
+    }
+    // An older app picking a project folder: it becomes the first project, and the bot stays home.
+    host.call("updateBot", json!({"id": bot, "cwd": a, "name": "Mika"})).await;
+    let settings = row(&host, &bot).await;
+    let home = host.workspace(&bot);
+    assert_eq!((&settings["cwd"], &settings["projects"]), (&json!(home), &json!([a])));
+    assert_eq!((&settings["gitRepo"], &settings["projectGitRepos"]), (&json!(true), &json!([true])));
+    assert_eq!((&settings["worktreeMode"], &settings["threadWorktrees"]), (&json!("sideBySide"), &json!(true)));
+    host.call("updateBot", json!({"id": bot, "projects": [a, b, a]})).await;
+    assert_eq!(row(&host, &bot).await["projects"], json!([a, b]), "each once");
+    let missing = projects.join("missing");
+    assert!(host.refused("updateBot", json!({"id": bot, "projects": [a, missing]})).await.contains("does not exist"));
+
+    // Side by side counts the threads in one checkout: one in another repository doesn't give it a worktree.
+    host.reply(&bot, "ADD In A|HOLD:a").await;
+    task(&host, &bot, "In A", "working").await;
+    wait("its prompt in the default project", async || task_prompts_in(&a, "In A").pop()).await;
+    host.reply(&bot, &format!("ADD In B|HOLD:b|folder={}", b.display())).await;
+    wait("its prompt in the folder it names", async || task_prompts_in(&b, "In B").pop()).await;
+    assert!(work(&host, &bot).await.iter().all(|i| i["worktree"].is_null()), "one thread in each checkout");
+    host.reply(&bot, "ADD Bad|x|folder=projects/b").await;
+    reply(&host, &bot, "Refused: folder must be the full path").await;
+
+    // Always: the first thread in a checkout gets one too. An older app's switch, saved with another field, keeps it.
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "always"})).await;
+    host.call("updateBot", json!({"id": bot, "description": "Ships", "threadWorktrees": true})).await;
+    assert_eq!(row(&host, &bot).await["worktreeMode"], "always");
+    std::fs::write(a.join("release-a"), "").unwrap();
+    task(&host, &bot, "In A", "done").await;
+    host.reply(&bot, "ADD First in A|HOLD:c").await;
+    let first = in_worktree(&host, &bot, "First in A").await;
+    assert_eq!(first["worktree"]["branch"], "codync/first-in-a");
+    assert!(task_prompts_in(&a, "First in A").is_empty(), "not in the user's checkout");
+    host.call("updateBot", json!({"id": bot, "threadWorktrees": false})).await;
+    assert_eq!(row(&host, &bot).await["worktreeMode"], "off");
 }
 
 #[tokio::test]
@@ -1239,8 +1374,8 @@ async fn a_threads_sign_in_is_asked_in_the_chat_and_its_task_goes_on_in_the_same
     host.reply(&bot, "hello again").await;
     let done = task(&host, &bot, "Login", "done").await;
     assert_eq!(done["thread"], waiting["thread"], "the same thread");
-    // A new agent process (the old one kept the old sign-in) goes on in the thread's session: its fork of the chat
-    // and what it did are still there.
+    // A new agent process (the old one kept the old sign-in) goes on in the thread's session: what it did is still
+    // there.
     let tries = task_prompts(&host, &bot, "Login");
     assert_eq!(tries.len(), 2, "{tries:?}");
     assert_eq!(tries[0]["session"], tries[1]["session"], "{tries:?}");
@@ -1250,7 +1385,7 @@ async fn a_threads_sign_in_is_asked_in_the_chat_and_its_task_goes_on_in_the_same
 }
 
 #[tokio::test]
-async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_the_chat() {
+async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_nothing_of_the_chat() {
     let host = Host::start().await;
     let command = common::fixture_command("work_agent.py", "no-load");
     let bot = json!({"name": "Mika", "backend": "kimi", "command": command, "connectors": [], "notify": false});
@@ -1263,16 +1398,16 @@ async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_
     std::fs::remove_file(signed_out).unwrap();
     host.reply(&bot, "hello again").await;
     task(&host, &bot, "Login", "done").await;
-    // A new agent process can't take the thread's session up again: a new one is told the chat it comes from.
+    // A new agent process can't take the thread's session up again: a new one, still nothing of the chat.
     let tries = task_prompts(&host, &bot, "Login");
     assert_eq!(tries.len(), 2, "{tries:?}");
     assert_ne!(tries[0]["session"], tries[1]["session"], "{tries:?}");
     let text = tries[1]["text"].as_str().unwrap();
-    assert!(text.contains("[The chat you come from, so far]") && text.contains("blue theme"), "{text}");
+    assert!(!text.contains("blue theme"), "{text}");
 }
 
 #[tokio::test]
-async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_the_chat() {
+async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_its_work_alone() {
     let host = Host::start().await;
     let bot = kimi_bot(&host, "Mika", json!([{"backend": "codex", "command": relay_agent("standin")}])).await;
     host.reply(&bot, "Remember the blue theme").await;
@@ -1288,11 +1423,11 @@ async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_ag
     let texts: Vec<&str> = moved.iter().filter_map(|e| e["data"]["text"].as_str()).collect();
     assert!(texts.contains(&"Kimi Code is signed out. Codex carried on."), "{texts:?}");
     assert!(texts.contains(&"Asked in the chat to sign in to Kimi Code."), "{texts:?}");
-    // The fork that carried the chat stays with the agent that failed: the next one is told the chat.
+    // The next agent is told the thread's own work, nothing of the chat.
     let log = host.log(&bot, "standin.jsonl");
     let prompt = log.iter().rfind(|r| r["method"] == "session/prompt").unwrap()["params"]["prompt"][0]["text"].clone();
     let prompt = prompt.as_str().unwrap();
-    assert!(prompt.contains("[The chat you come from, so far]") && prompt.contains("blue theme"), "{prompt}");
+    assert!(!prompt.contains("blue theme"), "{prompt}");
 }
 
 #[tokio::test]
@@ -1540,7 +1675,7 @@ async fn send_now_stops_the_threads_turn_for_the_message_or_joins_it_where_the_a
     assert_eq!(task(&host, &steers, "Slow", "working").await["thread"], slow["thread"]);
     release(&host, &steers, "slow");
     let done = task(&host, &steers, "Slow", "done").await;
-    assert_eq!(done["result"], "Report Slow: forked; no chat; joined use tabs");
+    assert_eq!(done["result"], "Report Slow: briefed; no chat; joined use tabs");
     let relayed = reply(&host, &steers, "Relayed:").await;
     assert!(relayed.contains("not the thread's: «use tabs»]"), "{relayed}");
 }
@@ -1550,7 +1685,7 @@ async fn a_message_to_an_ended_task_reopens_it_and_it_reports_again() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
     host.reply(&bot, "ADD Quick|look around").await;
-    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Quick: forked; no chat");
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Quick: briefed; no chat");
     let done = task(&host, &bot, "Quick", "done").await;
     assert_eq!(done["talk"], true, "its thread is kept with it");
 
@@ -1590,7 +1725,7 @@ async fn a_message_to_an_ended_task_reopens_it_and_it_reports_again() {
     assert_ne!(prompt["session"], task_prompts(&host, &fresh, "Quick")[0]["session"]);
     let text = prompt["text"].as_str().unwrap();
     assert!(text.contains("You worked on \"Quick\" before") && text.contains("look around"), "{text}");
-    assert!(text.contains("[Codync: what you reported when it ended:]\nReport Quick: forked; no chat"), "{text}");
+    assert!(text.contains("[Codync: what you reported when it ended:]\nReport Quick: briefed; no chat"), "{text}");
     assert!(text.contains("and now?\n\n[Codync: the user wrote this to you directly"), "{text}");
 }
 
@@ -1673,4 +1808,316 @@ async fn what_waited_in_a_thread_goes_with_a_task_that_gives_way() {
     assert_eq!(prompts.len(), 2);
     let again = prompts[1]["text"].as_str().unwrap();
     assert!(again.contains("[The user said since: «mind the cache»]"), "{again}");
+}
+
+#[tokio::test]
+async fn a_users_thread_starts_past_the_ceiling_and_the_bot_never_sees_it() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Busy|HOLD:busy").await;
+    task(&host, &bot, "Busy", "working").await;
+    // The bot's one seat is taken; the user's thread starts anyway.
+    host.call("startThread", json!({"botId": bot, "text": "Mine HOLD:mine"})).await;
+    task(&host, &bot, "Mine HOLD:mine", "working").await;
+    host.reply(&bot, "STATUS").await;
+    let status = reply(&host, &bot, "Status:").await;
+    assert!(status.contains("Busy") && !status.contains("Mine"), "{status}");
+    release(&host, &bot, "busy");
+    release(&host, &bot, "mine");
+    task(&host, &bot, "Busy", "done").await;
+    task(&host, &bot, "Mine HOLD:mine", "done").await;
+}
+
+#[tokio::test]
+async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_the_chat() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let started = host.call("startThread", json!({"botId": bot, "text": "Look at the tests\nall of them"})).await;
+
+    // Its first line names it; its turn is the user's message, in a session that starts without the chat.
+    let done = result(&host, &bot, "Look at the tests", "Thread").await;
+    assert_eq!((&done["id"], &done["status"]), (&started["taskId"], &json!("done")));
+    assert_eq!(done["result"], "Thread Look at the tests: same session");
+    assert_eq!((&done["source"], &done["talk"]), (&Value::Null, &json!(true)), "the bot's own to every client");
+    let opened = transcript(&host, &bot, &done).await;
+    let first = (&opened[0]["kind"], &opened[0]["data"]["text"]);
+    assert_eq!(first, (&json!("user"), &json!("Look at the tests\nall of them")));
+    let prompts = thread_prompts(&host, &bot);
+    let text = prompts[0]["text"].as_str().unwrap();
+    assert!(text.contains("the user opened this thread to work with you"), "{text}");
+    assert!(!host.workspace(&bot).join("forks.jsonl").exists(), "it forks nothing of the chat");
+    let servers = servers_of(&host, &bot, &prompts[0]);
+    assert!(!servers.iter().any(|s| s == "routines" || s == "team"), "the chat's own servers: {servers:?}");
+
+    // What it came to is read in the thread: the chat takes no turn for it.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(history(&host, &bot).await.is_empty(), "{:?}", history(&host, &bot).await);
+
+    // It takes more messages, as any thread of the bot's own work does, and still tells the chat nothing.
+    tell(&host, &bot, &done, "and the docs").await;
+    let again = result(&host, &bot, "Look at the tests", "Thread and").await;
+    assert_eq!(again["result"], "Thread and the docs: same session");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(relayed(&host, &bot).await, Vec::<String>::new());
+
+    // Only a bot starts one, with something to say.
+    let empty = "a thread starts with a message of at most 32000 bytes";
+    assert_eq!(host.refused("startThread", json!({"botId": bot, "text": "  "})).await, empty);
+    assert_eq!(host.refused("startThread", json!({"botId": done["thread"], "text": "x"})).await, "unknown bot");
+}
+
+#[tokio::test]
+async fn a_thread_the_user_starts_opens_with_their_files() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    // Uploaded to the bot first, then named by the thread: its first message carries them, read from the thread.
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk =
+        json!({"botId": bot, "uploadId": upload, "name": "shot.png", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    host.call("startThread", json!({"botId": bot, "text": "Look at this", "attachments": [upload]})).await;
+    let done = result(&host, &bot, "Look at this", "Thread").await;
+    let opened = transcript(&host, &bot, &done).await;
+    assert_eq!(opened[0]["data"]["attachments"][0]["name"], "shot.png");
+    let read = json!({"botId": done["thread"], "uploadId": upload, "offset": 0});
+    assert!(host.post("readUpload", &read).await.0, "the thread has the file");
+    let text = thread_prompts(&host, &bot)[0]["text"].as_str().unwrap().to_owned();
+    assert!(text.contains("[Attached files") && text.contains("shot.png"), "{text}");
+
+    // Files alone start one too, named by the first; one that was never uploaded starts nothing.
+    let alone = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"botId": bot, "uploadId": alone, "name": "log.txt", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    host.call("startThread", json!({"botId": bot, "text": "", "attachments": [alone]})).await;
+    result(&host, &bot, "log.txt", "Thread").await;
+    let missing = json!({"botId": bot, "text": "x", "attachments": [uuid::Uuid::new_v4().to_string()]});
+    assert!(host.refused("startThread", missing).await.starts_with("unknown upload"));
+}
+
+#[tokio::test]
+async fn a_thread_the_user_starts_works_where_its_setup_says() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let elsewhere = host.workspace(&bot).join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    // Its model and approvals are the thread bot's own (`tasks::Setup::over`): the scripted agent takes neither.
+    host.call("startThread", json!({"botId": bot, "text": "Elsewhere", "setup": {"cwd": elsewhere}})).await;
+    let done = result(&host, &bot, "Elsewhere", "Thread").await;
+    assert_eq!(done["folder"], json!(elsewhere), "its thread works in the folder the user chose");
+    // Without one, in the bot's default project.
+    let project = host.home.join("projects").join("mika");
+    std::fs::create_dir_all(&project).unwrap();
+    host.call("updateBot", json!({"id": bot, "projects": [project]})).await;
+    host.call("startThread", json!({"botId": bot, "text": "In the project"})).await;
+    let done = result(&host, &bot, "In the project", "Thread").await;
+    assert_eq!(done["folder"], json!(project), "the bot's default project");
+
+    // A setup is checked as a bot's is, and one that can't be read starts nothing.
+    let start = |setup: Value| host.refused("startThread", json!({"botId": bot, "text": "x", "setup": setup}));
+    assert_eq!(start(json!({"cwd": "elsewhere"})).await, "a thread's folder is a full path");
+    assert!(start(json!({"cwd": host.workspace(&bot).join("missing")})).await.contains("does not exist"));
+    assert!(start(json!({"approval": {"permission": "yolo", "mode": null}})).await.contains("a thread's setup"));
+
+    // Its login is one of its agent's: one this computer doesn't have, or another agent's, starts nothing; `""` is the
+    // agent's default login.
+    let other = host.call("addLoginProfile", json!({"backend": "cursor", "kind": "apiKey"})).await;
+    assert_eq!(start(json!({"loginProfile": "no-such-profile"})).await, "unknown login profile");
+    assert_eq!(start(json!({"loginProfile": other["loginProfile"]["id"]})).await, "unknown login profile");
+    host.call("startThread", json!({"botId": bot, "text": "At home", "setup": {"loginProfile": ""}})).await;
+    result(&host, &bot, "At home", "Thread").await;
+}
+
+/// What the scripted agent heard in `folder`, oldest first.
+fn heard_in(folder: &Path) -> Vec<Value> {
+    let log = std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()["text"].clone()).collect()
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
+    let host = Host::start().await;
+    let refused = "a thread without a bot names its agent";
+    assert_eq!(host.refused("startThread", json!({"text": "Hello"})).await, refused);
+    // The first one makes the computer's box, hidden, before its setup is checked: this one's folder isn't there.
+    let gone = json!({"backend": "claude", "cwd": std::env::temp_dir().join("codync-no-such-folder")});
+    assert!(host.refused("startThread", json!({"text": "Hello", "setup": gone})).await.contains("does not exist"));
+    let snapshot = host.snapshot().await;
+    let boxes: Vec<&Value> = snapshot["bots"].as_array().unwrap().iter().filter(|b| b["plain"] == true).collect();
+    assert_eq!(boxes.len(), 1, "one box");
+    let owner = boxes[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!((&boxes[0]["hidden"], &boxes[0]["connectors"]), (&json!(true), &json!([])));
+    // Only the host makes it, and it stays out of sight.
+    let made = host.call("createBot", json!({"name": "B", "backend": "custom", "command": "x", "plain": true})).await;
+    assert!(made["bot"]["plain"].is_null(), "{made}");
+    let shown = host.refused("updateBot", json!({"id": owner, "hidden": false})).await;
+    assert_eq!(shown, "the box of threads without a bot stays hidden");
+
+    // Here it runs the scripted agent, which hears the user's words and nothing of Codync's.
+    let agent = common::fixture_command("work_agent.py", "");
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": agent})).await;
+    let folder = host.home.join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    let setup = json!({"backend": "custom", "cwd": folder});
+    let started = host.call("startThread", json!({"text": "Look around", "setup": setup})).await;
+    let done = task(&host, &owner, "Look around", "done").await;
+    assert_eq!((&done["id"], &done["folder"]), (&started["taskId"], &json!(folder)));
+    assert_eq!((&started["botId"], &done["agent"]), (&json!(owner), &json!("custom")), "where it went, on what");
+    assert_eq!(heard_in(&folder), [json!("Look around")]);
+    // It takes more messages, as they are written.
+    tell(&host, &owner, &done, "and the docs").await;
+    wait("the second message", async || heard_in(&folder).get(1).cloned()).await;
+    assert_eq!(heard_in(&folder)[1], "and the docs");
+
+    // Its files go to the box, uploaded without a bot, and on to its thread.
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"uploadId": upload, "name": "notes.md", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    let with = json!({"text": "Read it", "setup": setup, "attachments": [upload]});
+    host.call("startThread", with).await;
+    let read = task(&host, &owner, "Read it", "done").await;
+    let opened = transcript(&host, &owner, &read).await;
+    assert_eq!(opened[0]["data"]["attachments"][0]["name"], "notes.md");
+}
+
+#[tokio::test]
+async fn the_bot_asks_a_working_task_and_gets_its_answer_apart_from_its_report() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ASKTASK Working|How far along are you?").await;
+    let asked = reply(&host, &bot, "Asked:").await;
+    assert!(asked.contains("\"answer\":\"Answer: How far along are you?\""), "{asked}");
+    // The thread heard it as its bot's question.
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    assert!(heard.iter().all(|p| !p["text"].as_str().unwrap().contains("asks you this")), "it joined the turn");
+
+    // It goes on with its task, and its report is its last message, not the answer.
+    release(&host, &bot, "working");
+    let report = relayed_for(&host, &bot, "Working").await;
+    assert!(!report.contains("Answer:"), "{report}");
+    task(&host, &bot, "Working", "done").await;
+    // An ended task is refused: its report came already.
+    host.reply(&bot, "ASKTASK Working|And now?").await;
+    let refused = reply(&host, &bot, "Refused:").await;
+    assert!(refused.contains("has ended"), "{refused}");
+}
+
+/// The first message in `bot`'s chat that starts with `prefix`.
+async fn text_starting(host: &Host, bot: &str, prefix: &str) -> Option<String> {
+    let texts = history(host, bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned));
+    texts.into_iter().find(|t| t.starts_with(prefix))
+}
+
+#[tokio::test]
+async fn an_agent_that_cannot_take_the_question_mid_turn_answers_it_in_a_turn_of_its_own() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ASKTASK Working|Which file?").await;
+    let asked = reply(&host, &bot, "Asked:").await;
+    assert!(asked.contains("\"answer\":\"Answer: Which file?\""), "{asked}");
+    // Its running turn stopped for the question, and its answer, the turn's last message, is its report too.
+    task(&host, &bot, "Working", "done").await;
+    let report = wait("its report", async || relayed(&host, &bot).await.pop()).await;
+    assert_eq!(report, "Relayed: Answer: Which file?");
+}
+
+#[tokio::test]
+async fn an_answer_after_the_minute_comes_to_the_bot_as_a_turn_of_its_own() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.call("send", json!({"botId": bot, "text": "ASKTASK Working|SLOW how far?"})).await;
+    let said = async |prefix: &str| text_starting(&host, &bot, prefix).await;
+    common::eventually("the call to give up", Duration::from_secs(90), async || said("Asked:").await.is_some()).await;
+    assert!(said("Asked:").await.unwrap().contains("no answer yet"));
+    common::eventually("the late answer's turn", Duration::from_secs(30), async || said("Late:").await.is_some()).await;
+    assert_eq!(said("Late:").await.unwrap(), "Late: Answer: SLOW how far?");
+    release(&host, &bot, "working");
+    let report = relayed_for(&host, &bot, "Working").await;
+    assert!(!report.contains("Answer:"), "{report}");
+}
+
+#[tokio::test]
+async fn a_task_names_its_place_and_a_new_worktree_gets_the_ignored_files_and_shared_folders() {
+    let host = Host::start().await;
+    let (bot, dir) = project_bot(&host, 3).await;
+    if !git_repo(&dir) {
+        return;
+    }
+    // `.env` and `node_modules` are ignored, and `.worktreeinclude` lists the one to copy.
+    std::fs::write(dir.join(".gitignore"), "*.jsonl\nrelease-*\n.env\nnode_modules/\n").unwrap();
+    std::fs::write(dir.join(".worktreeinclude"), ".env\nREADME.md\n").unwrap();
+    let commit = |args: &[&str]| assert!(git_in(&dir).args(args).output().unwrap().status.success());
+    commit(&["add", "."]);
+    commit(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ignores"]);
+    std::fs::write(dir.join(".env"), "KEY=1").unwrap();
+    std::fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
+    std::fs::write(dir.join("uncommitted.txt"), "the user's").unwrap();
+    let project = dir.to_string_lossy().into_owned();
+    let mut shared = serde_json::Map::new();
+    shared.insert(project.clone(), json!(["node_modules"]));
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "off", "sharedFolders": shared})).await;
+    assert_eq!(row(&host, &bot).await["sharedFolders"][&project], json!(["node_modules"]));
+
+    // Off mode, but the task asks for a worktree: it gets one, filled before its agent starts.
+    host.reply(&bot, "ADD Alone|HOLD:alone|place=worktree").await;
+    let alone = in_worktree(&host, &bot, "Alone").await;
+    let folder = PathBuf::from(alone["worktree"]["path"].as_str().unwrap());
+    assert_eq!(std::fs::read_to_string(folder.join(".env")).unwrap(), "KEY=1");
+    // A link on Windows needs Developer Mode; without it the thread starts all the same.
+    if cfg!(unix) {
+        assert!(folder.join("node_modules").symlink_metadata().unwrap().file_type().is_symlink());
+    }
+    assert!(!folder.join("uncommitted.txt").exists(), "never the user's uncommitted changes");
+    let told = wait("its prompt", async || std::fs::read_to_string(folder.join("prompts.jsonl")).ok()).await;
+    assert!(told.contains("from the project's last commit"), "{told}");
+
+    // Always mode, but the task asks to stay: it works in the folder itself.
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "always"})).await;
+    host.reply(&bot, "ADD Here|HOLD:here|place=here").await;
+    wait("its prompt in the folder", async || task_prompts_in(&dir, "Here").pop()).await;
+    assert!(task(&host, &bot, "Here", "working").await["worktree"].is_null());
+    // The bot's own folder never gets one: the call says why.
+    let own = host.workspace(&bot).to_string_lossy().into_owned();
+    host.reply(&bot, &format!("ADD Mine|x|folder={own}|place=worktree")).await;
+    wait("why it gets no worktree", async || {
+        let texts =
+            history(&host, &bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned));
+        texts.into_iter().find(|t| t.starts_with("Added:") && t.contains("your own folder never gets a worktree"))
+    })
+    .await;
+
+    // Untouched, it goes with its link, and the project keeps its own folder.
+    std::fs::write(folder.join("release-alone"), "").unwrap();
+    std::fs::write(dir.join("release-here"), "").unwrap();
+    let report = relayed_for(&host, &bot, "Alone").await;
+    if !cfg!(windows) {
+        assert!(report.contains("was removed with its branch"), "{report}");
+        assert!(!folder.exists() && dir.join("node_modules/pkg").is_dir());
+    }
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
+    let host = Host::start().await;
+    let agent = common::fixture_command("work_agent.py", "");
+    // The first start makes the computer's box; then it runs the scripted agent.
+    let gone = json!({"backend": "claude", "cwd": std::env::temp_dir().join("codync-no-such-folder")});
+    host.refused("startThread", json!({"text": "x", "setup": gone})).await;
+    let snapshot = host.snapshot().await;
+    let owner = snapshot["bots"].as_array().unwrap().iter().find(|b| b["plain"] == true).unwrap()["id"].clone();
+    let owner = owner.as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": agent})).await;
+    let started = host.call("startThread", json!({"text": "Look around", "setup": {"backend": "custom"}})).await;
+    let done = task(&host, &owner, "Look around", "done").await;
+    let own = host.home.join("threads").join(started["taskId"].as_str().unwrap());
+    assert_eq!(done["folder"], json!(own), "not the home folder");
+    assert_eq!(heard_in(&own), [json!("Look around")]);
+    // Versioned as a bot's own folder is, and never given a worktree of itself.
+    wait("its versions", async || own.join(".git").exists().then_some(())).await;
+    assert!(done["worktree"].is_null());
 }

@@ -23,10 +23,12 @@ mod groups;
 mod lead;
 mod order;
 mod patch;
+pub(crate) mod projects;
 mod reactions;
 mod sections;
 mod sync;
 mod validate;
+pub(crate) use patch::patched;
 pub(crate) use validate::validate;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
@@ -88,6 +90,7 @@ impl AgentStep {
 pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
+    pub workflows: crate::workflows::Workflows,
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
     pub work: crate::chat::work::Work,
@@ -162,6 +165,7 @@ impl Hub {
         Arc::new(Self {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
+            workflows: crate::workflows::Workflows::default(),
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
             work: crate::chat::work::Work::default(),
@@ -203,6 +207,8 @@ impl Hub {
             crate::chat::decision::Expiry::Restart.capture(self);
         }
         crate::chat::memory::import_old_memory(self);
+        // Before the routines and the bots' actors read what it changes.
+        projects::migrate(self);
         self.routines.restore(&self.store)?;
         crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
@@ -216,6 +222,7 @@ impl Hub {
         crate::chat::team::restart::restore(self);
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
+        crate::workflows::start(self);
         crate::analytics::start(self);
         Ok(())
     }
@@ -410,7 +417,9 @@ impl Hub {
 
     pub(crate) fn update_keep_awake(&self) {
         let busy = self.runtime.locked().values().any(|r| r.status == BotStatus::Working);
-        self.keep_awake.locked().set(busy || self.routines.keeps_awake());
+        self.keep_awake
+            .locked()
+            .set(busy || self.routines.keeps_awake() || crate::workflows::Workflows::keeps_awake(&self.store));
     }
 
     // MARK: entries
@@ -440,6 +449,11 @@ impl Hub {
                 None
             }
         }
+    }
+
+    pub(crate) fn emit_workflow(&self, body: Value) {
+        let _guard = self.emit_lock.locked();
+        let _ = self.events.send(body);
     }
 
     pub fn add_entry_once(

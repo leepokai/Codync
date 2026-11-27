@@ -65,6 +65,13 @@ public final class BotStore {
     public internal(set) var hostRoute: HostRoute?
     public internal(set) var client: HostClient?
     public internal(set) var hello: Hello?
+    /// Summaries for the roster pins and the workflow list. Not written into the bot cache, and not a rev.
+    public internal(set) var workflows: [WorkflowSummary] = []
+    /// Bumped when an open workflow should reload its graph.
+    public internal(set) var workflowReload = 0
+    /// Bumped when an open run should reload. Run and step events do not reload a graph.
+    public internal(set) var workflowRunReload = 0
+    public internal(set) var deletedWorkflows: Set<String> = []
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.
@@ -75,6 +82,11 @@ public final class BotStore {
     public internal(set) var entries: [String: [Entry]] = [:]
     /// Threads' transcripts as they come in, by thread id: never part of a chat, and gone with the thread.
     public internal(set) var threadEntries: [String: [Entry]] = [:]
+    /// Ended threads older than the bots' `work` carries, as far as the Threads list paged them (`BotStore+OlderThreads`).
+    public internal(set) var olderThreads = OlderThreadList()
+    /// Moved on when the older threads start over (a new `hello`, another keep choice): a page asked before is dropped.
+    public internal(set) var olderThreadsGeneration = 0
+    var loadingOlderThreads = false
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -93,6 +105,8 @@ public final class BotStore {
     @ObservationIgnored var composerPasted: [String: [String]] = [:]
     public let fileDownloads = FileDownloads()
     var artifacts = ArtifactCache()
+    /// The agents' model lists this computer gave (`models(for:)`): a model panel opens on one at once.
+    private var modelLists: [AgentLogin: AgentModels] = [:]
     public var lastError: String?
     /// The open conversation (navigation path).
     public var selection: String?
@@ -104,9 +118,6 @@ public final class BotStore {
 
     /// A task whose card its bot's conversation should bring into view, consumed by it.
     public internal(set) var cardRequest: (botId: String, task: WorkTask)?
-
-    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
-    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
@@ -332,7 +343,19 @@ public final class BotStore {
         backend.available ? backend.name : "\(backend.name) (not installed)"
     }
 
-    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+    /// `backends` as the Agent pickers list them, once per login (`Backend.loginSeats`).
+    func loginSeats(_ backends: [Backend], on: AgentLogin, logins: (Backend) -> [String?]? = { _ in nil }) -> [LoginSeat] {
+        backends.flatMap { $0.loginSeats(label: agentLabel($0), on: on, logins: logins($0)) }
+    }
+
+    /// The agents a chat's box can switch its bot to, once per login: the installed ones and the one in use (`readyLogins`).
+    public func readySeats(on: AgentLogin) -> [LoginSeat] {
+        loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
+    }
+
+    public var hiddenBots: [Bot] { bots.values.filter { $0.hidden && !$0.plain }.sorted { $0.name < $1.name } }
+    /// The box of threads that run without a bot: a hidden bot of the host's own, listed only on the Threads tab.
+    public var plainBox: Bot? { bots.values.first(where: \.plain) }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
     /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
@@ -350,6 +373,16 @@ public final class BotStore {
     /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
     public func authorName(_ id: String?, fallback: String? = nil) -> String {
         id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
+
+    /// The model list `login` offers as this computer gave it last.
+    func models(for login: AgentLogin) -> AgentModels? { modelLists[Self.listed(login)] }
+
+    func keepModels(_ list: AgentModels, for login: AgentLogin) { modelLists[Self.listed(login)] = list }
+
+    /// An empty login profile is the default login.
+    private static func listed(_ login: AgentLogin) -> AgentLogin {
+        AgentLogin(backend: login.backend, loginProfile: login.loginProfile.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     func updateComputer(_ change: (inout Computer) -> Void) {

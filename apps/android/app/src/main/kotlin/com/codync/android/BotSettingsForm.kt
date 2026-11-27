@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
+import com.codync.android.core.Login
+import com.codync.android.core.LoginSeat
 import com.codync.android.core.MAX_THREADS
 import com.codync.android.core.login
 import com.codync.android.core.restOf
@@ -55,20 +57,20 @@ import androidx.compose.ui.semantics.semantics
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        CardSection("Instructions") { instructionsRow(draft, change) }
-        CardSection("Agent") {
+        CardSection("Instructions", fold = "bot.instructions") { instructionsRow(draft, change) }
+        CardSection("Agent", fold = "bot.agent") {
             fallbackBanner(state, store, bot)
             agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
-        CardSection("Profile") {
+        CardSection("Profile", fold = "bot.profile") {
             avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
             nameRow(draft, change); createdByRow(state, bot)
         }
-        CardSection("Workspace") {
+        CardSection("Workspace", fold = "bot.workspace") {
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
-        CardSection("Activity") {
+        CardSection("Activity", fold = "bot.activity") {
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -78,8 +80,10 @@ import androidx.compose.ui.semantics.semantics
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
     CodyncSheet(folders, { folders = false }) {
-        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
-            change(draft.copy(cwd = it)); folders = false
+        // With projects, as on the iPhone: from the default project, else the computer's home.
+        val start = if (state.botProjects) draft.projects?.firstOrNull() else draft.cwd.ifEmpty { null }
+        FolderPicker(start ?: state.hello?.get("home")?.jsonPrimitive?.contentOrNull, online, state.computerName, store::listDirs, store::selectWorkspace) {
+            change(if (state.botProjects) draft.withProject(it) else draft.copy(cwd = it)); folders = false
         }
     }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
@@ -141,8 +145,9 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
-            agents = agentChoices(state) + ("custom" to "Custom command"),
-            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
+            agents = pickerSeats(agentBackends(state), draft.login) + LoginSeat(Login("custom"), tr("Custom command")),
+            chooseAgent = { change(draft.withAgent(it)) },
+            onReload = reloadModels, loginProfile = draft.loginProfile, store = store) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
@@ -151,7 +156,6 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
     }
-    loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, store, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }) }
@@ -165,6 +169,24 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 /** Where the bot works, how many of its threads work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
+    if (state.botProjects) projectRows(state.bots.firstOrNull { it.id == draft.id }, draft, state.worktreeFill, change, chooseFolder) else workspaceRows(state, draft, change, chooseFolder)
+    // Only from a host that has the box (its bots say).
+    draft.maxThreads?.let { count ->
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }
+    }
+    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
+    // place) and the host has it.
+    if (!state.botProjects) draft.threadWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
+        row {
+            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
+                { change(draft.copy(threadWorktrees = it)) })
+        }
+    }
+    row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
+}
+
+/** A host before projects: the one folder the bot works in, its own or a project. */
+private fun CardRows.workspaceRows(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
     row {
         Column {
             ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
@@ -185,19 +207,6 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
             state.bots.firstOrNull { it.id == draft.id }?.let(::gitState)?.let { GitLine(it) }
         }
     }
-    // Only from a host that has the box (its bots say).
-    draft.maxThreads?.let { count ->
-        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }
-    }
-    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
-    // place) and the host has it.
-    draft.threadWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
-        row {
-            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
-                { change(draft.copy(threadWorktrees = it)) })
-        }
-    }
-    row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }
 
 /** Under the folder: whether it is a git repository, and the manual's page on what threads working at once do with and without git. */

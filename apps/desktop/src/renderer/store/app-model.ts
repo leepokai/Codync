@@ -147,7 +147,7 @@ export class AppModel extends Observable {
       this.changed()
     }
     store.onRosterChanged = () => this.changed()
-    store.onAlert = ({ botId, kind, title, body }) => window.codync.notifications.show({ ref: refKey({ computerId: computer.id, botId }), kind, title, body })
+    store.onAlert = ({ botId, workflowId, ...alert }) => window.codync.notifications.show({ ref: refKey({ computerId: computer.id, botId }), ...alert, workflowId })
     // Kit views select a new bot on their own store; that becomes the window's selection.
     this.storeSubscriptions.set(computer.id, store.subscribe(() => {
       if (store.selection) {
@@ -202,6 +202,11 @@ export class AppModel extends Observable {
   /** Every computer's bots hidden from the roster, computer by computer, by name. */
   get hiddenBots(): RosterItem[] {
     return this.botsOnEveryComputer((store) => store.hiddenBots)
+  }
+
+  /** Every computer's box of threads without a bot, where one started. */
+  get plainBoxes(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => (store.plainBox ? [store.plainBox] : []))
   }
 
   private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
@@ -283,7 +288,10 @@ export class AppModel extends Observable {
 
   get errorMessage(): string | null {
     if (this.lastError) return this.lastError
-    for (const store of this.stores.values()) if (store.lastError) return store.lastError
+    for (const store of this.stores.values()) {
+      if (store.quietError) continue
+      if (store.lastError) return store.lastError
+    }
     return null
   }
 

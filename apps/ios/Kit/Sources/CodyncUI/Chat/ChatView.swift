@@ -142,9 +142,6 @@ public struct ChatView: View {
             .onChange(of: model.cardRequest?.task.id, initial: true) { _, _ in
                 if let task = model.takeCardRequest(for: botId) { showCard(task) }
             }
-            .onChange(of: model.threadRequest?.task.id, initial: true) { _, _ in
-                if let task = model.takeThreadRequest(for: botId) { details = DetailsRequest(thread: task) }
-            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -166,8 +163,7 @@ public struct ChatView: View {
             .codyncSheet(item: $details) { request in
                 // A card is in this chat: another bot's details (a group member's) have none to go to.
                 let own = (request.botId ?? botId) == botId
-                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil,
-                               openInChat: own ? { showInChat($0.id) } : nil) { artifact in
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -202,13 +198,6 @@ public struct ChatView: View {
         if let shown { reveal(shown) }
     }
 
-    /// Closes the details over the chat and brings the entry `id` into view: what a task's thread says it put
-    /// here. Only among the loaded messages, like a quote.
-    private func showInChat(_ id: String) {
-        details = nil
-        if let shown = rowId(of: id) { reveal(shown) }
-    }
-
     /// The chat's row that shows the entry `id`.
     private func rowId(of id: String) -> String? {
         chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }?.id
@@ -234,6 +223,11 @@ public struct ChatView: View {
             TimeSeparator(date: date)
         case .exchanges(let group):
             BotMessageRow(group: group) { botChat = BotChatTarget(id: group.peerId) }
+        case .requests(let entries):
+            RequestRun(entries: entries) { e in
+                PermissionCard(entry: e, hostName: model.hostName, answering: model.answering[e.id], respond: { model.respond(e, option: $0) }, showsEnding: false)
+            }
+            .padding(.top, 12)
         case .entry(let e, let groupStart):
             if e.kind == "notice", let id = e.data.routineId {
                 RoutineNoticeRow(entry: e) { openRoutine(id) }
@@ -357,6 +351,8 @@ struct ChatItem: Identifiable {
         case entry(Entry, groupStart: Bool)
         /// Main chat only: consecutive bot-to-bot exchanges with one peer.
         case exchanges(BotExchangeGroup)
+        /// Approvals in a row that ended alike, as one line.
+        case requests([Entry])
     }
 
     let id: String
@@ -364,7 +360,7 @@ struct ChatItem: Identifiable {
 
     /// Chat-visible entries plus time separators (gaps > 1 h) and author grouping. A bot's
     /// messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace. Runs of
-    /// bot exchanges with one peer fold into one item.
+    /// bot exchanges with one peer fold into one item, and approvals in a row that ended alike into one.
     static func build(_ entries: [Entry]) -> [ChatItem] {
         var out: [ChatItem] = []
         var lastDate: Date?
@@ -384,6 +380,17 @@ struct ChatItem: Identifiable {
                 out.append(ChatItem(id: id, kind: .exchanges(group)))
                 lastAuthor = nil
             case .entry(let e):
+                if let ending = Request.ending(e), let last = out.last {
+                    switch last.kind {
+                    case .entry(let prev, _) where Request.ending(prev) == ending:
+                        out[out.count - 1] = ChatItem(id: last.id, kind: .requests([prev, e]))
+                        continue
+                    case .requests(let run) where run.first.flatMap(Request.ending) == ending:
+                        out[out.count - 1] = ChatItem(id: last.id, kind: .requests(run + [e]))
+                        continue
+                    default: break
+                    }
+                }
                 // In a group each bot is its own author.
                 let author = e.kind == "user" ? "user" : e.kind == "agent" ? "agent:\(e.data.author ?? "")" : e.kind
                 out.append(ChatItem(id: id, kind: .entry(e, groupStart: author != lastAuthor)))

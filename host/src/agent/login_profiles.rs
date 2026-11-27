@@ -317,20 +317,22 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
         Kind::Account => account::remove(&profile.account).await?,
         Kind::ApiKey => keys::forget(&hub.store, id)?,
     }
+    crate::agent::auth::forget_model_list(&hub.store, &profile.account.agent, id);
     change(&hub.store, |profiles| {
         profiles.retain(|p| p.account.id != id);
         Ok(())
     })
 }
 
-/// The bots whose agent or one of whose fallbacks is set to profile `id`, or one of whose threads works on it, by name: saving one of them fails once
-/// the profile is gone (`settle`).
+/// The bots whose agent or one of whose fallbacks is set to profile `id`, or one of whose threads works or waits to
+/// work on it, by name: saving one of them, or starting the thread, fails once the profile is gone (`settle`).
 fn users(store: &Store, id: &str) -> Result<Vec<String>> {
     let uses = |cfg: &BotConfig| {
         cfg.login_profile.as_deref() == Some(id) || cfg.fallback_steps().any(|f| f.login_profile.as_deref() == Some(id))
     };
     // A thread keeps the login its bot had when it started, whatever the bot is set to since.
-    let threads = crate::chat::work::working_threads(store);
+    let threads =
+        crate::chat::work::working_threads(store).into_iter().chain(crate::chat::work::waiting_threads(store));
     let bots = store.bots()?.into_iter().filter(|b| !b.deleted).map(|b| b.config);
     let mut names: Vec<String> = bots.chain(threads).filter(uses).map(|cfg| cfg.name).collect();
     names.sort();

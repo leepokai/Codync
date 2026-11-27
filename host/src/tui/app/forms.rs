@@ -50,8 +50,13 @@ impl App {
             thread_fallbacks: b.thread_fallbacks.clone().unwrap_or_default(),
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             max_threads: b.max_threads,
-            // A bot's own folder keeps all its work in one place: no switch there.
-            thread_worktrees: b.thread_worktrees.filter(|_| b.git_repo && !b.managed_workspace),
+            // A bot's own folder keeps all its work in one place: no switch there. With projects, the mode instead.
+            thread_worktrees: b.thread_worktrees.filter(|_| b.git_repo && !b.managed_workspace && !self.projects),
+            projects: self.projects.then(|| b.projects.clone()),
+            worktree_mode: b.worktree_mode.unwrap_or_default(),
+            shared_folders: (self.projects && self.worktree_fill).then(|| b.shared_folders.clone()),
+            project: 0,
+            shared_name: Editor::default(),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -75,7 +80,7 @@ impl App {
         merge_toggles(&mut f.connectors, &self.market.0);
         merge_toggles(&mut f.skills, &self.market.1);
         f.opened = f.body();
-        self.want_models(&b.backend);
+        self.want_models(&b.backend, b.login_profile.as_deref());
         self.overlays.push(Overlay::Form(Box::new(f)));
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
@@ -101,6 +106,15 @@ impl App {
         if matches!(field, Field::Fallbacks | Field::ThreadFallbacks) && self.fallback_key(&mut f, k) {
             return Some(Overlay::Form(f));
         }
+        if field == Field::Projects && f.project_key(k) {
+            return Some(Overlay::Form(f));
+        }
+        if field == Field::SharedFolders
+            && let Some(project) = self.shared_project(&f).map(str::to_owned)
+            && f.shared_key(&project, k)
+        {
+            return Some(Overlay::Form(f));
+        }
         match k.code {
             KeyCode::Esc => return None,
             KeyCode::Char('s') if ctrl => {
@@ -120,8 +134,21 @@ impl App {
                 f.instructions.insert("\n");
             }
             KeyCode::Char('j') if ctrl && field == Field::Instructions => f.instructions.insert("\n"),
-            KeyCode::Backspace | KeyCode::Delete if field == Field::Folder => f.cwd.clear(),
-            KeyCode::Enter if field == Field::Folder => {
+            // On a host with projects the field is the bot's home: copied, never changed.
+            KeyCode::Char('c') if field == Field::Folder && f.projects.is_some() => {
+                if let Some(b) = self.bots.get(&f.bot_id) {
+                    super::copy(&b.cwd);
+                    self.flash("Copied");
+                }
+            }
+            KeyCode::Backspace | KeyCode::Delete if field == Field::Folder && f.projects.is_none() => f.cwd.clear(),
+            // A project is added with the folder picker (recent, browse, or ^L a path).
+            KeyCode::Enter if field == Field::Projects => {
+                self.overlays.push(Overlay::Form(f));
+                self.open_folder("");
+                return None;
+            }
+            KeyCode::Enter if field == Field::Folder && f.projects.is_none() => {
                 let start = f.cwd.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_folder(&start);
@@ -149,8 +176,8 @@ impl App {
             }
             KeyCode::Left | KeyCode::Right if field == Field::Model => {
                 let d: isize = if k.code == KeyCode::Left { -1 } else { 1 };
-                self.want_models(&f.backend);
-                if let Some(m) = self.cycle_model(&f.backend, f.model.text.trim(), d) {
+                self.want_models(&f.backend, f.login_profile.as_deref());
+                if let Some(m) = self.cycle_model(&f.backend, f.login_profile.as_deref(), f.model.text.trim(), d) {
                     f.model = Editor::with(&m);
                 }
             }
@@ -169,6 +196,7 @@ impl App {
                         | Field::ThreadAgent
                         | Field::MaxThreads
                         | Field::ThreadWorktrees
+                        | Field::WorktreeMode
                         | Field::Approvals
                         | Field::Compaction
                         | Field::Notify
@@ -199,10 +227,13 @@ impl App {
                             f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
                             f.mode = codync_agent::modes::on_other_agent(f.mode.as_deref());
-                            self.want_models(&f.backend);
+                            self.want_models(&f.backend, f.login_profile.as_deref());
                         }
                     }
-                    Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
+                    Field::LoginProfile if !space => {
+                        self.cycle_login_profile(&mut f, d);
+                        self.want_models(&f.backend, f.login_profile.as_deref());
+                    }
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Advisor => self.toggle_advisor(&mut f),
@@ -213,6 +244,7 @@ impl App {
                     }
                     Field::ThreadAgent => self.cycle_thread_agent(&mut f, d),
                     Field::ThreadWorktrees => f.thread_worktrees = f.thread_worktrees.map(|on| !on),
+                    Field::WorktreeMode if !space => f.cycle_worktree_mode(d),
                     Field::MaxThreads if !space => {
                         let step = |n: u8| if d < 0 { n.saturating_sub(1) } else { n + 1 };
                         f.max_threads = f.max_threads.map(|n| step(n).clamp(1, MAX_THREADS));
@@ -228,7 +260,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = self.model_settings(&f.backend, &model);
+                        let offered = self.model_settings(&f.backend, f.login_profile.as_deref(), &model);
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {
@@ -340,6 +372,17 @@ impl Form {
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
             "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
         });
+        // Only to a host with projects; it never gets a folder or the old switch, which it would read as a project and
+        // as a mode.
+        if let (Some(projects), Some(fields)) = (&self.projects, body.as_object_mut()) {
+            fields.remove("cwd");
+            fields.remove("threadWorktrees");
+            fields.insert("projects".into(), json!(projects));
+            fields.insert("worktreeMode".into(), json!(self.worktree_mode));
+            if let Some(shared) = &self.shared_folders {
+                fields.insert("sharedFolders".into(), json!(shared));
+            }
+        }
         // Only to a host that has Advisor mode.
         if self.advisor {
             body["threadAgent"] = json!(self.thread_agent);
@@ -426,7 +469,7 @@ mod tests {
         let mut app = test_app();
         let grok = json!({"id": "grok", "name": "Grok", "options": [
             {"id": "fast", "name": "Fast", "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "On"}]}]});
-        app.models.insert("cursor".into(), Some(AgentModel::parse(&grok).into_iter().collect()));
+        app.models.insert(("cursor".into(), None), Some(AgentModel::parse(&grok).into_iter().collect()));
         let bot = json!({"id": "b", "backend": "cursor", "model": "grok", "modelOptions": {"fast": "false"}});
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         app.selected = Some("b".into());
@@ -620,5 +663,25 @@ mod tests {
             let changed = f.changes();
             assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_bot_on_another_login_asks_for_that_logins_models() {
+        let (base, mut requests) = super::super::recording_host().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new(&base, Some("token")), tx, String::new());
+        let bot = json!({"id": "b", "backend": "claude", "loginProfile": "pro-7"});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let request = loop {
+            let request = super::super::next_request(&mut requests).await;
+            if request.starts_with("POST /api/agentModels") {
+                break request;
+            }
+        };
+        assert!(request.contains(r#""loginProfile":"pro-7""#), "{request}");
+        assert!(matches!(app.models_for("claude", Some("pro-7")), Some(None)), "its list is loading");
+        assert!(app.models_for("claude", None).is_none(), "the default login's list is another one");
     }
 }

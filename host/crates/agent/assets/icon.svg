@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<title>codync-agent: a lowercase a with a plug’s two prongs</title>
+<rect width="1024" height="1024" fill="#000"/><defs><filter id="g" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="18"/><feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 36 -16"/></filter></defs><g transform="translate(512 512) scale(1.12) translate(-518 -532)" filter="url(#g)" fill="none" stroke="#fff" stroke-linecap="round">
+<circle cx="440" cy="620" r="135" stroke-width="112"/>
+<path d="M 340 345 C 380 255, 575 250, 575 400 V 755" stroke-width="112"/>
+<path d="M655 540 H 790 M655 670 H 790" stroke-width="66"/></g></svg>

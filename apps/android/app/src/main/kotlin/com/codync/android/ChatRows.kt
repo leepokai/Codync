@@ -128,10 +128,10 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
         color = Palette.tertiary, textAlign = TextAlign.Center)
 }
 
-/** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer, and `selectText` opens its text
+/** One chat-visible entry, with what can be done to it. `openTrace` shows its turn's steps (null: none, in a thread's chat). `reply` quotes it in the composer, and `selectText` opens its text
  *  to reply to a part of it (null where the computer's host takes no part); `addFallback` opens a bot's fallbacks; `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
-    openTrace: () -> Unit, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: (Bot) -> Unit,
+    openTrace: (() -> Unit)?, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: ((Bot) -> Unit)?,
     openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)? = null) {
     val group = chat?.kind == "group"
     when (entry.kind) {
@@ -157,13 +157,18 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
                 reply = { store.sendText(entry.botId, it) })
         } else if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
+        } else if (entry.data["agentSwitch"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
+            val change = entry.data["agentSwitch"] as JsonObject
+            // A switch the user made is a divider of its own.
+            if (change["manual"]?.jsonPrimitive?.booleanOrNull == true) UserSwitchRow(change, state)
+            else AgentSwitchLine(tr(entry.text), change.text("carried"))
         } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
             // A fresh conversation starts at the left, as on the iPhone.
             HandoffCardRow(entry, entry.data["handoff"] as JsonObject, state, store)
         } else Box(Modifier.padding(top = 10.dp)) {
             // In a group, the member whose agent failed.
             val owner = state.bots.firstOrNull { it.id == (entry.data.text("author") ?: entry.botId) && it.kind != "group" }
-            NoticeRow(entry, owner?.let { { addFallback(it) } }, continuing = "continue:" + entry.id in state.busy) { store.continueChain(entry) }
+            NoticeRow(entry, addFallback?.let { add -> owner?.let { { add(it) } } }, continuing = "continue:" + entry.id in state.busy) { store.continueChain(entry) }
         }
     }
 }
@@ -229,7 +234,7 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
 }
 
 /**
- * A message of a thread's own transcript ([WorkThreadView]): the chat's bubble with Copy alone in its menu, under the
+ * A message of a thread's own transcript ([ThreadChat]): the chat's bubble with Copy alone in its menu, under the
  * user's files. Those entries are the thread's, never the chat's, so the chat's reactions and replies don't reach them.
  */
 @Composable internal fun PlainMessageRow(entry: Entry, state: AppState, store: AppStore) {
@@ -280,7 +285,7 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?,
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: (() -> Unit)?, reply: (() -> Unit)?,
     selectText: (() -> Unit)?, openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -432,7 +437,6 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }
-        "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
         entry.data["continueChain"]?.jsonPrimitive?.booleanOrNull == true -> Column(Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(tr(text), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
@@ -451,11 +455,14 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
     var expanded by remember { mutableStateOf(false) }
     if (carried.isNullOrEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = label)
-    else Disclosure(expanded, { expanded = !expanded }, Modifier.fillMaxWidth(), label) {
-        SelectionContainer {
-            Text(carried, Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent).padding(12.dp),
-                style = Type.footnote, color = Palette.secondary)
-        }
+    else Disclosure(expanded, { expanded = !expanded }, Modifier.fillMaxWidth(), label) { CarriedText(carried) }
+}
+
+/** What an agent taking over was told, unfolded under its line. */
+@Composable internal fun CarriedText(text: String) {
+    SelectionContainer {
+        Text(text, Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent).padding(12.dp),
+            style = Type.footnote, color = Palette.secondary)
     }
 }
 

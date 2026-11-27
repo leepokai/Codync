@@ -2145,6 +2145,7 @@
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "此版本的其他更新",
   "Watch the full video": "觀看完整影片",
+  "Background": "背景",
   "Work": "工作",
   "Worktree per thread": "每個 thread 一個 worktree",
   "Threads that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 thread 各有自己的分支。",

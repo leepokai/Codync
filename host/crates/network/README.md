@@ -139,6 +139,7 @@ Start the node on each computer and keep it running (a terminal, or a login serv
 codync-network init desk                         # the first computer, its owner; prints the recovery code
 codync-network invite                            # prints codync-network:… (one use, one hour)
 codync-network join 'codync-network:…' laptop    # on the other computer
+codync-network up                                # later runs: the network this computer is in
 ```
 
 Then, from any terminal or agent on either computer:
@@ -149,6 +150,7 @@ codync-network send terminal@desk hello          # delivered to terminal@desk
 codync-network send terminal@desk --notice "tests are green"
 codync-network promote laptop                    # the owner makes laptop an admin
 codync-network remove laptop [--cascade]         # out for good (--cascade: and whom it admitted)
+codync-network recover '<code>'                  # on another computer: it becomes the owner
 codync-network rules deny '*@laptop' reviewer    # laptop's agents can't write to reviewer here
 codync-network rules allow lead@laptop reviewer --first   # except lead (the first match decides)
 codync-network rules ask '*@cloud' terminal      # cloud's letters to this terminal print as (ask); to a session agent
@@ -162,6 +164,8 @@ To put a Claude Code session or a Codex thread on the network, run this in it (o
 ```sh
 codync-network agent reviewer claude "$CLAUDE_CODE_SESSION_ID" --about "Reviews changes"
 codync-network agent coder codex "$CODEX_THREAD_ID" --about "Writes the code"
+codync-network agents                            # the agents this computer offers
+codync-network agent coder --remove              # stop offering one
 ```
 
 A message to `reviewer@desk` then shows up in that session, with the command to reply. A Claude Code session that

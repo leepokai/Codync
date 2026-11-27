@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
     load: suspend (String?) -> DirListing, select: suspend (String) -> String, pick: (String) -> Unit) {
     val state = remember { WorkspacePickerState() }
     val scope = rememberCoroutineScope()
+    val dismiss = LocalDismissModal.current
     val open = state::open
     val recent = state::showRecent
     val noRecent = state.mode == FolderMode.Recent && !state.busy && state.listing?.recent.orEmpty().isEmpty()
@@ -64,9 +65,10 @@ import kotlinx.coroutines.launch
                     state.busy -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Spinner(20.dp) }
                     state.mode == FolderMode.Recent -> {
                         val items = state.listing?.recent.orEmpty().filter { it.path.contains(state.filter, ignoreCase = true) }
-                        Column {
+                        // One card, as the iPhone's list section and the desktop's list box; the picked row a step up.
+                        Column(Modifier.fillMaxWidth().background(Palette.surface, RoundedCornerShape(16.dp)).padding(4.dp)) {
                             items.forEach { item ->
-                                Row(Modifier.fillMaxWidth().background(if (state.selected == item.path) Palette.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
+                                Row(Modifier.fillMaxWidth().background(if (state.selected == item.path) Palette.bubbleUser else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
                                     .plainButton(enabled = !state.saving) { state.selected = item.path }.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Symbol("folder", size = 18.dp, tint = Palette.secondary)
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -103,6 +105,7 @@ import kotlinx.coroutines.launch
                 Text(tr(if (state.mode == FolderMode.Recent) "Selected folder" else "Current folder"), style = Type.caption, color = Palette.secondary)
                 Text(state.selected.ifEmpty { tr("Choose a folder") }, style = Type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            SecondaryButton("Cancel", enabled = !state.saving) { dismiss() }
             PrimaryButton(if (state.saving) "Saving…" else "Use this folder", enabled = state.selected.isNotEmpty() && online && !state.busy && !state.saving) {
                 scope.launch { state.confirm(load, select)?.let(pick) }
             }
@@ -117,7 +120,7 @@ import kotlinx.coroutines.launch
 }
 
 @Composable private fun FolderBrowse(enabled: Boolean, onBrowse: () -> Unit) {
-    Row(Modifier.fillMaxWidth().plainButton(enabled = enabled, action = onBrowse).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().background(Palette.surface, RoundedCornerShape(16.dp)).plainButton(enabled = enabled, action = onBrowse).padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Symbol("folder", size = 18.dp)
         Text(tr("Browse other folders"), Modifier.weight(1f), style = Type.body)
         Symbol("chevron.right", size = 12.dp)

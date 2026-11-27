@@ -63,7 +63,17 @@ pub(crate) async fn create_group(hub: &Arc<Hub>, source: &BotConfig, args: &Valu
     group_members(hub, "", &cfg.members)?;
     let created = {
         let hub = hub.clone();
-        tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??
+        let checking = hub.clone();
+        tokio::task::spawn_blocking(move || {
+            hub.create_bot_if(cfg, move |cfg, requested| {
+                // The card showed these members and the pre-card check passed; a bot deleted in the
+                // meantime must refuse the create under the save lock, not be dropped by `valid_members`.
+                // `requested` is the original roster: the config's one is only normalized after this check.
+                group_members(&checking, &cfg.id, requested)?;
+                Ok(())
+            })
+        })
+        .await??
     };
     let id = created["id"].as_str().context("the new group has no id")?;
     // Same members reopen an existing group: the name and the notice are the group's, not the request's.

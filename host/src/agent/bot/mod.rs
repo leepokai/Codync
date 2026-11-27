@@ -59,7 +59,7 @@ use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -75,7 +75,11 @@ pub struct BotHandle {
     pub tx: mpsc::UnboundedSender<Cmd>,
     /// The actor task; it kills its agent process on the way out.
     pub task: tokio::task::JoinHandle<()>,
+    pub(crate) thread_turn: ThreadTurn,
 }
+
+// A token for the running turn, shared only by this actor and its handle.
+type ThreadTurn = Arc<Mutex<Option<Arc<()>>>>;
 
 pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -92,6 +96,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    let thread_turn = ThreadTurn::default();
     let actor = Actor {
         hub,
         base,
@@ -123,6 +128,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         announce: None,
         first_prompt: None,
         turn: None,
+        thread_turn: thread_turn.clone(),
         queue: VecDeque::new(),
         steers_in_flight: HashMap::new(),
         held_done: None,
@@ -156,7 +162,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         relay: fallback::Relay::default(),
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
-    BotHandle { tx, task }
+    BotHandle { tx, task, thread_turn }
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -320,6 +326,7 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
+    thread_turn: ThreadTurn,
     queue: VecDeque<Queued>,
     /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
     steers_in_flight: HashMap<String, steer::InFlight>,

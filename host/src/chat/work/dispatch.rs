@@ -3,7 +3,7 @@
 use super::sources::{self, Begin};
 use super::tasks::{self, Source, Status, Task};
 use super::worktree::{self, Place, Worktree};
-use super::{Outcome, finished, of, prompts};
+use super::{Outcome, finished, of, prompts, thread};
 use crate::LockExt;
 use crate::agent::fallback;
 use crate::analytics::errors::host_error;
@@ -145,7 +145,9 @@ pub(super) fn held(hub: &Hub, task: &Task) -> bool {
 /// Whether a turn of `id` runs. `over`: the actor whose turn is ending as this is asked (its status still says it
 /// works).
 fn turn_runs(hub: &Hub, id: &str, over: Option<&str>) -> bool {
-    over != Some(id) && matches!(hub.runtime(id).status, BotStatus::Working | BotStatus::NeedsInput)
+    over != Some(id)
+        && (hub.thread_turn(id).is_some()
+            || matches!(hub.runtime(id).status, BotStatus::Working | BotStatus::NeedsInput))
 }
 
 pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> ThreadState {
@@ -208,13 +210,24 @@ struct Plan {
 /// Looks over `bot`'s box: waiting tasks go to threads where they can, threads with nothing left end. Run whenever the
 /// box or one of its threads changes.
 pub fn dispatch(hub: &Arc<Hub>, bot: &str) {
-    run(hub, bot, None);
+    run(hub, bot, || None);
 }
 
-/// [`dispatch`], from the end of `over`'s turn (the bot's own, or one of its threads').
-pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
+pub(super) fn after_thread(hub: &Arc<Hub>, bot: &str, thread: &str, turn: Option<&Arc<()>>) {
+    run(hub, bot, || {
+        let turn = turn?;
+        if thread::unheard(&hub.store, thread) {
+            return None;
+        }
+        let current = hub.thread_turn(thread)?;
+        Arc::ptr_eq(turn, &current).then_some(thread)
+    });
+}
+
+/// `over` identifies the same ending turn each time, even when dispatch follows a Git check.
+pub(super) fn run<'a>(hub: &Arc<Hub>, bot: &str, over: impl Fn() -> Option<&'a str>) {
     let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted).map(|r| r.config) else { return };
-    let plan = match tasks::change(hub, bot, |tasks| plan(hub, &cfg, tasks, over)) {
+    let plan = match tasks::change(hub, bot, |tasks| plan(hub, &cfg, tasks, over())) {
         Ok(plan) => plan,
         Err(error) => {
             host_error!(hub, "couldn't look over a bot's work", bot, error = format!("{error:#}"));
@@ -234,15 +247,23 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     }
     for thread in plan.end {
-        // Looked at again under the box's lock: a message the user wrote to its thread since reopened its task
-        // (`thread::message`, which holds the lock from there to the actor).
+        // A continuation may already be stopping, with no working task in the box.
         let _g = hub.work.boxes.locked();
-        if tasks::of_thread(&tasks::load(&hub.store, bot), &thread).is_none() {
+        if tasks::of_thread(&tasks::load(&hub.store, bot), &thread).is_none()
+            && !thread::unheard(&hub.store, &thread)
+            && !turn_runs(hub, &thread, over())
+        {
             hub.stop_actor(&thread);
         }
     }
     for thread in plan.delete {
-        if let Err(error) = hub.delete_bot(&thread) {
+        let _g = hub.work.boxes.locked();
+        let named = tasks::load(&hub.store, bot).iter().any(|i| i.thread.as_deref() == Some(&thread));
+        if !named
+            && !turn_runs(hub, &thread, over())
+            && hub.store.bot(&thread).is_ok_and(|row| row.is_some_and(|row| !row.deleted))
+            && let Err(error) = hub.delete_bot(&thread)
+        {
             tracing::warn!(thread, error = format!("{error:#}"), "couldn't remove a thread");
         }
     }
@@ -361,7 +382,7 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
     };
     if let Err(error) = posted {
         host_error!(hub, "couldn't hand work to a thread", thread = %thread.id, error = format!("{error:#}"));
-        finished(hub, thread, Outcome::not_dispatched(&error));
+        finished(hub, thread, Outcome::not_dispatched(&error), None);
     }
 }
 
@@ -597,7 +618,7 @@ mod tests {
         let waiting = json!({"id": "i1", "title": "Work", "brief": "x", "status": "waiting", "order": 1,
             "createdAt": 0, "worktree": worktree});
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([waiting]).to_string()).expect("saved");
-        run(&hub, "b1", None);
+        dispatch(&hub, "b1");
         assert_eq!(tasks::load(&hub.store, "b1")[0].status, Status::Waiting);
     }
 

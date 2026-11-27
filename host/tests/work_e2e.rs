@@ -2541,7 +2541,8 @@ async fn a_first_message_task_retries_its_opening_after_a_cancelled_prompt() {
     host.reply(&bot, "ADD Try again|RETURN_CANCELLED").await;
     let initial = wait("the initial task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
     let session = initial["session"].as_str().unwrap();
-    let stopped = stopped_task_prompt(&host, &bot, title, session, false).await;
+    let stopped = task(&host, &bot, title, "stopped").await;
+    assert_stopped_task_prompt(&host, &bot, &stopped, session, false).await;
 
     let retry = "deliver the opening";
     let quiet = "continue without the opening";
@@ -2967,10 +2968,328 @@ async fn a_standard_acp_task_retries_the_skill_update_when_its_agent_finishes_af
     compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::StoppedPrompt).await;
 }
 
-async fn stopped_task_prompt(host: &Host, bot: &str, title: &str, session: &str, stop_requested: bool) -> Value {
-    let stopped = task(host, bot, title, "stopped").await;
+#[tokio::test]
+async fn a_standard_task_revokes_a_skill_seen_before_acp_cancellation() {
+    continue_without_skill_after_stopped_prompt(false).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_revokes_a_skill_seen_before_stop_with_a_successful_reply() {
+    continue_without_skill_after_stopped_prompt(true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_late_worktree_check_leaves_the_continued_turn_to_finish() {
+    settle_worktree_and_stop(ReleaseFirst::Worktree).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stopped_worktree_turn_can_finish_before_the_old_check() {
+    settle_worktree_and_stop(ReleaseFirst::Cancel).await;
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug)]
+enum ReleaseFirst {
+    Worktree,
+    Cancel,
+}
+
+#[cfg(unix)]
+fn hold_worktree_check(repo: &Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let hook = repo.join(".git/hold-status");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh
+if [ -f release-hold-check ] && mkdir release-check-started 2>/dev/null; then
+    n=0
+    while [ ! -f release-check ] && [ -d \"$PWD\" ] && [ \"$n\" -lt 1500 ]; do
+        sleep 0.02
+        n=$((n + 1))
+    done
+fi
+exit 1
+",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(git_in(repo).args(["config", "core.fsmonitor"]).arg(hook).status().unwrap().success());
+}
+
+#[cfg(unix)]
+async fn settle_worktree_and_stop(first: ReleaseFirst) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+    let repo = host.home.join("project");
+    std::fs::create_dir(&repo).unwrap();
+    if git_in(&repo).arg("--version").output().is_err() {
+        return;
+    }
+    assert!(git_repo(&repo));
+    hold_worktree_check(&repo);
+    host.call("updateBot", json!({"id": bot, "cwd": repo})).await;
+
+    let title = "Ship it";
+    host.reply(&bot, "ADD Ship it|TOUCH HOLD:opening|place=worktree").await;
+    let opening = in_worktree(&host, &bot, title).await;
+    let folder = Path::new(opening["worktree"]["path"].as_str().unwrap());
+    let release = |name: &str| std::fs::write(folder.join(format!("release-{name}")), "").unwrap();
+    release("hold-check");
+    release("opening");
+    let done = task(&host, &bot, title, "done").await;
+    wait("the first task's Git status to block", async || folder.join("release-check-started").is_dir().then_some(()))
+        .await;
+    let [initial] = task_prompts_in(folder, title).try_into().unwrap();
+    let session = initial["session"].as_str().unwrap();
+
+    // Let only the dispatch publish a bot event while the first report waits in the parent's queue.
+    host.call("send", json!({"botId": bot, "text": "ADD Hold reporting|Hold the parent turn|hold"})).await;
+    task(&host, &bot, "Hold reporting", "waiting").await;
+    assert_eq!(row(&host, &bot).await["status"], "working");
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let interrupted = "use B HOLD:interrupted END_AFTER_CANCEL HOLD_CANCEL:interrupted";
+    assert_eq!(tell(&host, &bot, &done, interrupted).await["reopened"], true);
+    let overlay = folder.join(format!("fixture-skills-{session}"));
+    wait("the same ACP session to apply B", async || {
+        std::fs::read_to_string(&overlay).ok().filter(|skills| skills.contains("- B: Release steps."))
+    })
+    .await;
+    let process =
+        logged(folder, "standard_sessions.jsonl").into_iter().rfind(|event| event["session"] == session).unwrap();
+    let pid = process["pid"].to_string();
+    assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+    host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+    let stopped = task(&host, &bot, title, "stopped").await;
+    assert!(stopped["result"].is_null());
+    wait("the fixture to hold the cancel reply", async || {
+        folder.join("release-cancel-seen-interrupted").is_file().then_some(())
+    })
+    .await;
+
+    let finish_cancel = async || {
+        release("cancel-interrupted");
+        wait("the stopped turn to finish or its agent to exit", async || {
+            let stopped = transcript(&host, &bot, &done).await.iter().any(|e| e["data"]["stopReason"] == "cancelled");
+            (stopped || !common::alive(&pid)).then_some(stopped)
+        })
+        .await
+    };
+    let finish_check = async || {
+        let rev = row(&host, &bot).await["rev"].as_i64().unwrap();
+        let mut events = host.events().await;
+        release("check");
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while let Some(event) = events.recv().await {
+                if event["type"] == "bot" && event["bot"]["id"] == bot && event["rev"].as_i64().unwrap() > rev {
+                    return;
+                }
+            }
+            panic!("the bot event stream closed");
+        })
+        .await
+        .expect("the completed Git check dispatched again");
+    };
+    let turn_settled = match first {
+        ReleaseFirst::Worktree => {
+            finish_check().await;
+            finish_cancel().await
+        }
+        ReleaseFirst::Cancel => {
+            let settled = finish_cancel().await;
+            finish_check().await;
+            settled
+        }
+    };
+    host.call("stop", json!({"botId": bot})).await;
+    let report = relayed_for(&host, &bot, title).await;
+    assert!(report.contains(opening["worktree"]["branch"].as_str().unwrap()), "{report}");
+
+    let retry = "continue with the current skills";
+    let again = "check the result once more";
+    let mut previous = stopped;
+    for words in [retry, again] {
+        assert_eq!(tell(&host, &bot, &previous, words).await["reopened"], true);
+        previous = result(&host, &bot, title, &format!("Thread {words}:")).await;
+        assert_eq!(previous["thread"], opening["thread"]);
+        assert_eq!(previous["worktree"], opening["worktree"]);
+    }
+    let prompts = logged(folder, "prompts.jsonl");
+    let texts = [interrupted, retry, again].map(|words| {
+        let [prompt] = prompts
+            .iter()
+            .filter(|p| p["text"].as_str().unwrap().contains(words))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let updates = texts.map(|text| text.matches("<skills_update>").count());
+    let revoked = texts[1].contains("\nSkills: none.\n</skills_update>");
+    eprintln!(
+        "Released {first:?} first in {session}: stopped turn settled {turn_settled}, skill updates {updates:?}, revoked {revoked}"
+    );
+    assert_eq!(updates, [1, 1, 0]);
+    assert!(turn_settled && revoked);
+    assert!(std::fs::read_to_string(overlay).unwrap().ends_with("\nSkills: none."));
+    assert!(folder.join("made.txt").is_file());
+}
+
+async fn continue_without_skill_after_stopped_prompt(stop_requested: bool) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+    let title = "Ship it";
+    host.reply(&bot, "ADD Ship it|Finish the release").await;
+    let done = task(&host, &bot, title, "done").await;
+    let [initial] = task_prompts(&host, &bot, title).try_into().unwrap();
+    let session = initial["session"].as_str().unwrap();
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let snapshot_key = format!("context.{bot}.{session}");
+    let snapshot = || {
+        let raw: String = db.query_row("SELECT v FROM kv WHERE k = ?1", [&snapshot_key], |r| r.get(0)).unwrap();
+        serde_json::from_str::<Value>(&raw).unwrap()
+    };
+    let check_opening = |snapshot: &Value| {
+        assert_eq!(snapshot["epoch"], 0);
+        assert_eq!(snapshot["announced"]["skills_brief"], "");
+        assert_eq!(snapshot["confirmedTaskSkills"], "");
+        assert!(snapshot.get("pendingTaskSkills").is_none());
+    };
+    check_opening(&snapshot());
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let ending = if stop_requested { "END_AFTER_CANCEL" } else { "RETURN_CANCELLED" };
+    let message = format!("use B HOLD:skill_update {ending}");
+    assert_eq!(tell(&host, &bot, &done, &message).await["reopened"], true);
+    let interrupted = wait("the held skill update", async || thread_prompts(&host, &bot).into_iter().next()).await;
+    let text = interrupted["text"].as_str().unwrap();
+    assert_eq!(interrupted["session"], session);
+    assert_eq!(text.matches("<skills_update>").count(), 1);
+    let (_, update) = text.split_once("<skills_update>\n").unwrap();
+    assert!(update.contains("\n- B: Release steps. "), "{text}");
+    let overlay = host.workspace(&bot).join(format!("fixture-skills-{session}"));
+    wait("the held agent to see B", async || {
+        std::fs::read_to_string(&overlay).ok().filter(|skills| skills.contains("- B: Release steps."))
+    })
+    .await;
+    check_opening(&snapshot());
+    let context_at_end = record_task_end_context(&db, &bot, &done, &snapshot_key);
+    assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+
+    if stop_requested {
+        host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+    } else {
+        release(&host, &bot, "skill_update");
+    }
+    let stopped = task(&host, &bot, title, "stopped").await;
+    let retry = "continue with the current skills";
+    let again = "check the result once more";
+    let continued = tell(&host, &bot, &stopped, retry).await;
+    assert_eq!(continued["reopened"], true);
+    assert_stopped_task_prompt(&host, &bot, &stopped, session, stop_requested).await;
+    let resumed = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+    assert_eq!(resumed["thread"], done["thread"]);
+
+    let at_stop = context_at_end("stopped");
+    let at_notice = context_at_end("stop_notice");
+    let at_done = context_at_end("done");
+    for saved in [&at_stop, &at_notice, &at_done] {
+        check_opening(saved);
+    }
+    eprintln!(
+        "Task {session}: continuation queued {}, uncertainty at stopped {}, stop notice {} and done {}",
+        continued["queued"],
+        at_stop["taskSkillsUncertain"],
+        at_notice["taskSkillsUncertain"],
+        at_done["taskSkillsUncertain"],
+    );
+    assert_eq!(at_notice["taskSkillsUncertain"], true, "skill delivery is uncertain when the actor closes the turn");
+    if !stop_requested {
+        assert_eq!(at_stop["taskSkillsUncertain"], true, "ACP cancellation publishes the settled task");
+    }
+    assert!(at_done.get("taskSkillsUncertain").is_none(), "the successful revocation is settled at task completion");
+
+    assert_eq!(tell(&host, &bot, &resumed, again).await["reopened"], true);
+    task(&host, &bot, title, "done").await;
+    check_opening(&snapshot());
+
+    let [interrupted, retried, after] = thread_prompts(&host, &bot).try_into().unwrap();
+    let texts = [&interrupted, &retried, &after].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let counts = texts.map(|text| text.matches("<skills_update>").count());
+    let revoked = texts[1].contains("\nSkills: none.\n</skills_update>");
+    assert!(texts[2].contains(again), "{}", texts[2]);
+    eprintln!("Task {session}: skill update counts {counts:?}, revoked {revoked}");
+    assert_eq!(counts, [1, 1, 0], "restate the current list once after the interrupted update");
+    assert!(revoked, "{}", texts[1]);
+    assert!(std::fs::read_to_string(overlay).unwrap().ends_with("\nSkills: none."));
+}
+
+fn record_task_end_context<'a>(
+    db: &'a rusqlite::Connection,
+    bot: &str,
+    task: &Value,
+    snapshot_key: &str,
+) -> impl Fn(&str) -> Value + 'a {
+    // Capture each boundary in SQLite so a later snapshot write cannot race the observation.
+    db.execute_batch(
+        "CREATE TABLE fixture_task_end_keys(box_key TEXT, task_id TEXT, thread_id TEXT, snapshot_key TEXT);
+         CREATE TABLE fixture_task_end_context(status TEXT PRIMARY KEY, snapshot TEXT NOT NULL);
+         CREATE TRIGGER fixture_capture_task_end AFTER UPDATE OF v ON kv
+         WHEN NEW.k = (SELECT box_key FROM fixture_task_end_keys)
+         BEGIN
+             INSERT INTO fixture_task_end_context
+             SELECT json_extract(task.value, '$.status'), context.v
+             FROM fixture_task_end_keys JOIN kv AS context ON context.k = snapshot_key
+             CROSS JOIN json_each(NEW.v) AS task
+             WHERE json_extract(task.value, '$.id') = task_id
+               AND json_extract(task.value, '$.status') IN ('stopped', 'done')
+             ON CONFLICT (status) DO NOTHING;
+         END;
+         CREATE TRIGGER fixture_capture_stop_notice AFTER INSERT ON entries
+         WHEN json_extract(NEW.data, '$.stopReason') = 'cancelled'
+         BEGIN
+             INSERT INTO fixture_task_end_context
+             SELECT 'stop_notice', context.v
+             FROM fixture_task_end_keys JOIN kv AS context ON context.k = snapshot_key
+             WHERE thread_id = NEW.bot_id
+             ON CONFLICT (status) DO NOTHING;
+         END;",
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO fixture_task_end_keys VALUES (?1, ?2, ?3, ?4)",
+        [&format!("work.{bot}"), id(task), task["thread"].as_str().unwrap(), snapshot_key],
+    )
+    .unwrap();
+    move |status| {
+        let raw: String = db
+            .query_row("SELECT snapshot FROM fixture_task_end_context WHERE status = ?1", [status], |row| row.get(0))
+            .unwrap();
+        serde_json::from_str(&raw).unwrap()
+    }
+}
+
+async fn assert_stopped_task_prompt(host: &Host, bot: &str, stopped: &Value, session: &str, stop_requested: bool) {
     wait("a cancelled turn in the task transcript", async || {
-        transcript(host, bot, &stopped)
+        transcript(host, bot, stopped)
             .await
             .into_iter()
             .find(|e| e["data"]["stopReason"] == "cancelled" && e["data"]["text"] == "Stopped.")
@@ -2981,7 +3300,6 @@ async fn stopped_task_prompt(host: &Host, bot: &str, title: &str, session: &str,
     let reason = if stop_requested { "end_turn" } else { "cancelled" };
     assert_eq!(outcomes, [json!({"session": session, "stopReason": reason, "cancelReceived": stop_requested})]);
     eprintln!("Stopped task {session}: ACP {reason}, session/cancel received: {stop_requested}");
-    stopped
 }
 
 enum CompactedSkill {
@@ -3119,11 +3437,17 @@ async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
     };
     let mut interrupted_announcement = None;
     let (mut notice, mut load_count) = if let Some(status) = retry_status {
-        let interrupted = if status == "stopped" {
-            stopped_task_prompt(&host, &bot, "Ship it", session, matches!(skill, CompactedSkill::StoppedPrompt)).await
-        } else {
-            task(&host, &bot, "Ship it", status).await
-        };
+        let interrupted = task(&host, &bot, "Ship it", status).await;
+        if status == "stopped" {
+            assert_stopped_task_prompt(
+                &host,
+                &bot,
+                &interrupted,
+                session,
+                matches!(skill, CompactedSkill::StoppedPrompt),
+            )
+            .await;
+        }
         ended(&load["pid"]).await;
         let prompts = thread_prompts(&host, &bot);
         assert_eq!(prompts[0]["session"], session);

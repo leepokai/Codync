@@ -258,6 +258,10 @@ impl Hub {
         self.bots.locked().contains_key(bot_id)
     }
 
+    pub(crate) fn thread_turn(&self, id: &str) -> Option<Arc<()>> {
+        self.bots.locked().get(id).and_then(|handle| handle.thread_turn.locked().clone())
+    }
+
     /// Stops `bot_id`'s actor, and so its agent process; its row and transcript stay.
     pub(crate) fn stop_actor(&self, bot_id: &str) {
         if let Some(handle) = self.bots.locked().remove(bot_id) {
@@ -318,7 +322,9 @@ impl Hub {
     #[cfg(test)]
     pub fn attach_bot_for_test(&self, id: &str) -> tokio::sync::mpsc::UnboundedReceiver<Cmd> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        self.bots.locked().insert(id.into(), BotHandle { tx, task: tokio::spawn(async {}) });
+        self.bots
+            .locked()
+            .insert(id.into(), BotHandle { tx, task: tokio::spawn(async {}), thread_turn: Arc::default() });
         rx
     }
 

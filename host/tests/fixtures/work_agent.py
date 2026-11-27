@@ -372,6 +372,13 @@ def prompt(request):
     if ends_after_cancel and not cancel.wait(10):
         send({"id": request["id"], "error": {"code": -32603, "message": "Fixture did not receive session/cancel"}})
         return
+    cancel_gate = re.search(r"HOLD_CANCEL:(\w+)", text) if ends_after_cancel else None
+    if cancel_gate:
+        name = cancel_gate.group(1)
+        pathlib.Path(f"release-cancel-seen-{name}").touch()
+        deadline = time.monotonic() + 12
+        while not pathlib.Path(f"release-cancel-{name}").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
     cancel_received = cancel.is_set()
     stop_reason = "cancelled" if returns_cancelled or (cancel_received and not ends_after_cancel) else "end_turn"
     if returns_cancelled or ends_after_cancel:
@@ -380,7 +387,7 @@ def prompt(request):
         send({"id": request["id"], "result": {"stopReason": stop_reason}})
         return
     failure = {"thread-signedout": SIGNED_OUT, "thread-limit": LIMIT}
-    failed = [error for name, error in failure.items() if "[Task]" in text and pathlib.Path(name).exists()]
+    failed = [error for name, error in failure.items() if task_prompt and pathlib.Path(name).exists()]
     asked = pathlib.Path("sign-in-asked")
     if "[Task]" in text and "SIGNIN" in text and not asked.exists():
         asked.write_text("")

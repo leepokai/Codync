@@ -88,7 +88,8 @@ A connector or skill you add is turned on for every bot, and new bots start with
 - **Terminal UI:** press `e` on the bot. The settings form has the same switches.
 
 The bot picks up the change on its next turn, in the same conversation. Its tasks pick up skill changes when
-they continue.
+they continue. If a skill update was interrupted, the task gets the current list when that conversation resumes,
+including when it switches back from a fallback agent.
 
 On a Codex bot, a connector named like an MCP server in your own Codex config (for example `notion`, after `codex mcp add notion`) reaches the bot as `codync-notion`, so the bot gets both: Codex keeps its own entry and skips any other server with that name.
 

@@ -4,6 +4,7 @@ use super::sign_in::Held;
 use super::{
     Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
+use crate::LockExt;
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
@@ -526,6 +527,7 @@ impl Actor {
             r.message = None;
             r.session = None;
         });
+        *self.thread_turn.locked() = None;
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
     }
@@ -559,7 +561,8 @@ impl Actor {
     /// the tasks a bot added in the turn may start.
     pub(super) fn turn_over(&mut self, outcome: Outcome) {
         if self.cfg.is_thread() {
-            work::finished(&self.hub, &self.cfg, outcome);
+            let turn = self.thread_turn.locked().clone();
+            work::finished(&self.hub, &self.cfg, outcome, turn);
         } else {
             work::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
         }

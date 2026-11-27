@@ -426,6 +426,7 @@ impl Actor {
                     None => false,
                 };
             };
+            self.settle_context(false);
             if reason == Reason::SignedOut {
                 self.left_signed_out(&login);
             }

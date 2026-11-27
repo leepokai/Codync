@@ -43,8 +43,10 @@ its own context and compacts it itself.
   rebuilds its query and resumes the same conversation.
 - **Profile edits mid-session** (name, description, skills, the lead role) reach the agent as an
   `<agent_profile_update>` block on the next message. A task handed out by a bot gets a `<skills_update>` block
-  with its replacement skill list, including when the list becomes empty. After the turn reaches the agent,
-  the host records the update in `snapshot.announced`. The next compaction folds it into the snapshot.
+  with its replacement skill list, including when the list becomes empty. The host records confirmed delivery
+  in `snapshot.announced` before publishing the task result. The next compaction folds it into the snapshot.
+  A stopped or failed task prompt can leave delivery uncertain, including when another agent takes over. The
+  next ordinary prompt in that conversation carries the current skill list again.
 
 ## Memory (`host/src/chat/memory/`, crate `host/crates/memory`)
 

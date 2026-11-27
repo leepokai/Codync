@@ -2,6 +2,7 @@
 
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
+use crate::LockExt;
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -13,6 +14,7 @@ use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -126,6 +128,7 @@ impl Actor {
     ) -> Result<()> {
         self.task_source = work::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_thread() {
+            *self.thread_turn.locked() = Some(Arc::new(()));
             // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
             self.hub.ceilings.set(&self.cfg.id, work::access_of(&self.hub, &self.cfg));
             // A run worked as a thread: its session's setup ends by the routine's time limit too, where the box's
@@ -257,6 +260,7 @@ impl Actor {
                 r.message = None;
                 r.session = None;
             });
+            *self.thread_turn.locked() = None;
             return Ok(());
         }
         // Session-start chatter (banners, command lists) isn't part of the reply.
@@ -364,7 +368,7 @@ impl Actor {
         // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it. Only its
         // folder: its bot's fallbacks may have reached the row meanwhile (`work::fallbacks_changed`).
         let saved = {
-            let _g = crate::LockExt::locked(&self.hub.emit_lock);
+            let _g = self.hub.emit_lock.locked();
             self.hub.store.bot(&self.cfg.id).and_then(|row| {
                 let row = row.map_or_else(|| self.base.clone(), |row| row.config);
                 self.hub.store.save_bot(&BotConfig { cwd: worktree.cwd.clone(), ..row })
@@ -380,6 +384,10 @@ impl Actor {
         if self.turn.is_none() {
             return;
         }
+        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
+        let stopped = self.stop_requested || cancelled;
+        // The task can resume in another actor once its turn's end is published.
+        self.settle_context(done.is_ok() && !stopped);
         self.after_turn(done);
         self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
@@ -389,11 +397,9 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
         if cancelled && !self.stop_requested {
             self.requeue_unheard();
         }
-        let stopped = self.stop_requested || cancelled;
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
@@ -526,20 +532,6 @@ impl Actor {
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
-        // The message reached the agent: the context update it carried is now known to it.
-        let context_delivered = done.is_ok() && !stopped;
-        if let Some((snapshot, identity)) = self.announce.take()
-            && context_delivered
-            && let Err(error) = context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, identity)
-        {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
-        }
-        if let Some(sent) = self.first_prompt.take()
-            && context_delivered
-            && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)
-        {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
-        }
         if done.is_ok() {
             self.file_codex_session();
         }
@@ -562,6 +554,7 @@ impl Actor {
             r.message = None;
             r.session = None;
         });
+        *self.thread_turn.locked() = None;
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
@@ -582,6 +575,27 @@ impl Actor {
                 _ => "The agent didn't finish.".into(),
             });
             push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
+        }
+    }
+
+    pub(super) fn settle_context(&mut self, delivered: bool) {
+        let store = &self.hub.store;
+        let owner = self.cfg.owner();
+        let announcement = match self.announce.take() {
+            Some((snapshot, identity)) if delivered => context::mark_announced(store, owner, &snapshot, identity),
+            Some((snapshot, _)) if !context::as_bot(&self.cfg, &self.task_source) => {
+                context::mark_task_skills_uncertain(store, owner, &snapshot)
+            }
+            _ => Ok(()),
+        };
+        if let Err(error) = announcement {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
+        }
+        if let Some(sent) = self.first_prompt.take()
+            && delivered
+            && let Err(error) = context::mark_prompted(store, owner, &sent)
+        {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
         }
     }
 }

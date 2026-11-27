@@ -92,6 +92,9 @@ pub struct Snapshot {
     /// The skill block sent on a standard reopen that still needs confirmation in a prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pending_task_skills: Option<String>,
+    /// A task prompt may have replaced the last acknowledged skill list.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    task_skills_uncertain: bool,
     /// The memory revision `system` holds (`memory::current_revision` before it was rendered).
     #[serde(default)]
     pub memory: String,
@@ -176,9 +179,9 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str, opening_in_prompt:
     let (system, identity) = render_with_identity(store, cfg);
     let unprompted = stored.as_ref().map_or(opening_in_prompt && epoch > 0, |old| old.unprompted);
     let announced_epoch = stored.as_ref().map(|old| old.announced_epoch.unwrap_or(old.epoch));
-    let (announced, confirmed_task_skills, pending_task_skills) = stored.map_or_else(
-        || (identity.clone(), None, None),
-        |old| (old.announced, old.confirmed_task_skills, old.pending_task_skills),
+    let (announced, confirmed_task_skills, pending_task_skills, task_skills_uncertain) = stored.map_or_else(
+        || (identity.clone(), None, None, false),
+        |old| (old.announced, old.confirmed_task_skills, old.pending_task_skills, old.task_skills_uncertain),
     );
     let s = Snapshot {
         session: session.to_owned(),
@@ -190,6 +193,7 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str, opening_in_prompt:
         announced_epoch,
         confirmed_task_skills,
         pending_task_skills,
+        task_skills_uncertain,
         memory,
     };
     save(store, owner, &s)?;
@@ -244,6 +248,7 @@ pub fn adopt(
         announced_epoch: None,
         confirmed_task_skills,
         pending_task_skills: None,
+        task_skills_uncertain: false,
         memory,
         unprompted: true,
     };
@@ -516,7 +521,11 @@ pub fn task_skills_update(
     resend: bool,
 ) -> Option<(String, Identity)> {
     let skills_brief = current_skills(store, cfg);
-    if !resend && skills_brief == snapshot.announced.skills_brief && snapshot.pending_task_skills.is_none() {
+    if !resend
+        && !snapshot.task_skills_uncertain
+        && snapshot.pending_task_skills.is_none()
+        && skills_brief == snapshot.announced.skills_brief
+    {
         return None;
     }
     let identity = Identity { skills_brief, ..snapshot.announced.clone() };
@@ -562,6 +571,10 @@ pub fn task_system_reopened(store: &Store, bot_id: &str, sent: &Snapshot, delive
     })
 }
 
+pub(crate) fn mark_task_skills_uncertain(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
+    update_if_current(store, bot_id, sent, |current| !std::mem::replace(&mut current.task_skills_uncertain, true))
+}
+
 /// After the turn that carried an update reached the agent: remember it heard
 /// `identity`, unless the snapshot moved on meanwhile (a compaction re-rendered it).
 pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, identity: Identity) -> Result<()> {
@@ -569,13 +582,14 @@ pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, ide
         let changed = current.announced != identity;
         current.announced = identity;
         let previous = current.announced_epoch.replace(turn_snapshot.epoch);
+        let reasserted = turn_snapshot.task_skills_uncertain && std::mem::take(&mut current.task_skills_uncertain);
         if turn_snapshot.pending_task_skills.is_some()
             && current.pending_task_skills == turn_snapshot.pending_task_skills
         {
             current.confirmed_task_skills = current.pending_task_skills.take();
             return true;
         }
-        changed || previous != Some(turn_snapshot.epoch)
+        changed || reasserted || previous != Some(turn_snapshot.epoch)
     })
 }
 

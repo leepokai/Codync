@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod background_tasks;
 mod background_work;
 mod cmd;
 mod codex_section;
@@ -47,7 +48,7 @@ pub use compaction::{context_window, offers_threshold};
 pub(crate) use fallback::{kept_step, owe_move};
 use inflight::Inflight;
 pub(crate) use inflight::resumable;
-pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
+pub(crate) use launch::{Background, launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
@@ -154,6 +155,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig, startup: (bool, Vec<String>)) -> Bo
         seg: Seg::None,
         tools: HashMap::new(),
         detached_before: None,
+        agent_turn: None,
+        done_tx: None,
         plan_entry: None,
         last_text: None,
         sent: Vec::new(),
@@ -369,6 +372,10 @@ struct Actor {
     /// A thread's: the sessions its agent ran detached in when its task's round began, which aren't what the task
     /// leaves running (`left_running`, #634). Kept while the task goes on with what a turn left running.
     detached_before: Option<Vec<i32>>,
+    /// The turn its agent began by itself while it runs (`background_tasks`).
+    agent_turn: Option<background_tasks::AgentTurn>,
+    /// Where a turn ends (`run`'s own channel), for one the agent began by itself, which no prompt answers.
+    done_tx: Option<mpsc::UnboundedSender<Done>>,
     plan_entry: Option<String>,
     /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
@@ -437,6 +444,11 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        // One of those began a turn of the agent's own: this one goes on with it (`turn_ended`).
+        if self.agent_turn.is_some() {
+            self.held_done = Some(done);
+            return;
+        }
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         // A pause can be saved, and a resume can reopen admission, before this failure is retried.
         race_gate::wait("before_fallback").await;
@@ -477,6 +489,7 @@ impl Actor {
         // read `paused()` again: a resume in the gap must not reopen cut-off work, and must not change the ids.
         race_gate::wait("before_startup_pause_read").await;
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
+        self.done_tx = Some(done_tx.clone());
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
         if was_paused {
             // Paused while the host was down: nothing resumes now (that would spend). A thread's cut-off task is
@@ -533,12 +546,12 @@ impl Actor {
                     if (self.active_routine.is_some() || self.active_workflow.is_some()) && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.kill_agent().await;
                     }
                     // The agent ignored the cancel: stop its process so the bot is free again.
                     if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                         self.cancel_deadline = None;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.kill_agent().await;
                     }
                     self.release_idle().await;
                     // The idle check may have queued a compaction.

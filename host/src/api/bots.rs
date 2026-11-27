@@ -142,6 +142,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             work::refuse_chat_only(hub, bot, name)?;
             if work::TOOLS.contains(&name) {
                 work::call(hub, bot, name, &b["arguments"]).await?
+            } else if name == work::ask_chat::TOOL {
+                work::ask_chat::ask(hub, bot, &b["arguments"]).await?
             } else if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
             } else if name == crate::chat::decision::TOOL {

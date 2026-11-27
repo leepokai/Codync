@@ -383,12 +383,12 @@ mod tests {
             &root,
             "today",
             start + 3_600_000,
-            &[("0000000000000002", 1_000), ("0000000000000003", 23_482)],
+            &[("0000000000000002", 1_000), ("0000000000000003", 40_000)],
         );
         unified_session(&root, "yesterday", start - 3_600_000, &[("0000000000000001", 50_000)]);
         let windows = windows_in(&root, start, now);
         let _ = std::fs::remove_dir_all(&root);
-        assert_eq!(windows, [Window::note("tokens", "Tokens (started today)", "23.5k tokens")]);
+        assert_eq!(windows, [Window::note("tokens", "Tokens (started today)", "40.0k tokens")]);
     }
 
     #[test]

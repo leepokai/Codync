@@ -33,22 +33,44 @@ pub fn status(hub: &Hub) -> Value {
     })
 }
 
+/// How often the listed sessions are looked at again while the host runs.
+const LIVE_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Looks again at what the listed sessions' agents do, in the background; the `network` event
 /// brings a change.
 fn refresh_live(hub: &Arc<Hub>) {
+    tokio::spawn(look_again(hub.clone()));
+}
+
+/// Keeps the listed sessions' state current, so a Network page left open follows them: a change is
+/// a `network` event. ponytail: looks every `LIVE_EVERY` whether or not a page is open (a registry
+/// read and one `ps` per listed session); a client's "page open" signal if that ever costs.
+pub fn follow_live(hub: &Arc<Hub>) {
     let hub = hub.clone();
     tokio::spawn(async move {
-        let started = crate::store::now_ms();
-        let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
-        let read = tokio::task::spawn_blocking(move || {
-            listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s, &listed)?))).collect::<HashMap<_, _>>()
-        });
-        if let Ok(now) = read.await
-            && hub.network.sessions.renew_live(now, started)
-        {
-            emit(&hub);
+        let mut every = tokio::time::interval(LIVE_EVERY);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            every.tick().await;
+            look_again(hub.clone()).await;
         }
     });
+}
+
+async fn look_again(hub: Arc<Hub>) {
+    let started = crate::store::now_ms();
+    let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
+    if listed.is_empty() {
+        return;
+    }
+    let read = tokio::task::spawn_blocking(move || {
+        listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s, &listed)?))).collect::<HashMap<_, _>>()
+    });
+    if let Ok(now) = read.await
+        && hub.network.sessions.renew_live(now, started)
+    {
+        emit(&hub);
+    }
 }
 
 /// The coding agents' sessions on this computer the apps show (`Sessions::listed`), a rule that

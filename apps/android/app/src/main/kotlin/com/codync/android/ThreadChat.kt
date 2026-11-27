@@ -246,7 +246,7 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
         GlassBackButton(back)
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                if (bot.plain) AgentIcon(agentRegistry(state, task.agent ?: bot.backend), 18.dp) else BotAvatar(bot, state.bots, 22.dp, animated = false)
+                if (bot.plain) AgentIcon(agentRegistry(state, task.agentOf(bot) ?: bot.backend), 18.dp) else BotAvatar(bot, state.bots, 22.dp, animated = false)
                 Text(task.title, Modifier.semantics { heading() }, style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -269,7 +269,7 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
  * which goes without saying (the desktop's).
  */
 @Composable private fun ThreadRunsOn(bot: Bot, task: WorkTask, state: AppState) {
-    val agent = task.agent ?: bot.backend
+    val agent = task.agentOf(bot) ?: bot.backend
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AgentIcon(agentRegistry(state, agent), 14.dp)

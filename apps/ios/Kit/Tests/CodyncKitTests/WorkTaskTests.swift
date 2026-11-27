@@ -42,6 +42,14 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(work[0].timeTaken == nil)
     }
 
+    @Test func aTaskNamesTheAgentItsThreadRunsOn() throws {
+        let owner = try bot(#","backend":"claude","work":[{"id":"a","status":"working","runsOn":"codex"},{"id":"b","status":"waiting"},{"id":"c","status":"working","runsOn":"","agent":"gemini"}]"#)
+        #expect(owner.work.map { $0.agent(of: owner) } == ["codex", "claude", "gemini"])
+        var plain = owner
+        plain.plain = true
+        #expect(owner.work[1].agent(of: plain) == nil, "the box of threads without a bot has no agent of its own")
+    }
+
     @Test func aHostFromBeforeTheBoxHasNoWorkAndNoSetting() throws {
         let old = try bot(#","tasks":[{"id":"task-1","title":"Fix login","status":"working"}]"#)
         #expect(old.work.isEmpty)

@@ -17,14 +17,15 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Bot 分頁的篩選選單新增「依電腦分組」和「依狀態排序」；「將有新動態的機器人移到最前面」改成這裡的「依最近活動排序」，不再放在管理電腦裡。
 - Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方；Threads 分頁也一樣。
 - 換 Bot 的 agent 或登入設定檔後，新的 agent 不再從零開始：下一則訊息會帶上目前對話的摘要。送出前聊天裡會出現「脈絡交接待進行」的分隔線，標出從哪個 agent 換到哪個，送出後可以點開看帶了什麼。
-- 新增 Workflows 分頁（圖示和電腦版相同）：查看這台電腦的 workflow、它的步驟、觸發條件和執行紀錄，並直接核准或拒絕等待你核准的步驟。右上角可以用標題搜尋 workflow，有多台電腦時可以切換電腦。Workflow 在電腦版建立和編輯；長按 workflow 可以釘選到 Bot 列表上方。
+- 新增 Workflows 分頁（圖示和電腦版相同）：查看這台電腦的 workflow、它的步驟、觸發條件和執行紀錄，並直接核准或拒絕等待你核准的步驟。右上角可以用標題搜尋 workflow，有多台電腦時可以切換電腦。等待核准的通知會直接打開那個步驟，在電腦版單獨執行的步驟也一樣。Workflow 在電腦版建立和編輯；長按 workflow 可以釘選到 Bot 列表上方。
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 在 Bot 列表長按刪除 Bot 或群組聊天，確認後會真的刪掉。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
 - 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開模型面板，不必進 Bot 設定：上方選 agent，模型列滿整個畫面並附上說明（較舊的收在「更多模型」），下方一張卡片放推理強度、核准方式和快速模式。模型清單一打開就在，不用再等載入；往下拉可以重新讀取。
 - 在中國大陸也能收到推播通知了。
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。返回和詳情是浮在頂端的玻璃按鈕，內容捲動時在頂端柔和地模糊。
-- 電腦的「網路」頁會列出這台電腦上的程式開發代理會話（Claude Code、Codex 等）：標題、位址和是否正在執行。
+- 電腦的「網路」頁會列出這台電腦上的 agent 會話（Claude Code、Codex 等）：標題、位址和是否正在執行。
+- Threads 分頁的每個 thread 開頭會顯示它正在使用的 coding agent 圖示；切換到備援 agent 時，顯示最後換到的那個。
 
 ### en-US
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
@@ -35,14 +36,15 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - The Bots tab's filter menu adds Group by computer and Sort by status. Move active bots to the top is now Sort by last active there, no longer in Manage computers.
 - The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, and the connection status sits under the title, on the Threads tab too.
 - Changing a bot's agent or login profile no longer starts it from nothing: your next message carries a summary of the conversation. Until then a divider in the chat reads Context handoff pending with both agents; afterwards tap it to see what was carried.
-- A Workflows tab, with the desktop's icon: see a computer's workflows, their steps, triggers and run history, and approve or reject a step that waits for you. Search at the top right finds a workflow by title, and with more computers than one the filter button switches computer. Workflows are built and edited in the desktop app. Long-press a workflow to pin it above the bots.
+- A Workflows tab, with the desktop's icon: see a computer's workflows, their steps, triggers and run history, and approve or reject a step that waits for you. Search at the top right finds a workflow by title, and with more computers than one the filter button switches computer. An approval's notification opens that step, a step run on its own in the desktop app too. Workflows are built and edited in the desktop app. Long-press a workflow to pin it above the bots.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Deleting a bot or group chat from its long-press menu in the bot list works again.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
 - The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the model panel, without opening the bot's settings: the agent at the top, its models full width with what each is for (older ones under More models), and one card with effort, Approvals and Fast mode. The list is there the moment it opens; pull down to read it again.
 - Push notifications now reach phones and computers in mainland China.
 - A thread now opens full screen as a chat, like on the desktop: messages and replies as bubbles, its cards, files and artifacts right there; Details at the top right opens the bot's details. Back and Details float at the top as glass buttons, and the thread fades softly under them as it scrolls.
-- A computer's Network page lists its coding agents' sessions (Claude Code, Codex…) and whether they run.
+- A computer's Network page lists its agents' sessions (Claude Code, Codex…) and whether they run.
+- Each thread on the Threads tab starts with the icon of the coding agent it runs on; after it falls back, the one it switched to.
 
 ## 2.53.0
 ### zh-Hant

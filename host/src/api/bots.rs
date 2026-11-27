@@ -153,7 +153,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // A coding agent's session on this computer that isn't a bot (`codync-host mcp network`).
         "agentCall" => {
             let caller: crate::network::sessions::Caller =
-                serde_json::from_value(b["agent"].clone()).context("agent is {kind, session, process, cwd, hint}")?;
+                serde_json::from_value(b["agent"].clone()).context("agent is {kind, session, process, cwd}")?;
             crate::chat::team::assistant::local_call(hub, &caller, str_arg(&b, "name")?, &b["arguments"]).await?
         }
         // The turn tier: a coding agent's hook asks whether letters wait (`codync-host network hook`).

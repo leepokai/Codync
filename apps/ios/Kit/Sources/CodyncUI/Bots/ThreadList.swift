@@ -54,6 +54,8 @@ public struct ThreadList: View {
             .padding(.bottom, 20)
         }
         .background(Palette.background)
+        // The Bots tab's top edge: the list fades softly under the bar.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .workQuestion($question)
     }
 
@@ -161,6 +163,15 @@ public struct ThreadList: View {
     private func row(_ item: ThreadSections<RosterItem>.Item, label: String?, indent: CGFloat) -> some View {
         Button { open(item) } label: {
             HStack(spacing: 8) {
+                // The coding agent it runs on; its place kept without one, so titles line up.
+                Group {
+                    if let agent = item.task.agent(of: item.of.bot) {
+                        AgentIcon(registry: store(item.of)?.agentRegistry(agent) ?? agent, size: 16)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: 16, height: 16)
                 Text(label ?? item.task.title).foregroundStyle(Palette.text).lineLimit(1)
                 Spacer(minLength: 8)
                 if item.task.status != .done { WorkMark(status: item.task.status) }

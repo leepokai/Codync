@@ -141,7 +141,7 @@ export type HostEvent =
   /** One this app has no use for. */
   | { type: 'skipped' }
   /** A workflow change. It carries no `rev` and never means the event stream is unreadable. */
-  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; enabled?: boolean }
+  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; stepId?: string; enabled?: boolean }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
 
@@ -228,7 +228,14 @@ export function parseEvent(line: string): HostEvent | null {
       const workflowId = raw.workflowId
       if (typeof workflowId !== 'string') return null
       if (change !== 'graph' && change !== 'enabled' && change !== 'run' && change !== 'step' && change !== 'deleted') return null
-      return { type, change, workflowId, runId: typeof raw.runId === 'string' ? raw.runId : null, enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined }
+      return {
+        type,
+        change,
+        workflowId,
+        runId: typeof raw.runId === 'string' ? raw.runId : null,
+        stepId: typeof raw.stepId === 'string' ? raw.stepId : undefined,
+        enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined,
+      }
     }
     default:
       return null

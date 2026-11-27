@@ -180,7 +180,7 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
 }
 
 fn session(kind: codync_network::AgentKind, id: &str) -> Caller {
-    Caller { kind, session: Some(id.into()), process: "1-test".into(), cwd: "/work/api".into(), hint: None }
+    Caller { kind, session: Some(id.into()), process: "1-test".into(), cwd: "/work/api".into() }
 }
 
 #[tokio::test]

@@ -152,8 +152,8 @@ that was off learns of a removal.
   `codync-host mcp network` (stdio MCP, local API `agentCall`, loopback only; [sessions](#coding-agents-sessions)).
   They get the cloud assistant's tools (`chat/team/assistant.rs`) under their address ("Message from api-claude (this
   computer)"), with their own replies and no cloud switch or per-bot cloud scope; letters elsewhere are sent as
-  `<address>@<computer>`. They also get `whoami`, `set_name` and `check_inbox` (`chat/team/mailbox.rs`). Add it with
-  `claude mcp add codync -- codync-host mcp network`.
+  `<address>@<computer>`. They also get `whoami`, `set_name` and `check_inbox` (`chat/team/mailbox.rs`). Added by
+  `codync-host network setup` (below).
 - Agents that aren't Codync bots use the same letters: the standalone `codync-network` daemon offers Claude Code
   sessions (their inbox socket) and Codex threads (`codex queue`), see the crate README. It keeps its own key in
   `~/.codync-network` (the host's are `~/.codync/network` and `network-…`, one per network), so beside a host it is a computer of its own.
@@ -170,8 +170,7 @@ that was off learns of a removal.
   (`sessionId`) and Antigravity (root conversation id) from each tool call's `_meta`; opencode from
   `ai.opencode/sessionID` when it sends one. No id (pi, Cursor, any other MCP client): the MCP server's process keys
   it, the session is `temporary` (no title in listings, forgotten a day after its last call).
-- **Address**, chosen at the first call that knows the session: `--name` if the server's config gives one (an
-  initial hint, to be removed), else `<git root or folder>-<agent>` (`api-claude`), numbered on a clash (`-2`). It is
+- **Address**, chosen at the first call that knows the session: `<git root or folder>-<agent>` (`api-claude`), numbered on a clash (`-2`). It is
   reserved in the bots' address book (kv `network_handles`, owner `session:<key>`), so no bot or session ever takes
   it, also after `set_name` retires it. The same session id gets the same address and its waiting mail; the agent's
   title never changes it. A session unseen for 30 days with no mail waiting is forgotten (its address stays
@@ -194,13 +193,23 @@ that was off learns of a removal.
   is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook raises the
   session's tier to `turn`. What each agent reads back is `codync_network::hooks` (Codex and Grok:
   `hookSpecificOutput.additionalContext`, Codex refusing any other field; Copilot CLI: top-level
-  `additionalContext`). Checked end to end with each agent's CLI on aimock. Adding the hooks (the setup command) is
-  phase 5; until then, by hand:
-  - Codex `~/.codex/hooks.json`, then approve them once in `/hooks`:
-    `{"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "codync-host network hook codex"}]}], "Stop": [same]}}`
-  - Grok `~/.grok/hooks/codync.json`: the same, with `hook grok`.
-  - Copilot CLI `~/.copilot/hooks/codync.json`:
-    `{"version": 1, "hooks": {"PostToolUse": [{"type": "command", "bash": "codync-host network hook copilot"}], "Stop": [same]}}`
+  `additionalContext`). Checked end to end with each agent's CLI on aimock. 
+- **Setup** (`codync-host network setup [agent…] [--remove]`, `network_cli/setup.rs`): with no agent named, every
+  one installed here (Claude Code, Codex, Copilot CLI, Grok, pi, Antigravity, Cursor, opencode). The MCP server goes in
+  as `codync` = this binary's own path (Homebrew's `bin` link rather than its versioned keg) + `mcp network` (`--port` when not the default), through the agent's own
+  `mcp add` (user scope), or into its file where it has none (Cursor `~/.cursor/mcp.json`, opencode
+  `opencode.jsonc` or `opencode.json` in its config folder, edited only while it parses as plain JSON). Hooks (macOS and Linux): Copilot CLI and Grok get a
+  file of our own (`~/.copilot/hooks/codync.json`, `~/.grok/hooks/codync.json`); Codex's shared `hooks.json` gets
+  one group per event appended last, an older one of ours replaced in place, since Codex trusts each hook by its
+  place (approve them once in `/hooks`). The agent's config is read first: a `codync` entry that isn't a
+  `codync-host … mcp network` server is left alone and reported, one of ours at another path or with other
+  arguments is replaced (also a Claude Code project's own, local-scope one, which wins over the user's: removed with
+  `claude mcp remove -s local` in that folder), a file that doesn't parse is never written. Each agent's config folder
+  follows its variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`,
+  `XDG_CONFIG_HOME`); a file reached through a link is written at its target with its mode kept. A host on another data folder (`CODYNC_HOME`, a sandbox) isn't reached: the agents start the server without that variable, and setup says so. Running it again changes nothing; `--remove`
+  takes out only ours. Works without the host; each agent's outcome is counted through `track` when it runs
+  (`network_setup`, with the failure's category). A server added by hand with the old `--name` flag no longer starts;
+  running setup replaces it.
 - **Other computers**: a session is offered to a network only when one of its rules is an `allow` naming the
   session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. Its letters, too, pass only a rule
   that names it (`rules::mailbox_access`: a `*` allow doesn't open it, while a `*` deny or ceiling still applies;
@@ -239,7 +248,8 @@ that was off learns of a removal.
   else `online`/`offline` by whether its MCP server's process (pid and start time, `Caller::running`) still runs;
   none on Windows. The host sends them in order, running first (`runs`), then the most recent, and marks `older`
   the ones neither running nor called in the last day. The state is kept in memory for the listed sessions only,
-  read again off the async workers when `networkView` is asked (not while a page stays open), and a change is a
+  read again off the async workers when `networkView` is asked and every 10 s while the host runs
+  (`api::follow_live`, so a page left open follows its sessions), and a change is a
   `network` event; so is a new session, a new title or a rename. Every client shows them on its Network page
   (desktop `SessionsCard`, for its own computer only; iPhone and Android `NetworkSheet`, for the computer open;
   TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as
@@ -363,3 +373,4 @@ Planned in order, with what each step touches: [what's left](../plans/codync-net
 - `host/tests/network_e2e.rs`: two real hosts in one network, a bot messaging a bot on the other computer through
   approval and back, a request its recipient's user stops and one that fails, and the view with its per-row
   permissions and the `network` event reaching both computers' apps on a promotion.
+- Local testing with two computers (the Mac and the Lima Linux VM): [codync-network testing](../guides/codync-network-testing.md).

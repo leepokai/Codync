@@ -203,7 +203,7 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
     if body.bottom().saturating_sub(y + below) < 2 {
         return y.saturating_sub(1);
     }
-    line(buf, body, &mut y, &tr("Coding agents"), t.bold);
+    line(buf, body, &mut y, &tr("Agents"), t.bold);
     let room = usize::from(body.bottom().saturating_sub(y + below));
     // The last row says how many more when they don't all fit.
     let fit = if all.len() > room { room.saturating_sub(1) } else { all.len() };
@@ -399,7 +399,7 @@ mod tests {
             buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
         };
         let tall = text(30);
-        assert!(tall.contains("Coding agents") && tall.contains("Working · Checks its mail"), "{tall}");
+        assert!(tall.contains("Agents") && tall.contains("Working · Checks its mail"), "{tall}");
         let at = |s: &str| tall.find(s).unwrap_or(usize::MAX);
         assert!(at("Fix refunds") < at("web-codex") && at("web-codex") < at("infra-codex"), "{tall}");
         assert!(tall.contains("● Fix refunds  billing-claude · Working"), "spaced apart: {tall}");

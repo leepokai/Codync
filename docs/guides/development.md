@@ -48,6 +48,9 @@ not finish the task.
    before the host was ready. Do not report installation complete before both
    checks pass.
 
+For a requested **build and install on the Mac mini**, run `tools/install-dev-mac-mini.sh`:
+[Mac mini testing](mac-mini-testing.md).
+
 This sequence records the Dev installation failure on 2026-10-23: the old host
 was booted out, the app bundle was replaced, but the service was not reloaded
 until the new bundled host's `install` command was run explicitly.
@@ -181,13 +184,13 @@ Versions are defined in `apps/project.yml` (`MARKETING_VERSION`, also in the gen
 
 Greptile reviews every PR into `dev` or `main` when it opens and on each push (`.greptile/config.json`), and posts a *Greptile Review* check beside CI. `@greptileai review` on the PR asks for a fresh review.
 
-A release runs end to end through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". It:
+A release runs through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". The first run stops once the gate passes (outcome `ready`), steps 1–3; steps 4–5 run only when the maintainer explicitly says to merge, as a rerun with `{merge: true}` that picks up the open release PR, rechecks its gate (skipping the real-agent check its body already records) and merges. It:
 
 1. Reads what `dev` holds against `main`: the version, whether shipped code (`apps/`, `host/`, `packaging/`) changed, `MIN_APP`, `cloud/`, the crates, the store notes and the open PRs into `main`. A `MIN_APP` raise stops it to ask first (rerun with `{allowMinAppRaise: true}`).
 2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. An open `release/X.Y.Z` PR of our own is picked up instead of cutting a new one, and a release PR opened straight from `dev` is closed as superseded; any other PR into `main` is neither gated nor merged, only reported. On that branch it bumps the version when shipped code changed and the version isn't ahead of the latest tag (docs, `web/`, `cloud/`, `relay/` and CI-only releases don't bump, so they get no tag), raises the crates, writes the missing WhatsNew sections, runs the agent check once when shipped code changed (aimock for every covered agent, a real turn only for Cursor: [test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
 3. Works the gate, at most four rounds: `tools/pr-gate.py` on the head, then every failing check, the findings in Greptile's summary of that head and every unresolved Greptile review thread, whatever commit it was left on (a later push doesn't fix it), are checked against the code and fixed on the release branch, not routed to the owning agent, and those fixes go through `after-change` before the next round commits them; each thread fixed or refuted gets a reply and is resolved, and a known flaky test is rerun once. It stops to ask about a finding that needs a product decision, and stops when the gate still fails after four rounds or when a failing round leaves nothing fixed or rerun.
-4. When `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
-5. Merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
+4. Only with `{merge: true}`: when `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
+5. Only with `{merge: true}`: merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
 
 `node tools/release-pr-test.mjs` checks the workflow's routing with canned agent results.
 

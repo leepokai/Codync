@@ -65,8 +65,6 @@ pub struct Caller {
     /// The MCP server's process (`<pid>-<nonce>`), which keys a session without an id.
     pub process: String,
     pub cwd: String,
-    /// An address asked for in the server's config (`--name`), used once, at registration.
-    pub hint: Option<String>,
 }
 
 /// The key of `kind`'s session `id`.
@@ -98,8 +96,7 @@ impl Caller {
     /// Reads files: call it off the async workers.
     pub fn look(&self) -> (Info, String) {
         let info = self.session.as_deref().map(|id| info(self.kind, id)).unwrap_or_default();
-        let base = self.hint.as_deref().map_or_else(|| default_address(self), crate::network::handle);
-        (info, base)
+        (info, default_address(self))
     }
 }
 

@@ -164,3 +164,116 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
     assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+async fn mock_icon_cloud() -> String {
+    let router = axum::Router::new().route(
+        "/v1/host/icons/{slot}",
+        axum::routing::put(|| async { axum::http::StatusCode::OK }).delete(|| async { axum::http::StatusCode::OK }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    url
+}
+
+#[tokio::test]
+async fn create_and_update_bot_support_avatar_image_validation_persistence_and_clear() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let cloud_url = mock_icon_cloud().await;
+    hub.store.kv_set("test_cloud_url", &cloud_url).unwrap();
+
+    assert!(arguments().contains("avatarImage"));
+
+    let svg_red = br##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#ff0000"/></svg>"##;
+    let svg_blue = br##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#0000ff"/></svg>"##;
+    let red_data_url = format!("data:image/svg+xml;base64,{}", STANDARD.encode(svg_red));
+    let blue_raw_b64 = STANDARD.encode(svg_blue);
+
+    // Pre-validation rejects invalid formats and oversized payloads before creating any bot.
+    let bots_before = hub.store.bots().unwrap().len();
+    let big_svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\"><!--{}--></svg>",
+        "a".repeat(257 * 1024)
+    );
+    for (label, bad_avatar) in [
+        ("non-image bytes", json!(format!("data:image/png;base64,{}", STANDARD.encode(b"not an image")))),
+        ("wrong mime", json!(format!("data:text/plain;base64,{}", STANDARD.encode(svg_red)))),
+        ("non-base64 data url", json!("data:image/svg+xml,<svg/>")),
+        ("invalid base64", json!("not!valid!base64")),
+        ("oversized svg", json!(format!("data:image/svg+xml;base64,{}", STANDARD.encode(big_svg.as_bytes())))),
+        ("non-string", json!(123)),
+    ] {
+        let err =
+            call(&hub, "lead", "create_bot", &json!({"name": "BadBot", "avatarImage": bad_avatar})).await.unwrap_err();
+        assert_eq!(err.downcast_ref::<Refused>().map(|r| r.category), Some("avatar"), "{label}: {err}");
+    }
+    assert_eq!(hub.store.bots().unwrap().len(), bots_before, "rejected avatarImage creates no bot");
+
+    // create_bot with valid data URL saves normalized icon under bot:<id>.
+    let mut png_bytes = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(4, 4).write_to(&mut png_bytes, image::ImageFormat::Png).unwrap();
+    let png_data_url = format!("data:image/png;base64,{}", STANDARD.encode(png_bytes.into_inner()));
+    let mut card_fields = setup_patch(&json!({"name": "CardBot"}), &[]).unwrap();
+    card_fields.insert("avatarImage".into(), "custom image".into());
+    let card_text = describe(&hub.store, &card_fields, &[]);
+    assert!(card_text.contains("Avatar image: custom image"), "{card_text}");
+
+    let made =
+        call(&hub, "lead", "create_bot", &json!({"name": "IconBot", "agent": "claude", "avatarImage": red_data_url}))
+            .await
+            .unwrap();
+    let id = made["bot"]["id"].as_str().unwrap().to_owned();
+    let key = format!("bot:{id}");
+    let first_url = crate::icons::snapshot(&hub.store).unwrap().icons.get(&key).expect("icon saved").data_url.clone();
+    assert!(first_url.starts_with("data:image/png;base64,"));
+
+    // update_bot with PNG data URL and raw base64 SVG both update the icon cleanly.
+    call(&hub, "lead", "update_bot", &json!({"botId": id, "avatarImage": png_data_url})).await.unwrap();
+    let png_url = crate::icons::snapshot(&hub.store).unwrap().icons.get(&key).expect("png icon saved").data_url.clone();
+    assert!(png_url.starts_with("data:image/png;base64,"));
+    assert_ne!(png_url, first_url);
+
+    // update_bot with raw base64 updates the icon even when no BotConfig fields change.
+    call(&hub, "lead", "update_bot", &json!({"botId": id, "avatarImage": blue_raw_b64})).await.unwrap();
+    let second_url =
+        crate::icons::snapshot(&hub.store).unwrap().icons.get(&key).expect("icon updated").data_url.clone();
+    assert!(second_url.starts_with("data:image/png;base64,"));
+    assert_ne!(second_url, first_url);
+
+    // update_bot with empty string removes custom icon.
+    call(&hub, "lead", "update_bot", &json!({"botId": id, "avatarImage": ""})).await.unwrap();
+    assert!(!crate::icons::snapshot(&hub.store).unwrap().icons.contains_key(&key));
+
+    assert_eq!(
+        notices(&hub, "lead"),
+        [
+            json!("Created bot IconBot"),
+            json!("Updated IconBot: avatar image"),
+            json!("Updated IconBot: avatar image"),
+            json!("Updated IconBot: avatar image"),
+        ]
+    );
+
+    // If icons::set fails after create_bot (e.g. cloud off), the newly created bot is rolled back cleanly.
+    hub.store.kv_set("test_cloud_url", "").unwrap();
+    let live_before: Vec<String> =
+        hub.store.bots().unwrap().into_iter().filter(|b| !b.deleted).map(|b| b.config.id).collect();
+    let err = call(
+        &hub,
+        "lead",
+        "create_bot",
+        &json!({"name": "RollbackBot", "agent": "claude", "avatarImage": red_data_url}),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("rolled back"), "{err:#}");
+    let live_after: Vec<String> =
+        hub.store.bots().unwrap().into_iter().filter(|b| !b.deleted).map(|b| b.config.id).collect();
+    assert_eq!(live_after, live_before, "bot was rolled back on icon save failure");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

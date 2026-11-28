@@ -3,13 +3,13 @@ use anyhow::{Context, Result, bail, ensure};
 use image::{DynamicImage, ImageDecoder as _, ImageFormat, ImageReader, Limits};
 use std::io::Cursor;
 
-pub(super) const MAX_INPUT: usize = 5 * 1024 * 1024;
+pub(crate) const MAX_INPUT: usize = 5 * 1024 * 1024;
 pub(super) const MAX_PNG: usize = 48 * 1024;
 const MAX_SIDE: u32 = 4096;
 const ICON_SIDE: u32 = 256;
 const MAX_SVG: usize = 256 * 1024;
 
-pub(super) fn normalize(bytes: &[u8]) -> Result<Vec<u8>> {
+pub(crate) fn normalize(bytes: &[u8]) -> Result<Vec<u8>> {
     ensure!(!bytes.is_empty() && bytes.len() <= MAX_INPUT, "Choose an image up to 5 MiB");
     let image = match image::guess_format(bytes) {
         Ok(format @ (ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP)) => {

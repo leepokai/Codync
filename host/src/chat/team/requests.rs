@@ -229,6 +229,13 @@ impl Requests {
         }
     }
 
+    /// `bot` was deleted: everything the hop limit kept for it goes too. Without this, [`Self::user_message_started`]
+    /// leaves one entry per bot that ever ran, and `actors` grows for the life of the process. A lift the deleted bot
+    /// held is gone with it: no approval can reach it any more.
+    pub fn forget(&self, bot: &str) {
+        self.0.locked().actors.remove(bot);
+    }
+
     /// A clarification wake that queued but whose turn failed to start: the question never reached the bot,
     /// so the lead may ask again.
     pub fn abandon_open_ask(&self, actor: &str) {
@@ -843,6 +850,32 @@ mod tests {
         requests.user_message_started("a");
         assert_eq!(requests.generation("a"), 1);
         assert!(requests.open_lift("sender", "a", 1).is_some());
+    }
+
+    #[test]
+    fn a_deleted_bot_leaves_no_entry_behind() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(0));
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.user_message_started("a");
+        requests.control("a", true);
+        assert!(requests.first_stop("a"));
+        assert_eq!(requests.generation("a"), 1);
+
+        requests.end_turn("a");
+        requests.forget("a");
+
+        let state = requests.0.locked();
+        assert!(state.actors.is_empty(), "a deleted bot keeps no hop-limit entry");
+        assert!(state.active.is_empty());
+        assert!(state.stopped.is_empty());
+        drop(state);
+        assert_eq!(requests.generation("a"), 0);
+        assert!(!requests.refusal_open(refusal), "nothing approves a lift for a bot that is gone");
+        assert!(!requests.in_control("a"));
+        // A re-created bot starts clean rather than inheriting the old generation.
+        requests.start_turn("a", Turn::Chat(0));
+        assert!(requests.open_lift("sender", "a", 0).is_some());
     }
 
     #[test]

@@ -713,6 +713,16 @@ async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
 }
 
 #[tokio::test]
+async fn deleting_a_bot_drops_what_the_hop_limit_kept_for_it() {
+    let f = Fixture::new();
+    f.hub.team.user_message_started("b");
+    assert_eq!(f.hub.team.generation("b"), 1);
+    f.hub.delete_bot("b").unwrap();
+    assert_eq!(f.hub.team.generation("b"), 0, "a deleted bot keeps no hop-limit entry");
+    f.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_member_in_a_room_turn_mentions_instead_of_messaging() {
     let f = Fixture::new();
     f.hub.set_runtime("a", |r| r.lane = Some(Lane::main("crew")));

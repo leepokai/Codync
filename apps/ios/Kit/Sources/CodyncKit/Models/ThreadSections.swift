@@ -112,6 +112,8 @@ public struct ThreadSections<Row> {
             if task.source?.kind == .routine {
                 return Group(key: "routine:\(key(row.of)):\(task.source?.id ?? task.title)", kind: .routine, title: task.title)
             }
+            // Every thread in a folder Codync made for it, in one group.
+            if task.ownFolder { return Group(key: "folder:own", kind: .folder, title: L10n.tr("Own folder")) }
             // A thread in its own worktree, or in its bot's folder, works where its bot does.
             guard task.worktree == nil, let path = task.wherePath, path != owner.cwd else { return nil }
             return Group(key: "folder:\(path)", kind: .folder, title: path.folderName)

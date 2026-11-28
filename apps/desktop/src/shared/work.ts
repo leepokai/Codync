@@ -54,6 +54,8 @@ export interface WorkTask {
   worktree: { branch: string; path: string } | null
   /** The folder its thread works in (the worktree's, for one in a worktree); null until a thread took it. */
   folder: string | null
+  /** `folder` is the one Codync made for a thread without a bot, shown as "Own folder"; false from an older host. */
+  ownFolder: boolean
   /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
   /** The agent a thread the user started runs on, where it isn't its bot's (always without a bot). */
@@ -67,6 +69,19 @@ export interface WorkTask {
   runsOn: string | null
   /** The outside app that started it over MCP (the name the user gave it); null for any other, and from an older host. */
   startedBy?: string | null
+  /** What its thread's agent runs in the background (a command, a workflow, a monitor), oldest first: the task waits
+   * on it. Empty from an older host, and for an agent that doesn't say. */
+  background: BackgroundTask[]
+}
+
+/** A piece of work a thread's agent reports running in the background. */
+export interface BackgroundTask {
+  id: string
+  /** What the agent calls it: a workflow's name, a command's description. */
+  name: string
+  /** What it does now, when the agent says (a workflow's phase and agent). */
+  activity: string | null
+  startedAt: number
 }
 
 /** "Started by <app> (MCP)" for a thread an outside app started, else null. */
@@ -97,7 +112,7 @@ export interface ThreadSetup {
 }
 
 type Translate = (text: string) => string
-type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree' | 'startedBy'>> & { startedBy?: { label?: string } | null } & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
+type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree' | 'startedBy' | 'background'>> & { startedBy?: { label?: string } | null } & { background?: unknown } & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
 /** `bot.work`; a host from before the box sends none, and the feature doesn't show. A task in a status this app
  * doesn't know is left out. */
@@ -121,15 +136,42 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           worktree: t.worktree?.branch ? { branch: t.worktree.branch, path: t.worktree.path ?? '' } : null,
           source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
           folder: t.folder || null,
+          ownFolder: t.ownFolder === true,
           talk: t.talk ?? false,
           agent: typeof t.agent === 'string' ? t.agent : null,
           talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
           runsOn: typeof t.runsOn === 'string' && t.runsOn ? t.runsOn : null,
           ...(typeof t.startedBy?.label === 'string' && t.startedBy.label ? { startedBy: t.startedBy.label } : {}),
+          background: normalizeBackground(t.background),
         }]
       : [],
   )
+}
+
+function normalizeBackground(raw: unknown): BackgroundTask[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as (Partial<BackgroundTask> | null)[]).flatMap((t) =>
+    t && typeof t.id === 'string'
+      ? [{
+          id: t.id,
+          name: t.name ?? '',
+          activity: t.activity || null,
+          startedAt: t.startedAt ?? 0,
+        }]
+      : [],
+  )
+}
+
+/** The capsule over a thread's message box while its agent runs work in the background: what the one piece does, or
+ * the names of several, since the oldest began. Null while nothing runs there. */
+export function backgroundLabel(task: WorkTask): { text: string; since: number } | null {
+  const [first] = task.background
+  if (!first) return null
+  const text = task.background.length === 1
+    ? [first.name, first.activity].filter(Boolean).join(' · ')
+    : task.background.map((t) => t.name).join(', ')
+  return { text, since: first.startedAt }
 }
 
 /** `bot.maxThreads`, within 1 to 6; null from a host before the box. */
@@ -165,6 +207,10 @@ export interface ThreadRowOf<T> {
   of: T
   task: WorkTask
 }
+
+/** The one Threads group of every thread that works in a folder Codync made for it (`ownFolder`): titled "Own folder",
+ * a phrase the view looks up. */
+export const OWN_FOLDER_GROUP = 'folder:own'
 
 /** One group of the Threads page: a folder a thread works in outside its bot's own, a routine's runs, a bot, or a
  * computer. */
@@ -204,6 +250,7 @@ export function threadSections<T extends { bot: { work: WorkTask[]; name: string
       : grouping === 'computer' ? { key: `computer:${computerOf(of)}`, kind: 'computer', title: computerOf(of) }
       : grouping === 'none' ? null
       : task.source?.kind === 'routine' ? { key: `routine:${keyOf(of)}:${task.source.id ?? task.title}`, kind: 'routine', title: task.title }
+      : task.ownFolder ? { key: OWN_FOLDER_GROUP, kind: 'folder', title: 'Own folder' }
       : path && !task.worktree && path !== of.bot.cwd ? { key: `folder:${path}`, kind: 'folder', title: path.split(/[\\/]/).filter(Boolean).pop() ?? path }
       : null
     if (!group) recent.push(row)
@@ -450,16 +497,17 @@ export function readOnlyReason(task: Pick<WorkTask, 'talk' | 'source'>): string 
   }
 }
 
-/** Where a task's thread works, in one quiet line. */
+/** Where a task's thread works, in one quiet line; `own`'s text is a phrase to look up. */
 export interface WhereLine {
-  kind: 'folder' | 'branch'
+  kind: 'folder' | 'branch' | 'own'
   text: string
 }
 
-/** The branch when the task has a worktree of its own, else its folder with the home folder as `~`. Null for a task
- * no thread has taken. */
-export function whereLine(task: Pick<WorkTask, 'folder' | 'worktree'>, home: string): WhereLine | null {
+/** The branch when the task has a worktree of its own, else its folder with the home folder as `~` ("Own folder" for
+ * the one Codync made for it). Null for a task no thread has taken. */
+export function whereLine(task: Pick<WorkTask, 'folder' | 'worktree' | 'ownFolder'>, home: string): WhereLine | null {
   if (task.worktree) return { kind: 'branch', text: task.worktree.branch }
+  if (task.folder && task.ownFolder) return { kind: 'own', text: 'Own folder' }
   return task.folder ? { kind: 'folder', text: homeRelative(task.folder, home) } : null
 }
 

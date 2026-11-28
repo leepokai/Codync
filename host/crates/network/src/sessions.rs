@@ -4,7 +4,7 @@
 //! tells it: Claude Code, Copilot CLI and Grok in the environment, Codex and Antigravity with each tool
 //! call (`_meta`). The kind comes from the client's own name, never from the environment alone: an
 //! agent started from a Claude Code shell inherits that session's variables.
-//! ([agent sessions](../../../docs/plans/agent-sessions.md))
+//! ([agent sessions](https://github.com/leepokai/Codync/blob/dev/docs/plans/agent-sessions.md))
 
 use crate::reach::{ClaudeSession, claude_dir, claude_sessions};
 use crate::wire::AgentKind;

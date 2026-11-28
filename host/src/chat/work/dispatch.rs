@@ -148,10 +148,12 @@ fn turn_runs(hub: &Hub, id: &str, over: Option<&str>) -> bool {
     over != Some(id) && matches!(hub.runtime(id).status, BotStatus::Working | BotStatus::NeedsInput)
 }
 
+/// A thread busy with its agent's background work is busy with its task, which waits on it (`Outcome::Waiting`); one
+/// with no task ends with that work all the same.
 pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> ThreadState {
     if !hub.has_actor(thread) {
         ThreadState::Gone
-    } else if turn_runs(hub, thread, over) {
+    } else if turn_runs(hub, thread, over) || !hub.runtime(thread).background.is_empty() {
         ThreadState::Busy
     } else {
         ThreadState::Idle

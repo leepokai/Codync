@@ -24,6 +24,7 @@ import { CONVERSATION_MIN } from './side-panel-width'
 import { SideChat } from './ChatView'
 import { DetailsPanel } from './DetailsPanel'
 import { ChatLog, useDockHeight } from './ChatLog'
+import { BackgroundCapsule } from './BackgroundCapsule'
 import { AgentBubble, ChatRow, TimeSeparator } from './ChatRows'
 import { Composer } from './Composer'
 import { PanelBarButtons } from './PanelBarButtons'
@@ -50,7 +51,7 @@ const NEW_PANE: Pane = { tabs: [], shown: null }
 /**
  * A thread as the window shows it, in the chat's own form: its messages as the chat's bubbles, what its task put in
  * the bot's chat (a card to answer, a file, an artifact) as the chat's own rows, the working line with the turn's
- * steps, and the chat's message box, which writes to the thread, with the agent it runs on and where it works in the box's
+ * steps, what its agent runs in the background in a capsule over the box, and the chat's message box, which writes to the thread, with the agent it runs on and where it works in the box's
  * row. Its title, status and the panel's toggle are in the window's bar (as a tab of a bot's panel, with no bar, the
  * status sits on top and the tab names it); the panel beside it is its bot's own (Details, Computer, Library, Memory, Settings, Browser, Terminal in the thread's
  * folder, Side chat with the bot, its other threads), a thread without a bot's a Browser and a Terminal; what the panel shows in the chat opens the bot's chat; where it works sits over the box. A routine's run or another bot's request says it is read only.
@@ -173,6 +174,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
           <div className="composer-fade" />
           {artifactId ? null : (
             <>
+              <BackgroundCapsule task={task} />
               {task.talk ? (
                 <Composer
                   botId={bot.id}

@@ -10,13 +10,16 @@ reach you while a turn runs. Before work that needs more than a few tool calls (
 running builds or tests, research, writing a document), call add_task(title, brief) first, then say in a sentence that \
 it is under way and end your turn. One of your threads does it away from this chat, in a session of its own that \
 sees nothing of this chat: write the brief so it stands alone (the goal, what you know, the user's words that matter, \
-what done looks like). Its report comes back to you as a message, and you tell the user what it found. Add one task per piece of work: \
+what done looks like). Its report comes back to you as a message by itself, and you tell the user what it found; \
+Codync's watchdog wakes you if a task loops, keeps failing or stalls between tool calls. So don't set a follow-up to \
+wait for a task or check on it, unless the user asked you to check back at a time. Add one task per piece of work: \
 tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
 work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
 its brief or stops it. tell_task passes words on to a task without starting it again: what the user adds about work \
-under way, a fact it needs. ask_task asks a working task a short question and gives you its answer. recall_task \
-looks back at your tasks, ended ones too, up to 30 days: what one was asked, what it found and its thread's steps. Only \
-quick answers and work of a few tool calls you do here yourself.";
+under way, a fact it needs. ask_task asks a working task a short question and gives you its answer; a task that asks \
+you something (ask_chat) waits for answer_task. recall_task looks back at your tasks, ended ones too, up to 30 days: \
+what one was asked, what it found and its thread's steps. Only quick answers and work of a few tool calls you do here \
+yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.
@@ -59,6 +62,15 @@ pub(super) fn wait_for(running: &str) -> String {
          yet. Wait for it here, in the foreground, without starting it again, then end with your report of what it \
          found; if it already finished, end with that report now. If you end your turn again while it still runs, \
          your task ends as stopped early.]"
+    )
+}
+
+/// What a thread is told when background work it ran (`name`) was stopped while its task waited on it: its agent
+/// hears nothing of a stop, so the host asks for the report (`work::ask_report`).
+pub(super) fn report_after_stop(name: &str) -> String {
+    format!(
+        "[Codync: your background work \"{name}\" was stopped before it finished, and nothing else of yours still \
+         runs. End with your report: what you did, what it found before it stopped, and what is left.]"
     )
 }
 
@@ -116,6 +128,18 @@ pub(super) fn late_answer(title: &str, task: &str, question: &str, answer: &str)
          your call stopped waiting.]\n{answer}\n\n[Codync: this is your thread's answer, not the user speaking: act on \
          it if it matters, and tell the user only what they need to know.]",
         super::ask::TOOL
+    )
+}
+
+/// The turn a thread's question to its bot (`ask_chat`) starts in the bot's chat.
+pub(super) fn question(title: &str, task: &str, question: &str) -> String {
+    format!(
+        "[Codync: your task \"{title}\" ({task}) asks you this while it works, and waits for your answer:]\n\
+         {question}\n\n[Codync: this is your thread asking, not the user. Answer it with {}(task, answer) from what \
+         you know: this chat, your memory, the files. What only the user can decide, such as a permission or their \
+         own preference, say so in your answer: the task asks them itself. Once answered, reply with only (pass) \
+         unless the user needs to know.]",
+        super::ask_chat::ANSWER
     )
 }
 

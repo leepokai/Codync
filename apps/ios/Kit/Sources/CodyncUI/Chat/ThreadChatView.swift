@@ -64,7 +64,8 @@ public extension View {
 
 /// A task's thread in the chat's own form, the desktop's `ThreadChat`: the user's messages and the thread's replies as
 /// the chat's bubbles, what it put in the bot's chat (a card to answer, a file, an artifact) as the chat's own rows,
-/// what it was told folded on top, and while it works the chat's working line with its steps. On top: Back, the bot
+/// what it was told folded on top, and while it works the chat's working line with its steps and, over the composer,
+/// what its agent runs in the background. On top: Back, the bot
 /// (a thread without a bot: its agent) and the title over how it stands, and Details for the bot's details. Under it:
 /// the chat's composer writing to the thread, with the agent it runs on and where it works; for a routine's run or
 /// another bot's request, why it is read only, and Stop while it runs.
@@ -86,6 +87,7 @@ struct ThreadChatView: View {
     @State private var artifact: ArtifactTarget?
     @State private var botChat: BotChatTarget?
     @State private var viewingImage: ImageViewing?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// What reads the transcript again: Try again, a thread taking the task, the task ending, and the link coming back
     /// (its catch-up carries no thread entries).
@@ -224,9 +226,21 @@ struct ThreadChatView: View {
         }
     }
 
-    /// The composer for a task that takes messages (its Stop stops the thread, asking first); for a routine's run or
-    /// another bot's request, why it doesn't, with Stop while it runs.
+    /// Over the composer, what its agent runs in the background; then the composer for a task that takes messages
+    /// (its Stop stops the thread, asking first); for a routine's run or another bot's request, why it doesn't, with
+    /// Stop while it runs.
     @ViewBuilder private func footer(_ task: WorkTask, queued: [Entry]) -> some View {
+        VStack(spacing: 6) {
+            if let label = task.backgroundLabel {
+                BackgroundCapsule(label: label)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            composer(task, queued: queued)
+        }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: task.background.isEmpty)
+    }
+
+    @ViewBuilder private func composer(_ task: WorkTask, queued: [Entry]) -> some View {
         if takesMessages(task) {
             Composer(botId: botId, replyingTo: .constant(nil), queued: queued, stopThread: { confirmingStop = true })
                 .disabled(model.isOffline)

@@ -23,6 +23,15 @@ async fn wait<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
     }
 }
 
+/// Removes `folder` once nothing holds it: Windows refuses while the run's agent still has it open (#603).
+async fn remove(folder: &Path) {
+    wait("the folder to go", async || {
+        let _ = std::fs::remove_dir_all(folder);
+        (!folder.exists()).then_some(())
+    })
+    .await;
+}
+
 async fn history(host: &Host, bot: &str) -> Vec<Value> {
     host.call("history", json!({"botId": bot})).await["entries"].as_array().unwrap().clone()
 }
@@ -273,28 +282,115 @@ async fn a_task_whose_thread_ends_its_turn_while_its_background_work_runs_is_not
     assert_eq!(asked.count(), 1, "asked once to wait");
 }
 
-/// #634: a Claude subagent launched in the background holds its task the same way, and the thread waits for it in the
-/// same agent process and session, which nothing closes or stops meanwhile (that would end the subagent).
+/// Work its agent reports running in the background (Claude's adapter, `asyncTasks`, asked for by a thread only)
+/// holds its task between turns without a word to the thread: it shows on the task, the agent stays, and the turn the
+/// agent begins by itself once that work ends is the thread's, whose last message is the report.
+#[cfg(unix)]
 #[tokio::test]
-async fn a_background_subagent_holds_its_task_in_the_same_session() {
+async fn a_workflow_its_agent_reports_holds_its_task_until_the_agents_own_turn_reports() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
-    host.reply(&bot, "ADD Review|SUBAGENT").await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let thread = working["thread"].clone();
+    let progress = "Report Review: briefed; no chat; started the workflow, waiting for it to finish";
+    wait("the thread's turn to end", async || {
+        finals(&host, &bot, &thread).await.contains(&progress.into()).then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let now = work(&host, &bot).await.into_iter().find(|i| i["title"] == "Review").unwrap();
+    release(&host, &bot, "review");
+    assert_eq!(now["status"], "working", "the workflow still runs: {now}");
+    assert_eq!(now["activity"], "Review: diff", "what it does now is the workflow's: {now}");
+    let background = &now["background"][0];
+    assert_eq!((&background["kind"], &background["name"]), (&json!("workflow"), &json!("after-change")), "{now}");
     let done = task(&host, &bot, "Review", "done").await;
-    assert_eq!(done["result"], "Report Review: it finished, all green", "{done}");
+    assert_eq!(done["result"], "Report Review: the workflow passed", "the agent's own turn reported: {done}");
+    assert!(done.get("background").is_none(), "{done}");
     let prompts = host.log(&bot, "prompts.jsonl");
-    let turns: Vec<&Value> = prompts
-        .iter()
-        .filter(|p| {
-            let text = p["text"].as_str().unwrap_or_default();
-            text.contains("[Task]") || text.contains("[Codync: you ended your turn while a subagent")
-        })
-        .collect();
-    assert_eq!(turns.len(), 2, "its task's turn and the one that waits: {prompts:?}");
-    assert_eq!((&turns[0]["session"], &turns[0]["pid"]), (&turns[1]["session"], &turns[1]["pid"]), "same session");
-    let closed = host.log(&bot, "closed.jsonl");
-    let between = closed.iter().any(|c| c["session"] == turns[0]["session"] && c["prompts"].as_u64() < Some(2));
-    assert!(!between, "nothing closed its session before the turn that waits: {closed:?}");
+    let to_thread = prompts.iter().filter(|p| p["session"] != prompts[0]["session"]).count();
+    assert_eq!(to_thread, 1, "the thread was told nothing more than its task: {prompts:?}");
+    let details = host.call("threadEntries", json!({"botId": bot, "threadId": thread})).await;
+    let merged = details["entries"].as_array().into_iter().flatten().any(|e| e["data"]["title"] == "git merge");
+    assert!(merged, "what the agent did by itself is the thread's: {details}");
+    let asked: Vec<bool> = host.log(&bot, "initialize.jsonl").iter().map(|i| i["asyncTasks"] == true).collect();
+    assert!(asked.contains(&true) && asked.contains(&false), "a thread asks, the chat doesn't: {asked:?}");
+}
+
+/// The agent hears nothing of a stop of its background work, so no turn of its own follows: the task that waited on
+/// the last of it asks its thread for the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stopped_workflow_has_its_thread_asked_for_the_report() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review STOP").await;
+    let working = task(&host, &bot, "Review", "working").await;
+    let thread = working["thread"].clone();
+    wait("the thread's turn to end", async || (!finals(&host, &bot, &thread).await.is_empty()).then_some(())).await;
+    release(&host, &bot, "review");
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report after the stop", "{done}");
+}
+
+/// A turn the agent begins by itself just as the thread's turn ends is part of it: the task ends once both have, with
+/// the agent's own turn's last message as the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_turn_the_agent_begins_as_its_threads_turn_ends_joins_it() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review JOIN").await;
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: the workflow passed", "{done}");
+}
+
+/// A server its agent runs in the background, left listening for the user, doesn't hold its task: the turn's last
+/// message is the report.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_server_its_agent_leaves_listening_doesnt_hold_its_task() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    let port = (20_000 + u16::try_from(uuid::Uuid::new_v4().as_u128() % 10_000).unwrap()..32_000)
+        .find(|port| std::net::TcpListener::bind(("127.0.0.1", *port)).is_ok())
+        .unwrap();
+    host.reply(&bot, &format!("ADD Serve|SERVE:{port}")).await;
+    let done = task(&host, &bot, "Serve", "done").await;
+    assert_eq!(done["result"], "Report Serve: briefed; no chat; the dev server runs", "{done}");
+}
+
+/// While its task waits on a workflow its agent reports, the bot's `work_status` names it; a Stop ends it with its
+/// agent, and an agent that dies meanwhile fails the task.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_task_waiting_on_its_agents_workflow_stops_or_fails_with_its_agent() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    let agent_of = |title: &str| task_prompts(&host, &bot, title)[0]["pid"].to_string();
+    let waits = async |title: &str| {
+        let thread = task(&host, &bot, title, "working").await["thread"].clone();
+        wait("the thread's turn to end", async || (!finals(&host, &bot, &thread).await.is_empty()).then_some(())).await;
+    };
+
+    host.reply(&bot, "ADD One|WORKFLOW:one").await;
+    waits("One").await;
+    host.reply(&bot, "STATUS").await;
+    let status = reply(&host, &bot, "Status:").await;
+    assert!(status.contains(r#""inBackground":["after-change"]"#), "{status}");
+    let one = task(&host, &bot, "One", "working").await;
+    host.call("stopWork", json!({"botId": bot, "taskId": id(&one)})).await;
+    let agent = agent_of("One");
+    common::eventually("its agent to stop", Duration::from_secs(10), async || !common::alive(&agent)).await;
+    let stopped = task(&host, &bot, "One", "stopped").await;
+    assert!(stopped.get("background").is_none() && stopped["result"].is_null(), "{stopped}");
+
+    host.reply(&bot, "ADD Two|WORKFLOW:two").await;
+    waits("Two").await;
+    common::kill(&agent_of("Two"));
+    let failed = task(&host, &bot, "Two", "failed").await;
+    assert_eq!(failed["result"], "its agent stopped while its background work still ran", "{failed}");
 }
 
 /// #634: a thread that ends its turn again while its background work still runs, after it was asked to wait, has
@@ -435,6 +531,30 @@ async fn a_thread_waiting_on_the_user_gives_its_seat_to_the_next_task_and_both_r
     })
     .await;
     assert!(reports.contains("Report Asks:") && reports.contains("Report Next:"), "{reports}");
+}
+
+/// A follow-up set while one of the bot's tasks works is still set (the user may have asked for it), and its answer
+/// says the task's report comes by itself; once the task has reported, a follow-up's answer says nothing of it.
+#[tokio::test]
+async fn a_follow_up_set_while_a_task_works_is_set_and_says_its_report_comes_by_itself() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Build|HOLD:build").await;
+    task(&host, &bot, "Build", "working").await;
+    let follow_up = async |note: &str| {
+        let arguments = json!({"minutes": 30, "note": note});
+        host.call("routineCall", json!({"botId": bot, "name": "follow_up", "arguments": arguments})).await
+    };
+    let set = follow_up("Check the Build task").await;
+    assert!(set["followUp"]["id"].is_string(), "{set}");
+    let hint = set["hint"].as_str().expect("a hint");
+    assert!(hint.contains("\"Build\"") && hint.contains("cancel_follow_up"), "{hint}");
+
+    release(&host, &bot, "build");
+    task(&host, &bot, "Build", "done").await;
+    let later = follow_up("Check the deploy").await;
+    assert!(later.get("hint").is_none(), "{later}");
+    assert_eq!(host.call("routines", json!({"botId": bot})).await["followUps"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -848,11 +968,7 @@ async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
     let there = logged(&folder, "prompts.jsonl");
     assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
 
-    // The run's thread stops its agent after the run is recorded; Windows can't remove a folder a process is still in.
-    wait("the run's agent to leave the folder", async || {
-        (std::fs::remove_dir_all(&folder).is_ok() || !folder.exists()).then_some(())
-    })
-    .await;
+    remove(&folder).await;
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
@@ -892,7 +1008,7 @@ async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routi
         there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
         "{there:?}"
     );
-    std::fs::remove_dir_all(&folder).unwrap();
+    remove(&folder).await;
 }
 
 #[tokio::test]
@@ -2239,4 +2355,119 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     // Versioned as a bot's own folder is, and never given a worktree of itself.
     wait("its versions", async || own.join(".git").exists().then_some(())).await;
     assert!(done["worktree"].is_null());
+}
+
+/// What a thread's `ask_chat` calls got back, oldest first.
+fn chat_asked(host: &Host, bot: &str) -> Vec<Value> {
+    let results = host.log(bot, "ask_chat.jsonl").into_iter();
+    results.map(|r| serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap_or(r)).collect()
+}
+
+/// Whether the chat got the turn with its thread's question.
+fn asked_in_chat(host: &Host, bot: &str) -> bool {
+    let prompts = logged(&host.workspace(bot), "prompts.jsonl");
+    prompts.iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("asks you this while it works")))
+}
+
+#[tokio::test]
+async fn a_thread_asks_its_chat_and_goes_on_with_the_answer() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "hello").await;
+    host.reply(&bot, "ADD Deploy|CHATQ:which branch?;").await;
+
+    // The chat's turn answers it with answer_task, and the thread goes on with the answer to its report.
+    let report = relayed_for(&host, &bot, "Deploy").await;
+    assert!(report.contains(r#"Chat said: {"answered":true,"answer":"Chat: which branch?"}"#), "{report}");
+    let answered = host.log(&bot, "answer_task.jsonl");
+    assert!(answered[0]["content"][0]["text"].as_str().unwrap().contains(r#""status":"answered""#), "{answered:?}");
+    let prompts = logged(&host.workspace(&bot), "prompts.jsonl");
+    let question = prompts.iter().find(|p| p["text"].as_str().unwrap().contains("asks you this while it works"));
+    let question = question.expect("the chat's turn")["text"].as_str().unwrap().to_owned();
+    assert!(question.contains("\"Deploy\"") && question.contains("which branch?"), "{question}");
+    // Its turn passes: the chat shows only its replies to the user and the report's.
+    let finals: Vec<String> = history(&host, &bot)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
+        .map(|e| e["data"]["text"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    let said = ["reply: hello", "Added: ", "Relayed: "];
+    assert!(finals.iter().all(|t| said.iter().any(|s| t.starts_with(s))), "(pass) says nothing: {finals:?}");
+    task(&host, &bot, "Deploy", "done").await;
+
+    // Refused: from the chat itself, from a thread the user started, and answer_task from a thread.
+    let ask = |id: &Value| json!({"botId": id, "name": "ask_chat", "arguments": {"question": "which?"}});
+    let refused = host.refused("chatCall", ask(&json!(bot))).await;
+    assert!(refused.contains("ask_chat is for a task your chat handed out"), "{refused}");
+    host.call("startThread", json!({"botId": bot, "text": "Mine HOLD:mine"})).await;
+    let mine = task(&host, &bot, "Mine HOLD:mine", "working").await;
+    let refused = host.refused("chatCall", ask(&mine["thread"])).await;
+    assert!(refused.contains("ask_chat is for a task your chat handed out"), "{refused}");
+    let answer =
+        json!({"botId": mine["thread"], "name": "answer_task", "arguments": {"task": mine["id"], "answer": "x"}});
+    let refused = host.refused("chatCall", answer).await;
+    assert!(refused.contains("answer_task isn't available in a thread"), "{refused}");
+    release(&host, &bot, "mine");
+}
+
+#[tokio::test]
+async fn a_question_its_chat_leaves_unanswered_goes_with_its_stopped_task() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Wait|CHATQ:QUIET which branch?;").await;
+    wait("the chat's turn on the question", async || asked_in_chat(&host, &bot).then_some(())).await;
+    wait("the chat to be idle", async || common::steer::idle(&host, &bot).await.then_some(())).await;
+    // It only waits for its chat: the task is still working.
+    task(&host, &bot, "Wait", "working").await;
+    host.reply(&bot, "STEER stop|Wait").await;
+    let got = wait("the thread's call to hear it", async || chat_asked(&host, &bot).pop()).await;
+    assert_eq!(got["answered"], false, "{got}");
+}
+
+#[tokio::test]
+async fn what_only_the_user_can_decide_the_thread_asks_them_and_its_task_needs_them() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Ship|CHATQ:DECIDE may I deploy?; then ASK").await;
+    let card = wait("the thread's choice card", async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.rfind(|e| e["data"]["status"] == "pending")
+    })
+    .await;
+    let waits = task(&host, &bot, "Ship", "needsYou").await;
+    assert_eq!(card["data"]["task"], waits["id"], "the thread's own card");
+    // The chat's host-started turn can't put a card in front of the user.
+    let tried = host.log(&bot, "chat_decision.jsonl");
+    eprintln!("the chat's request_decision: {tried:?}");
+    host.call("respondDecision", json!({"entryId": card["id"], "option": "B"})).await;
+    let report = relayed_for(&host, &bot, "Ship").await;
+    assert!(report.contains("Only the user can decide that"), "{report}");
+    assert!(report.contains(r#"Asked: {"choice":"B"}"#), "{report}");
+}
+
+/// Real time: the call gives up after `ask_chat::WAIT` (270 s), and an answer after that is passed on to the thread.
+#[tokio::test]
+#[ignore = "waits out ask_chat's 270 seconds"]
+async fn an_answer_after_the_wait_is_passed_on_to_the_thread() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Late|CHATQ:QUIET which branch?; HOLD:late").await;
+    let started = Instant::now();
+    let got = common::eventually("the call to give up", Duration::from_mins(5), async || {
+        chat_asked(&host, &bot).pop().is_some()
+    });
+    got.await;
+    let got = chat_asked(&host, &bot).pop().unwrap();
+    assert_eq!(got["answered"], false, "{got}");
+    assert!(started.elapsed() >= Duration::from_secs(265), "{:?}", started.elapsed());
+    let late = task(&host, &bot, "Late", "working").await;
+    let args = json!({"task": late["id"], "answer": "Prod after all."});
+    let told = host.call("chatCall", json!({"botId": bot, "name": "answer_task", "arguments": args})).await;
+    eprintln!("late answer_task: {told}");
+    assert!(told.to_string().contains("It stopped waiting for your answer"), "{told}");
+    release(&host, &bot, "late");
+    task(&host, &bot, "Late", "done").await;
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    assert!(heard.iter().any(|p| p["text"].as_str().unwrap().contains("Prod after all.")), "the thread heard it");
 }

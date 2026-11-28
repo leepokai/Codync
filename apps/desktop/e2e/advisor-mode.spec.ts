@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach } from './sandbox.ts'
+import { api, attach, openDetails, showView } from './sandbox.ts'
 
 type Fallback = { backend: string; model?: string | null }
 type Bot = { backend: string; fallbacks: Fallback[]; threadAgent: Fallback | null; threadFallbacks: Fallback[] | null }
@@ -18,9 +18,7 @@ test("Advisor mode sets the threads' own agent and fallbacks, keeps them, and tu
     const saved = async () => (await api<{ bot: Bot }>(page, 'updateBot', { id: bot.id })).bot
 
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    const panel = page.locator('.details-panel')
-    await panel.getByRole('tab', { name: 'Settings' }).click()
+    const panel = await openDetails(page, 'Settings')
     const advisor = panel.getByRole('switch').filter({ hasText: 'Advisor mode' })
     const threadsAgent = panel.getByText("Threads' agent", { exact: true }).locator('..')
     await expect(advisor).toHaveAttribute('aria-checked', 'false')
@@ -49,9 +47,9 @@ test("Advisor mode sets the threads' own agent and fallbacks, keeps them, and tu
     expect(kept.fallbacks.map((f) => f.backend)).toEqual(['codex'])
 
     // Opened again, the form shows what was kept.
-    await panel.getByRole('tab', { name: 'Details' }).click()
+    await showView(panel, 'Details')
     await expect(advisor).toHaveCount(0)
-    await panel.getByRole('tab', { name: 'Settings' }).click()
+    await showView(panel, 'Settings')
     await expect(advisor).toHaveAttribute('aria-checked', 'true')
     await expect(threadsAgent).toBeVisible()
     expect((await saved()).threadAgent).toEqual(kept.threadAgent)

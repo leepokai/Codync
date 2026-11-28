@@ -46,6 +46,17 @@ internal fun capsuleLabel(work: List<WorkTask>, tr: (String) -> String): Capsule
     }
 }
 
+/** What the capsule over a thread's composer says after `Background ·`, and since when (the oldest piece began). */
+internal data class BackgroundLabel(val text: String, val since: Long)
+
+/** The capsule while [task]'s thread's agent runs work in the background: what the one piece does, or the names of several; null while nothing runs there. */
+internal fun backgroundLabel(task: WorkTask): BackgroundLabel? {
+    val first = task.background.firstOrNull() ?: return null
+    val text = if (task.background.size == 1) listOfNotNull(first.name.takeIf(String::isNotEmpty), first.activity).joinToString(" · ")
+        else task.background.joinToString(", ") { it.name }
+    return BackgroundLabel(text, first.startedAt)
+}
+
 /** How a roster row's line reads: what needs the user, something going on (the moving mark), or plain words. */
 internal enum class BotLineKind { NeedsYou, Working, Waiting }
 

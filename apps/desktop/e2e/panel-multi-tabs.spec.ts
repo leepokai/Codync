@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach, echoBot, openPage, setPref, withPrefs } from './sandbox.ts'
+import { api, attach, echoBot, openPage, setPref, sidePanel, withPrefs } from './sandbox.ts'
 
 // Browser and Terminal open a new tab each time they are picked; each terminal is its own shell, ended with its tab.
 test('picking Browser or Terminal again opens another tab', async () => {
@@ -72,7 +72,7 @@ test("a thread without a bot opens a new terminal each time too", async () => {
     await start.getByRole('textbox').press('Enter')
     await expect(page.locator('.thread-chat')).toBeVisible({ timeout: 20_000 })
     await page.getByRole('button', { name: 'Conversation details', exact: true }).click()
-    const panel = page.locator('.side-panel:not([inert])').filter({ visible: true })
+    const panel = sidePanel(page)
     const tabs = panel.locator('.panel-tabs-row').getByRole('tab')
     for (let i = 0; i < 2; i++) {
       await panel.getByRole('button', { name: 'Open a view', exact: true }).click()

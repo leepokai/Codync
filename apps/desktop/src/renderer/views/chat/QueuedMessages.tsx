@@ -26,9 +26,13 @@ const EXIT_MS = 300
 export function QueuedMessages({ botId }: { botId: string }) {
   const store = useStore()
   const bot = store.bots.get(botId)
-  // A held message can sit far behind the loaded window (`hello.held` carries it), so the tray reads both.
+  // A held message can sit far behind the loaded window (`hello.held` carries it), so the tray reads both; a row
+  // the chat has taken back is not re-added from that snapshot.
   const entries = hidingCalls(store.allEntries(botId))
-  const waiting = waitingMessages([...entries, ...heldOutside(entries, botId, store.hello?.held)], !!bot && isWorking(bot))
+  const waiting = waitingMessages(
+    [...entries, ...heldOutside(entries, botId, store.hello?.held, store.takenBack(botId))],
+    !!bot && isWorking(bot),
+  )
   const rows = useLeaving(waiting)
   const list = useRevealSent(waiting.at(-1), store.lastSentNonce)
   const tray = usePresence(waiting.length > 0, EXIT_MS)

@@ -135,6 +135,21 @@ test('a held message that stops being scheduled leaves hello.held, and an older 
   assert.deepEqual(store.hello?.held, [])
 })
 
+test('a taken-back row the chat has dropped does not come back from a stale held snapshot', () => {
+  const { store } = storeWithAlerts()
+  const held = heldEntry()
+  ;(store as unknown as { hello: unknown }).hello = { version: '2.54.0', scheduleSend: true, held: [held] }
+  // The chat kept only the hidden tombstone: what a cancel from another surface leaves, its snapshot unchanged.
+  store.entries.set('b', [{ ...held, rev: 2, data: { ...held.data, status: 'cancelled', removed: true } }])
+  assert.deepEqual(store.allEntries('b'), [], 'the chat no longer shows the row')
+  const shown = store.allEntries('b')
+  assert.deepEqual(heldOutside(shown, 'b', store.hello?.held, store.takenBack('b')), [], 'so the tray does not either')
+  // With no removal behind it the same snapshot still reaches the tray from below the loaded window.
+  store.entries.set('b', [])
+  const below = heldOutside(store.allEntries('b'), 'b', store.hello?.held, store.takenBack('b'))
+  assert.deepEqual(below.map((e) => e.id), [held.id], 'a held message nothing removed still shows')
+})
+
 test('a schedule made below this window joins the tray and stays out of the transcript', () => {
   const { store, receive } = storeWithAlerts()
   const newer: Entry = { ...heldEntry('newer'), seq: 100, rev: 5, data: { text: 'newest in the loaded window', status: 'sent' } }

@@ -50,6 +50,10 @@ test('a scheduled message older than the loaded window still reaches the tray, f
   const edited = [user('old', 'scheduled', { notBefore: 9_000 })]
   assert.deepEqual(heldOutside(edited, 'b', held), [], 'the chat\u2019s own copy is the newer one')
   assert.deepEqual(heldOutside(entries, 'b', undefined), [], 'an older host sends none')
+  // A row the chat has taken back is dropped from the shown list, so only the removal keeps its snapshot copy out.
+  const takenBack = [user('gone', 'scheduled', { notBefore: 1_000 })]
+  assert.deepEqual(heldOutside([], 'b', takenBack), takenBack, 'the snapshot still reaches the tray while nothing removed it')
+  assert.deepEqual(heldOutside([], 'b', takenBack, new Set(['gone'])), [], 'a taken-back row does not come back')
 })
 
 test('only a host that schedules gets the schedule affordances', () => {

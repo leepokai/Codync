@@ -346,6 +346,14 @@ export class BotMirror extends Observable {
     return list ? withoutRemoved(list) : []
   }
 
+  /** The ids of a chat's rows the user took back (`removed`, which `allEntries` hides): the tray reads this so a
+   * stale `hello.held` copy of one cannot put the row back after the chat has dropped it. */
+  takenBack(botId: string): Set<string> {
+    const gone = new Set<string>()
+    for (const e of this.entries.get(botId) ?? []) if (e.data.removed) gone.add(e.id)
+    return gone
+  }
+
   /** Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go. */
   canLoadOlder(botId: string) {
     return !this.refetched && canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))

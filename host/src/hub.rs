@@ -23,7 +23,9 @@ mod groups;
 mod lead;
 mod order;
 mod patch;
+mod pause;
 pub(crate) mod projects;
+pub use pause::{PROMPT_WRITE_TIMEOUT, Pause};
 mod reactions;
 mod sections;
 mod sync;
@@ -121,6 +123,8 @@ pub struct Hub {
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
     pub work: crate::chat::work::Work,
+    /// Pause transactions and prompt admission (see [`pause`]).
+    pub pause: Pause,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
@@ -196,6 +200,7 @@ impl Hub {
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
             work: crate::chat::work::Work::default(),
+            pause: Pause::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),
@@ -242,6 +247,12 @@ impl Hub {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;
             } else if !row.config.is_group() {
+                // A pause outlives the process in the saved flag, but the admission gate is in memory: a bot paused
+                // before the restart would take a message that arrives now into its queue instead of refusing it.
+                // Close the gate again before its actor can accept one; a resume reopens it.
+                if row.config.paused {
+                    self.pause.block(&row.config.id);
+                }
                 self.spawn_bot(row.config);
             }
         }
@@ -255,9 +266,20 @@ impl Hub {
     }
 
     pub(crate) fn spawn_bot(self: &Arc<Self>, cfg: BotConfig) {
+        // Outermost holder for this actor: the flag and the active ids, one read, then the pair is passed in.
+        // `spawn` does not take the transition. A caller that already holds it uses [`Self::spawn_bot_with`].
+        let startup = {
+            let _transition = self.pause.transition();
+            bot::startup_pair(self, &cfg)
+        };
+        self.spawn_bot_with(cfg, startup);
+    }
+
+    /// [`Self::spawn_bot`] when `startup` was already read under the pause transition this thread holds.
+    pub(crate) fn spawn_bot_with(self: &Arc<Self>, cfg: BotConfig, startup: (bool, Vec<String>)) {
         let id = cfg.id.clone();
         self.runtime.locked().insert(id.clone(), Runtime::default());
-        let handle = bot::spawn(self.clone(), cfg);
+        let handle = bot::spawn(self.clone(), cfg, startup);
         self.bots.locked().insert(id, handle);
     }
 

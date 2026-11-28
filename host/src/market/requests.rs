@@ -256,7 +256,17 @@ fn complete(hub: &Arc<Hub>, e: &Entry, id: &str, note: String) -> Result<Value> 
         &json!({"text":note,"status":"queued","from":"host"}),
     )?;
     if added {
-        hub.send_cmd(&bot, Cmd::Send { lane, entry_id: ack.id, text: note })?;
+        let arrived = hub.pause.generation(&bot);
+        hub.send_cmd(
+            &bot,
+            Cmd::Send {
+                lane,
+                entry_id: ack.id,
+                text: note,
+                arrived_epoch: arrived.epoch,
+                arrived_blocked: arrived.blocked,
+            },
+        )?;
     }
     Ok(json!({"entry":entry}))
 }

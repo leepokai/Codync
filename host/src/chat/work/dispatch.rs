@@ -210,12 +210,28 @@ struct Plan {
 /// Looks over `bot`'s box: waiting tasks go to threads where they can, threads with nothing left end. Run whenever the
 /// box or one of its threads changes.
 pub fn dispatch(hub: &Arc<Hub>, bot: &str) {
-    run(hub, bot, None);
+    run(hub, bot, None, None);
+}
+
+/// [`dispatch`] while the caller holds the pause transition and has already read `startup`.
+/// The thread this pass starts takes that pair. [`dispatch`] captures its own pair instead.
+pub(super) fn dispatch_with_startup(hub: &Arc<Hub>, bot: &str, startup: (bool, Vec<String>)) {
+    run(hub, bot, None, Some(startup));
 }
 
 /// [`dispatch`], from the end of `over`'s turn (the bot's own, or one of its threads').
-pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
+pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>, startup: Option<(bool, Vec<String>)>) {
     let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted).map(|r| r.config) else { return };
+    // Paused, or admission closed by a pause transaction still in flight: the box starts nothing (nothing is spent),
+    // and a resume looks over it again when it is done. `blocked` is the second case: a pause sets it before its flag
+    // is saved, and a resume clears it only once its own cleanup has run and its threads have been told, so a pass
+    // inside a resume's window would read the resume's own `blocked` bit as a starting thread's pause flag
+    // (`startup_flag`), register that thread's actor after the resume's thread scan, and cut its first task off
+    // (`CUT_OFF`) though nothing was interrupted. `blocked` clears once, in a resume, so a pass that reads it clear
+    // starts from the flag as it stands; only a pause beginning after that can close it again.
+    if hub.paused(bot) || hub.pause.blocked(bot) {
+        return;
+    }
     let plan = match tasks::change(hub, bot, |tasks| plan(hub, &cfg, tasks, over)) {
         Ok(plan) => plan,
         Err(error) => {
@@ -226,11 +242,11 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     };
     for (thread, task) in plan.start {
-        begin(hub, bot, &thread, &task, true);
+        begin(hub, bot, &thread, &task, true, startup.clone());
     }
     for (thread, task) in plan.join {
         if let Ok(Some(row)) = hub.store.bot(&thread) {
-            begin(hub, bot, &row.config, &task, false);
+            begin(hub, bot, &row.config, &task, false, None);
         } else {
             host_error!(hub, "a thread that took more work is gone", thread);
         }
@@ -253,7 +269,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         worktree::settle_then(hub, &bot.clone(), &task, left, move |hub| dispatch(hub, &bot));
     }
     if plan.again {
-        return run(hub, bot, over);
+        return run(hub, bot, over, startup);
     }
     hub.emit_bot(bot);
     // What follows the bot from outside its chat counts it working while its box holds work.
@@ -340,7 +356,14 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
 /// prompt and another bot's request go as they are: they say themselves what the turn is and where its reply goes.
 /// Under the box's lock, and only while the task is still on that thread: a Stop since the plan found no turn to stop.
 /// The files a user's task starts with are copied before it.
-fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool) {
+fn begin(
+    hub: &Arc<Hub>,
+    bot: &str,
+    thread: &BotConfig,
+    task: &Task,
+    first: bool,
+    startup: Option<(bool, Vec<String>)>,
+) {
     // Copied before the lock, which every bot's box shares: a copy again is harmless.
     let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
     let posted = {
@@ -349,7 +372,26 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             return;
         }
         if first {
-            hub.spawn_bot(thread.clone());
+            match startup {
+                // The caller already holds the pause transition and captured this pair for a thread.
+                // Taking the lock here never returns. A bot's own ids are captured in `spawn_bot`, not here.
+                Some(startup) if thread.is_thread() => hub.spawn_bot_with(thread.clone(), startup),
+                Some(_) => {
+                    tracing::error!(thread = %thread.id, "refusing to start a bot with a thread's startup pair");
+                    return;
+                }
+                // Read here, under the box's lock, at the instant the actor starts: read any earlier (before the
+                // lock), a resume landing in between left the new thread marked as paused, and its first task
+                // ended as cut off by a restart that never happened. A thread has no runs of its own, so this is
+                // the flag alone and takes no pause transition: `update_bot` holds that transition and then takes
+                // this box (`work::paused`), and taking them the other way round here would deadlock the two.
+                None if thread.is_thread() => {
+                    hub.spawn_bot_with(thread.clone(), crate::agent::bot::startup_flag(hub, thread));
+                }
+                // Not a thread: no plan starts one (`thread_bot`). Its runs would have to be read under the pause
+                // transition, which the holder of this box must not take after it.
+                None => hub.spawn_bot(thread.clone()),
+            }
             sources::watch(hub, bot, &thread.id, task);
         }
         let message = match task.source {
@@ -587,8 +629,65 @@ mod tests {
         })
         .expect("stopped");
         let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..cfg };
-        begin(&hub, "b1", &thread, &planned, true);
+        begin(&hub, "b1", &thread, &planned, true, None);
         assert!(!hub.has_actor("thread-1"), "it never starts");
+    }
+
+    /// A new thread reads its pause flag under the box's lock, at the instant its actor starts, and so takes no pause
+    /// transition: a pause or a resume that holds it (as `update_bot` does, before it takes the box) is neither waited
+    /// on nor deadlocked against this box.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_thread_starts_while_a_pause_transition_is_held() {
+        let hub = hub();
+        let cfg = bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let planned = tasks::load(&hub.store, "b1").remove(0);
+        let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..cfg };
+        let (taken, is_held) = std::sync::mpsc::channel();
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let holder = hub.clone();
+        let holding = std::thread::spawn(move || {
+            let _transition = holder.pause.transition();
+            taken.send(()).unwrap();
+            wait.recv().unwrap();
+        });
+        is_held.recv().expect("the transition was taken");
+        let starting = {
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || begin(&hub, "b1", &thread, &planned, true, None))
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(5), starting)
+            .await
+            .expect("it waited for the pause transition while holding the box")
+            .expect("it ran");
+        release.send(()).expect("the transition was released");
+        holding.join().expect("the holder ended");
+        assert!(hub.has_actor("thread-1"), "it did not start");
+    }
+
+    /// A box pass inside a resume's window starts nothing. The resume has saved its flag and admission is not open
+    /// yet (`blocked`): read in that window, a starting thread's flag is the resume's own `blocked` bit, its actor
+    /// registers after the resume's thread scan, and its first task ends as cut off by a restart that never
+    /// happened. The resume's own pass starts the task after it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_box_pass_inside_a_resume_starts_no_thread() {
+        let hub = hub();
+        hub.store.save_bot(&BotConfig { max_threads: 2, ..bot("b1", "Mika", "/tmp") }).expect("saved");
+        let waiting =
+            json!({"id": "w1", "title": "Work", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0});
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([waiting]).to_string()).expect("saved");
+        // A resume from a pause: the flag is already saved false, and admission opens later (`unblock`).
+        hub.pause.block("b1");
+        run(&hub, "b1", None, None);
+        let task = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(task.status, Status::Waiting, "the task started while the resume still held admission");
+        assert!(task.thread.is_none(), "a thread started inside the resume's window");
+
+        hub.pause.unblock("b1");
+        run(&hub, "b1", None, None);
+        let thread = tasks::load(&hub.store, "b1").remove(0).thread.expect("a thread of its own");
+        assert!(hub.has_actor(&thread), "the pass after the resume did not start it");
     }
 
     #[test]
@@ -599,7 +698,7 @@ mod tests {
         let waiting = json!({"id": "i1", "title": "Work", "brief": "x", "status": "waiting", "order": 1,
             "createdAt": 0, "worktree": worktree});
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([waiting]).to_string()).expect("saved");
-        run(&hub, "b1", None);
+        run(&hub, "b1", None, None);
         assert_eq!(tasks::load(&hub.store, "b1")[0].status, Status::Waiting);
     }
 

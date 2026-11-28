@@ -112,7 +112,11 @@ impl Actor {
         text: &str,
         hidden: bool,
         done_tx: &mpsc::UnboundedSender<Done>,
+        pause_epoch: u64,
     ) -> Result<()> {
+        // `pause_epoch` is the generation this work was admitted under. A read here would compare the epoch with
+        // itself: a pause and a resume during setup would both be invisible. The caller passes a fresh read only
+        // when it is deciding now (a resume, a compaction, a task report).
         self.task_source = work::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_thread() {
             // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
@@ -149,6 +153,8 @@ impl Actor {
         }
         self.lane = lane.clone();
         self.turn = Some(turn);
+        // The generation this turn was admitted under. A later pause notice compares against it.
+        self.turn_epoch = Some(pause_epoch);
         // Only the user's own words feed memory: not another bot's, a room's or a routine's.
         let from_user = !hidden && self.source() == TurnSource::User;
         self.turn_text = from_user.then(|| text.to_owned());
@@ -167,11 +173,14 @@ impl Actor {
         if hidden {
             self.hidden_turn();
         } else {
-            self.relay_turn(&lane, entry_ids, text).await;
+            self.relay_turn(&lane, entry_ids, text, pause_epoch).await;
         }
         // A reply turn is marked only once its prompt is out and its replies are relayed (`queue`): a restart before
         // that sends them again from their notices, and resuming as well would hand them over twice.
         self.set_inflight(self.resumes() && self.reply_hops.is_none());
+        // The restart mark is saved. This turn has not returned to the command loop, so a pause
+        // notification stays unread and a crash leaves the mark set.
+        super::race_gate::wait("after_inflight_marked").await;
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
         let message = if from_user { entry_ids.iter().rev().find(typed).cloned() } else { None };
@@ -274,10 +283,6 @@ impl Actor {
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
         let prompt = json!([{"type": "text", "text": prompt}]);
-        if let Some(id) = &self.active_routine {
-            self.hub.routines.mark_started(&self.hub.store, id)?;
-            self.set_inflight(true);
-        }
         // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
         self.versions.before(&self.hub, &self.cfg, text).await;
         // From here what changes in its memory folders is the bot's, however it changed them: a thread's too, as
@@ -285,8 +290,33 @@ impl Actor {
         // thread started: what the user wants forgotten, the bot does in the chat.
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
-        // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.session(&sid).prompt(prompt).await?;
+        // Admission is the last gate before the prompt. A pause that began during session setup has closed it, and
+        // one that begins after this point waits until the prompt has reached the agent before it returns.
+        let admission = self
+            .hub
+            .pause
+            .admit_prompt(self.cfg.owner(), pause_epoch)
+            .ok_or_else(|| anyhow!(super::PAUSED_BEFORE_PROMPT))?;
+        if let Some(id) = &self.active_routine {
+            self.hub.routines.mark_started(&self.hub.store, id)?;
+            self.set_inflight(true);
+        }
+        // Written before this returns, so a Stop right after is sent after the prompt. A broken pipe must not
+        // strand the actor and every later pause behind this admitted write.
+        let written = tokio::time::timeout(crate::hub::PROMPT_WRITE_TIMEOUT, acp.session(&sid).prompt(prompt)).await;
+        let Ok(answer) = written else {
+            if let Some(conn) = self.conn.take() {
+                conn.acp.kill().await;
+            } else {
+                acp.kill().await;
+            }
+            return Err(anyhow!(
+                "the agent didn't accept the prompt within {}s",
+                crate::hub::PROMPT_WRITE_TIMEOUT.as_secs()
+            ));
+        };
+        let answer = answer?;
+        drop(admission);
         if std::mem::take(&mut self.relay.handing_off) {
             self.handed_off(true);
         }
@@ -443,7 +473,7 @@ impl Actor {
             // Stop or Remove since took it back).
             _ if self.stop_requested
                 && self.stopped_for_message
-                && self.queue.iter().any(|q| matches!(q, Queued::User { .. })) => {}
+                && self.queue.iter().any(|q| matches!(&q.item, Queued::User { .. })) => {}
             // A stopped turn says so even when its agent still ended it normally: its reply is withheld above.
             (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
             (Ok(_), _) if self.stop_requested => self.stop_notice("Stopped.", "cancelled"),
@@ -565,7 +595,7 @@ impl Actor {
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
-        let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
+        let more = self.queue.iter().any(|q| matches!(&q.item, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
         let held_back = final_text.is_none() && matches!(reacted, Reacted::Refused);
         // A turn the host started that found nothing worth saying (a follow-up's `(pass)`): the same.

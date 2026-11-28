@@ -17,6 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/threads'
+import { pauseEcho } from '@shared/old-host'
 import { pendingCards, type ThreadSetup } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
@@ -564,6 +565,51 @@ export class BotStore extends BotSync {
 
   setHidden(bot: Bot, hidden: boolean) {
     this.patchBot(bot, { hidden })
+  }
+
+  /** Paused: the bot answers nothing and spends nothing until it is resumed.
+   * Shown at once, then replaced by the host's echo. A successful `updateBot` whose bot omits
+   * `paused` did not apply it (an older host ignores the field): the row keeps the true state.
+   * A reply can arrive after the row has moved. Failure puts only `paused` back, and only while
+   * that row is still there at the same `rev`, so a bot deleted or replaced meanwhile stays as it is.
+   * A successful echo replaces the row only when it carries a fresh numeric revision. An echo with
+   * no revision updates `paused` alone: without a rev there is no way to tell whether a newer event
+   * has already landed, so the rest of that body is an unverifiable write. A numeric echo that is
+   * already older does not raise "Not applied": the row moved on, and the stale body is not a
+   * failure of this pause.
+   */
+  setPaused(bot: Bot, paused: boolean) {
+    const current = this.bots.get(bot.id)
+    const beforePaused = current?.paused
+    const beforeRev = current?.rev
+    if (current) this.bots.set(bot.id, { ...current, paused })
+    this.changed()
+    const restorePaused = () => {
+      if (beforePaused === undefined) return
+      const row = this.bots.get(bot.id)
+      if (!row || row.rev !== beforeRev) return
+      this.bots.set(bot.id, { ...row, paused: beforePaused })
+    }
+    this.perform(async (c) => {
+      // The menu's `bot` is a snapshot. The host keeps every field a patch leaves out, so a pause
+      // names only `id` and `paused` and cannot put an older model or permission back.
+      const res = await c.call<{ bot?: Partial<Bot> & { id?: string; rev?: number } }>('updateBot', { id: bot.id, paused })
+      const echoed = res?.bot
+      const row = echoed && typeof echoed.id === 'string' ? this.bots.get(bot.id) : undefined
+      const echoedRev = echoed && typeof echoed.rev === 'number' ? echoed.rev : undefined
+      const stale = !!row && echoedRev !== undefined && echoedRev < row.rev
+      if (row && echoed && echoedRev !== undefined && !stale) {
+        this.putHostBot(normalizeBot(echoed as Partial<Bot> & { id: string }))
+      } else if (row && echoedRev === undefined) {
+        if (typeof echoed?.paused === 'boolean') this.bots.set(bot.id, { ...row, paused: echoed.paused })
+        else restorePaused()
+      } else if (!row) restorePaused()
+      if (!stale && !pauseEcho(paused, res).applied) this.lastError = trNow('Not applied on this computer')
+      this.changed()
+    }, true, () => {
+      restorePaused()
+      this.changed()
+    })
   }
 
   setFastMode(bot: Bot, fastMode: boolean) {

@@ -199,6 +199,45 @@ impl Work {
     }
 }
 
+/// The bot was just paused: a request that had not started is answered now, and a routine task whose run the pause
+/// cancelled leaves the box. The threads already working it stop through their own actors.
+pub fn paused(hub: &Hub, bot: &str) {
+    // One change of the box, so an insert that is checking the pause generation cannot land between the snapshot
+    // and the removal.
+    let refused = match tasks::change(hub, bot, |tasks| {
+        let ids: Vec<String> = tasks
+            .iter()
+            .filter(|task| task.status == Status::Waiting)
+            .filter(|task| matches!(task.source, Source::Request { .. }))
+            .map(|task| task.id.clone())
+            .collect();
+        let refused: Vec<crate::chat::team::BotRequest> = {
+            let mut requests = hub.work.requests.locked();
+            ids.iter().filter_map(|id| requests.remove(id)).collect()
+        };
+        tasks.retain(|task| {
+            if task.status != Status::Waiting {
+                return true;
+            }
+            match &task.source {
+                Source::Request { .. } => !ids.contains(&task.id),
+                Source::Routine { run, .. } => hub.routines.waits(run),
+                Source::Bot | Source::User => true,
+            }
+        });
+        Ok(refused)
+    }) {
+        Ok(refused) => refused,
+        Err(error) => {
+            host_error!(hub, "couldn't clear a paused bot's box", bot, error = format!("{error:#}"));
+            return;
+        }
+    };
+    for request in refused {
+        request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+    }
+}
+
 /// Looks over each box one of whose threads gave its seat up ([`Work::seat_freed`]), for as long as the host runs.
 fn look_when_seats_free(hub: &Arc<Hub>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
@@ -247,7 +286,8 @@ pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     }
     for thread in threads.into_iter().filter(|thread| hub.has_actor(&thread.id)) {
         let id = thread.id.clone();
-        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure(Box::new(thread))) {
+        let pause_epoch = hub.pause.epoch(thread.owner());
+        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure { base: Box::new(thread), pause_epoch }) {
             tracing::warn!(thread = %id, error = format!("{error:#}"), "couldn't give a thread its bot's fallbacks");
         }
     }
@@ -342,7 +382,7 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
             tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a stopped turn's work");
         }
     }
-    dispatch::run(hub, bot, Some(bot));
+    dispatch::run(hub, bot, Some(bot), None);
 }
 
 /// Thread `cfg`'s turn ended: its task says how, its result goes where its source reads it (the bot's own work: a
@@ -354,7 +394,7 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
     let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
-    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
+    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread), None);
     let left = matches!(outcome, Outcome::LeftRunning { .. } | Outcome::Waiting { .. });
     let mut goes_on = false;
     let ended = tasks::change(hub, bot, |tasks| {

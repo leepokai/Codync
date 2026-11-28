@@ -295,7 +295,14 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     }
     let request = uuid::Uuid::new_v4().to_string();
     let back = Back::Assistant { request: request.clone() };
-    let mut lifetime = MessageLifetime::new(hub, &request, message, back, &target.name, 1);
+    let target_epoch = {
+        let _transition = hub.pause.transition();
+        if hub.paused(&target.id) {
+            bail!("{} is paused", target.name);
+        }
+        hub.pause.epoch(&target.id)
+    };
+    let mut lifetime = MessageLifetime::new(hub, &request, message, back, &target.name, target_epoch, 1);
     let (source, name) = (asker.id.as_str(), asker.name.as_str());
     let exchange =
         Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name), hops: None };

@@ -104,6 +104,15 @@ def log(name, value):
 def new_session():
     global count
     count += 1
+    # A test can hold session setup open by putting `setup-barrier` in the folder: this says when it is waiting and
+    # goes on once the file is gone.
+    barrier = pathlib.Path("setup-barrier")
+    if barrier.exists():
+        waiting = pathlib.Path("setup-barrier-waiting")
+        waiting.write_text("", encoding="utf-8")
+        while barrier.exists() and not cancel.wait(0.01):
+            pass
+        waiting.unlink(missing_ok=True)
     return f"s{os.getpid()}-{count}"
 
 
@@ -397,6 +406,12 @@ def answer(text, session):
         return elsewhere("Request", text)
     command = re.search(r"^(ADD|STEER|TELL|ASKTASK|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
+        # A user message can hold this turn open (`HOLD:<name>`), the way a routine brief does,
+        # so a test can queue more work behind it. No `HOLD:` and this returns at once.
+        # A reply turn quotes the request, which may itself say HOLD:. The profile mentions the
+        # reply header without a request id, so only a real reply is skipped.
+        if not re.search(r"replied to your message_bot request [0-9a-f]{8}-", text):
+            hold(text)
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
     if name == "ADD":

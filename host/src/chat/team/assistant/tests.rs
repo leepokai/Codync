@@ -207,6 +207,27 @@ async fn a_session_on_this_computer_asks_without_the_cloud_and_reads_only_its_ow
 }
 
 #[tokio::test]
+async fn a_request_received_while_the_target_is_paused_is_refused_at_capture() {
+    let f = Fixture::new();
+    let claude = session(codync_network::AgentKind::ClaudeCode, "s1");
+    f.hub.update_bot(&json!({"id":"b", "paused":true})).unwrap();
+    let result = local_call(&f.hub, &claude, "message_bot", &json!({"botId":"b", "message":"SHOULD_NOT_ADMIT"})).await;
+    assert!(result.unwrap_err().to_string().contains("b is paused"));
+
+    f.hub.update_bot(&json!({"id":"b", "paused":false})).unwrap();
+    let sent =
+        local_call(&f.hub, &claude, "message_bot", &json!({"botId":"b", "message":"after resume"})).await.unwrap();
+    let request = sent["requestId"].as_str().unwrap().to_owned();
+    let read = |c: &Caller| f.hub.assistant.read(&format!("session:{}", c.key()), Some(&request))["replies"][0].clone();
+    f.until(|| read(&claude)["status"] == "completed").await;
+    let folder = f.hub.store.bot("b").unwrap().unwrap().config.cwd;
+    let prompts = std::fs::read_to_string(std::path::Path::new(&folder).join("prompts.jsonl")).unwrap();
+    assert!(!prompts.contains("SHOULD_NOT_ADMIT"));
+    assert!(prompts.contains("after resume"));
+    f.shutdown().await;
+}
+
+#[tokio::test]
 async fn sessions_mail_each_other_and_read_it_once() {
     use codync_network::AgentKind::{ClaudeCode, Codex};
     let f = Fixture::new();

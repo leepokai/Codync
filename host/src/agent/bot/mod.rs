@@ -32,6 +32,7 @@ mod launch;
 mod lifecycle;
 mod modes;
 mod queue;
+mod race_gate;
 mod session;
 mod sign_in;
 mod steer;
@@ -40,7 +41,7 @@ mod turn;
 mod updates;
 
 pub use cmd::Cmd;
-use cmd::{HostTurn, Queued};
+use cmd::{Admitted, HostTurn, Queued};
 use codync_agent::mcp_names::Renamed;
 pub use commands::listed as agent_commands;
 pub use compaction::{context_window, offers_threshold};
@@ -78,7 +79,28 @@ pub struct BotHandle {
     pub task: tokio::task::JoinHandle<()>,
 }
 
-pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
+/// The pause flag and the active run ids, read together. The caller holds the pause transition for this
+/// whole read: the flag at one instant and the ids at another would cancel a run admitted in between,
+/// or spare one that was already active. A thread has no runs of its own, so its pair is the flag and
+/// an empty list, with no second read.
+pub(crate) fn startup_pair(hub: &Hub, cfg: &BotConfig) -> (bool, Vec<String>) {
+    let was_paused = hub.paused(cfg.owner()) || hub.pause.blocked(cfg.owner());
+    let runs = if was_paused && !cfg.is_thread() { hub.routines.active_ids(&cfg.id) } else { Vec::new() };
+    (was_paused, runs)
+}
+
+/// The pause pair of a thread that starts now: its owner's flag at this instant, and no runs. A thread has no runs of
+/// its own, so the transition that keeps a bot's flag and ids one read buys nothing here; a caller that already holds
+/// the work box's lock must not take it, and `update_bot` holds the transition before that box.
+pub(crate) fn startup_flag(hub: &Hub, cfg: &BotConfig) -> (bool, Vec<String>) {
+    let was_paused = hub.paused(cfg.owner()) || hub.pause.blocked(cfg.owner());
+    (was_paused, Vec::new())
+}
+
+/// `startup` is `(was_paused, active run ids)` from [`startup_pair`], already captured by the caller.
+/// This does not take the pause transition. The scheduler holds that mutex across the admission that
+/// reaches here, and `std::sync::Mutex` is not reentrant.
+pub fn spawn(hub: Arc<Hub>, base: BotConfig, startup: (bool, Vec<String>)) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
@@ -93,6 +115,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    // `startup` was read under one pause transition by the caller. Reading the ids again here, or later
+    // inside `run`, would cancel a routine admitted after a resume that landed before the task started.
+    // `run` decides from this pair, not from the flag or the run list it would see later.
     let actor = Actor {
         hub,
         base,
@@ -125,6 +150,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         announce: None,
         first_prompt: None,
         turn: None,
+        turn_epoch: None,
         queue: VecDeque::new(),
         steers_in_flight: HashMap::new(),
         held_done: None,
@@ -160,7 +186,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
     };
-    let task = tokio::spawn(actor.run(rx, interrupted));
+    let task = tokio::spawn(actor.run(rx, interrupted, startup.0, startup.1));
     BotHandle { tx, task }
 }
 
@@ -329,7 +355,10 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
-    queue: VecDeque<Queued>,
+    /// The pause generation the running turn was admitted under (`start_turn`). Empty when no turn runs
+    /// the check; a finished turn's value is ignored while `turn` is empty.
+    turn_epoch: Option<u64>,
+    queue: VecDeque<Admitted>,
     /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
     steers_in_flight: HashMap<String, steer::InFlight>,
     /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
@@ -370,7 +399,7 @@ struct Actor {
     /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
     // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
     // one joined, refused, still drops it; ACP doesn't say which step read the message.
-    unheard: Vec<Queued>,
+    unheard: Vec<Admitted>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
@@ -429,6 +458,8 @@ impl Actor {
             return;
         }
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
+        // A pause can be saved, and a resume can reopen admission, before this failure is retried.
+        race_gate::wait("before_fallback").await;
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -448,15 +479,56 @@ impl Actor {
             _ => {}
         }
         self.stop_spent().await;
+        // Queued work starts here, before any pause or resume still sitting in the command channel.
+        race_gate::wait("before_next_in_queue").await;
         self.next_in_queue(done_tx).await;
     }
 
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
-    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>) {
+    /// `was_paused` and `paused_runs` were read together by whoever spawned this actor, before this task ran.
+    async fn run(
+        mut self,
+        mut rx: mpsc::UnboundedReceiver<Cmd>,
+        interrupted: Option<Lane>,
+        was_paused: bool,
+        paused_runs: Vec<String>,
+    ) {
+        // The gate only lets a test hold the gap after that read and before this branch. The branch does not
+        // read `paused()` again: a resume in the gap must not reopen cut-off work, and must not change the ids.
+        race_gate::wait("before_startup_pause_read").await;
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         self.done_tx = Some(done_tx.clone());
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
-        if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
+        if was_paused {
+            // Paused while the host was down: nothing resumes now (that would spend). A thread's cut-off task is
+            // settled here: one of the bot's own waits again and starts only after an explicit resume, while a
+            // routine run or request ends as interrupted. The bot's own run that was going says interrupted, and
+            // the runs captured with the pause flag are cancelled. A run admitted after the resume is not one.
+            self.set_inflight(false);
+            if self.cfg.is_thread() {
+                self.turn_over(crate::chat::work::Outcome::Failed(
+                    crate::chat::work::Failure::Restart,
+                    crate::chat::work::CUT_OFF.into(),
+                ));
+            } else {
+                if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
+                    let ran = crate::routines::Ran { timed_out: false, thread: None };
+                    if let Err(error) = self.hub.routines.complete(
+                        &self.hub,
+                        &run.id,
+                        crate::routines::Status::Interrupted,
+                        Some("the bot is paused".into()),
+                        None,
+                        &ran,
+                    ) {
+                        tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
+                    }
+                }
+                if let Err(error) = self.hub.routines.cancel_ids_for_pause(&self.hub.store, &paused_runs) {
+                    tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
+                }
+            }
+        } else if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
             self.active_routine = Some(run.id.clone());
             self.routine_deadline = Some(Instant::now() + self.hub.routines.timeout(&run.id));
             self.resume_interrupted(Lane::main(&self.cfg.id), &done_tx).await;
@@ -527,6 +599,14 @@ impl Actor {
         }
     }
 
+    /// The bot (or, for a thread, its bot) is paused: no turn of its starts, so nothing is spent.
+    fn paused(&self) -> bool {
+        match self.cfg.thread_of.as_deref() {
+            Some(owner) => self.hub.paused(owner) || self.hub.pause.blocked(owner),
+            None => self.hub.paused(&self.cfg.id) || self.hub.pause.blocked(&self.cfg.id),
+        }
+    }
+
     /// Adds an entry to the current lane, signed by this bot (a group shows who said it).
     fn add(&self, kind: EntryKind, turn: i64, mut data: Value) -> Option<Entry> {
         data["author"] = self.cfg.id.clone().into();
@@ -559,6 +639,11 @@ impl Actor {
 /// Told to a bot whose turn the previous host process cut off (Grok Bot's upgrade resume).
 const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-turn. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
 
+/// Shown in a paused bot's chat when a message of the user's reaches it: nothing runs until it is resumed.
+const PAUSED_NOTICE: &str = "This bot is paused. Resume it to respond.";
+/// A turn whose setup outlived the start of a pause: no prompt was written, so it ends as a paused start.
+const PAUSED_BEFORE_PROMPT: &str = "the bot was paused before its turn began";
+
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);
 
@@ -566,5 +651,59 @@ async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {
         Some(c) => c.rx.recv().await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::startup_pair;
+    use crate::chat::calls::context::tests::{bot, hub};
+    use serde_json::json;
+
+    fn run_status(hub: &crate::hub::Hub, id: &str) -> String {
+        hub.routines.list("b1")["runs"]
+            .as_array()
+            .and_then(|runs| runs.iter().find(|run| run["id"] == id))
+            .and_then(|run| run["status"].as_str())
+            .unwrap_or("")
+            .to_owned()
+    }
+
+    /// The ids read with the pause flag are the ones a paused startup cancels. A run admitted after that
+    /// read is not one of them. This is the pair `Actor::run` passes to `cancel_ids_for_pause`.
+    #[test]
+    fn startup_cancels_exactly_the_ids_read_with_the_pause_flag() {
+        let hub = hub();
+        let cfg = crate::store::BotConfig { paused: true, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        let saved = hub
+            .routines
+            .save(&hub, "b1", &json!({"name": "Check", "instruction": "x", "triggers": [{"type": "webhook"}]}))
+            .expect("routine");
+        let routine = saved["routine"]["id"].as_str().expect("id");
+        let enqueue = |mark: &str| {
+            hub.routines.enqueue(&hub.store, "b1", routine, json!({"source": mark}), None, true).expect("queued")["run"]
+                ["id"]
+                .as_str()
+                .expect("run id")
+                .to_owned()
+        };
+        let first = enqueue("first");
+        let second = enqueue("second");
+        let startup = {
+            let _transition = hub.pause.transition();
+            startup_pair(&hub, &cfg)
+        };
+        let later = enqueue("later");
+        assert!(startup.0, "the flag and the ids are one read, and the bot was paused");
+        let mut ids = startup.1.clone();
+        ids.sort();
+        let mut expected = vec![first.clone(), second.clone()];
+        expected.sort();
+        assert_eq!(ids, expected, "a run admitted after the read is not in the snapshot");
+        hub.routines.cancel_ids_for_pause(&hub.store, &startup.1).expect("cancel");
+        assert_eq!(run_status(&hub, &first), "cancelled");
+        assert_eq!(run_status(&hub, &second), "cancelled");
+        assert_eq!(run_status(&hub, &later), "pending");
     }
 }

@@ -1125,6 +1125,265 @@ async fn a_routine_task_is_stopped_dropped_and_tried_again_as_its_routine_is() {
 }
 
 #[tokio::test]
+async fn pausing_a_bot_stops_its_working_thread_and_cancels_a_run_that_comes_due() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+    let held = routine(&host, &bot, "Held", "HOLD:held").await;
+    host.call("runRoutine", json!({"botId": bot, "id": held})).await;
+    let working = task(&host, &bot, "Held", "working").await;
+    let ran = |prompts: &[Value]| {
+        prompts.iter().filter(|p| p["text"].as_str().is_some_and(|t| t.contains("Scheduled routine: Held"))).count()
+    };
+    wait("the held run's prompt", async || (ran(&logged(&host.workspace(&bot), "prompts.jsonl")) == 1).then_some(()))
+        .await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    // The thread that was working stops, and its run says why. No report is posted as a success.
+    assert_eq!(task(&host, &bot, "Held", "stopped").await["thread"], working["thread"]);
+    let cancelled = run(&host, &bot, &held, "cancelled").await;
+    assert_eq!(cancelled["detail"], "the bot is paused");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(ran(&logged(&host.workspace(&bot), "prompts.jsonl")), 1, "the stopped thread spent nothing more");
+
+    // A run that comes due while paused is cancelled before it reaches the box or a thread.
+    let later = routine(&host, &bot, "Later", "HOLD:later").await;
+    host.call("runRoutine", json!({"botId": bot, "id": later})).await;
+    run(&host, &bot, &later, "cancelled").await;
+    assert!(work(&host, &bot).await.iter().all(|task| task["title"] != "Later"), "{:?}", work(&host, &bot).await);
+
+    // Resuming starts neither the stopped task nor the cancelled run; new work does run.
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(ran(&logged(&host.workspace(&bot), "prompts.jsonl")), 1);
+    assert_eq!(task(&host, &bot, "Held", "stopped").await["thread"], working["thread"]);
+    let after = routine(&host, &bot, "After", "PASS").await;
+    host.call("runRoutine", json!({"botId": bot, "id": after})).await;
+    task(&host, &bot, "After", "done").await;
+    run(&host, &bot, &after, "succeeded").await;
+}
+
+#[tokio::test]
+async fn a_pause_during_session_setup_writes_no_prompt_and_the_message_does_not_run_after_resume() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let workspace = host.workspace(&bot);
+    let barrier = workspace.join("setup-barrier");
+    let waiting = workspace.join("setup-barrier-waiting");
+    std::fs::write(&barrier, "").unwrap();
+    let sent = json!({"botId": bot, "text": "PAUSED_DURING_SETUP", "clientNonce": "pause-setup"});
+    host.call("send", sent).await;
+    wait("the agent to wait in session setup", async || waiting.exists().then_some(())).await;
+
+    // The pause returns while the turn is still setting up. Releasing setup afterwards must not submit its prompt.
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    std::fs::remove_file(&barrier).unwrap();
+    wait("the waiting session setup to finish", async || (!waiting.exists()).then_some(())).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let prompts = logged(&workspace, "prompts.jsonl");
+    assert!(
+        prompts.iter().all(|p| !p["text"].as_str().unwrap().contains("PAUSED_DURING_SETUP")),
+        "a prompt was written after the pause returned: {prompts:?}"
+    );
+
+    // Resume does not revive it; a new message is a new turn.
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    host.call("send", json!({"botId": bot, "text": "AFTER_RESUME", "clientNonce": "after-resume"})).await;
+    assert_eq!(reply(&host, &bot, "reply: AFTER_RESUME").await, "reply: AFTER_RESUME");
+    let prompts = logged(&workspace, "prompts.jsonl");
+    assert_eq!(prompts.iter().filter(|p| p["text"].as_str().unwrap().contains("PAUSED_DURING_SETUP")).count(), 0);
+    assert_eq!(prompts.iter().filter(|p| p["text"].as_str().unwrap().contains("AFTER_RESUME")).count(), 1);
+}
+
+#[tokio::test]
+async fn a_request_queued_before_pause_is_refused_after_the_resume() {
+    let host = Host::start().await;
+    let asker = host.fixture_bot("Ada", "work_agent.py", "").await;
+    let bot = bot_with(&host, 1).await;
+    let workspace = host.workspace(&bot);
+    let barrier = workspace.join("setup-barrier");
+    let waiting = workspace.join("setup-barrier-waiting");
+    std::fs::write(&barrier, "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "SETUP_FOR_REQUEST", "clientNonce": "request-setup"})).await;
+    wait("the agent to wait in session setup", async || waiting.exists().then_some(())).await;
+
+    // The request is made while the target is unpaused, then its actor is kept in setup while pause and resume both
+    // finish. It must not become a turn after the resume.
+    host.reply(&asker, &format!("MESSAGE {bot}|SHOULD_NOT_RUN_REQUEST")).await;
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    std::fs::remove_file(&barrier).unwrap();
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    let answer = wait("the refused request's reply turn", async || {
+        let prompts = host.log(&asker, "prompts.jsonl");
+        prompts.into_iter().find(|p| {
+            let text = p["text"].as_str().unwrap();
+            text.contains("message_bot request")
+                && text.contains("couldn't finish")
+                && text.contains("couldn't start recipient: this bot is paused")
+        })
+    })
+    .await;
+    let text = answer["text"].as_str().unwrap();
+    assert!(text.contains("couldn't start recipient"), "{text}");
+    assert!(
+        logged(&workspace, "prompts.jsonl")
+            .iter()
+            .all(|p| !p["text"].as_str().unwrap().contains("SHOULD_NOT_RUN_REQUEST")),
+        "the paused request reached the agent"
+    );
+}
+
+#[tokio::test]
+async fn a_stuck_prompt_write_does_not_freeze_pause_or_another_bot() {
+    let host = Host::start().await;
+    let stuck = host.fixture_bot("Stuck input", "stuck_input_agent.py", "").await;
+    let other = host.fixture_bot("Other", "work_agent.py", "").await;
+    host.call("send", json!({"botId": stuck, "text": "x".repeat(512 * 1024)})).await;
+    wait("the agent to stop reading its input", async || {
+        host.workspace(&stuck).join("session-ready").exists().then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let base = host.base.clone();
+    let token = host.token.clone();
+    let pausing = tokio::spawn(async move {
+        reqwest::Client::new()
+            .post(format!("{base}/api/updateBot"))
+            .bearer_auth(token)
+            .json(&json!({"id": stuck, "paused": true}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::timeout(
+        Duration::from_secs(8),
+        host.call("updateBot", json!({"id": other, "description": "still responsive"})),
+    )
+    .await
+    .expect("another bot froze behind the stuck prompt write");
+    tokio::time::timeout(Duration::from_secs(15), pausing)
+        .await
+        .expect("the pause did not stop the stuck agent")
+        .unwrap();
+    let snapshot = host.snapshot().await;
+    assert_eq!(common::bot(&snapshot, &other)["description"], "still responsive");
+}
+
+#[tokio::test]
+async fn a_quick_pause_and_resume_during_setup_is_cancelled_not_a_start_failure() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let workspace = host.workspace(&bot);
+    let barrier = workspace.join("setup-barrier");
+    let waiting = workspace.join("setup-barrier-waiting");
+    std::fs::write(&barrier, "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "QUICK_PAUSE_RESUME", "clientNonce": "quick-pause-resume"})).await;
+    wait("the agent to wait in session setup", async || waiting.exists().then_some(())).await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    std::fs::remove_file(&barrier).unwrap();
+
+    wait("the old turn to settle", async || {
+        history(&host, &bot)
+            .await
+            .into_iter()
+            .any(|e| {
+                let text = e["data"]["text"].as_str().unwrap_or_default();
+                e["kind"] == "notice"
+                    && (text == "This bot is paused. Resume it to respond."
+                        || text.contains("QUICK_PAUSE_RESUME")
+                        || text.contains("Couldn't start the agent"))
+            })
+            .then_some(())
+    })
+    .await;
+    let entries = history(&host, &bot).await;
+    assert!(
+        entries.iter().any(|e| e["data"]["text"] == "This bot is paused. Resume it to respond."),
+        "the old turn was not classified as paused: {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|e| !e["data"]["text"].as_str().unwrap_or_default().contains("Couldn't start the agent")),
+        "a paused setup became a start failure: {entries:?}"
+    );
+    let sent = entries.iter().find(|e| e["data"]["text"] == "QUICK_PAUSE_RESUME").expect("the sent message");
+    assert_eq!(sent["data"]["status"], "cancelled");
+    assert!(
+        logged(&workspace, "prompts.jsonl").iter().all(|p| !p["text"].as_str().unwrap().contains("QUICK_PAUSE_RESUME"))
+    );
+}
+
+#[tokio::test]
+async fn an_old_pause_notification_does_not_cancel_a_fresh_routine_after_resume() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let workspace = host.workspace(&bot);
+    let barrier = workspace.join("setup-barrier");
+    let waiting = workspace.join("setup-barrier-waiting");
+    std::fs::write(&barrier, "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "KEEP_ACTOR_IN_SETUP", "clientNonce": "keep-actor-in-setup"})).await;
+    wait("the agent to wait in session setup", async || waiting.exists().then_some(())).await;
+    let fresh = routine(&host, &bot, "Fresh after resume", "PASS").await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    host.call("runRoutine", json!({"botId": bot, "id": fresh})).await;
+    std::fs::remove_file(&barrier).unwrap();
+
+    let finished = wait("the fresh run to settle", async || {
+        host.call("routines", json!({"botId": bot})).await["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| {
+                run["routineId"] == fresh
+                    && !matches!(run["status"].as_str(), Some("pending" | "starting" | "running" | "recovering"))
+            })
+            .cloned()
+    })
+    .await;
+    assert_eq!(finished["status"], "succeeded", "old pause cleanup cancelled a fresh run: {finished}");
+    assert_eq!(finished["detail"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_restart_while_paused_neither_resumes_cut_off_work_nor_spends_after_resume() {
+    let mut host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+    let held = routine(&host, &bot, "Held", "HOLD:held").await;
+    host.call("runRoutine", json!({"botId": bot, "id": held})).await;
+    let working = task(&host, &bot, "Held", "working").await;
+    let ran = |prompts: &[Value]| {
+        prompts.iter().filter(|p| p["text"].as_str().is_some_and(|t| t.contains("Scheduled routine: Held"))).count()
+    };
+    wait("the held run's prompt", async || (ran(&logged(&host.workspace(&bot), "prompts.jsonl")) == 1).then_some(()))
+        .await;
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    host.restart(|_| {}).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(ran(&logged(&host.workspace(&bot), "prompts.jsonl")), 1, "the paused restart resumed the run");
+    let after = work(&host, &bot).await.into_iter().find(|task| task["id"] == working["id"]).unwrap();
+    assert_ne!(after["status"], "working", "{after}");
+    assert_ne!(after["status"], "done", "{after}");
+
+    // Resume does not bring the cut-off routine back, and a new chat turn does run.
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(ran(&logged(&host.workspace(&bot), "prompts.jsonl")), 1, "resume replayed a paused run");
+    host.call("send", json!({"botId": bot, "text": "AFTER_PAUSED_RESTART", "clientNonce": "after-paused-restart"}))
+        .await;
+    assert_eq!(reply(&host, &bot, "reply: AFTER_PAUSED_RESTART").await, "reply: AFTER_PAUSED_RESTART");
+}
+
+#[tokio::test]
 async fn a_routine_run_cut_off_by_a_host_restart_picks_up_and_posts_once() {
     let mut host = Host::start().await;
     let bot = bot_with(&host, 1).await;

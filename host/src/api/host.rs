@@ -129,6 +129,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
                 "workflows": true,
+                // This host honours `updateBot`'s `paused`. The version stays 2.54.0: a bump would make the
+                // updater treat this build as the 2.55.0 release. Clients show Pause when this is true, or
+                // when the version is at least 2.55.0. A host that omits it still ignores the field.
+                "botPause": true,
             })
         }
         "refreshBackends" => {

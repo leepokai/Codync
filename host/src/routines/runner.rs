@@ -102,13 +102,15 @@ impl Routines {
     }
 
     /// Run `run` waits in its bot's box from here (`chat::work`), not in the bot's queue.
-    pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run) -> Result<()> {
+    /// `startup` is the pause flag and the run ids, already read together by the caller that holds the
+    /// pause transition. The thread this admission may start takes that pair and does not read it again.
+    pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run, startup: (bool, Vec<String>)) -> Result<()> {
         let name = self.state.locked().routines.iter().find(|r| r.id == run.routine_id).map(|r| r.name.clone());
         // Marked first: a host that stops in between finds a run the box doesn't hold and queues it again, where
         // an unmarked run its thread already began would be taken for one cut off in the chat.
         self.set_boxed(&hub.store, &run.id, true)?;
         let name = name.unwrap_or_default();
-        crate::chat::work::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name).inspect_err(|_| {
+        crate::chat::work::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name, startup).inspect_err(|_| {
             if let Err(error) = self.set_boxed(&hub.store, &run.id, false) {
                 tracing::warn!(run = run.id, error = format!("{error:#}"), "couldn't queue a run again");
             }
@@ -244,14 +246,124 @@ impl Routines {
     /// The bot's Stop: cancels the runs queued behind its turn. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it); so does a run in the box, which the box's own Stop
     /// stops, and a webhook delivery, which its sender was already told was taken.
-    pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
+    /// Cancels the pending runs named in `ids`. A run that is not named stays, including one admitted after a resume
+    /// while a pause notification was still waiting. A retry that is waiting for later, a boxed run, and a webhook
+    /// delivery stay even when named: Stop and a pause do not take those back.
+    pub fn cancel_queued(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
         let now = now_ms();
         self.change(store, |s| {
-            let queued = |r: &&mut Run| {
-                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
-            };
-            for r in s.runs.iter_mut().filter(queued) {
-                cancel_run(r);
+            for run in s.runs.iter_mut().filter(|run| ids.iter().any(|id| id == &run.id)) {
+                if !run.boxed && run.status == Status::Pending && !run.waiting(now) && run.delivery_id.is_none() {
+                    cancel_run(run);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// The bot's Stop: every pending unboxed run that is not waiting for later and is not a webhook delivery.
+    pub fn cancel_for_stop(&self, store: &Store, bot: &str) -> Result<()> {
+        let now = now_ms();
+        let ids: Vec<String> = self
+            .state
+            .locked()
+            .runs
+            .iter()
+            .filter(|run| {
+                run.bot_id == bot
+                    && !run.boxed
+                    && run.status == Status::Pending
+                    && !run.waiting(now)
+                    && run.delivery_id.is_none()
+            })
+            .map(|run| run.id.clone())
+            .collect();
+        self.cancel_queued(store, &ids)
+    }
+
+    /// Active run ids for `bot`. Read in the same pause transition as the pause flag, so a resume cannot
+    /// admit a run between the two.
+    pub fn active_ids(&self, bot: &str) -> Vec<String> {
+        self.state
+            .locked()
+            .runs
+            .iter()
+            .filter(|run| run.bot_id == bot && run.status.active())
+            .map(|run| run.id.clone())
+            .collect()
+    }
+
+    /// A pause is not the bot's Stop: it ends every run of the bot, including a run working in a box thread and a
+    /// webhook delivery whose sender was already acknowledged, and a run that came due while it is paused. The
+    /// routine's schedule keeps its next trigger, so resuming starts nothing from this pause.
+    pub fn cancel_for_pause(&self, store: &Store, bot: &str) -> Result<()> {
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Ends the named runs the way [`Self::cancel_for_pause`] does. A run that is not named stays, including one
+    /// admitted after the ids were read.
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|run| ids.iter().any(|id| id == &run.id) && run.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Closing a pause: every run that was made while the bot was paused is discarded, and a trigger that came due in
+    /// that time starts from its next occurrence. The caller holds the pause transition, so no new run can slip in
+    /// between this cleanup and admission opening again.
+    pub fn resume_after_pause(&self, store: &Store, bot: &str) -> Result<()> {
+        let now = now_ms();
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            for routine in s.routines.iter_mut().filter(|r| r.bot_id == bot && !r.deleted && r.enabled) {
+                for (trigger, next) in routine.triggers.iter().zip(&mut routine.next_runs) {
+                    let Some(at) = *next else { continue };
+                    if at > now {
+                        continue;
+                    }
+                    match trigger.advance(at, now) {
+                        Ok(future) => *next = future,
+                        Err(error) => {
+                            routine.enabled = false;
+                            routine.last_error = Some(format!("Invalid schedule: {error:#}"));
+                            break;
+                        }
+                    }
+                }
             }
             Ok(())
         })
@@ -335,7 +447,16 @@ impl Routines {
         state.runs.iter().filter(|r| r.status == Status::Pending && !r.boxed && !r.waiting(now)).cloned().collect()
     }
 
-    fn schedule_due(&self, store: &Store, now: i64) -> Result<()> {
+    fn schedule_due(
+        &self,
+        store: &Store,
+        now: i64,
+        pause: &crate::hub::Pause,
+        paused: impl Fn(&str) -> bool,
+    ) -> Result<()> {
+        // Held with the pause transition: a trigger due while a bot is paused is advanced, but never becomes a run
+        // that a resume could start.
+        let _transition = pause.transition();
         let due = self
             .state
             .locked()
@@ -368,7 +489,7 @@ impl Routines {
                         }
                     }
                 }
-                if !fired || !routine.enabled {
+                if !fired || !routine.enabled || pause.blocked(&routine.bot_id) || paused(&routine.bot_id) {
                     continue;
                 }
                 // Keep one pending wake while a prior run is active. This also
@@ -409,7 +530,7 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
         tracing::error!(%error, "routine result publication will retry");
     }
     let now = now_ms();
-    hub.routines.schedule_due(&hub.store, now)?;
+    hub.routines.schedule_due(&hub.store, now, &hub.pause, |bot| hub.paused(bot))?;
     hub.routines.send_due_follow_ups(hub, now)?;
     for run in hub.routines.due(now) {
         if hub.routines.stopping() {
@@ -419,10 +540,22 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
             hub.routines.disable_bot(&hub.store, &run.bot_id)?;
             continue;
         };
+        // A run that came due while its bot is paused is cancelled here, not put in a box where a resume would
+        // start it later. Its routine's schedule has already advanced to its next trigger. The transition is held
+        // through admission, so a resume cannot open the gate between this check and the run being placed.
+        let _transition = hub.pause.transition();
+        // One instant, while this guard is held. A thread this admission starts does not carry run ids:
+        // those belong to the bot, and they are captured when the bot's own actor is spawned.
+        let was_paused = hub.pause.blocked(&run.bot_id) || hub.paused(&run.bot_id);
+        if was_paused {
+            hub.routines.cancel_for_pause(&hub.store, &run.bot_id)?;
+            continue;
+        }
         // A task in the bot's box: it waits its turn there, and the chat stays free.
         // One with a folder of its own too: only a thread can work elsewhere than the bot's folder.
         if crate::chat::work::boxed(&bot.config) || hub.routines.has_folder(&run.routine_id) {
-            hub.routines.put_in_box(hub, &run)?;
+            let startup = (was_paused, Vec::new());
+            hub.routines.put_in_box(hub, &run, startup)?;
             continue;
         }
         if !hub.routines.active.locked().insert(run.bot_id.clone()) {
@@ -441,6 +574,11 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn due_at(routines: &Routines, store: &Store, now: i64) {
+        let pause = crate::hub::Pause::default();
+        routines.schedule_due(store, now, &pause, |_| false).unwrap();
+    }
+
     #[test]
     fn busy_run_keeps_one_pending_wake_and_interval_cadence() {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -455,12 +593,33 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        routines.schedule_due(&store, 61_700).unwrap();
-        routines.schedule_due(&store, 181_000).unwrap();
+        due_at(&routines, &store, 61_700);
+        due_at(&routines, &store, 181_000);
         let state = routines.state.locked();
         assert_eq!(state.routines[0].next_runs[0], Some(240_000));
         assert_eq!(state.runs.len(), 2);
         assert_eq!(state.runs.iter().filter(|r| r.status == Status::Pending).count(), 1);
+    }
+
+    #[test]
+    fn a_due_trigger_while_paused_advances_without_creating_a_run() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let routines = Routines::default();
+        let routine = super::super::tests::routine();
+        routines
+            .change(&store, |s| {
+                s.routines.push(routine);
+                Ok(())
+            })
+            .unwrap();
+        let pause = crate::hub::Pause::default();
+        pause.block("bot");
+        routines.schedule_due(&store, 61_000, &pause, |_| false).unwrap();
+        pause.unblock("bot");
+        routines.resume_after_pause(&store, "bot").unwrap();
+        let state = routines.state.locked();
+        assert!(state.runs.is_empty(), "a paused trigger became a run: {:?}", state.runs.len());
+        assert!(state.routines[0].next_runs[0].is_some_and(|at| at > 61_000));
     }
 
     #[test]
@@ -478,8 +637,8 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        routines.schedule_due(&store, 70_000).unwrap();
-        routines.schedule_due(&store, 80_000).unwrap();
+        due_at(&routines, &store, 70_000);
+        due_at(&routines, &store, 80_000);
         let state = routines.state.locked();
         assert_eq!(state.routines[0].next_runs[0], None);
         assert_eq!(state.runs.len(), 2);
@@ -503,7 +662,7 @@ mod tests {
             .unwrap();
         assert!(routines.due(119_999).is_empty());
         assert_eq!(routines.due(120_000).len(), 1);
-        routines.schedule_due(&store, 61_000).unwrap();
+        due_at(&routines, &store, 61_000);
         let state = routines.state.locked();
         assert_eq!(state.runs.len(), 1, "the waiting retry is the scheduled fire");
         assert_eq!(state.runs[0].not_before, None);
@@ -514,19 +673,23 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let routines = Routines::default();
         let routine = super::super::tests::routine();
+        let queued = new_run(&routine, Value::Null, None);
+        let queued_id = queued.id.clone();
+        let mut retry = new_run(&routine, Value::Null, None);
+        retry.not_before = Some(now_ms() + 60_000);
+        let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+        let fresh = new_run(&routine, Value::Null, None);
         routines
             .change(&store, |s| {
-                let mut retry = new_run(&routine, Value::Null, None);
-                retry.not_before = Some(now_ms() + 60_000);
-                let delivery = new_run(&routine, Value::Null, Some("d1".into()));
-                s.runs.extend([new_run(&routine, Value::Null, None), retry, delivery]);
+                s.runs.extend([queued, retry, delivery, fresh]);
                 s.routines.push(routine);
                 Ok(())
             })
             .unwrap();
-        routines.cancel_queued(&store, "bot").unwrap();
+        routines.cancel_queued(&store, &[queued_id]).unwrap();
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
         assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
+        assert!(state.runs[3].status == Status::Pending, "a run that was not queued for this pause stays");
     }
 }

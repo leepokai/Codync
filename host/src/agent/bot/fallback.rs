@@ -39,6 +39,8 @@ struct Attempt {
     lane: Lane,
     entries: Vec<String>,
     text: String,
+    /// The generation the turn was admitted under. A retry uses this, not a generation read when the next agent starts.
+    epoch: u64,
 }
 
 /// The running turn's place in the chain.
@@ -104,7 +106,7 @@ impl Actor {
     }
 
     /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
-    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str) {
+    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str, epoch: u64) {
         if !std::mem::take(&mut self.relay.retrying) {
             self.relay.tried.clear();
             self.relay.failed.clear();
@@ -116,7 +118,8 @@ impl Actor {
         self.relay.line = None;
         self.relay.carried = None;
         self.relay.handing_off = false;
-        self.relay.attempt = Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned() });
+        self.relay.attempt =
+            Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned(), epoch });
         let now = now_ms();
         let target = self.next_step(now).unwrap_or(0);
         self.left_signed_out_before(target, now);
@@ -438,8 +441,15 @@ impl Actor {
             self.relay.stopped = Some((reason, rest.map(|r| r.until)));
             self.close_attempt(true);
             self.relay.retrying = true;
-            match self.start_turn(attempt.lane.clone(), &attempt.entries, &attempt.text, false, done_tx).await {
+            match self
+                .start_turn(attempt.lane.clone(), &attempt.entries, &attempt.text, false, done_tx, attempt.epoch)
+                .await
+            {
                 Ok(()) => return true,
+                Err(e) if e.to_string() == super::PAUSED_BEFORE_PROMPT => {
+                    self.start_paused();
+                    return true;
+                }
                 Err(e) => {
                     let Some(r) = fallback::reason::of(&e) else {
                         self.start_failed(&e);
@@ -530,9 +540,60 @@ impl Actor {
 
     /// A turn that couldn't start: on the next agent if one can take it, otherwise the failure as usual.
     pub(super) async fn start_error(&mut self, error: anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) {
+        // A pause is not a failing agent: no fallback may take the turn, since that would spend during the pause.
+        // The admission error stays authoritative even when a quick resume has already changed the current flag.
+        if error.to_string() == super::PAUSED_BEFORE_PROMPT || self.paused() || self.hub.pause.blocked(self.cfg.owner())
+        {
+            self.start_paused();
+            return;
+        }
         if !self.fall_back(&error, done_tx).await {
             self.start_failed(&error);
         }
+    }
+
+    /// A turn whose setup outlived the start of a pause ended before any prompt: what it carried is refused as a
+    /// paused turn, not reported as an agent failure.
+    fn start_paused(&mut self) {
+        if self.turn.is_some() {
+            self.report_turn(true, None, "paused");
+        }
+        self.finish_routine(crate::routines::Status::Cancelled, Some("the bot is paused".into()), None);
+        self.complete_request(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+        self.complete_group(Err(anyhow::anyhow!("this bot is paused")));
+        let mut told = !self.turn_entries.is_empty();
+        for id in std::mem::take(&mut self.turn_entries) {
+            if let Some(mut entry) = self.hub.store.entry(&id) {
+                entry.data["status"] = "cancelled".into();
+                self.hub.set_entry(&id, &entry.data);
+                told = true;
+            }
+        }
+        let goes_on = self.end_task(|| crate::chat::work::Outcome::Stopped);
+        self.relay.carried = None;
+        self.turn = None;
+        self.reply_hops = None;
+        self.end_host_turn(false);
+        crate::chat::memory::turns::drop_turn(&self.cfg.id);
+        if self.routine_completion.is_none() {
+            self.set_inflight(false);
+        }
+        let needs = goes_on.as_ref().and_then(Held::needs);
+        self.hub.set_runtime(&self.id(), |runtime| {
+            runtime.status =
+                if needs.is_some() { crate::hub::BotStatus::NeedsInput } else { crate::hub::BotStatus::Idle };
+            runtime.activity = needs.unwrap_or_default();
+            runtime.started_at = None;
+            runtime.lane = None;
+            runtime.message = None;
+            runtime.session = None;
+        });
+        self.wait_for_sign_in(goes_on.as_ref());
+        self.hub.team.end_turn(&self.cfg.id);
+        if told {
+            self.add_between_turns(EntryKind::Notice, &json!({"text": super::PAUSED_NOTICE, "style": "info"}));
+        }
+        self.refuse_paused();
     }
 
     /// The agent answered a turn: whatever rest it had is over.

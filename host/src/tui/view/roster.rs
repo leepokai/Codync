@@ -176,9 +176,12 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
-    // The most pressing first: it needs the user (its chat, then a task of its box), what its chat does, how many
-    // tasks work and wait; else the row reads as usual.
+    // The most pressing first: paused (it answers nothing until it is resumed), it needs the user (its chat, then
+    // a task of its box), what its chat does, how many tasks work and wait; else the row reads as usual.
     let background = counts(&b.work);
+    if b.paused {
+        return (tr("Paused").into_owned(), t.secondary);
+    }
     match b.mark() {
         Mark::Need => (
             if b.activity.is_empty() { tr("Needs approval").into_owned() } else { tr(&b.activity).into_owned() },

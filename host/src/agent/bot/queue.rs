@@ -2,15 +2,17 @@
 
 use super::sign_in::Held;
 use super::{
-    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+    Actor, Admitted, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, PAUSED_NOTICE, Queued, RESUME_PROMPT,
+    RoutineCompletion,
 };
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
-use crate::store::{Lane, now_ms};
+use crate::store::{EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
+use serde_json::json;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -19,22 +21,42 @@ impl Actor {
         match cmd {
             Cmd::RefreshTools => self.restart_stale(),
             Cmd::KeeperRestarted => self.keeper_restarted().await,
-            Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
+            Cmd::Routine(id) => {
+                self.enqueue(Queued::Routine(id), done_tx).await;
+                // The run is in `self.queue` and has not started. A later pause can still see it.
+                super::race_gate::wait("routine_queued").await;
+            }
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
-            Cmd::WorkflowStep { step_id } => self.enqueue(Queued::WorkflowStep(step_id), done_tx).await,
+            Cmd::WorkflowStep { step_id } => {
+                self.enqueue(Queued::WorkflowStep(step_id), done_tx).await;
+                // The step is in `self.queue` and has not started. A later pause can still see it.
+                super::race_gate::wait("workflow_step_queued").await;
+            }
             Cmd::WorkflowStop { step_id } => self.stop_workflow(&step_id).await,
             Cmd::Watchdog(stuck) => {
                 // A newer look at the thread stands for one still waiting.
-                self.queue.retain(|q| !matches!(q, Queued::Watchdog(s) if s.thread() == stuck.thread()));
+                self.queue.retain(|q| !matches!(&q.item, Queued::Watchdog(s) if s.thread() == stuck.thread()));
                 self.enqueue(Queued::Watchdog(stuck), done_tx).await;
             }
             Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
-            Cmd::Send { lane, entry_id, mut text } => {
+            Cmd::Send { lane, entry_id, mut text, arrived_epoch, arrived_blocked } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
                 if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {
-                    self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                    // Arrival is the snapshot from `hand_on`, not `paused()` now. A resume does not
+                    // move the epoch, so an equal epoch is not proof the message arrived afterwards:
+                    // `arrived_blocked` is that fact. A message that arrived while admission was open
+                    // is held when this actor only reads it after a later pause began.
+                    let pause_began_after_arrival = self.hub.pause.epoch(self.cfg.owner()) != arrived_epoch;
+                    if arrived_blocked {
+                        self.cancel_paused_message(&entry_id);
+                    } else {
+                        if pause_began_after_arrival && self.paused() {
+                            tracing::debug!(arrived_epoch, "holding a message that arrived before this pause");
+                        }
+                        self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                    }
                 }
             }
             Cmd::Steer { entry_id } => self.steer(entry_id).await,
@@ -42,21 +64,34 @@ impl Actor {
             Cmd::Unqueue { entry_id } => self.unqueue(&entry_id),
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
-                self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane == turn.lane));
+                self.queue.retain(|q| !matches!(&q.item, Queued::Group(g) if g.lane == turn.lane));
                 self.enqueue(Queued::Group(turn), done_tx).await;
             }
             Cmd::CancelGroup { chat } => {
                 // Dropping a queued turn's reply tells the room it won't come.
-                self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane.chat == chat));
+                self.queue.retain(|q| !matches!(&q.item, Queued::Group(g) if g.lane.chat == chat));
                 if self.active_group.as_ref().is_some_and(|g| g.lane.chat == chat) {
                     self.cancel_turn().await;
                 }
             }
+            // A pause after the request was made refuses it here as well as in the sender: the owner may have been
+            // resumed before this actor handled the command, and no turn may start from work admitted inside a pause.
+            Cmd::BotRequest(request)
+                if self.paused() || self.hub.pause.epoch(self.cfg.owner()) != request.pause_epoch =>
+            {
+                request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+            }
             // A task in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
             Cmd::BotRequest(request) if work::boxed(&self.base) => {
+                // The epoch check above has passed. Pause cleanup can run before the box insert.
+                super::race_gate::wait("before_boxed_request_insert").await;
                 work::add_request(&self.hub, &self.cfg.id, request);
             }
-            Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
+            Cmd::BotRequest(request) => {
+                self.enqueue(Queued::BotRequest(request), done_tx).await;
+                // The request is behind the running turn, admitted at the epoch it arrived with.
+                super::race_gate::wait("unboxed_request_queued").await;
+            }
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
             Cmd::Prompt { text, call } => self.enqueue(Queued::Prompt { text, call }, done_tx).await,
             Cmd::SendToUser { text, quote, reply } => {
@@ -98,6 +133,7 @@ impl Actor {
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
+            Cmd::Paused { paused, pause_epoch } => self.pause_changed(paused, pause_epoch, done_tx).await,
             Cmd::SwitchBack => self.switch_back().await,
             Cmd::CallEnded { call } => {
                 if self.turn_call.as_ref() == Some(&call) {
@@ -105,7 +141,7 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(mut base) => {
+            Cmd::Reconfigure { mut base, pause_epoch } => {
                 // A thread's folder is its own (`enter_worktree`): its bot's changes (`work::fallbacks_changed`) keep it.
                 if self.cfg.is_thread() {
                     base.cwd.clone_from(&self.base.cwd);
@@ -167,15 +203,29 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
+                // A pause stops the running turn (nothing more is spent), cancels every run of its routines and
+                // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
+                if old.paused != self.base.paused {
+                    self.pause_changed(self.base.paused, pause_epoch, done_tx).await;
+                }
             }
             Cmd::Shutdown => return false,
         }
         true
     }
 
+    /// The pause generation to store with `item`. A bot request keeps the generation it was made under.
+    pub(super) fn queued(&self, item: Queued) -> Admitted {
+        let epoch = match &item {
+            Queued::BotRequest(request) => request.pause_epoch,
+            _ => self.hub.pause.epoch(self.cfg.owner()),
+        };
+        Admitted { item, epoch }
+    }
+
     /// Queues `item`, and starts it right away when the bot is free.
     async fn enqueue(&mut self, item: Queued, done_tx: &mpsc::UnboundedSender<Done>) {
-        self.queue.push_back(item);
+        self.queue.push_back(self.queued(item));
         if self.turn.is_none() {
             self.next_in_queue(done_tx).await;
         }
@@ -183,7 +233,7 @@ impl Actor {
 
     pub(super) async fn stop(&mut self) {
         self.hub.team.end_turn(&self.cfg.id);
-        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
+        if let Err(error) = self.hub.routines.cancel_for_stop(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
         }
         if self.active_routine.is_none() {
@@ -194,14 +244,17 @@ impl Actor {
         }
         // Queued messages are dropped too: Stop means "stop everything". A room's late turn stays: the room was
         // told this member answers there once free, and only the group's Stop drops it.
-        for queued in std::mem::take(&mut self.queue) {
-            match queued {
+        for admitted in std::mem::take(&mut self.queue) {
+            let epoch = admitted.epoch;
+            match admitted.item {
                 Queued::WorkflowStep(step) => {
                     self.hub.workflows.finish(&self.hub, &step, None, None, true);
                 }
-                Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
+                Queued::Group(turn) if turn.late => self.queue.push_back(Admitted { item: Queued::Group(turn), epoch }),
                 // A task's report is news the user still wants.
-                Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
+                Queued::TaskReport(report) => {
+                    self.queue.push_back(Admitted { item: Queued::TaskReport(report), epoch });
+                }
                 // Its notice keeps the outcome; a host restart doesn't bring back what the user stopped.
                 Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
                 Queued::User { entry_id, .. } => {
@@ -232,7 +285,7 @@ impl Actor {
     }
 
     async fn stop_workflow(&mut self, step_id: &str) {
-        self.queue.retain(|queued| !matches!(queued, Queued::WorkflowStep(id) if id == step_id));
+        self.queue.retain(|queued| !matches!(&queued.item, Queued::WorkflowStep(id) if id == step_id));
         if self.active_workflow.as_deref() == Some(step_id) {
             self.cancel_turn().await;
         } else {
@@ -272,25 +325,45 @@ impl Actor {
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
         }
+        // Paused: no turn starts, so nothing is spent. What is already queued stays for resume, except the
+        // kinds `refuse_paused` drops. A user message that arrives while paused never reaches this queue.
+        if self.paused() {
+            self.refuse_paused();
+            return;
+        }
         let main = Lane::main(&self.cfg.id);
         while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
             // What the rest of the queue works on is the user's, or this computer's own: only a bot request and
             // bot replies carry another computer's text.
             self.hub.ceilings.set(&self.cfg.id, Access::Allow);
-            match self.queue.front() {
+            match self.queue.front().map(|queued| &queued.item) {
                 Some(Queued::WorkflowStep(_)) => {
-                    let Some(Queued::WorkflowStep(id)) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::WorkflowStep(id), epoch }) = self.queue.pop_front() else {
                         unreachable!("front is a workflow step")
                     };
                     self.active_workflow = Some(id.clone());
                     match crate::workflows::agent_begin(&self.hub, &id) {
                         Ok(Some(prepared)) => {
                             self.routine_deadline = Some(Instant::now() + prepared.timeout);
-                            let result = self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx).await;
+                            let result =
+                                self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx, epoch).await;
                             if let Err(error) = result {
                                 self.routine_deadline = None;
-                                self.hub.workflows.finish(&self.hub, &id, None, Some(format!("{error:#}")), false);
+                                // Admission rejected the carried epoch. Stopping the step is the same end as
+                                // `WorkflowStop`. Recording the error would mark it failed, and reading a fresh
+                                // epoch here would reopen the race the carried epoch closes.
+                                let paused = error.to_string() == super::PAUSED_BEFORE_PROMPT;
+                                self.hub.workflows.finish(
+                                    &self.hub,
+                                    &id,
+                                    None,
+                                    (!paused).then(|| format!("{error:#}")),
+                                    paused,
+                                );
                                 self.active_workflow = None;
+                                if paused {
+                                    self.start_error(error, done_tx).await;
+                                }
                             } else if let Err(error) = crate::workflows::agent_mark_started(&self.hub, &id) {
                                 tracing::warn!(error = format!("{error:#}"), "couldn't mark a workflow step started");
                             }
@@ -304,13 +377,16 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::Routine(_)) => {
-                    let Some(Queued::Routine(id)) = self.queue.pop_front() else { unreachable!("front is a routine") };
+                    let Some(Admitted { item: Queued::Routine(id), epoch }) = self.queue.pop_front() else {
+                        unreachable!("front is a routine")
+                    };
                     self.active_routine = Some(id.clone());
                     self.routine_timed_out = false;
                     match self.hub.routines.begin(&self.hub, &self.cfg.id, &id) {
                         Ok(Some(prepared)) => {
                             self.routine_deadline = Some(Instant::now() + prepared.timeout);
-                            let result = self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx).await;
+                            let result =
+                                self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx, epoch).await;
                             if let Err(error) = result {
                                 self.start_error(error, done_tx).await;
                             }
@@ -327,7 +403,7 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::BotRequest(_)) => {
-                    let Some(Queued::BotRequest(mut request)) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::BotRequest(mut request), epoch }) = self.queue.pop_front() else {
                         unreachable!("front is a bot request")
                     };
                     let ids = [request.entry_id.clone()];
@@ -335,7 +411,7 @@ impl Actor {
                     self.hub.ceilings.set(&self.cfg.id, request.access());
                     request.mark_started();
                     self.active_request = Some(request);
-                    let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
+                    let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx, epoch).await;
                     if let Err(e) = result {
                         self.start_error(e, done_tx).await;
                     }
@@ -344,20 +420,23 @@ impl Actor {
                 Some(Queued::BotReply(_)) => {
                     // Replies that came in while the bot worked are one turn, as the user's messages are, those a
                     // network rule holds to the same level: a turn that can't start under a ceiling takes no other
-                    // bot's reply down with it.
+                    // bot's reply down with it. The oldest generation in the batch is the one admission uses.
                     let mut replies: Vec<crate::chat::team::BotReply> = Vec::new();
-                    while let Some(Queued::BotReply(next)) = self.queue.front()
-                        && replies.first().is_none_or(|first| first.access() == next.access())
-                    {
-                        if let Some(Queued::BotReply(reply)) = self.queue.pop_front() {
-                            replies.push(reply);
-                        }
+                    let mut epoch = u64::MAX;
+                    while self.queue.front().is_some_and(|queued| {
+                        let Queued::BotReply(next) = &queued.item else { return false };
+                        replies.first().is_none_or(|first| first.access() == next.access())
+                    }) {
+                        let Some(Admitted { item, epoch: queued }) = self.queue.pop_front() else { break };
+                        let Queued::BotReply(reply) = item else { break };
+                        epoch = epoch.min(queued);
+                        replies.push(reply);
                     }
                     let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
-                    let result = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await;
+                    let result = self.start_turn(main.clone(), &[], &prompt, false, done_tx, epoch).await;
                     let started = result.is_ok();
                     if let Err(e) = result {
                         self.start_error(e, done_tx).await;
@@ -370,18 +449,20 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::TaskReport(_)) => {
-                    // Reports that came in while the bot worked are one turn, as replies are.
+                    // Reports that came in while the bot worked are one turn, as replies are. The actor decides to
+                    // deliver them now, including after a resume, so admission reads the generation at this start.
                     let mut reports = Vec::new();
-                    while let Some(Queued::TaskReport(_)) = self.queue.front() {
-                        if let Some(Queued::TaskReport(report)) = self.queue.pop_front() {
-                            reports.push(report);
-                        }
+                    while self.queue.front().is_some_and(|queued| matches!(&queued.item, Queued::TaskReport(_))) {
+                        let Some(Admitted { item, .. }) = self.queue.pop_front() else { break };
+                        let Queued::TaskReport(report) = item else { break };
+                        reports.push(report);
                     }
                     self.host_turn = Some(HostTurn::TaskReport);
                     let hops = reports.iter().map(|r| r.hops).max().unwrap_or(0);
                     let prompt = work::report_prompt(&reports);
                     self.reports = reports;
-                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                    let epoch = self.hub.pause.epoch(self.cfg.owner());
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx, epoch).await {
                         // A task this turn adds carries the chain on.
                         Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
@@ -389,13 +470,14 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::Watchdog(_)) => {
-                    let Some(Queued::Watchdog(stuck)) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::Watchdog(stuck), .. }) = self.queue.pop_front() else {
                         unreachable!("front is the watchdog's")
                     };
                     // The task ended or was set aside while this waited: nothing is left to look at.
                     let Some((prompt, hops)) = stuck.turn(&self.hub.store, &self.cfg.id) else { continue };
                     self.host_turn = Some(HostTurn::Watchdog);
-                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                    let epoch = self.hub.pause.epoch(self.cfg.owner());
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx, epoch).await {
                         // A task this turn adds carries the chain on, as a report's turn does.
                         Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
@@ -403,11 +485,13 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::TaskAnswer { .. }) => {
-                    let Some(Queued::TaskAnswer { prompt, hops }) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::TaskAnswer { prompt, hops }, .. }) = self.queue.pop_front()
+                    else {
                         unreachable!("front is a thread's answer")
                     };
                     self.host_turn = Some(HostTurn::TaskAnswer);
-                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                    let epoch = self.hub.pause.epoch(self.cfg.owner());
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx, epoch).await {
                         // A task this turn adds carries the chain on, as a report's turn does.
                         Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
@@ -415,24 +499,25 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::Prompt { .. }) => {
-                    let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::Prompt { text, call }, epoch }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
                     };
                     self.host_turn = Some(HostTurn::Opening);
                     self.prompt_call = call;
-                    if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
+                    if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx, epoch).await {
                         self.start_error(e, done_tx).await;
                     }
                     continue;
                 }
                 Some(Queued::FollowUp(_)) => {
-                    let Some(Queued::FollowUp(id)) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::FollowUp(id), .. }) = self.queue.pop_front() else {
                         unreachable!("front is a follow-up")
                     };
                     match self.hub.routines.begin_follow_up(&self.hub, &self.cfg.id, &id) {
                         Ok(Some(prompt)) => {
                             self.host_turn = Some(HostTurn::FollowUp);
-                            if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                            let epoch = self.hub.pause.epoch(self.cfg.owner());
+                            if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx, epoch).await {
                                 self.start_error(e, done_tx).await;
                             }
                         }
@@ -445,7 +530,7 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::Group(_)) => {
-                    let Some(Queued::Group(mut turn)) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::Group(mut turn), epoch }) = self.queue.pop_front() else {
                         unreachable!("front is a group turn")
                     };
                     // A newer message in the room (or Stop) ended the room turn that queued this; a late turn
@@ -459,14 +544,14 @@ impl Actor {
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());
                     self.active_group = Some(turn);
-                    let result = self.start_turn(lane, &[], &prompt, false, done_tx).await;
+                    let result = self.start_turn(lane, &[], &prompt, false, done_tx, epoch).await;
                     if let Err(e) = result {
                         self.start_error(e, done_tx).await;
                     }
                     continue;
                 }
                 Some(Queued::Compact { .. }) => {
-                    let Some(Queued::Compact { idle }) = self.queue.pop_front() else {
+                    let Some(Admitted { item: Queued::Compact { idle }, .. }) = self.queue.pop_front() else {
                         unreachable!("front is a compaction")
                     };
                     self.start_compaction(idle, done_tx).await;
@@ -476,15 +561,21 @@ impl Actor {
             }
             // Messages sent while the agent worked go out together as its next turn
             // without crossing a bot request or reply or another lane: each gets its own reply.
-            let Some(Queued::User { lane, .. }) = self.queue.front() else { continue };
-            let lane = lane.clone();
+            let Some(lane) = self.queue.front().and_then(|queued| match &queued.item {
+                Queued::User { lane, .. } => Some(lane.clone()),
+                _ => None,
+            }) else {
+                continue;
+            };
             let mut batch = Vec::new();
-            while let Some(Queued::User { lane: l, .. }) = self.queue.front()
-                && *l == lane
+            while self
+                .queue
+                .front()
+                .is_some_and(|queued| matches!(&queued.item, Queued::User { lane: l, .. } if l == &lane))
             {
-                if let Some(Queued::User { entry_id, text, .. }) = self.queue.pop_front() {
-                    batch.push((entry_id, text));
-                }
+                let Some(Admitted { item, .. }) = self.queue.pop_front() else { break };
+                let Queued::User { entry_id, text, .. } = item else { break };
+                batch.push((entry_id, text));
             }
             let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
             let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
@@ -493,8 +584,106 @@ impl Actor {
             if lane == main {
                 self.handoff = self.take_handoff().or_else(|| self.handoff.take());
             }
-            if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
+            // The generation stored at enqueue is the one from before a pause, and admission would reject it
+            // after resume. This start is the actor deciding to run the message now, so it reads the generation
+            // here, as a task report does. A pause during setup still rejects the prompt: the read is not repeated
+            // at the write.
+            let epoch = self.hub.pause.epoch(self.cfg.owner());
+            if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx, epoch).await {
                 self.start_error(e, done_tx).await;
+            }
+        }
+    }
+
+    /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
+    /// lets what was already waiting go on. The host's pause transaction already cancelled its routine runs, so a
+    /// delayed notification cannot cancel work admitted after a resume.
+    async fn pause_changed(&mut self, paused: bool, notice_epoch: u64, done_tx: &mpsc::UnboundedSender<Done>) {
+        if paused {
+            // `notice_epoch` is the generation `Pause::block` stored for this pause. A turn admitted
+            // at that generation or a later one started after the pause: a resume does not move the
+            // generation. Cancelling it drops work a newer resume already started, and `cancel_turn`
+            // does not put the message back.
+            if !self.stale_pause_notice(notice_epoch) {
+                self.cancel_turn().await;
+            }
+            // The running turn is stopped. A resume can admit new work before the queue is refused.
+            super::race_gate::wait("before_refuse_paused").await;
+            self.refuse_paused();
+        } else {
+            self.next_in_queue(done_tx).await;
+            if !self.cfg.is_thread() {
+                work::dispatch(&self.hub, &self.cfg.id);
+            }
+        }
+        // After the notice's effects, so a test can tell the backlog has been applied.
+        super::race_gate::wait("after_pause_changed").await;
+    }
+
+    /// A pause notice from `notice_epoch` is older than the running turn. It must not cancel it.
+    fn stale_pause_notice(&self, notice_epoch: u64) -> bool {
+        self.turn.is_some() && self.turn_epoch.is_some_and(|started| notice_epoch <= started)
+    }
+
+    /// A user message that reached an already-paused bot. It was not waiting in the queue, so it does not run
+    /// on resume. The chat keeps it, marked cancelled, with the same notice as before.
+    fn cancel_paused_message(&mut self, entry_id: &str) {
+        if let Some(mut entry) = self.hub.store.entry(entry_id) {
+            entry.data["status"] = "cancelled".into();
+            self.hub.set_entry(entry_id, &entry.data);
+        }
+        self.add_between_turns(EntryKind::Notice, &json!({"text": PAUSED_NOTICE, "style": "info"}));
+    }
+
+    /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. A user message already in
+    /// this queue keeps waiting and runs when the bot is resumed. A message that arrives while paused is refused
+    /// at `Cmd::Send` instead. A bot's request ends as not started, replies go to their notices, a room's turn is
+    /// dropped with why, a workflow step is stopped, and a call's opening is not spoken. Host turns (a task's
+    /// report, the watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due
+    /// routine run is cancelled instead (see below): its schedule continues from the next trigger after the resume.
+    pub(super) fn refuse_paused(&mut self) {
+        let (kept, refused): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queue).into_iter().partition(|q| {
+            !matches!(
+                &q.item,
+                Queued::BotRequest(_)
+                    | Queued::BotReply(_)
+                    | Queued::Group(_)
+                    | Queued::WorkflowStep(_)
+                    | Queued::Prompt { .. }
+            )
+        });
+        // Only the routine runs still in this queue. A run admitted after the resume is not one of them, so a late
+        // pause notification cannot cancel it.
+        let routine_ids: Vec<String> = kept
+            .iter()
+            .filter_map(|queued| match &queued.item {
+                Queued::Routine(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        if !routine_ids.is_empty()
+            && let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &routine_ids)
+        {
+            tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+        }
+        self.queue = kept.into_iter().collect();
+        for item in refused {
+            match item.item {
+                Queued::BotRequest(request) => {
+                    request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+                }
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
+                Queued::Group(turn) => {
+                    let _ = turn.reply.send(Err(anyhow!("this bot is paused")));
+                }
+                // The same end as `stop` and `WorkflowStop`: stopped, not failed at the next admission.
+                Queued::WorkflowStep(step) => {
+                    self.hub.workflows.finish(&self.hub, &step, None, None, true);
+                }
+                // A call opening speaks on the call. Stop drops one that is still queued; a pause does too,
+                // so it is not started later with the epoch from before the pause.
+                Queued::Prompt { .. } => {}
+                _ => unreachable!("only the queued kinds above are refused"),
             }
         }
     }
@@ -668,7 +857,8 @@ impl Actor {
         } else {
             RESUME_PROMPT.to_owned()
         };
-        if let Err(e) = self.start_turn(lane, &[], &prompt, true, done_tx).await {
+        if let Err(e) = self.start_turn(lane, &[], &prompt, true, done_tx, self.hub.pause.epoch(self.cfg.owner())).await
+        {
             self.start_failed(&e);
         }
     }

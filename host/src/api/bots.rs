@@ -95,16 +95,24 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             work::routines_changed(hub, bot);
             answer
         }
-        "runRoutine" => hub.routines.enqueue(
-            &hub.store,
-            str_arg(&b, "botId")?,
-            str_arg(&b, "id")?,
-            json!({"source":"test"}),
-            None,
-            true,
-        )?,
+        "runRoutine" => {
+            // A manual run requested while a pause/resume is settling is treated as after it, never as work the pause
+            // left behind.
+            let _transition = hub.pause.transition();
+            hub.routines.enqueue(
+                &hub.store,
+                str_arg(&b, "botId")?,
+                str_arg(&b, "id")?,
+                json!({"source":"test"}),
+                None,
+                true,
+            )?
+        }
         "continueChain" => crate::chat::team::limit::continue_chain(hub, str_arg(&b, "entryId")?)?,
-        "retryRoutineRun" => hub.routines.retry(hub, str_arg(&b, "botId")?, str_arg(&b, "runId")?)?,
+        "retryRoutineRun" => {
+            let _transition = hub.pause.transition();
+            hub.routines.retry(hub, str_arg(&b, "botId")?, str_arg(&b, "runId")?)?
+        }
         "routineWebhook" => hub.routines.credentials(
             hub,
             str_arg(&b, "botId")?,

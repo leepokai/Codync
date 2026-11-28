@@ -96,6 +96,31 @@ async fn a_follow_up_with_nothing_to_say_is_silent_and_one_set_in_its_turn_conti
 }
 
 #[tokio::test]
+async fn a_paused_bot_leaves_a_queued_follow_up_unspent_until_it_is_resumed() {
+    let mut host = Host::start().await;
+    let bot = host.stable_bot("paused-follow").await;
+    host.send(&bot, "WARMUP").await;
+    host.wait_event("paused-follow", "finished", "WARMUP").await;
+    follow_up(&host, &bot, "BLOCK[pause] the first look").await;
+    follow_up(&host, &bot, "the second look").await;
+    restart_with_follow_ups_due(&mut host).await;
+    host.wait_event("paused-follow", "started", "BLOCK[pause] the first look").await;
+
+    host.call("updateBot", json!({"id":bot,"paused":true})).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        !host
+            .agent_events("paused-follow")
+            .iter()
+            .any(|e| e["event"] == "started" && e["text"].as_str().unwrap().contains("the second look")),
+        "the queued follow-up spent while the bot was paused"
+    );
+
+    host.call("updateBot", json!({"id":bot,"paused":false})).await;
+    host.wait_event("paused-follow", "started", "the second look").await;
+}
+
+#[tokio::test]
 async fn a_follow_up_is_refused_in_a_room_and_taken_in_the_bots_own_chat() {
     let host = Host::start().await;
     let member = host.stable_bot("member").await;

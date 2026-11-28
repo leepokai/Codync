@@ -3,6 +3,7 @@
 //! `maxThreads`. Their result takes no turn of the bot's: a run's last message is the routine's message in the chat,
 //! as a run in the chat posted it, and a request's is the reply the asking bot gets.
 
+use super::dispatch::dispatch_with_startup;
 use super::tasks::{self, FolderKind, Setup, Source, Status, Task};
 use super::{Failure, MAX_BRIEF, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
 use crate::LockExt;
@@ -61,14 +62,22 @@ fn put(hub: &Hub, bot: &str, mut task: Task) -> Result<()> {
 
 /// A run of `bot`'s routine `routine` (named `name`) waits in its box. Its prompt is written when it starts, from
 /// the routine as it is then. A run already there isn't added twice.
-pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &str) -> Result<()> {
+pub fn add_routine(
+    hub: &Arc<Hub>,
+    bot: &str,
+    routine: &str,
+    run: &str,
+    name: &str,
+    startup: (bool, Vec<String>),
+) -> Result<()> {
     let known = |task: &Task| matches!(&task.source, Source::Routine { run: r, .. } if r == run);
     if !tasks::load(&hub.store, bot).iter().any(known) {
         let source = Source::Routine { id: routine.to_owned(), run: run.to_owned() };
         added(hub, &source);
         put(hub, bot, Task { source, ..Task::waiting(&title(name), "", None, None, 0) })?;
     }
-    dispatch(hub, bot);
+    // `startup` was captured by the caller that holds the pause transition. Dispatch must not take it again.
+    dispatch_with_startup(hub, bot, startup);
     Ok(())
 }
 
@@ -160,16 +169,51 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
 /// was cancelled.
 pub fn add_request(hub: &Arc<Hub>, bot: &str, request: BotRequest) {
     let source = Source::Request { id: request.sender().map(str::to_owned) };
-    let task = Task { source, ..Task::waiting(&title(request.quote()), &request.prompt, None, None, 0) };
-    let (id, source) = (task.id.clone(), task.source.clone());
-    hub.work.requests.locked().insert(id.clone(), request);
-    if let Err(error) = put(hub, bot, task) {
-        host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
-        hub.work.requests.locked().remove(&id);
+    let mut task =
+        Task { source: source.clone(), ..Task::waiting(&title(request.quote()), &request.prompt, None, None, 0) };
+    let epoch = request.pause_epoch;
+    let mut held = Some(request);
+    let saved = match tasks::change(hub, bot, |tasks| {
+        // Same lock `paused` holds. A pause that already advanced the generation refuses the insert; one that has
+        // not yet will see this task when it clears the box.
+        if hub.pause.epoch(bot) != epoch {
+            return Ok(false);
+        }
+        let Some(request) = held.take() else { return Ok(false) };
+        hub.work.requests.locked().insert(task.id.clone(), request);
+        task.order = tasks::last(tasks);
+        tasks.push(task.clone());
+        Ok(true)
+    }) {
+        Ok(saved) => saved,
+        Err(error) => {
+            host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
+            // The closure inserts the request before `kv_set`. A failed save leaves `held` empty and the
+            // request in the map, with no task, so nothing would ever complete it.
+            let stranded = {
+                let mut requests = hub.work.requests.locked();
+                recover_inserted(&mut held, &mut requests, &task.id)
+            };
+            if let Some(request) = stranded {
+                request.complete(Err(no_reply::not_started(format!("{error:#}"))), false);
+            }
+            return;
+        }
+    };
+    if !saved {
+        if let Some(request) = held.take() {
+            request.complete(Err(no_reply::not_started("this bot is paused")), false);
+        }
         return;
     }
     added(hub, &source);
     dispatch(hub, bot);
+}
+
+/// The request to complete when a box save fails. The closure may already have moved it out of `held`
+/// and into the map; either place, it must not be left waiting.
+fn recover_inserted<T>(held: &mut Option<T>, map: &mut std::collections::HashMap<String, T>, id: &str) -> Option<T> {
+    held.take().or_else(|| map.remove(id))
 }
 
 /// A row's title from `text`: its first line, as long as a title may be.
@@ -356,12 +400,16 @@ pub(super) fn run_again(hub: &Arc<Hub>, bot: &str, task: &Task) -> Result<()> {
     match &task.source {
         Source::Bot | Source::User => Ok(()),
         Source::Routine { id, run } => {
+            // A retry is new work: it waits for any pause/resume settling rather than becoming work that pause left.
+            // The thread it may start takes this pair. The flag is this read; a thread carries no run ids.
+            let _transition = hub.pause.transition();
+            let startup = (hub.paused(bot) || hub.pause.blocked(bot), Vec::new());
             let again = hub.routines.run_again(hub, bot, id, run)?;
             tasks::change(hub, bot, |tasks| {
                 tasks.retain(|i| i.id != task.id);
                 Ok(())
             })?;
-            hub.routines.put_in_box(hub, &again)
+            hub.routines.put_in_box(hub, &again, startup)
         }
         Source::Request { .. } => Err(anyhow!("another bot's request can't be tried again: that bot asks again")),
     }
@@ -432,5 +480,23 @@ mod tests {
         assert!(!boxed(&BotConfig { manage_team: true, ..plain.clone() }));
         assert!(!boxed(&BotConfig { thread_of: Some("b1".into()), ..plain.clone() }));
         assert_eq!(source_of(&store, &plain), Source::Bot);
+    }
+
+    #[test]
+    fn a_failed_save_still_returns_the_request_it_already_inserted() {
+        let mut held = Some("waiting".to_string());
+        let mut map = std::collections::HashMap::<String, String>::new();
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), Some("waiting".to_string()));
+        assert!(held.is_none());
+        assert!(map.is_empty());
+
+        let mut held = None;
+        map.insert("id".to_string(), "saved".to_string());
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), Some("saved".to_string()));
+        assert!(!map.contains_key("id"));
+
+        let mut held = None;
+        let mut map = std::collections::HashMap::<String, String>::new();
+        assert_eq!(recover_inserted(&mut held, &mut map, "id"), None);
     }
 }

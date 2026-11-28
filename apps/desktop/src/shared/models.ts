@@ -63,6 +63,8 @@ export interface Bot {
   hidden: boolean
   /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
   plain: boolean
+  /** Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed; missing from an older host reads as not paused. */
+  paused: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -171,6 +173,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     plain: raw.plain === true,
+    // Only a boolean true. A missing flag, or anything else an older host sent, is not paused.
+    paused: raw.paused === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -752,6 +756,8 @@ export interface Hello {
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */
   workflows?: boolean
+  /** This host honours `updateBot`'s `paused`. Missing on an older host, which ignores the field. */
+  botPause?: boolean
   /** Bots have `projects` and `worktreeMode`, and `cwd` is always the bot's own folder. */
   projects?: boolean
   /** A new thread may name its place in a git project (`startThread` with `setup.place`). */
@@ -908,6 +914,8 @@ export interface BotDraft {
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
   hidden?: boolean
+  /** Pause the bot: it answers nothing and spends nothing until it is resumed; left out, the host keeps it. */
+  paused?: boolean
   notify?: boolean | null
   connectors?: string[]
   skills?: string[]
@@ -964,6 +972,7 @@ export function draftOf(bot: Bot): BotDraft {
     ...(bot.worktreeMode === null
       ? { threadWorktrees: bot.threadWorktrees ?? undefined }
       : { projects: bot.projects, worktreeMode: bot.worktreeMode }),
+    paused: bot.paused,
     ...(bot.sharedFolders === null ? {} : { sharedFolders: bot.sharedFolders }),
   }
 }

@@ -28,6 +28,7 @@ import { GitStateLine } from './GitStateLine'
 import { HomeFolderRow, ProjectsRow, WorktreeModeRow } from './ProjectsRows'
 import { withProject } from './projects'
 import './bots.css'
+import { trNow } from '../../lib/l10n.ts'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
 
@@ -90,7 +91,14 @@ export function BotSettingsPanel({ botId }: { botId: string }) {
     const timer = setTimeout(() => {
       store
         .save(normalized(draft))
-        .then(() => setError(null))
+        .then((bot) => {
+          setError(null)
+          // The host's bot is the truth. A success that omits `paused` did not pause it.
+          if (typeof draft.paused === 'boolean' && bot.paused !== draft.paused) {
+            change((d) => ({ ...d, paused: bot.paused }))
+            setError(trNow('Not applied on this computer'))
+          }
+        })
         .catch((e: unknown) => setError(errorText(e)))
     }, 600)
     return () => clearTimeout(timer)
@@ -279,6 +287,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
         </CardSection>
 
         <CardSection title="Activity" fold="bot.activity">
+          {/* From a host that has it: a paused bot answers nothing and spends nothing until it is resumed. */}
+          {saved && store.hasBotPause ? (
+            <SwitchRow
+              title="Paused"
+              detail="It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled."
+              on={draft.paused ?? false}
+              onChange={(on) => set('paused', on)}
+            />
+          ) : null}
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
           {store.screen && !inspector ? (
             <SwitchRow
@@ -300,7 +317,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (
             <SwitchRow
               title="Manage the team"
-              detail="Let this bot create bots and change any bot's setup, its own included. The bots it creates can too."
+              detail="Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too."
               on={draft.manageTeam ?? false}
               onChange={(on) => set('manageTeam', on)}
             />

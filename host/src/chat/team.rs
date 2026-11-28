@@ -114,6 +114,9 @@ pub mod no_reply {
 pub struct BotRequest {
     pub entry_id: String,
     pub prompt: String,
+    /// The recipient's pause generation when the request was made. A pause after that refuses it even if a resume
+    /// reaches its actor first.
+    pub pause_epoch: u64,
     /// What this computer's rules allow its sender: the ceiling its turn works under (`Ceilings::set`).
     access: Access,
     lifetime: MessageLifetime,
@@ -268,6 +271,8 @@ struct MessageLifetime {
     /// The exchange notices on this computer: the sender's (when local), then the recipient's.
     entries: Vec<String>,
     target_name: String,
+    /// The recipient's pause generation when the request was made (see [`BotRequest::pause_epoch`]).
+    pause_epoch: u64,
     /// The chain's handoffs so far; the reply carries them into the sender's turn, so the chain stays bounded.
     hops: u8,
     /// Its sender was told it is queued, so however it ends, the sender hears. A local sender whose request is
@@ -279,7 +284,15 @@ struct MessageLifetime {
 
 impl MessageLifetime {
     /// A request's lifetime before its notices: dropped early, it ends the ones saved by then.
-    fn new(hub: &Arc<Hub>, request_id: &str, message: &str, back: Back, target_name: &str, hops: u8) -> Self {
+    fn new(
+        hub: &Arc<Hub>,
+        request_id: &str,
+        message: &str,
+        back: Back,
+        target_name: &str,
+        pause_epoch: u64,
+        hops: u8,
+    ) -> Self {
         Self {
             hub: hub.clone(),
             request_id: request_id.to_owned(),
@@ -288,6 +301,7 @@ impl MessageLifetime {
             back,
             entries: vec![],
             target_name: target_name.to_owned(),
+            pause_epoch,
             hops,
             started: false,
             finished: false,
@@ -300,12 +314,14 @@ impl MessageLifetime {
         let hub = self.hub.clone();
         let entry_id = self.entries.last().cloned().unwrap_or_default();
         let was = std::mem::replace(&mut self.admitted, true);
-        hub.offer_cmd(target, Cmd::BotRequest(BotRequest { entry_id, prompt, access, lifetime: self })).map_err(|cmd| {
-            if let Cmd::BotRequest(mut request) = *cmd {
-                request.lifetime.admitted = was;
-            }
-            anyhow!("{target} isn't running")
-        })
+        let pause_epoch = self.pause_epoch;
+        hub.offer_cmd(target, Cmd::BotRequest(BotRequest { entry_id, prompt, pause_epoch, access, lifetime: self }))
+            .map_err(|cmd| {
+                if let Cmd::BotRequest(mut request) = *cmd {
+                    request.lifetime.admitted = was;
+                }
+                anyhow!("{target} isn't running")
+            })
     }
 
     fn start(&mut self) {
@@ -583,11 +599,21 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
+    // Paused: the target answers nothing and spends nothing, so the sender hears so instead of a turn starting. The
+    // transition is held while its generation is read: a pause that starts after this point refuses the request at
+    // the recipient even if a resume reaches its actor first.
+    let target_epoch = {
+        let _transition = hub.pause.transition();
+        if hub.paused(&target.id) {
+            bail!("{} is paused", target.name);
+        }
+        hub.pause.epoch(&target.id)
+    };
     let hops = reserve(hub, &source.id, turn)?;
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.
     let back = Back::Local { sender: source.id.clone() };
-    let mut lifetime = MessageLifetime::new(hub, &id, message, back, &target.name, hops);
+    let mut lifetime = MessageLifetime::new(hub, &id, message, back, &target.name, target_epoch, hops);
     let exchange = Exchange {
         request: &id,
         source: &source.id,

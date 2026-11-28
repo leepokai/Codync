@@ -20,7 +20,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } })
 
 const { HostClient, parseEvent } = await import('../client/host-client.ts')
-const { speaksThreads } = await import('@shared/old-host')
+const { pauseEcho, speaksThreads } = await import('@shared/old-host')
 
 /** A client of a host at `version` that answers each method with `answers[method]`, and what it was sent. */
 async function clientOf(version: string, answers: Record<string, unknown> = {}) {
@@ -121,6 +121,19 @@ test("today's events read the same, whatever the host's version", () => {
   assert.deepEqual((parseEvent(JSON.stringify({ type: 'entry', rev: 4, entry: card })) as { entry: Entry }).entry.data, card.data)
   const bot = parseEvent(JSON.stringify({ type: 'bot', rev: 3, bot: { id: 'b', maxThreads: 4, threadWorktrees: true, work: [{ id: 't1', status: 'working', thread: 'thread-1' }] } })) as { bot: Bot }
   assert.deepEqual([bot.bot.maxThreads, bot.bot.threadWorktrees, bot.bot.work[0]!.thread], [4, true, 'thread-1'])
+})
+
+test("an older host's updateBot that omits paused did not pause the bot", () => {
+  // Success with the field left out: the host ignored it. Missing reads as not paused, and it is not an applied pause.
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', name: 'Bot' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', name: 'Bot' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: false } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: true } }), { applied: true, paused: true })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', paused: false } }), { applied: true, paused: false })
+  assert.deepEqual(pauseEcho(false, { bot: { id: 'b', paused: true } }), { applied: false, paused: true })
+  assert.deepEqual(pauseEcho(true, {}), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, { bot: { id: 'b', paused: 'yes' } }), { applied: false, paused: false })
+  assert.deepEqual(pauseEcho(true, null), { applied: false, paused: false })
 })
 
 test("an older host's answers read as today's: the bot of updateBot, a page of history, a thread's transcript", async () => {

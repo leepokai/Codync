@@ -163,16 +163,16 @@ npm run dist:win:dev      # / dist:win:main, on Windows (builds the bundled host
 
 They write `resources/account-config.json` for that environment, and the Mac ones build the
 bundled host (`tools/native-host.mjs`, universal, through rustup's pinned toolchain) for the same
-one, so app and host always match, plus the Codync Screen helper (`tools/native-screen.mjs`).
+one, so app and host always match, plus the Codync Screen helper (`tools/native-screen.mjs`) and
+the on-device speech helper `codync-speech` (`tools/native-speech.mjs`, universal in both environments:
+it builds in seconds). Packaging stops if the speech helper is missing (`tools/verify-build.cjs`).
 `dist:mac:dev` builds only what this Mac runs: the app folder for its architecture
 (`dist/mac-arm64/Codync Dev.app` on Apple silicon), the host for that architecture in the faster
 `dev-app` profile, and signatures without Apple's timestamp server (only notarized builds need it;
 asking it for every file adds about 5 minutes). `CODYNC_HOST_PROFILE` (`dev-app` or `release`)
 overrides the host's profile: the release workflow's Windows dry runs on PRs into `dev` build
 `dev-app`, since nothing they make ships (its macOS job keeps `release`, the profile its cache holds).
-Extra electron-builder flags go after `--`. The speech
-helper at the top of `electron-builder.yml` doesn't depend on the environment; place it first
-(the release workflow, `.github/workflows/release-desktop.yml`, shows how).
+Extra electron-builder flags go after `--`.
 `dist:mac:dev` signs with the team 7FUM8A8H72 development certificate (`CSC_NAME` in
 `package.json`): the Screen launch agent only runs code from that team, and the keychain holds
 another team's certificate electron-builder would otherwise pick. When it is renewed, update the

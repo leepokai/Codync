@@ -15,6 +15,7 @@ function fixture(t: TestContext, platform = 'darwin', arch = Arch.x64) {
   mkdirSync(join(projectDir, 'resources'))
   writeFileSync(join(projectDir, 'resources/account-config.json'), JSON.stringify({ environment: 'dev' }))
   if (platform === 'win32') writeHost(projectDir, 0x8664)
+  if (platform === 'darwin') writeNative(projectDir, 'codync-speech', 'fixture')
   return { electronPlatformName: platform, arch, packager: { projectDir, appInfo: { id: 'com.pokai.Codync.dev' } } }
 }
 
@@ -24,8 +25,12 @@ function writeHost(projectDir: string, machine: number) {
   exe.writeUInt32LE(0x80, 0x3c)
   exe.write('PE\0\0', 0x80, 'latin1')
   exe.writeUInt16LE(machine, 0x84)
+  writeNative(projectDir, 'codync-host.exe', exe)
+}
+
+function writeNative(projectDir: string, name: string, contents: string | Buffer) {
   mkdirSync(join(projectDir, 'build/native'), { recursive: true })
-  writeFileSync(join(projectDir, 'build/native/codync-host.exe'), exe)
+  writeFileSync(join(projectDir, 'build/native', name), contents)
 }
 
 test('macOS packaging requires the Apple logo manifest entry and every rendered weight', async (t) => {
@@ -41,6 +46,12 @@ test('macOS packaging requires the Apple logo manifest entry and every rendered 
     writeFileSync(join(symbols, `apple.logo.${weight}.png`), 'fixture')
   }
   await assert.doesNotReject(verifyBuild(context))
+})
+
+test('macOS packaging refuses an app without the on-device speech helper', async (t) => {
+  const context = fixture(t)
+  rmSync(join(context.packager.projectDir, 'build/native/codync-speech'))
+  await assert.rejects(verifyBuild(context), /missing codync-speech/)
 })
 
 test('Linux and Windows packaging does not require Apple-only SF Symbols', async (t) => {

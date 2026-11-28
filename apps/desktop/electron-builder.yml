@@ -1,5 +1,5 @@
 # Packaging for macOS (DMG + zip for updates), Linux (AppImage, deb, tar.gz) and Windows (NSIS).
-# CI puts the native pieces in place first (see .github/workflows/release-desktop.yml):
+# The dist scripts build the native pieces first (tools/native-*.mjs):
 #   build/native/codync-host        the host for this platform (macOS: universal)
 #   build/native/codync-host.exe    Windows: the host, and codync-hostw.exe that runs it at sign-in
 #   build/native/codync-speech      macOS on-device speech helper

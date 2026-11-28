@@ -34,7 +34,7 @@ pub(crate) async fn start_with(
     login_profile: Option<&str>,
     extra: &[(&str, &str)],
 ) -> Result<Started> {
-    let candidates = backends::launch_candidates(backend)?;
+    let candidates = select_auth_candidates(backend, backends::launch_candidates(backend)?);
     let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
@@ -42,6 +42,16 @@ pub(crate) async fn start_with(
     let started = start_candidates(backend, candidates, &dir, &env).await?;
     std::mem::take(&mut grants).held_by(&started.acp);
     Ok(started)
+}
+
+/// Keeps the installed CLI alone for backends where falling back to a registry build
+/// risks a slow download or schema migration (e.g. OpenCode 1.x -> 2.x), while allowing
+/// `antigravity` to fall back to `antigravity-acp` when an older `agy` binary lacks `acp`.
+fn select_auth_candidates(backend: &str, mut candidates: Vec<Candidate>) -> Vec<Candidate> {
+    if backends::agent_id(backend) != "antigravity" && matches!(candidates.first(), Some(Candidate::Ready(_))) {
+        candidates.truncate(1);
+    }
+    candidates
 }
 
 async fn start_candidates(
@@ -166,6 +176,28 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use codync_agent::registry::Cmd;
+
+    #[test]
+    fn select_auth_candidates_only_keeps_registry_fallback_for_antigravity() {
+        let opencode = select_auth_candidates(
+            "opencode",
+            vec![
+                Candidate::Ready(Cmd { program: "opencode".to_owned(), args: String::new() }),
+                Candidate::Ready(Cmd { program: "npx".to_owned(), args: "opencode-ai".to_owned() }),
+            ],
+        );
+        assert_eq!(opencode.len(), 1);
+        assert!(matches!(opencode.first(), Some(Candidate::Ready(c)) if c.program == "opencode"));
+
+        let agy = select_auth_candidates(
+            "antigravity",
+            vec![
+                Candidate::Ready(Cmd { program: "agy".to_owned(), args: String::new() }),
+                Candidate::Ready(Cmd { program: "antigravity-acp".to_owned(), args: String::new() }),
+            ],
+        );
+        assert_eq!(agy.len(), 2);
+    }
 
     #[tokio::test]
     async fn start_candidates_falls_back_after_local_startup_failure() {

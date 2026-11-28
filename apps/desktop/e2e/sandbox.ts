@@ -80,6 +80,9 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
   await setPref(page, 'kofiAsk', { asked: 3, day: 0 }) // So would the Ko-fi invitation's, on a sandbox used for days.
+  // A sandbox in no account (started without a Clerk test account, as in CI) would open on the welcome: it goes on
+  // without one, as its "Continue without an account" does. A signed-in sandbox clears it again (`useWelcomeGate`).
+  await setPref(page, 'withoutAccount', true)
   // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox, and a Ko-fi invitation already up.
   for (const sheet of [page.getByRole('alertdialog'), page.getByRole('dialog', { name: 'Support Codync' })]) {
     const notNow = sheet.getByRole('button', { name: 'Not now' })

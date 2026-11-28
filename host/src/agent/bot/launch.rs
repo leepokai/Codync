@@ -375,8 +375,10 @@ mod tests {
         crate::agent::init_runtime();
         let fixture =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/agent/tests/fixtures/model_options_agent.py");
+        let log = std::env::temp_dir().join(format!("codync-model-req-{}.jsonl", uuid::Uuid::new_v4()));
+        let env = [("ACP_REQUEST_LOG".to_owned(), log.to_string_lossy().into_owned())];
         let command = codync_agent::shell::python(&fixture);
-        let (acp, _inbox) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let (acp, _inbox) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &env).unwrap();
         let session = json!({
             "sessionId": "s-agy",
             "configOptions": [
@@ -408,6 +410,14 @@ mod tests {
         .unwrap();
         let updated = select_model(&acp, &session, "s-agy", &cfg).await.unwrap();
         acp.kill().await;
+        let recorded: Vec<Value> =
+            std::fs::read_to_string(&log).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0]["method"], "session/set_config_option");
+        assert_eq!(recorded[0]["params"]["sessionId"], "s-agy");
+        assert_eq!(recorded[0]["params"]["configId"], "model");
+        assert_eq!(recorded[0]["params"]["value"], "claude-sonnet-4-6");
         assert_eq!(updated["configOptions"][0]["currentValue"], "medium");
     }
 

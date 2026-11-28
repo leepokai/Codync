@@ -34,15 +34,22 @@ pub(crate) async fn start_with(
     login_profile: Option<&str>,
     extra: &[(&str, &str)],
 ) -> Result<Started> {
-    let mut candidates = backends::launch_candidates(backend)?;
-    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    if matches!(candidates.first(), Some(Candidate::Ready(_))) {
-        candidates.truncate(1);
-    }
+    let candidates = backends::launch_candidates(backend)?;
     let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
+    let started = start_candidates(backend, candidates, &dir, &env).await?;
+    std::mem::take(&mut grants).held_by(&started.acp);
+    Ok(started)
+}
+
+async fn start_candidates(
+    backend: &str,
+    candidates: Vec<Candidate>,
+    dir: &std::path::Path,
+    env: &[(String, String)],
+) -> Result<Started> {
     let mut last = None;
     let count = candidates.len();
     for (i, candidate) in candidates.into_iter().enumerate() {
@@ -55,8 +62,8 @@ pub(crate) async fn start_with(
                 continue;
             }
         };
-        backends::prepare_launch_command(backend, &mut cmd, &env);
-        let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
+        backends::prepare_launch_command(backend, &mut cmd, env);
+        let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), env) {
             Ok(v) => v,
             Err(e) => {
                 last = Some(e);
@@ -79,10 +86,7 @@ pub(crate) async fn start_with(
             }),
         );
         match tokio::time::timeout(budget, init).await {
-            Ok(Ok(init)) => {
-                std::mem::take(&mut grants).held_by(&acp);
-                return Ok(Started { acp, inbox: rx, init, cmd });
-            }
+            Ok(Ok(init)) => return Ok(Started { acp, inbox: rx, init, cmd }),
             Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
             Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
         }
@@ -154,5 +158,34 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use codync_agent::registry::Cmd;
+
+    #[tokio::test]
+    async fn start_candidates_falls_back_after_local_startup_failure() {
+        crate::agent::init_runtime();
+        let script = r#"
+import json, sys
+msg = json.loads(sys.stdin.readline())
+print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"agentInfo": {"name": "Antigravity ACP Server", "version": "1.5.2"}}}), flush=True)
+"#;
+        let broken = Candidate::Ready(Cmd {
+            program: r#"python3 -c "import sys; sys.stderr.write('unknown command acp\n'); sys.exit(1)""#.to_owned(),
+            args: String::new(),
+        });
+        let fallback = Candidate::Ready(Cmd {
+            program: format!("python3 -c {}", codync_agent::shell::quote(script)),
+            args: String::new(),
+        });
+        let dir = std::env::temp_dir();
+        let started = start_candidates("antigravity", vec![broken, fallback], &dir, &[]).await.unwrap();
+        assert_eq!(started.init["agentInfo"]["name"], "Antigravity ACP Server");
+        started.acp.kill().await;
     }
 }

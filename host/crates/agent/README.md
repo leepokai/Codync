@@ -215,7 +215,7 @@ token to use it, never stores one, and never asks a provider who an account is.
 | Codex (`codex`) | `CODEX_HOME` | its CLI | everything in `~/.codex` but the login files |
 | OpenCode (`opencode`) | `XDG_DATA_HOME`, `XDG_STATE_HOME` | its CLI | its setup is in `~/.config/opencode`, which every account reads |
 | Devin (`devin`) | `XDG_DATA_HOME`, `XDG_STATE_HOME` | its CLI | the same |
-| Google Antigravity (`antigravity`) | `GEMINI_HOME`, `AGY_ACP_FORCE_FILE_STORAGE=1` | its ACP server (`authenticate`) | everything in `~/.gemini` but the server's sign-in; its conversations |
+| Google Antigravity (`antigravity`) | `GEMINI_HOME` (registry), `--gemini-dir` (local `agy acp`), `AGY_ACP_FORCE_FILE_STORAGE=1`, `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=1` | its ACP server (`authenticate`) | everything in `~/.gemini` but the server's sign-in; its conversations |
 | Pi (`pi`) | `PI_CODING_AGENT_DIR` | its CLI | everything in `~/.pi/agent` but `auth.json` |
 | Gemini CLI (`gemini`) | `GEMINI_CLI_HOME`, `GEMINI_FORCE_ENCRYPTED_FILE_STORAGE=false` | its CLI | everything in `~/.gemini` but its login files and `antigravity-acp` |
 

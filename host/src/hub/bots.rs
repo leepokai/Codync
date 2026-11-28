@@ -92,6 +92,31 @@ impl Hub {
         Ok(self.bot_value(&id).unwrap_or(Value::Null))
     }
 
+    /// Adds `ids` to `id`'s enabled skills without re-validating its workspace folder, so a thread
+    /// saving a skill from its own folder still turns it on for its bot if the bot's folder is away.
+    /// Running bots read their enabled skills from the store.
+    pub(crate) fn enable_skills(&self, id: &str, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        {
+            let _g = self.emit_lock.locked();
+            let row = self.store.bot(id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let mut cfg = row.config;
+            if cfg.is_group() || ids.iter().all(|s| cfg.skills.contains(s)) {
+                return Ok(());
+            }
+            for s in ids {
+                if !cfg.skills.contains(s) {
+                    cfg.skills.push(s.clone());
+                }
+            }
+            self.store.save_bot(&cfg)?;
+        }
+        self.emit_bot(id);
+        Ok(())
+    }
+
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in crate::chat::work::of(&self.store, id) {
@@ -133,5 +158,39 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::calls::context::tests::hub;
+    use crate::store::Permission;
+
+    #[tokio::test]
+    async fn enabling_a_skill_cannot_restore_automatic_approval() {
+        let hub = hub();
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "a", "name": "A", "backend": "custom", "command": "unused",
+            "cwd": std::env::temp_dir(), "permission": "auto", "mode": "auto",
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+        let mut inbox = hub.attach_bot_for_test("a");
+
+        hub.enable_skills("a", &["release".into()]).unwrap();
+        let delayed = inbox.try_recv().ok();
+        let updated = hub.update_bot(&json!({"id": "a", "permission": "ask", "mode": "read-only"})).unwrap();
+        let Ok(Cmd::Reconfigure(manual)) = inbox.try_recv() else {
+            panic!("the actor must receive the user's approval setting");
+        };
+
+        // Apply the skill notification after the user's update, as in the race.
+        let live = match delayed {
+            Some(Cmd::Reconfigure(stale)) => stale,
+            _ => manual,
+        };
+        assert_eq!((live.permission, live.mode.as_deref()), (Permission::Ask, Some("read-only")));
+        assert_eq!(updated["skills"], json!(["release"]));
     }
 }

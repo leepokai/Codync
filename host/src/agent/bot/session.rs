@@ -176,15 +176,20 @@ impl Actor {
         Ok(conn)
     }
 
-    /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
-    /// mustn't leave the agent opening a session the host never learns of.
+    /// Bounds a routine's session setup and retires any agent left with an unfinished opening.
     pub(super) async fn ensure_turn_session(&mut self, slot: Option<&str>) -> Result<()> {
-        let Some(deadline) = self.routine_deadline else { return self.ensure_session(slot).await };
-        let setup = tokio::time::timeout_at(deadline.into(), self.ensure_session(slot)).await;
+        let setup = if let Some(deadline) = self.routine_deadline {
+            tokio::time::timeout_at(deadline.into(), self.ensure_session(slot))
+                .await
+                .context("routine session setup timed out")
+                .flatten()
+        } else {
+            self.ensure_session(slot).await
+        };
         if setup.is_err() {
             self.drop_unanswered().await;
         }
-        setup.context("routine session setup timed out")?
+        setup
     }
 
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
@@ -253,14 +258,14 @@ impl Actor {
         // re-rendered them, loading the session again swaps the prompt in (the adapter
         // rebuilds its query and resumes the same conversation).
         let current = self.session_for(slot);
-        let snapshot = match (&current, instructions) {
-            (Some(sid), Instructions::ClaudeMeta) => Some(self.snapshot(sid).await?),
+        let claude_snapshot = match (&current, instructions) {
+            (Some(sid), Instructions::ClaudeMeta) => Some(self.snapshot(sid, instructions).await?),
             _ => None,
         };
         let Some(conn) = self.conn.as_ref() else { bail!("agent not running") };
         if let Some(sid) = current {
             let prompt_current =
-                snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
+                claude_snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
             if conn.loaded.contains_key(&sid) && prompt_current {
                 if !self.servers_dropped().await {
                     self.turn_session = Some(sid);
@@ -276,44 +281,74 @@ impl Actor {
             };
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let mut params = self.session_params(&servers, Some(&sid));
+            let snapshot = if instructions == Instructions::SystemPrompt {
+                Some(self.snapshot(&sid, instructions).await?)
+            } else {
+                claude_snapshot
+            };
             if let Some(s) = &snapshot {
-                params["_meta"] = claude_meta(&self.cfg, &s.system);
-            }
-            if instructions == Instructions::SystemPrompt {
-                params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
+                self.instruct(&mut params, instructions, &s.system);
             }
             let res = self.session_request(reopen.method(), params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             let about_agent = drop_replay(conn);
             match res {
                 Ok(res) => {
-                    // A resumed session can come back on the agent's last-used model (Cursor
-                    // keeps one for all its sessions), so the bot's own is set again.
-                    let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        match select_model(&conn.acp, &res, &sid, &self.cfg).await {
-                            Ok(selected) => selected,
-                            Err(error) => {
-                                // The agent now holds a session the host doesn't track, and `session/resume` refuses
-                                // one it holds. Stopped, it takes the session again on the next message.
-                                if reopen == acp::Reopen::Resume {
-                                    self.kill_agent().await;
-                                }
-                                return Err(error);
-                            }
+                    conn.opening = reopen == acp::Reopen::Resume;
+                    let as_bot = context::as_bot(&self.cfg, &self.task_source);
+                    let prepared = async {
+                        if !as_bot && let Some(s) = &snapshot {
+                            let delivery = if instructions == Instructions::ClaudeMeta {
+                                context::TaskSystemDelivery::Immediate
+                            } else {
+                                context::TaskSystemDelivery::MayDefer
+                            };
+                            context::task_system_reopened(&self.hub.store, self.cfg.owner(), s, delivery)?;
                         }
-                    } else {
-                        res
+                        // The resumed session can come back on the agent's last-used model.
+                        if res.get("configOptions").is_some() || res.get("models").is_some() {
+                            select_model(&conn.acp, &res, &sid, &self.cfg).await
+                        } else {
+                            Ok(res)
+                        }
+                    }
+                    .await;
+                    let res = match prepared {
+                        Ok(res) => res,
+                        Err(error) => {
+                            // Resume refuses a session this process already holds.
+                            if reopen == acp::Reopen::Resume {
+                                let closed =
+                                    tokio::time::timeout(FAILED_RESUME_CLOSE_TIMEOUT, self.close_session(&sid)).await;
+                                match closed {
+                                    Ok(true) => {
+                                        if let Some(conn) = self.conn.as_mut() {
+                                            conn.opening = false;
+                                        }
+                                    }
+                                    Ok(false) => {}
+                                    Err(elapsed) => tracing::warn!(
+                                        bot = %self.cfg.id, session = %sid, %elapsed, "timed out closing a failed resume"
+                                    ),
+                                }
+                            }
+                            return Err(error);
+                        }
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
+                    conn.opening = false;
                     watch_servers(conn).await;
                     self.note_options(&sid, &res, Listing::Session);
                     for update in &about_agent {
                         self.on_session_wide(update);
                     }
-                    if let Some(s) = snapshot {
-                        // Its system prompt now names the bot and holds memory as rendered.
-                        context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
+                    if instructions == Instructions::ClaudeMeta
+                        && let Some(s) = snapshot
+                    {
+                        if as_bot {
+                            context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
+                        }
                         memory::opened(&self.hub.store, self.cfg.owner(), &sid, &s.memory)?;
                         self.applied_system.insert(sid.clone(), s.system);
                     }
@@ -329,10 +364,12 @@ impl Actor {
         if slot.is_none() {
             crate::chat::work::began(&self.hub, &self.cfg);
         }
-        let (revision, system) = {
+        let (revision, system, identity) = {
             let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
             tokio::task::spawn_blocking(move || {
-                (memory::current_revision(&hub.store, cfg.owner()), context::render(&hub.store, &cfg))
+                let revision = memory::current_revision(&hub.store, cfg.owner());
+                let (system, identity) = context::render_with_identity(&hub.store, &cfg);
+                (revision, system, identity)
             })
             .await?
         };
@@ -340,7 +377,7 @@ impl Actor {
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
-        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), revision)?;
+        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), identity, revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }
@@ -377,19 +414,26 @@ impl Actor {
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
-        conn.opening = matches!(method, "session/new" | "session/load" | "session/resume");
+        let opens = matches!(method, "session/new" | "session/load" | "session/resume");
+        if opens {
+            conn.opening = true;
+        }
         let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
-        conn.opening = false;
+        if opens {
+            conn.opening = false;
+        }
         if let Ok(result) = answered {
             return result;
         }
-        self.kill_agent().await;
+        // A pending resume is retired by ensure_turn_session outside the routine deadline.
+        if !conn.opening {
+            self.kill_agent().await;
+        }
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
     }
 
-    /// A routine's time limit cut a session request short. An agent that can resume stops, so a session it might
-    /// still open goes with its process; one that can't keeps running rather than lose the sessions it has.
+    /// Retires a resumable agent that may hold a session whose opening or preparation didn't finish.
     async fn drop_unanswered(&mut self) {
         let Some(conn) = self.conn.as_mut() else { return };
         if !std::mem::take(&mut conn.opening) {
@@ -435,6 +479,9 @@ async fn watch_servers(conn: &mut Conn) {
 
 /// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
+
+/// How long cleanup of a failed resume may hold the actor.
+const FAILED_RESUME_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// An agent replays a session's history as `session/update` before it answers a reopen: drops it, and
 /// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for

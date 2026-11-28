@@ -8,7 +8,8 @@ replaced). While `<name>.refusal` exists, every prompt answers `refusal` with th
 While `<name>.errored` exists, every prompt ends the way pi-acp (0.0.33, 0.0.34) ends a turn whose model request
 failed: `end_turn` with no reply, with pi's error only in the notification Codync's pi extension sends.
 Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; while `<name>.commands` exists, a new session lists the
-agent's `/review` command. Every request goes to `<name>.jsonl` in its folder. While `<name>.nostart` exists, it quits
+agent's `/review` command. `<name>.hold` holds a successful answer. Every request goes to `<name>.jsonl` in its folder.
+While `<name>.nostart` exists, it quits
 as it starts, saying it needs signing in."""
 
 import json
@@ -85,6 +86,8 @@ for line in sys.stdin:
             update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Edited a.txt"}})
             send({"id": message["id"], "error": LIMIT})
         else:
+            while os.path.exists(f"{NAME}.hold"):
+                time.sleep(0.01)
             if os.path.exists(f"{NAME}.work"):
                 diff = {"type": "diff", "path": f"{NAME}.txt", "oldText": "old\n", "newText": "new\n"}
                 tool = {"toolCallId": "w1", "title": f"Edit {NAME}.txt", "kind": "edit", "status": "completed"}

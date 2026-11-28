@@ -179,7 +179,8 @@ host answers and sends it once the host is up.
 | `connector_signin_started` | host | `connectorSignIn` | — |
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
-| `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
+| `skill_written` | host | A bot's `save_skill` (`chatCall`) succeeded | `change` (`new`/`update`) |
+| `skill_save_failed` | host | A bot's `save_skill` (`chatCall`) returned an error | `change` (`new`/`update`), `error` (`enable` if a new skill was saved and turning it on failed, `parked_thread_owner` if the recorded author is a parked thread of the calling bot, `not_owner` for other ownership refusals, `invalid` for invalid skill text or an unknown skill id, `other` for other failures) |
 | `team_managed` | host | A manager bot's `create_bot` or `update_bot` (`manageCall`) | `tool` (`create`/`update`), `fields`: the settings it passed by tool argument name (`name`, `model`, `modelOptions`, `routines`, …); when it failed `outcome` `failed` and `error` (`options`: a model setting the agent doesn't list; `catalog`: the agent's model list didn't load; `denied`: the approval card wasn't allowed in time; `other`); never their values or the bot |
 | `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether a new card went into the bot's chat), `quiet` (an update with `notify: false` that refreshed the artifact's existing card instead; never both true), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |

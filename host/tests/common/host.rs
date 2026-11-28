@@ -6,7 +6,7 @@
 use serde_json::{Value, json};
 use std::{
     ffi::{OsStr, OsString},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Child,
     time::{Duration, Instant},
 };
@@ -36,8 +36,13 @@ impl Host {
 
     /// [`Self::start`] with `env` on top of the test host's own.
     pub async fn start_with(env: &[(&str, &OsStr)]) -> Self {
+        Self::start_from(Path::new(env!("CARGO_BIN_EXE_codync-host")), env).await
+    }
+
+    /// Starts an older binary for a test that upgrades through [`Self::restart`].
+    pub async fn start_from(binary: &Path, env: &[(&str, &OsStr)]) -> Self {
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
-        let (child, base) = super::serve_with(&home, env).await;
+        let (child, base) = super::serve_binary(binary, &home, env).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         let env = env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
         Self { child, home, base, token, env }
@@ -55,7 +60,7 @@ impl Host {
     }
 
     /// Stops the host, lets `between` change its files, and starts it again on the same data and env.
-    pub async fn restart(&mut self, between: impl FnOnce(&std::path::Path)) {
+    pub async fn restart(&mut self, between: impl FnOnce(&Path)) {
         super::stop(&mut self.child);
         between(&self.home);
         let env: Vec<(&str, &OsStr)> = self.env.iter().map(|(k, v)| (k.as_str(), v.as_os_str())).collect();

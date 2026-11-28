@@ -31,19 +31,22 @@ its own context and compacts it itself.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
 - A [thread](work.md) starts in a new session of its own, never a fork of the bot's main one, with a fresh
-  snapshot rendered for where its task came from (`render_thread`): a task the bot handed out is told the task
-  alone (no name, description or memory, so no memory-change notice or profile update either); a thread the user
-  started, a routine's run and another bot's request are told who the bot is, without the chat's own paragraphs. Its
-  snapshots are kept with its bot's (`context.<bot>` under `BotConfig::owner`).
+  snapshot rendered for where its task came from (`render_thread`). A task the bot handed out gets its task
+  instructions and the bot's enabled skills. It looks up memory through the `memory` server. A thread the user
+  started, a routine's run and another bot's request get the bot's profile in their instructions. Thread snapshots
+  are kept with their bot's (`context.<bot>` under `BotConfig::owner`).
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k (a
   stream's start reports zero use before the model has answered, which is not a reading, issue #496). The
   next turn re-renders the snapshot, and Claude's session is loaded again with the new system prompt. The adapter
   rebuilds its query and resumes the same conversation.
-- **Profile edits mid-session** (name, description, skills, the lead role) are sent once as an `<agent_profile_update>` block
-  appended to the next message. After that turn reaches the agent, the change is recorded in
-  `snapshot.announced`. The next compaction folds it into the snapshot.
+- **Profile edits mid-session** (name, description, skills, the lead role) reach the agent as an
+  `<agent_profile_update>` block on the next message. A task handed out by a bot gets a `<skills_update>` block
+  with its replacement skill list, including when the list becomes empty. The host records confirmed delivery
+  in `snapshot.announced` before publishing the task result. The next compaction folds it into the snapshot.
+  A stopped or failed task prompt can leave delivery uncertain, including when another agent takes over. The
+  next ordinary prompt in that conversation carries the current skill list again.
 
 ## Memory (`host/src/chat/memory/`, crate `host/crates/memory`)
 

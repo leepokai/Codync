@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use super::{Actor, Adapter, Conn, Done, Instructions, Queued};
+use super::{Actor, Adapter, Conn, Done, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
@@ -181,9 +181,6 @@ impl Actor {
         }
         if let Err(error) = memory::compacted(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
-        }
-        if self.conn.as_ref().is_some_and(|c| c.instructions() == Instructions::FirstMessage) {
-            self.profile_resend.insert(sid.clone());
         }
         let mut c = self.conversation(&sid);
         c.compacted(self.compacting.is_some(), self.compacting == Some(true), now_ms());

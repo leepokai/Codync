@@ -41,11 +41,11 @@ pub use connector_update::update_connector;
 pub use custom::add_custom_connector;
 pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
+pub(crate) use skills::{SkillSaveError, body as skill_body, front_matter};
 pub use skills::{
-    add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
-    skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
+    add_custom_skill, adopt_thread_skills, browse_skills, expand_command, install_skill, list_skills, remove_skill,
+    skill_details, skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
 };
-pub(crate) use skills::{body as skill_body, front_matter};
 
 pub use updates::{automatic_loop, refresh_connector};
 
@@ -252,8 +252,9 @@ pub fn enable_new(hub: &crate::hub::Hub, kind: Installed, before: &[String]) -> 
     turn_on(hub, kind, &new, None)
 }
 
-/// Turns `ids` on for `bot`, or for every bot. One call at a time reads and writes the bots' lists, so two
-/// installs can't drop each other's ids; a bot that can't take the change (its folder is gone, say) is skipped.
+/// Turns `ids` on for `bot`, or for every bot. Skills go through `Hub::enable_skills` so installs
+/// and concurrent `save_skill` calls merge under the same lock without dropping each other's ids; a
+/// bot that can't take the change (its folder is gone, say) is skipped.
 pub fn turn_on(hub: &crate::hub::Hub, kind: Installed, ids: &[String], bot: Option<&str>) -> Result<()> {
     static TURN_ON: std::sync::Mutex<()> = std::sync::Mutex::new(());
     if ids.is_empty() {
@@ -264,16 +265,19 @@ pub fn turn_on(hub: &crate::hub::Hub, kind: Installed, ids: &[String], bot: Opti
         if row.deleted || row.config.is_group() || bot.is_some_and(|b| b != row.config.id) {
             continue;
         }
-        let (key, mut on) = match kind {
-            Installed::Connectors => ("connectors", row.config.connectors),
-            Installed::Skills => ("skills", row.config.skills),
-        };
-        for id in ids {
-            if !on.contains(id) {
-                on.push(id.clone());
+        let result = match kind {
+            Installed::Skills => hub.enable_skills(&row.config.id, ids),
+            Installed::Connectors => {
+                let mut on = row.config.connectors;
+                for id in ids {
+                    if !on.contains(id) {
+                        on.push(id.clone());
+                    }
+                }
+                hub.update_bot(&json!({"id": row.config.id, "connectors": on})).map(|_| ())
             }
-        }
-        if let Err(e) = hub.update_bot(&json!({"id": row.config.id, key: on})) {
+        };
+        if let Err(e) = result {
             tracing::warn!(bot = %row.config.id, error = format!("{e:#}"), "couldn't turn on a new install");
         }
     }
@@ -483,6 +487,29 @@ mod tests {
         let skills = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.skills;
         let pdf = vec!["pdf".to_owned()];
         assert_eq!((skills("a"), skills("b")), (pdf.clone(), pdf), "new skills too, but not one a bot wrote");
+
+        // Concurrent marketplace installs (`turn_on`) and bot `save_skill` (`enable_skills`) merge under
+        // the same lock and never drop each other's additions.
+        let hub = std::sync::Arc::new(hub);
+        let h1 = hub.clone();
+        let h2 = hub.clone();
+        let t1 = std::thread::spawn(move || {
+            for i in 0..20 {
+                turn_on(&h1, Installed::Skills, &[format!("install-{i}")], Some("a")).expect("turn on");
+            }
+        });
+        let t2 = std::thread::spawn(move || {
+            for i in 0..20 {
+                h2.enable_skills("a", &[format!("saved-{i}")]).expect("enable_skills");
+            }
+        });
+        t1.join().expect("turn_on thread");
+        t2.join().expect("enable_skills thread");
+        let merged = hub.store.bot("a").expect("read").expect("bot").config.skills;
+        for i in 0..20 {
+            assert!(merged.contains(&format!("install-{i}")), "missing install-{i} in {merged:?}");
+            assert!(merged.contains(&format!("saved-{i}")), "missing saved-{i} in {merged:?}");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 }

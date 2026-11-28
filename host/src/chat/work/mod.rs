@@ -342,19 +342,16 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
             tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a stopped turn's work");
         }
     }
-    dispatch::run(hub, bot, Some(bot));
+    dispatch::run(hub, bot, || Some(bot));
 }
 
-/// Thread `cfg`'s turn ended: its task says how, its result goes where its source reads it (the bot's own work: a
-/// report, as a turn in the chat), and the dispatcher decides what the thread does next. A task the user stopped
-/// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the task isn't
-/// over: that turn's end is its end. Nor is it the first time its turn ends while what it started in the background
-/// still runs ([`hold`]). Whether it goes on with what the turn left running, either way: then its agent and session
-/// stay as they are. Nor while work its agent reports still runs ([`Outcome::Waiting`]).
-pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
+/// Ends the thread's task, reports its result unless stopped, and dispatches after any worktree check.
+/// Pending messages and running background work can keep the task open.
+/// Returns whether the thread keeps its agent and session for that background work.
+pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome, turn: Option<Arc<()>>) -> bool {
     let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
-    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
+    let next = move |hub: &Arc<Hub>| dispatch::after_thread(hub, &owner, &thread, turn.as_ref());
     let left = matches!(outcome, Outcome::LeftRunning { .. } | Outcome::Waiting { .. });
     let mut goes_on = false;
     let ended = tasks::change(hub, bot, |tasks| {

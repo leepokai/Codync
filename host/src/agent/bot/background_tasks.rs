@@ -4,10 +4,12 @@
 //! message is the task's report when nothing else still runs.
 
 use super::{Actor, Done};
+use crate::LockExt;
 use crate::analytics::{self, Event as Analytics};
 use crate::hub::{BackgroundKind, BackgroundTask, BotStatus};
 use codync_agent::events::{Task, TaskChange, TaskEnd, TaskKind};
 use serde_json::json;
+use std::sync::Arc;
 
 /// A turn the agent began by itself, by the adapter's id for it.
 pub(super) enum AgentTurn {
@@ -98,6 +100,7 @@ impl Actor {
         }
         let turn = self.hub.store.max_turn(&self.lane.chat) + 1;
         self.turn = Some(turn);
+        *self.thread_turn.locked() = Some(Arc::new(()));
         self.agent_turn = Some(AgentTurn::Own(id));
         if let Some(session) = session {
             self.turn_session = Some(session.to_owned());

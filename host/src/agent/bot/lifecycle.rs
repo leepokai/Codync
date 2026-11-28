@@ -193,18 +193,17 @@ impl Actor {
     /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
     /// `acp::may_end_session`): the next turn reopens it instead of finding it dead.
     pub(super) async fn close_reopenable(&mut self, sid: &str) {
-        if self
-            .conn
-            .as_ref()
-            .is_some_and(|c| c.sessions.close && c.sessions.reopen().is_some() && c.loaded.contains_key(sid))
-        {
+        if self.conn.as_ref().is_some_and(|c| c.sessions.reopen().is_some() && c.loaded.contains_key(sid)) {
             self.close_session(sid).await;
         }
     }
 
-    async fn close_session(&mut self, sid: &str) {
+    pub(super) async fn close_session(&mut self, sid: &str) -> bool {
+        if !self.conn.as_ref().is_some_and(|c| c.sessions.close) {
+            return false;
+        }
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
-        let Some(conn) = self.conn.as_mut() else { return };
+        let Some(conn) = self.conn.as_mut() else { return false };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
@@ -215,11 +214,15 @@ impl Actor {
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
                 self.applied_system.remove(sid);
+                true
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
-                conn.loaded.insert(sid.to_owned(), Instant::now());
+                if let Some(used) = conn.loaded.get_mut(sid) {
+                    *used = Instant::now();
+                }
+                false
             }
         }
     }

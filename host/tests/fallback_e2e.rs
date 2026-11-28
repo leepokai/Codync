@@ -40,6 +40,26 @@ async fn bot_value(host: &Host, bot: &str) -> Value {
     snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap()
 }
 
+async fn task_report(host: &Host, bot: &str, title: &str, prefix: &str) -> Value {
+    let mut report = None;
+    common::eventually(prefix, Duration::from_secs(30), async || {
+        let row = bot_value(host, bot).await;
+        report = row["work"]
+            .as_array()
+            .and_then(|tasks| {
+                tasks.iter().find(|task| {
+                    task["title"] == title
+                        && task["status"] == "done"
+                        && task["result"].as_str().is_some_and(|text| text.starts_with(prefix))
+                })
+            })
+            .cloned();
+        report.is_some()
+    })
+    .await;
+    report.unwrap()
+}
+
 #[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;
@@ -103,6 +123,106 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
         "{text}"
     );
     assert!(text.contains("Codex reached its usage limit (resets in 1 h)"), "{text}");
+}
+
+#[tokio::test]
+async fn a_task_revokes_a_skill_the_original_agent_saw_before_falling_back() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Relay", "work_agent.py", "standard defer-system track-skills").await;
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let title = "Ship it";
+    host.reply(&bot, "ADD Ship it|Finish the release").await;
+    let task = task_report(&host, &bot, title, "Report Ship it:").await;
+    let prompts = || host.log(&bot, "prompts.jsonl");
+    let initial = prompts().into_iter().find(|p| p["text"].as_str().unwrap().contains("[Task]")).unwrap();
+    let session = initial["session"].as_str().unwrap();
+    let resumed = || {
+        host.log(&bot, "standard_sessions.jsonl")
+            .into_iter()
+            .filter(|event| event["method"] == "session/load" && event["session"] == session)
+            .count()
+    };
+    let tell = async |text: &str| {
+        let sent = host
+            .call(
+                "send",
+                json!({"botId": bot, "taskId": task["id"], "text": text,
+            "clientNonce": uuid::Uuid::new_v4().to_string()}),
+            )
+            .await;
+        assert_eq!(sent["reopened"], true);
+    };
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let folder = host.workspace(&bot);
+    let overlay = folder.join(format!("fixture-skills-{session}"));
+    tell("use B HOLD:before_limit").await;
+    common::eventually("the original agent has seen B", Duration::from_secs(30), async || {
+        std::fs::read_to_string(&overlay).is_ok_and(|skills| skills.contains("- B: Release steps."))
+    })
+    .await;
+    let limited = folder.join("thread-limit");
+    let held = folder.join("standin.hold");
+    for path in [&limited, &held, &folder.join("release-before_limit")] {
+        std::fs::write(path, "").unwrap();
+    }
+    common::eventually("the fallback has the prompt", Duration::from_secs(30), async || {
+        host.log(&bot, "standin.jsonl").iter().any(|call| call["method"] == "session/prompt")
+    })
+    .await;
+    assert!(last_prompt(&host, &bot, "standin").contains("reached its usage limit"));
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let parked_key = format!("fallback.session.{}.custom#%", task["thread"].as_str().unwrap());
+    let parked: bool = db
+        .query_row("SELECT EXISTS (SELECT 1 FROM kv WHERE k LIKE ?1 AND v = ?2)", [&parked_key, session], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(parked, "the original session {session} is parked while the fallback answers");
+    let raw: String =
+        db.query_row("SELECT v FROM kv WHERE k = ?1", [format!("context.{bot}.{session}")], |row| row.get(0)).unwrap();
+    let parked_context: Value = serde_json::from_str(&raw).unwrap();
+    let prior_loads = resumed();
+    assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+    std::fs::remove_file(limited).unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    common::eventually("the original agent is off rest", Duration::from_secs(30), async || {
+        bot_value(&host, &bot).await["resting"].as_array().is_some_and(Vec::is_empty)
+    })
+    .await;
+    std::fs::remove_file(held).unwrap();
+    assert_eq!(task_report(&host, &bot, title, "standin answered").await["thread"], task["thread"]);
+
+    for text in ["continue with the current skills", "check the result once more"] {
+        tell(text).await;
+        assert_eq!(task_report(&host, &bot, title, &format!("Thread {text}:")).await["thread"], task["thread"]);
+    }
+    let returned = prompts();
+    let [failed, restored, again] =
+        ["use B HOLD:before_limit", "continue with the current skills", "check the result once more"]
+            .map(|text| returned.iter().find(|p| p["text"].as_str().unwrap().contains(text)).unwrap());
+    let texts = [failed, restored, again].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let counts = texts.map(|text| text.matches("<skills_update>").count());
+    let revoked = texts[1].contains("\nSkills: none.\n</skills_update>");
+    eprintln!(
+        "Fallback returned to {session}: skill update counts {counts:?}, revoked {revoked}, parked uncertainty {}",
+        parked_context["taskSkillsUncertain"]
+    );
+    assert!(resumed() > prior_loads, "the original ACP session was loaded again");
+    assert_eq!(counts, [1, 1, 0]);
+    assert_eq!(parked_context["taskSkillsUncertain"], true);
+    assert!(revoked && std::fs::read_to_string(overlay).unwrap().ends_with("\nSkills: none."));
 }
 
 #[tokio::test]

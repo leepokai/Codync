@@ -374,7 +374,7 @@ impl Task {
 
 pub(super) const PREFIX: &str = "work.";
 
-fn key(bot: &str) -> String {
+pub(super) fn key(bot: &str) -> String {
     format!("{PREFIX}{bot}")
 }
 
@@ -387,10 +387,14 @@ pub(super) fn load(store: &Store, bot: &str) -> Vec<Task> {
     store.kv_get(&key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default()
 }
 
-/// Changes `bot`'s box. One change at a time, so two can't write over each other.
 // ponytail: one lock for every bot's box; a lock per bot if boxes ever change often enough to wait on each other.
+pub(super) fn lock(hub: &Hub) -> std::sync::MutexGuard<'_, ()> {
+    hub.work.boxes.locked()
+}
+
+/// Changes `bot`'s box. One change at a time, so two can't write over each other.
 pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Task>) -> Result<T>) -> Result<T> {
-    let _g = hub.work.boxes.locked();
+    let _g = lock(hub);
     let mut tasks = load(&hub.store, bot);
     let out = change(&mut tasks)?;
     hub.store.kv_set(&key(bot), &serde_json::to_string(&tasks)?)?;

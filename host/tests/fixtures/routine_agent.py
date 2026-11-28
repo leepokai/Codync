@@ -13,6 +13,11 @@ import uuid
 lock = threading.RLock()
 sessions_file = pathlib.Path("sessions.json")
 sessions = json.loads(sessions_file.read_text()) if sessions_file.exists() else {}
+held = set()
+setup_fault = pathlib.Path("resume-setup-fault")
+fault_session, fault_stage = setup_fault.read_text().splitlines() if setup_fault.exists() else ("", "")
+model_options = [{"id": "model", "category": "model", "type": "select", "currentValue": "fixture",
+                  "options": [{"value": "fixture", "name": "Fixture"}]}]
 cancel = threading.Event()
 servers = []
 
@@ -25,10 +30,12 @@ def send(value):
 def log(event, sid, text):
     with lock:
         with pathlib.Path("events.jsonl").open("a") as output:
-            output.write(json.dumps({"event": event, "session": sid, "text": text}) + "\n")
+            output.write(json.dumps({"event": event, "session": sid, "text": text,
+                                     "pid": os.getpid(), "held": sorted(held)}) + "\n")
 
 
 def answer_late(answer):
+    held.add(answer["result"]["sessionId"])
     log("late", answer["result"]["sessionId"], "")
     send(answer)
 
@@ -191,6 +198,9 @@ for line in sys.stdin:
         log("initialize", "", str(os.getpid()))
         resumable = not pathlib.Path("no-load").exists() and "--no-load" not in sys.argv
         capabilities = {"loadSession": resumable, "sessionCapabilities": {"close": {}}}
+        if fault_session:
+            capabilities["loadSession"] = False
+            capabilities["sessionCapabilities"]["resume"] = {}
         send({"id": request["id"], "result": {"agentCapabilities": capabilities}})
     elif method == "session/new":
         servers = request["params"]["mcpServers"]
@@ -203,22 +213,44 @@ for line in sys.stdin:
             late.daemon = True
             late.start()
         elif "--hang-new" not in sys.argv:  # an agent stuck starting never answers
+            held.add(answer["result"]["sessionId"])
             send(answer)
-    elif method == "session/load":
+    elif method in ("session/load", "session/resume"):
         sid = request["params"]["sessionId"]
-        if sid in sessions:
+        if method == "session/resume" and sid in held:
+            send({"id": request["id"], "error": {"code": -32602, "message": "session already held"}})
+        elif sid in sessions:
             servers = request["params"]["mcpServers"]
-            log("loaded", sid, "")
-            send({"id": request["id"], "result": {"sessionId": sid}})
+            held.add(sid)
+            log("resume_accepted" if method == "session/resume" else "loaded", sid, "")
+            result = {"sessionId": sid}
+            if sid == fault_session:
+                result["configOptions"] = model_options
+            send({"id": request["id"], "result": result})
         else:
             send({"id": request["id"], "error": {"code": -32000, "message": "unknown session"}})
+    elif method == "session/set_config_option" and request["params"]["sessionId"] == fault_session:
+        model = request["params"]["value"]
+        if fault_stage == "model":
+            log("model_waiting", fault_session, model)
+        else:
+            log("model_refused", fault_session, model)
+            send({"id": request["id"], "error": {"code": -32603, "message": "Fixture rejected the model"}})
     elif method == "session/prompt":
         cancel = threading.Event()
         threading.Thread(target=prompt, args=(request, cancel), daemon=True).start()
     elif method == "session/cancel":
         cancel.set()
     elif method == "session/close":
-        log("closed", request["params"]["sessionId"], "")
+        sid = request["params"]["sessionId"]
+        if sid == fault_session and fault_stage == "close":
+            log("close_waiting", sid, "")
+            continue
+        held.discard(sid)
+        log("closed", sid, "")
         send({"id": request["id"], "result": {}})
     elif "id" in request:
         send({"id": request["id"], "result": {}})
+
+if fault_session:
+    log("exit", "", "")

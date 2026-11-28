@@ -3,7 +3,7 @@
 //! goes to the agent as typed, so the agent runs it (docs/features/marketplace.md, "Commands").
 
 use super::Actor;
-use crate::store::{BotConfig, Store};
+use crate::store::Store;
 use codync_agent::events::Command;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -51,10 +51,10 @@ fn parse(commands: &[Command]) -> Vec<AgentCommand> {
         .collect()
 }
 
-/// What `agent` last listed for `cfg`'s bot, without the names Codync's own commands and the bot's skills take:
+/// What `agent` last listed for `bot`, without the names Codync's own commands and the bot's skills take:
 /// typing those runs Codync's. Empty when another agent listed it.
-pub fn listed(store: &Store, cfg: &BotConfig, agent: &str) -> Vec<AgentCommand> {
-    let Some(saved) = store.kv_get(&key(&cfg.id)).and_then(|v| serde_json::from_str::<Listed>(&v).ok()) else {
+pub fn listed(store: &Store, bot: &str, agent: &str, enabled_skills: &[String]) -> Vec<AgentCommand> {
+    let Some(saved) = store.kv_get(&key(bot)).and_then(|v| serde_json::from_str::<Listed>(&v).ok()) else {
         return Vec::new();
     };
     if saved.agent != agent {
@@ -63,7 +63,7 @@ pub fn listed(store: &Store, cfg: &BotConfig, agent: &str) -> Vec<AgentCommand> 
     saved
         .commands
         .into_iter()
-        .filter(|c| !BUILT_IN.contains(&c.name.as_str()) && !cfg.skills.contains(&c.name))
+        .filter(|c| !BUILT_IN.contains(&c.name.as_str()) && !enabled_skills.contains(&c.name))
         .collect()
 }
 
@@ -86,7 +86,8 @@ impl Actor {
     /// `text` starts with a command the running agent lists: the message goes to it as typed.
     pub(super) fn is_agent_command(&self, text: &str) -> bool {
         let Some((name, _)) = crate::market::slash_command(text) else { return false };
-        listed(&self.hub.store, &self.cfg, &self.cfg.backend).iter().any(|c| c.name == name)
+        let skills = crate::chat::context::enabled_skills(&self.hub.store, &self.cfg);
+        listed(&self.hub.store, &self.cfg.id, &self.cfg.backend, &skills).iter().any(|c| c.name == name)
     }
 }
 
@@ -124,10 +125,7 @@ mod tests {
     fn the_list_follows_the_agent_and_leaves_codyncs_own_names_out() {
         let path = std::env::temp_dir().join(format!("codync-agent-commands-{}.db", uuid::Uuid::new_v4()));
         let store = Store::open(&path).expect("temp store");
-        let cfg: BotConfig = serde_json::from_value(json!({
-            "id": "b", "name": "Bot", "backend": "claude", "cwd": "/tmp", "skills": ["release"],
-        }))
-        .expect("valid bot");
+        let skills = ["release".to_owned()];
         let commands = ["review", "fast", "release", "servers"].map(|name| AgentCommand {
             name: name.into(),
             description: String::new(),
@@ -135,7 +133,7 @@ mod tests {
         });
         let saved = Listed { agent: "claude".into(), commands: commands.to_vec() };
         store.kv_set(&key("b"), &serde_json::to_string(&saved).unwrap()).unwrap();
-        let names = |agent| listed(&store, &cfg, agent).into_iter().map(|c| c.name).collect::<Vec<_>>();
+        let names = |agent| listed(&store, "b", agent, &skills).into_iter().map(|c| c.name).collect::<Vec<_>>();
         assert_eq!(names("claude"), ["review"]);
         assert!(names("codex").is_empty(), "another agent's list isn't this one's");
         let _ = std::fs::remove_file(&path);

@@ -15,6 +15,7 @@ mod schema;
 mod workspaces;
 
 pub use archive::Archived;
+pub(crate) use archive::UnparkError;
 pub use devices::{Device, DeviceAccount, DeviceSource, Scope};
 pub use entries::INTERRUPTED;
 pub use model::{
@@ -57,6 +58,11 @@ fn next_rev(c: &Connection) -> Result<i64> {
     )?)
 }
 
+fn write_kv(c: &Connection, k: &str, v: &str) -> Result<()> {
+    c.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
+    Ok(())
+}
+
 impl Store {
     /// Durable control state must distinguish a missing key from a failed read.
     pub fn kv_read(&self, k: &str) -> Result<Option<String>> {
@@ -69,9 +75,7 @@ impl Store {
     }
 
     pub fn kv_set(&self, k: &str, v: &str) -> Result<()> {
-        let c = self.db.locked();
-        c.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
-        Ok(())
+        write_kv(&self.db.locked(), k, v)
     }
 
     pub fn kv_delete(&self, k: &str) -> Result<()> {

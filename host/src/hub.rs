@@ -238,6 +238,9 @@ impl Hub {
         projects::migrate(self);
         self.routines.restore(&self.store)?;
         crate::market::turn_on_installed_once(&self.store)?;
+        if crate::market::adopt_thread_skills(&self.store).is_err() {
+            tracing::warn!("couldn't read the skills list during startup adoption");
+        }
         for row in self.store.bots()? {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;
@@ -282,6 +285,10 @@ impl Hub {
     /// Whether `bot_id`'s actor runs.
     pub fn has_actor(&self, bot_id: &str) -> bool {
         self.bots.locked().contains_key(bot_id)
+    }
+
+    pub(crate) fn thread_turn(&self, id: &str) -> Option<Arc<()>> {
+        self.bots.locked().get(id).and_then(|handle| handle.thread_turn.locked().clone())
     }
 
     /// Stops `bot_id`'s actor, and so its agent process; its row and transcript stay.
@@ -344,7 +351,9 @@ impl Hub {
     #[cfg(test)]
     pub fn attach_bot_for_test(&self, id: &str) -> tokio::sync::mpsc::UnboundedReceiver<Cmd> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        self.bots.locked().insert(id.into(), BotHandle { tx, task: tokio::spawn(async {}) });
+        self.bots
+            .locked()
+            .insert(id.into(), BotHandle { tx, task: tokio::spawn(async {}), thread_turn: Arc::default() });
         rx
     }
 

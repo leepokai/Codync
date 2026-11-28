@@ -5,6 +5,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
+#[path = "work_e2e/skill_delivery.rs"]
+mod skill_delivery;
+#[path = "work_e2e/startup_skills.rs"]
+mod startup_skills;
 
 use common::host::Host;
 use serde_json::{Value, json};
@@ -316,6 +320,46 @@ async fn a_workflow_its_agent_reports_holds_its_task_until_the_agents_own_turn_r
     assert!(merged, "what the agent did by itself is the thread's: {details}");
     let asked: Vec<bool> = host.log(&bot, "initialize.jsonl").iter().map(|i| i["asyncTasks"] == true).collect();
     assert!(asked.contains(&true) && asked.contains(&false), "a thread asks, the chat doesn't: {asked:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_task_follows_a_workflow_in_its_session_while_the_chat_is_busy() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "tasks").await;
+    host.call("updateBot", json!({"id": bot, "maxThreads": 1})).await;
+    host.reply(&bot, "ADD Review|WORKFLOW:review").await;
+    let first = wait("the thread to wait between turns", async || {
+        work(&host, &bot).await.into_iter().find(|i| i["title"] == "Review" && i["activity"] == "Review: diff")
+    })
+    .await;
+    host.reply(&bot, "ADD Follow|Use the review|after=Review").await;
+    assert_eq!(task(&host, &bot, "Follow", "waiting").await["wait"], json!({"kind": "after"}));
+    host.call("send", json!({"botId": bot, "text": "ADD Hold the chat|Later|hold"})).await;
+    task(&host, &bot, "Hold the chat", "waiting").await;
+
+    release(&host, &bot, "review");
+    let done = task(&host, &bot, "Review", "done").await;
+    assert_eq!(done["result"], "Report Review: the workflow passed");
+    let follow = tokio::time::timeout(Duration::from_secs(12), task(&host, &bot, "Follow", "done")).await;
+    let Ok(follow) = follow else {
+        let tasks = work(&host, &bot).await;
+        let follow = tasks.iter().find(|i| i["title"] == "Follow").unwrap();
+        let prompts = task_prompts(&host, &bot, "Follow").len();
+        panic!("follow-up status {}, wait {}, prompts received {prompts} after 12s", follow["status"], follow["wait"]);
+    };
+    assert_eq!(follow["thread"], first["thread"]);
+    let review_session = task_prompts(&host, &bot, "Review")[0]["session"].clone();
+    assert_eq!(task_prompts(&host, &bot, "Follow")[0]["session"], review_session);
+    assert!(!common::steer::idle(&host, &bot).await);
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0]);
+    eprintln!("The workflow and its follow-up used {review_session} while the chat was busy");
+    host.call("stop", json!({"botId": bot})).await;
+    relayed_for(&host, &bot, "Review").await;
+    relayed_for(&host, &bot, "Follow").await;
+    let reports = relayed(&host, &bot).await.join("\n");
+    assert_eq!(reports.matches("Report Review:").count(), 1, "{reports}");
+    assert_eq!(reports.matches("Report Follow:").count(), 1, "{reports}");
 }
 
 /// The agent hears nothing of a stop of its background work, so no turn of its own follows: the task that waited on
@@ -2214,6 +2258,75 @@ async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
     assert_eq!(opened[0]["data"]["attachments"][0]["name"], "notes.md");
 }
 
+async fn standalone_fixture(host: &Host, fixture: &str, args: &str) -> (String, PathBuf) {
+    let setup = json!({"backend": "custom"});
+    let empty = host.refused("startThread", json!({"text": "", "setup": setup})).await;
+    assert!(empty.starts_with("a thread starts with a message"), "{empty}");
+    let snapshot = host.snapshot().await;
+    let owner = snapshot["bots"].as_array().unwrap().iter().find(|b| b["plain"] == true).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let command = common::fixture_command(fixture, args);
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": command})).await;
+    let folder = host.home.join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    (owner, folder)
+}
+
+async fn install_review_skill(host: &Host, owner: &str) {
+    let installed = host
+        .call("installSkill", json!({"name": "Review", "description": "Read the notes.", "instructions": "Read."}))
+        .await;
+    assert_eq!(installed["skill"]["id"], "review");
+    assert_eq!(common::bot(&host.snapshot().await, owner)["skills"], json!(["review"]));
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_starts_with_its_agents_command_and_file() {
+    let host = Host::start().await;
+    let (owner, folder) = standalone_fixture(&host, "commands_agent.py", "").await;
+    install_review_skill(&host, &owner).await;
+
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"uploadId": upload, "name": "notes.txt", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    let command = "/review the notes";
+    let setup = json!({"backend": "custom", "cwd": folder});
+    host.call("startThread", json!({"text": command, "setup": setup, "attachments": [upload]})).await;
+    let done = task(&host, &owner, command, "done").await;
+    let file =
+        host.home.join("bots").join(done["thread"].as_str().unwrap()).join("uploads").join(upload).join("notes.txt");
+    let expected = format!("{command}\n\n[Attached files — read them from these paths]\n- {}", file.display());
+    let requests = logged(&folder, "requests.jsonl");
+    let prompt = requests.iter().find(|r| r["method"] == "session/prompt").unwrap();
+    assert_eq!(prompt["params"]["prompt"][0]["text"], expected);
+    assert_eq!(std::fs::read_to_string(file).unwrap(), "hi");
+}
+
+#[tokio::test]
+async fn steering_a_thread_without_a_bot_keeps_its_slash_command_after_a_skill_is_installed() {
+    let host = Host::start().await;
+    let (owner, folder) = standalone_fixture(&host, "steer_agent.py", "steer 30").await;
+    let setup = json!({"backend": "custom", "cwd": folder});
+    host.call("startThread", json!({"text": "Read the notes", "setup": setup})).await;
+    let running = task(&host, &owner, "Read the notes", "working").await;
+    wait("the agent to start working", async || {
+        transcript(&host, &owner, &running).await.into_iter().find(|e| e["data"]["text"] == "Working")
+    })
+    .await;
+
+    install_review_skill(&host, &owner).await;
+    let command = "/review the next note";
+    let sent = tell(&host, &owner, &running, command).await;
+    assert_eq!(sent["queued"], true);
+    host.call("steer", json!({"botId": owner, "taskId": running["id"], "entryId": sent["entry"]["id"]})).await;
+    thread_status(&host, &owner, &running, &sent["entry"]["id"], "sent").await;
+    let requests = logged(&folder, "requests.jsonl");
+    let steer = requests.iter().find(|r| r["method"] == "_session/steering").unwrap();
+    assert_eq!(steer["params"]["prompt"][0]["text"], command);
+}
+
 #[tokio::test]
 async fn the_bot_asks_a_working_task_and_gets_its_answer_apart_from_its_report() {
     let host = Host::start().await;
@@ -2355,6 +2468,1363 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     // Versioned as a bot's own folder is, and never given a worktree of itself.
     wait("its versions", async || own.join(".git").exists().then_some(())).await;
     assert!(done["worktree"].is_null());
+}
+
+#[tokio::test]
+async fn a_background_task_hears_skill_changes_from_its_bot_and_restart_adopts_old_thread_skills() {
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    let description = "Coordinates production releases.";
+    host.call("updateBot", json!({"id": bot, "description": description})).await;
+    host.reply(&bot, "ADD Ship it|HOLD:gate").await;
+    let working = task(&host, &bot, "Ship it", "working").await;
+    let thread = working["thread"].as_str().unwrap().to_owned();
+    let first = wait("first prompt in thread", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
+
+    let arguments = json!({"name": "Deploy notes", "description": "Release steps.", "instructions": "1. Build."});
+    let refused =
+        host.refused("chatCall", json!({"botId": thread, "name": "save_skill", "arguments": arguments})).await;
+    assert!(refused.starts_with("save_skill isn't available in a thread"), "{refused}");
+    assert_eq!(common::bot(&host.snapshot().await, &bot)["skills"], json!([]));
+    let saved = host.call("chatCall", json!({"botId": bot, "name": "save_skill", "arguments": arguments})).await;
+    let skill_id = saved["skill"]["id"].as_str().unwrap().to_owned();
+    let bot_skills = |snap: &Value| -> Vec<String> {
+        common::bot(snap, &bot)["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    };
+    assert_eq!(bot_skills(&host.snapshot().await), [skill_id.as_str()], "turned on for the parent bot");
+    let notices: Vec<String> = history(&host, &bot)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "notice")
+        .filter_map(|e| e["data"]["text"].as_str().map(str::to_owned))
+        .collect();
+    assert!(notices.iter().any(|t| t == "Saved the skill Deploy notes"), "notice in parent chat: {notices:?}");
+
+    let updated = host
+        .call(
+            "chatCall",
+            json!({
+                "botId": bot,
+                "name": "save_skill",
+                "arguments": {
+                    "id": skill_id,
+                    "name": "Deploy notes",
+                    "description": "Release steps updated.",
+                    "instructions": "1. Build.\n2. Tag."
+                }
+            }),
+        )
+        .await;
+    assert_eq!(updated["skill"]["id"], skill_id);
+
+    let memory = "Prefers a dry run before deploying.";
+    host.write_memory(Some(&bot), "MEMORY.md", &format!("- {memory}\n"));
+    release(&host, &bot, "gate");
+    let done = task(&host, &bot, "Ship it", "done").await;
+    let looked_up = host.tool(&thread, "read_memory", json!({"file": "MEMORY.md"})).await;
+    assert!(looked_up["content"].as_str().unwrap().contains(memory), "{looked_up}");
+
+    let continue_task = async |message: &str| {
+        assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], thread);
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], first["session"], "the same ACP session continued");
+        let text = prompt["text"].as_str().unwrap().to_owned();
+        for absent in ["<agent_profile_update>", "Title: Mika", description, "<memory_update>", memory] {
+            assert!(!text.contains(absent), "{absent} in the task prompt: {text}");
+        }
+        text
+    };
+    let text = continue_task("use the new skill").await;
+    assert!(
+        text.contains("<skills_update>") && text.contains("Deploy notes: Release steps updated."),
+        "the existing task gets the updated skill list: {text}"
+    );
+    let text = continue_task("confirm the steps").await;
+    assert!(!text.contains("<skills_update>"), "the agent already heard this list: {text}");
+
+    host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    let text = continue_task("continue without the skill").await;
+    assert!(text.contains("<skills_update>") && text.contains("Skills: none."), "{text}");
+    assert!(!text.contains("Deploy notes"), "{text}");
+
+    // Restart adopts a skill whose saved owner is an old thread.
+    let legacy_id = "legacy-thread-skill";
+    host.restart(|home| {
+        let dir = home.join("skills").join(legacy_id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\nname: Legacy\ndescription: Old.\n---\n\nOld.\n").unwrap();
+        let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
+        let raw: String = db.query_row("SELECT v FROM kv WHERE k = 'skills'", [], |r| r.get(0)).unwrap();
+        let mut list: Vec<Value> = serde_json::from_str(&raw).unwrap();
+        list.push(json!({
+            "id": legacy_id,
+            "name": "Legacy",
+            "description": "Old.",
+            "source": "custom",
+            "writtenBy": thread,
+        }));
+        db.execute("UPDATE kv SET v = ?1 WHERE k = 'skills'", [serde_json::to_string(&list).unwrap()]).unwrap();
+    })
+    .await;
+
+    let skills_after = bot_skills(&host.snapshot().await);
+    assert!(
+        skills_after.contains(&legacy_id.to_owned()),
+        "legacy thread skill turned on after restart: {skills_after:?}"
+    );
+    let rewritten = host
+        .call(
+            "chatCall",
+            json!({
+                "botId": bot,
+                "name": "save_skill",
+                "arguments": {"id": legacy_id, "name": "Legacy", "description": "Adopted.", "instructions": "New."}
+            }),
+        )
+        .await;
+    assert_eq!(rewritten["skill"]["id"], legacy_id, "parent bot can rewrite adopted legacy skill");
+}
+
+#[tokio::test]
+async fn a_claude_task_keeps_its_announced_skills_across_session_loads() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "claude").await;
+    let description = "Coordinates production releases.";
+    let memory = "Prefers a dry run before deploying.";
+    host.call("updateBot", json!({"id": bot, "description": description})).await;
+    host.write_memory(Some(&bot), "MEMORY.md", &format!("- {memory}\n"));
+    host.reply(&bot, "ADD Ship it|Read the release notes").await;
+    let done = task(&host, &bot, "Ship it", "done").await;
+    let initial = task_prompts(&host, &bot, "Ship it").into_iter().next().unwrap();
+    let session = initial["session"].as_str().unwrap();
+    let sessions = || host.log(&bot, "claude_sessions.jsonl");
+    let ended = async |pid: &Value| {
+        wait("the task agent to exit", async || {
+            sessions().into_iter().any(|e| e["method"] == "exit" && &e["pid"] == pid).then_some(())
+        })
+        .await;
+    };
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    let system = opening["system"].as_str().unwrap();
+    let assert_task_context = |text: &str| {
+        for absent in
+            ["Agent profile:", "<agent_profile_update>", "Title: Mika", description, "<memory_update>", memory]
+        {
+            assert!(!text.contains(absent), "{absent} in the task context: {text}");
+        }
+    };
+    assert!(system.starts_with("You are doing one task"), "{system}");
+    assert_task_context(system);
+    assert!(!system.contains("Skills you can use"), "{system}");
+    ended(&opening["pid"]).await;
+
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let announced = || -> String {
+        db.query_row(
+            "SELECT json_extract(v, '$.announced.skills_brief') FROM kv WHERE k = ?1",
+            [format!("context.{bot}.{session}")],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert!(announced().is_empty(), "the task opened with no skills");
+
+    let continue_task = async |message: &str, load_count| {
+        assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], done["thread"]);
+        let loads: Vec<_> =
+            sessions().into_iter().filter(|e| e["method"] == "session/load" && e["session"] == session).collect();
+        assert_eq!(loads.len(), load_count, "the task reloaded its original session");
+        let load = loads.last().unwrap();
+        assert_eq!(load["system"], system, "the load used the frozen task instructions");
+        ended(&load["pid"]).await;
+
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        let text = prompt["text"].as_str().unwrap().to_owned();
+        assert_task_context(&text);
+        (text, announced())
+    };
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let added = continue_task("use the new skill", 1).await;
+    let unchanged = continue_task("confirm the steps", 2).await;
+    host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    let removed = continue_task("continue without the skill", 3).await;
+
+    let updates = [&added, &unchanged, &removed].map(|(text, _)| text.matches("<skills_update>").count());
+    let empty_list = removed.0.contains("Skills: none.");
+    let delivered_b = added.1.contains("- B: Release steps.");
+    eprintln!(
+        "three loads of {session} with the frozen system: updates {updates:?}, empty list {empty_list}, \
+         SQLite B after first and second turns {delivered_b}/{}, empty after third {}",
+        unchanged.1 == added.1,
+        removed.1.is_empty(),
+    );
+    assert_eq!(updates, [1, 0, 1], "add, keep, and remove skills across the three loads");
+    assert!(delivered_b && added.0.contains(&added.1), "the first prompt delivered the recorded skill");
+    assert_eq!(unchanged.1, added.1);
+    assert!(empty_list && removed.1.is_empty(), "the last prompt revoked the recorded skill");
+}
+
+#[tokio::test]
+async fn a_standard_task_resends_skill_updates_dropped_by_compaction() {
+    let mut counts = Vec::new();
+    for initially_enabled in [false, true] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+        let save_skill = async || {
+            host.call(
+                "chatCall",
+                json!({"botId": bot, "name": "save_skill",
+                    "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+            )
+            .await;
+        };
+        if initially_enabled {
+            save_skill().await;
+        }
+        let sessions = || host.log(&bot, "standard_sessions.jsonl");
+        let exited = async |pid: &Value| {
+            wait("the task agent to exit", async || {
+                sessions().into_iter().find(|e| e["method"] == "exit" && &e["pid"] == pid)
+            })
+            .await;
+        };
+        host.reply(&bot, "ADD Keep going|Finish the release").await;
+        let mut done = task(&host, &bot, "Keep going", "done").await;
+        let initial = &task_prompts(&host, &bot, "Keep going")[0];
+        let session = initial["session"].as_str().unwrap();
+        let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+        exited(&opening["pid"]).await;
+        let opening_text = opening["system"].as_str().unwrap();
+        assert_eq!(opening_text.contains("- B: Release steps."), initially_enabled);
+        if initially_enabled {
+            assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+        } else {
+            save_skill().await;
+        }
+        let expected = if initially_enabled { "Skills: none." } else { "- B: Release steps." };
+        let mut updates = Vec::new();
+        let overlay = host.workspace(&bot).join(format!("fixture-skills-{session}"));
+        for (index, message) in ["record the update COMPACT_AGAIN", "continue after the summary", "check one more time"]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(tell(&host, &bot, &done, message).await["reopened"], true);
+            done = result(&host, &bot, "Keep going", &format!("Thread {message}:")).await;
+            let loaded =
+                sessions().into_iter().rfind(|e| e["method"] == "session/load" && e["session"] == session).unwrap();
+            assert_eq!(loaded["activeSystem"], opening["system"]);
+            exited(&loaded["pid"]).await;
+            let prompt = thread_prompts(&host, &bot)
+                .into_iter()
+                .find(|p| p["text"].as_str().unwrap().contains(message))
+                .unwrap();
+            assert_eq!(prompt["session"], session);
+            let text = prompt["text"].as_str().unwrap();
+            let count = text.matches("<skills_update>").count();
+            assert!(count == 0 || text.contains(expected), "{text}");
+            updates.push(count);
+            if index == 0 {
+                assert!(!overlay.exists(), "compaction discarded the delivered update");
+            }
+        }
+        let dropped = host.log(&bot, "compacted_skills.jsonl");
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0]["session"], session);
+        assert!(dropped[0]["dropped"].as_str().unwrap().contains(expected));
+        eprintln!("standard {session} dropped {expected:?} before the turn succeeded, update counts {updates:?}");
+        counts.push(updates);
+    }
+    assert_eq!(counts, [[1, 1, 0], [1, 1, 0]]);
+}
+
+#[tokio::test]
+async fn a_first_message_agent_retries_compacted_instructions_after_a_failed_prompt() {
+    let mut counts = Vec::new();
+    for handed_out in [true, false] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "report-compaction").await;
+        let title = "Try again";
+        let rejected = "refuse the refreshed instructions FAIL_SKILL_PROMPT";
+        let retry = "deliver the refreshed instructions";
+        let quiet = "check without a repeat";
+        if handed_out {
+            host.reply(&bot, "ADD Try again|COMPACT_NOW HOLD:before_retry").await;
+            let working = task(&host, &bot, title, "working").await;
+            wait("the compacting task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+            assert_eq!(tell(&host, &bot, &working, rejected).await["queued"], true);
+            release(&host, &bot, "before_retry");
+            let failed = task(&host, &bot, title, "failed").await;
+            assert_eq!(tell(&host, &bot, &failed, retry).await["reopened"], true);
+            let done = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+            assert_eq!(tell(&host, &bot, &done, quiet).await["reopened"], true);
+            result(&host, &bot, title, &format!("Thread {quiet}:")).await;
+        } else {
+            host.reply(&bot, "start the chat").await;
+            host.reply(&bot, "COMPACT_AGAIN").await;
+            host.call("send", json!({"botId": bot, "text": rejected, "clientNonce": "reject-profile"})).await;
+            entry(&host, &bot, "the rejected profile prompt", |e| {
+                e["data"]["text"].as_str().is_some_and(|text| text.contains("Fixture rejected the prompt"))
+            })
+            .await;
+            host.reply(&bot, retry).await;
+            host.reply(&bot, quiet).await;
+        }
+        let prompts = host.log(&bot, "prompts.jsonl");
+        let [failed, retried, after] = [rejected, retry, quiet]
+            .map(|message| prompts.iter().find(|p| p["text"].as_str().unwrap().contains(message)).unwrap());
+        assert_eq!(failed["session"], retried["session"]);
+        assert_eq!(failed["session"], after["session"]);
+        let copies = [failed, retried, after].map(|p| p["text"].as_str().unwrap().matches("<bot-profile>").count());
+        let expected = if handed_out { "Continue following the user's original brief." } else { "Title: Mika" };
+        for prompt in [failed, retried] {
+            let text = prompt["text"].as_str().unwrap();
+            if text.contains("<bot-profile>") {
+                assert!(text.contains("Your context was summarized.") && text.contains(expected), "{text}");
+            }
+        }
+        eprintln!("FirstMessage task={handed_out} session {} profile counts {copies:?}", failed["session"]);
+        counts.push(copies);
+    }
+    assert_eq!(counts, [[1, 1, 0], [1, 1, 0]]);
+}
+
+#[tokio::test]
+async fn a_first_message_task_retries_its_opening_after_a_cancelled_prompt() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    let title = "Try again";
+    host.reply(&bot, "ADD Try again|RETURN_CANCELLED").await;
+    let initial = wait("the initial task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let stopped = task(&host, &bot, title, "stopped").await;
+    assert_stopped_task_prompt(&host, &bot, &stopped, session, false).await;
+
+    let retry = "deliver the opening";
+    let quiet = "continue without the opening";
+    assert_eq!(tell(&host, &bot, &stopped, retry).await["reopened"], true);
+    let done = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+    assert_eq!(tell(&host, &bot, &done, quiet).await["reopened"], true);
+    result(&host, &bot, title, &format!("Thread {quiet}:")).await;
+
+    let prompts = thread_prompts(&host, &bot);
+    let [retried, after]: &[Value; 2] = prompts.as_slice().try_into().unwrap();
+    let texts = [&initial, retried, after].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let counts = texts.map(|text| text.matches("<bot-profile>").count());
+    eprintln!("FirstMessage task {session}: opening counts {counts:?}");
+    assert_eq!(counts, [1, 1, 0]);
+    let opening = texts[0].split_once("</bot-profile>").unwrap().0;
+    assert!(opening.contains("away from the chat where it was handed out"));
+    assert_eq!(texts[1].split_once("</bot-profile>").unwrap().0, opening);
+}
+
+#[tokio::test]
+async fn a_standard_task_retries_its_session_after_a_resume_bookkeeping_error() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Unsupported).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_closes_the_failed_resume_and_keeps_background_work() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Supported).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_restarts_its_agent_when_close_is_rejected() {
+    retry_task_after_resume_bookkeeping_error(ResumeClose::Refused).await;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ResumeClose {
+    Unsupported,
+    Supported,
+    Refused,
+}
+
+async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
+    let host = Host::start().await;
+    let options = if close == ResumeClose::Unsupported {
+        "standard resume-only strict-resume"
+    } else {
+        "standard resume-only strict-resume with-close"
+    };
+    let bot = host.fixture_bot("Mika", "work_agent.py", options).await;
+    let sessions = || host.log(&bot, "standard_sessions.jsonl");
+    host.reply(&bot, "ADD Retry resume|COMPACT_NOW").await;
+    let done = task(&host, &bot, "Retry resume", "done").await;
+    let task_opened = &task_prompts(&host, &bot, "Retry resume")[0];
+    let session = task_opened["session"].as_str().unwrap();
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    wait("the original task agent to exit", async || {
+        sessions().into_iter().find(|e| e["method"] == "exit" && e["pid"] == opening["pid"])
+    })
+    .await;
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+
+    let gate = flag(&host, &bot, &format!("hold-load-{session}"));
+    assert_eq!(tell(&host, &bot, &done, "reopen with B").await["reopened"], true);
+    let resumes = || -> Vec<Value> {
+        sessions().into_iter().filter(|e| e["method"] == "session/resume" && e["session"] == session).collect()
+    };
+    let accepted = wait("the held resume", async || resumes().into_iter().next()).await;
+    assert_eq!(accepted["gate"], "initial");
+    assert!(accepted["system"].as_str().unwrap().contains("- B: Release steps."));
+    let workspace = host.workspace(&bot);
+    let background = if close == ResumeClose::Unsupported {
+        None
+    } else {
+        Some(
+            wait("the detached worker to start under the resuming agent", async || {
+                let parent = format!(" {}", accepted["pid"]);
+                std::fs::read_to_string(workspace.join("background-ready")).ok().filter(|s| s.ends_with(&parent))
+            })
+            .await,
+        )
+    };
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let snapshot_key = format!("context.{bot}.{session}");
+    db.execute_batch("CREATE TABLE fixture_resume_failure(k TEXT PRIMARY KEY, armed INTEGER NOT NULL);").unwrap();
+    db.execute("INSERT INTO fixture_resume_failure VALUES(?1, 1)", [&snapshot_key]).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER reject_resume_snapshot BEFORE INSERT ON kv
+         WHEN CASE WHEN EXISTS(SELECT 1 FROM fixture_resume_failure WHERE k = NEW.k AND armed = 1)
+              THEN json_type(NEW.v, '$.pendingTaskSkills') IS NOT NULL ELSE 0 END
+         BEGIN
+             SELECT RAISE(FAIL, 'fixture refused the snapshot write');
+         END;",
+    )
+    .unwrap();
+    if close == ResumeClose::Refused {
+        flag(&host, &bot, &format!("fail-close-{session}"));
+    }
+    let retry_gate = flag(&host, &bot, &format!("hold-retry-load-{session}"));
+    let retry_text = "retry the same session HOLD:resume_retry";
+    assert_eq!(tell(&host, &bot, &done, retry_text).await["queued"], true);
+    std::fs::remove_file(gate).unwrap();
+    let refusal_count = async || {
+        transcript(&host, &bot, &done)
+            .await
+            .into_iter()
+            .filter(|entry| {
+                entry["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the snapshot write"))
+            })
+            .count()
+    };
+    wait("the first resume bookkeeping error", async || (refusal_count().await == 1).then_some(())).await;
+    let held_resumes = wait("the held retry resume", async || {
+        let seen = resumes();
+        (seen.len() == 2).then_some(seen)
+    })
+    .await;
+    assert_eq!(held_resumes[0]["gate"], "initial");
+    assert_eq!(held_resumes[1]["gate"], "retry");
+    let stored_before_retry: Value = serde_json::from_str(
+        &db.query_row("SELECT v FROM kv WHERE k = ?1", [&snapshot_key], |r| r.get::<_, String>(0)).unwrap(),
+    )
+    .unwrap();
+    assert!(stored_before_retry["pendingTaskSkills"].is_null(), "first snapshot write was not rolled back");
+    assert!(thread_prompts(&host, &bot).is_empty(), "queued retry prompted before the retry gate opened");
+    eprintln!(
+        "{close:?}: observed 1 refusal for {session} with pendingTaskSkills absent; gates=({}, {}); disarming before retry PID {}",
+        held_resumes[0]["gate"], held_resumes[1]["gate"], held_resumes[1]["pid"]
+    );
+    assert_eq!(db.execute("UPDATE fixture_resume_failure SET armed = 0 WHERE k = ?1", [&snapshot_key]).unwrap(), 1);
+    std::fs::remove_file(retry_gate).unwrap();
+    let resumed_prompt = wait("the prompt from the queued retry", async || {
+        thread_prompts(&host, &bot).into_iter().find(|p| p["text"].as_str().unwrap().contains(retry_text))
+    })
+    .await;
+    let events = sessions();
+    let [first, retry]: [usize; 2] = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e["method"] == "session/resume" && e["session"] == session)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let close_event =
+        events[first + 1..retry].iter().find(|e| e["method"] == "session/close" && e["session"] == session);
+    let first_pid = &events[first]["pid"];
+    let retry_pid = &events[retry]["pid"];
+    if background.is_some() {
+        release(&host, &bot, "background");
+    }
+    let worker_finished = if close == ResumeClose::Supported && first_pid == retry_pid {
+        Some(
+            wait("the detached worker to finish during the retry", async || {
+                std::fs::read_to_string(workspace.join("background-finished")).ok().filter(|s| s.contains(' '))
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+    release(&host, &bot, "resume_retry");
+    result(&host, &bot, "Retry resume", &format!("Thread {retry_text}:")).await;
+    assert_eq!(
+        db.query_row("SELECT armed FROM fixture_resume_failure WHERE k = ?1", [&snapshot_key], |r| r.get::<_, i32>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(refusal_count().await, 1);
+    eprintln!(
+        "{close:?}: resume of {session} accepted by PID {first_pid}, close {close_event:?}, next resume PID {retry_pid}, retry prompt session {}, detached worker {background:?}",
+        resumed_prompt["session"]
+    );
+    assert_eq!(first_pid == retry_pid, close == ResumeClose::Supported);
+    assert_eq!(
+        close_event.map(|e| e["rejected"].as_bool().unwrap()),
+        match close {
+            ResumeClose::Unsupported => None,
+            ResumeClose::Supported => Some(false),
+            ResumeClose::Refused => Some(true),
+        }
+    );
+    if let Some(event) = close_event {
+        assert_eq!(&event["pid"], first_pid);
+    }
+    assert_eq!(resumed_prompt["session"], session);
+    let prompt_text = resumed_prompt["text"].as_str().unwrap();
+    assert_eq!(prompt_text.matches("<skills_update>").count(), 1);
+    assert!(prompt_text.contains("- B: Release steps."));
+    if let Some(finished) = worker_finished {
+        assert_eq!(Some(&finished), background.as_ref());
+        assert!(finished.ends_with(&format!(" {first_pid}")));
+        eprintln!("detached worker finished with unchanged PID and parent {finished}");
+    }
+}
+
+#[tokio::test]
+async fn a_first_message_agent_recovers_an_opening_lost_before_compaction() {
+    for compacted in [false, true] {
+        let host = Host::start().await;
+        let bot = host.fixture_bot("Mika", "work_agent.py", "report-compaction native-compact").await;
+        let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+        db.busy_timeout(Duration::from_secs(5)).unwrap();
+        db.execute_batch(
+            "CREATE TABLE fixture_adopt_failure(bot TEXT PRIMARY KEY, fired INTEGER NOT NULL);
+             CREATE TRIGGER reject_adoption BEFORE INSERT ON kv
+             WHEN EXISTS(SELECT 1 FROM fixture_adopt_failure WHERE fired = 0 AND NEW.k GLOB ('context.' || bot || '.*'))
+             BEGIN
+                 UPDATE fixture_adopt_failure SET fired = 1;
+                 SELECT RAISE(FAIL, 'fixture refused the initial snapshot');
+             END;",
+        )
+        .unwrap();
+        db.execute("INSERT INTO fixture_adopt_failure VALUES(?1, 0)", [&bot]).unwrap();
+        let send = async |text: &str| {
+            host.call("send", json!({"botId": bot, "text": text, "clientNonce": uuid::Uuid::new_v4().to_string()}))
+                .await
+        };
+        send("try the initial opening").await;
+        entry(&host, &bot, "the snapshot adoption error", |e| {
+            e["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the initial snapshot"))
+        })
+        .await;
+        assert_eq!(db.query_row("SELECT fired FROM fixture_adopt_failure", [], |r| r.get::<_, i32>(0)).unwrap(), 1);
+        let stored =
+            |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |r| r.get(0)).ok() };
+        let opened = host.log(&bot, "servers.jsonl");
+        let session = opened[0]["session"].as_str().unwrap();
+        let snapshot_key = format!("context.{bot}.{session}");
+        assert_eq!(host.log(&bot, "prompts.jsonl"), Vec::<Value>::new());
+        assert!(stored(&snapshot_key).is_none());
+        if compacted {
+            wait("the native compact command to be registered", async || {
+                stored(&format!("agent.commands.{bot}")).filter(|commands| commands.contains("\"compact\""))
+            })
+            .await;
+            host.reply(&bot, "/compact").await;
+            let commands = host.log(&bot, "prompts.jsonl");
+            assert_eq!(commands[0]["session"], session);
+            assert_eq!(commands[0]["text"], "/compact");
+            assert_eq!(
+                stored(&format!("context.epoch.{bot}.{session}")),
+                Some(format!("{session}\t1\tnative-compaction"))
+            );
+            assert!(stored(&snapshot_key).is_none(), "the native command skipped the opening");
+        }
+        send("refuse the missing opening FAIL_SKILL_PROMPT").await;
+        entry(&host, &bot, "the failed recovery prompt", |e| {
+            e["data"]["text"].as_str().is_some_and(|text| text.contains("Fixture rejected the prompt"))
+        })
+        .await;
+        host.reply(&bot, "recover the opening").await;
+        host.reply(&bot, "continue without the opening").await;
+        let prompts = host.log(&bot, "prompts.jsonl");
+        let rounds: &[Value; 3] = prompts[usize::from(compacted)..].try_into().unwrap();
+        let copies = rounds.each_ref().map(|p| {
+            assert_eq!(p["session"], session);
+            p["text"].as_str().unwrap().matches("<bot-profile>").count()
+        });
+        let profile = |p: &Value| {
+            p["text"]
+                .as_str()
+                .unwrap()
+                .split_once("<bot-profile>")
+                .and_then(|(_, text)| text.split_once("</bot-profile>").map(|(opening, _)| opening.to_owned()))
+        };
+        eprintln!("FirstMessage {session} compacted={compacted} opening counts {copies:?}");
+        assert_eq!(copies, if compacted { [1, 1, 0] } else { [0, 0, 0] });
+        assert_eq!(profile(&rounds[0]), profile(&rounds[1]));
+        if compacted {
+            assert!(profile(&rounds[1]).unwrap().contains("Title: Mika"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_claude_task_revokes_a_skill_disabled_during_a_compacted_session_load() {
+    compacted_task_skills_on_reopen("claude", CompactedSkill::Disabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_revokes_a_skill_disabled_during_a_compacted_session_load() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::Disabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_announces_skills_after_a_deferred_load() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::Enabled).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_announces_skills_after_a_deferred_resume() {
+    compacted_task_skills_on_reopen("standard resume-only defer-system", CompactedSkill::Enabled).await;
+}
+
+#[tokio::test]
+async fn an_upgraded_standard_acp_task_revokes_the_frozen_skill_on_reopen() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::Legacy).await;
+}
+
+#[tokio::test]
+async fn an_upgraded_claude_task_revokes_the_frozen_skill_on_reopen() {
+    compacted_task_skills_on_reopen("claude", CompactedSkill::Legacy).await;
+}
+
+#[tokio::test]
+#[ignore = "requires a historical codync-host via CODYNC_LEGACY_HOST_BIN"]
+async fn a_legacy_standard_task_revokes_skills_after_reopening_a_refreshed_system() {
+    let legacy = std::env::var_os("CODYNC_LEGACY_HOST_BIN").expect("set the historical codync-host path");
+    let mut host = Host::start_from(Path::new(&legacy), &[]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system").await;
+    let title = "Legacy task";
+    let skill = "- B: Release steps.";
+    host.reply(&bot, "ADD Legacy task|COMPACT_NOW HOLD:legacy_start").await;
+    let initial = wait("the legacy task prompt", async || task_prompts(&host, &bot, title).into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let events = |host: &Host, method: &str| -> Vec<Value> {
+        host.log(&bot, "standard_sessions.jsonl")
+            .into_iter()
+            .filter(|event| event["session"] == session && event["method"] == method)
+            .collect()
+    };
+    let ended = async |host: &Host, pid: &Value| {
+        wait("the task agent to exit", async || {
+            host.log(&bot, "standard_sessions.jsonl")
+                .into_iter()
+                .find(|event| event["method"] == "exit" && &event["pid"] == pid)
+        })
+        .await;
+    };
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let kv =
+        |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |row| row.get(0)).ok() };
+    let snapshot = || -> Value { serde_json::from_str(&kv(&format!("context.{bot}.{session}")).unwrap()).unwrap() };
+    let compacted = async |revision: u32, id: &str| {
+        let key = format!("context.epoch.{bot}.{session}");
+        let expected = format!("{session}\t{revision}\t{id}");
+        wait(id, async || (kv(&key).as_deref() == Some(&expected)).then_some(())).await;
+    };
+    compacted(1, "task-compaction").await;
+    release(&host, &bot, "legacy_start");
+    let done = task(&host, &bot, title, "done").await;
+    ended(&host, &events(&host, "session/new")[0]["pid"]).await;
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let apply = flag(&host, &bot, &format!("apply-system-{session}"));
+    assert_eq!(tell(&host, &bot, &done, "COMPACT_AGAIN FAIL_SKILL_PROMPT HOLD:legacy_origin").await["reopened"], true);
+    compacted(2, "task-compaction-again").await;
+    let saved = snapshot();
+    let [origin_load] = events(&host, "session/load").try_into().unwrap();
+    assert!(origin_load["activeSystem"].as_str().unwrap().contains(skill));
+    assert_eq!(origin_load["activeSystem"], saved["system"]);
+    assert_eq!(saved["epoch"], 1);
+    assert_eq!(saved["announced"]["skills_brief"], "");
+    for key in ["loadedTaskSkills", "confirmedTaskSkills", "pendingTaskSkills"] {
+        assert!(saved.get(key).is_none(), "{key} in the historical snapshot");
+    }
+    let bot_change = host.call("updateBot", json!({"id": bot, "skills": []})).await;
+    assert_eq!(bot_change["bot"]["skills"], json!([]));
+    std::fs::remove_file(apply).unwrap();
+    release(&host, &bot, "legacy_origin");
+    let failed = task(&host, &bot, title, "failed").await;
+    ended(&host, &origin_load["pid"]).await;
+    assert_eq!(snapshot(), saved);
+    host.restart(|_| {}).await;
+
+    let first_message = "finish after upgrade HOLD:confirm";
+    assert_eq!(tell(&host, &bot, &failed, first_message).await["reopened"], true);
+    let thread_prompt = async |host: &Host, message: &str| {
+        wait(message, async || {
+            thread_prompts(host, &bot)
+                .into_iter()
+                .find(|prompt| prompt["text"].as_str().is_some_and(|text| text.contains(message)))
+        })
+        .await
+    };
+    let first = thread_prompt(&host, first_message).await;
+    let before_reply = snapshot();
+    let [_, upgraded] = events(&host, "session/load").try_into().unwrap();
+    assert_eq!(before_reply["epoch"], 2);
+    assert_eq!(before_reply["systemIdentity"]["skills_brief"], "");
+    assert_eq!(before_reply["announced"]["skills_brief"], "");
+    assert_eq!(upgraded["system"], before_reply["system"]);
+    assert_eq!(upgraded["activeSystem"], origin_load["activeSystem"]);
+    release(&host, &bot, "confirm");
+    let finished = result(&host, &bot, title, &format!("Thread {first_message}:")).await;
+    ended(&host, &upgraded["pid"]).await;
+    let delivered = snapshot();
+
+    let second_message = "check the same opening";
+    assert_eq!(tell(&host, &bot, &finished, second_message).await["reopened"], true);
+    result(&host, &bot, title, &format!("Thread {second_message}:")).await;
+    let replay = thread_prompt(&host, second_message).await;
+    let [_, _, repeat] = events(&host, "session/load").try_into().unwrap();
+    ended(&host, &repeat["pid"]).await;
+    assert_eq!(repeat["system"], upgraded["system"]);
+    assert_eq!(repeat["activeSystem"], origin_load["activeSystem"]);
+    let updates = [&first, &replay].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap().matches("<skills_update>").count()
+    });
+    let revoked = first["text"].as_str().unwrap().contains("Skills: none.");
+    eprintln!(
+        "{session} upgraded from epoch 1 with B to epoch 2 without B, active system still contains B: \
+         updates {updates:?}, revoked {revoked}, pending before prompt reply {}, confirmed before reply {}, \
+         confirmed after reply {}, announced after reply {}",
+        before_reply["pendingTaskSkills"],
+        before_reply["confirmedTaskSkills"],
+        delivered["confirmedTaskSkills"],
+        delivered["announced"]["skills_brief"],
+    );
+    assert_eq!(updates, [1, 0]);
+    assert!(revoked);
+    assert_eq!(before_reply["pendingTaskSkills"], "");
+    assert!(before_reply.get("confirmedTaskSkills").is_none());
+    for state in [delivered, snapshot()] {
+        assert_eq!(state["announced"]["skills_brief"], "");
+        assert_eq!(state["confirmedTaskSkills"], "");
+        assert!(state.get("pendingTaskSkills").is_none());
+    }
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_does_not_credit_skills_from_a_failed_reopen() {
+    compacted_task_skills_on_reopen("standard", CompactedSkill::FailedReopen).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_after_a_failed_prompt() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::RetryPrompt).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_after_a_cancelled_prompt() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::CancelledPrompt).await;
+}
+
+#[tokio::test]
+async fn a_standard_acp_task_retries_the_skill_update_when_its_agent_finishes_after_stop() {
+    compacted_task_skills_on_reopen("standard defer-system", CompactedSkill::StoppedPrompt).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_revokes_a_skill_seen_before_acp_cancellation() {
+    continue_without_skill_after_stopped_prompt(false).await;
+}
+
+#[tokio::test]
+async fn a_standard_task_revokes_a_skill_seen_before_stop_with_a_successful_reply() {
+    continue_without_skill_after_stopped_prompt(true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_late_worktree_check_leaves_the_continued_turn_to_finish() {
+    settle_worktree_and_stop(ReleaseFirst::Worktree).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stopped_worktree_turn_can_finish_before_the_old_check() {
+    settle_worktree_and_stop(ReleaseFirst::Cancel).await;
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug)]
+enum ReleaseFirst {
+    Worktree,
+    Cancel,
+}
+
+#[cfg(unix)]
+fn hold_worktree_check(repo: &Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let hook = repo.join(".git/hold-status");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh
+if [ -f release-hold-check ] && mkdir release-check-started 2>/dev/null; then
+    n=0
+    while [ ! -f release-check ] && [ -d \"$PWD\" ] && [ \"$n\" -lt 1500 ]; do
+        sleep 0.02
+        n=$((n + 1))
+    done
+fi
+exit 1
+",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(git_in(repo).args(["config", "core.fsmonitor"]).arg(hook).status().unwrap().success());
+}
+
+#[cfg(unix)]
+async fn settle_worktree_and_stop(first: ReleaseFirst) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+    let repo = host.home.join("project");
+    std::fs::create_dir(&repo).unwrap();
+    if git_in(&repo).arg("--version").output().is_err() {
+        return;
+    }
+    assert!(git_repo(&repo));
+    hold_worktree_check(&repo);
+    host.call("updateBot", json!({"id": bot, "cwd": repo})).await;
+
+    let title = "Ship it";
+    host.reply(&bot, "ADD Ship it|TOUCH HOLD:opening|place=worktree").await;
+    let opening = in_worktree(&host, &bot, title).await;
+    let folder = Path::new(opening["worktree"]["path"].as_str().unwrap());
+    let release = |name: &str| std::fs::write(folder.join(format!("release-{name}")), "").unwrap();
+    release("hold-check");
+    release("opening");
+    let done = task(&host, &bot, title, "done").await;
+    wait("the first task's Git status to block", async || folder.join("release-check-started").is_dir().then_some(()))
+        .await;
+    let [initial] = task_prompts_in(folder, title).try_into().unwrap();
+    let session = initial["session"].as_str().unwrap();
+
+    // Let only the dispatch publish a bot event while the first report waits in the parent's queue.
+    host.call("send", json!({"botId": bot, "text": "ADD Hold reporting|Hold the parent turn|hold"})).await;
+    task(&host, &bot, "Hold reporting", "waiting").await;
+    assert_eq!(row(&host, &bot).await["status"], "working");
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let interrupted = "use B HOLD:interrupted END_AFTER_CANCEL HOLD_CANCEL:interrupted";
+    assert_eq!(tell(&host, &bot, &done, interrupted).await["reopened"], true);
+    let overlay = folder.join(format!("fixture-skills-{session}"));
+    wait("the same ACP session to apply B", async || {
+        std::fs::read_to_string(&overlay).ok().filter(|skills| skills.contains("- B: Release steps."))
+    })
+    .await;
+    let process =
+        logged(folder, "standard_sessions.jsonl").into_iter().rfind(|event| event["session"] == session).unwrap();
+    let pid = process["pid"].to_string();
+    assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+    host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+    let stopped = task(&host, &bot, title, "stopped").await;
+    assert!(stopped["result"].is_null());
+    wait("the fixture to hold the cancel reply", async || {
+        folder.join("release-cancel-seen-interrupted").is_file().then_some(())
+    })
+    .await;
+
+    let finish_cancel = async || {
+        release("cancel-interrupted");
+        wait("the stopped turn to finish or its agent to exit", async || {
+            let stopped = transcript(&host, &bot, &done).await.iter().any(|e| e["data"]["stopReason"] == "cancelled");
+            (stopped || !common::alive(&pid)).then_some(stopped)
+        })
+        .await
+    };
+    let finish_check = async || {
+        let rev = row(&host, &bot).await["rev"].as_i64().unwrap();
+        let mut events = host.events().await;
+        release("check");
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while let Some(event) = events.recv().await {
+                if event["type"] == "bot" && event["bot"]["id"] == bot && event["rev"].as_i64().unwrap() > rev {
+                    return;
+                }
+            }
+            panic!("the bot event stream closed");
+        })
+        .await
+        .expect("the completed Git check dispatched again");
+    };
+    let turn_settled = match first {
+        ReleaseFirst::Worktree => {
+            finish_check().await;
+            finish_cancel().await
+        }
+        ReleaseFirst::Cancel => {
+            let settled = finish_cancel().await;
+            finish_check().await;
+            settled
+        }
+    };
+    host.call("stop", json!({"botId": bot})).await;
+    let report = relayed_for(&host, &bot, title).await;
+    assert!(report.contains(opening["worktree"]["branch"].as_str().unwrap()), "{report}");
+
+    let retry = "continue with the current skills";
+    let again = "check the result once more";
+    let mut previous = stopped;
+    for words in [retry, again] {
+        assert_eq!(tell(&host, &bot, &previous, words).await["reopened"], true);
+        previous = result(&host, &bot, title, &format!("Thread {words}:")).await;
+        assert_eq!(previous["thread"], opening["thread"]);
+        assert_eq!(previous["worktree"], opening["worktree"]);
+    }
+    let prompts = logged(folder, "prompts.jsonl");
+    let texts = [interrupted, retry, again].map(|words| {
+        let [prompt] = prompts
+            .iter()
+            .filter(|p| p["text"].as_str().unwrap().contains(words))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let updates = texts.map(|text| text.matches("<skills_update>").count());
+    let revoked = texts[1].contains("\nSkills: none.\n</skills_update>");
+    eprintln!(
+        "Released {first:?} first in {session}: stopped turn settled {turn_settled}, skill updates {updates:?}, revoked {revoked}"
+    );
+    assert_eq!(updates, [1, 1, 0]);
+    assert!(turn_settled && revoked);
+    assert!(std::fs::read_to_string(overlay).unwrap().ends_with("\nSkills: none."));
+    assert!(folder.join("made.txt").is_file());
+}
+
+async fn continue_without_skill_after_stopped_prompt(stop_requested: bool) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "standard defer-system track-skills").await;
+    let title = "Ship it";
+    host.reply(&bot, "ADD Ship it|Finish the release").await;
+    let done = task(&host, &bot, title, "done").await;
+    let [initial] = task_prompts(&host, &bot, title).try_into().unwrap();
+    let session = initial["session"].as_str().unwrap();
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let snapshot_key = format!("context.{bot}.{session}");
+    let snapshot = || {
+        let raw: String = db.query_row("SELECT v FROM kv WHERE k = ?1", [&snapshot_key], |r| r.get(0)).unwrap();
+        serde_json::from_str::<Value>(&raw).unwrap()
+    };
+    let check_opening = |snapshot: &Value| {
+        assert_eq!(snapshot["epoch"], 0);
+        assert_eq!(snapshot["announced"]["skills_brief"], "");
+        assert_eq!(snapshot["confirmedTaskSkills"], "");
+        assert!(snapshot.get("pendingTaskSkills").is_none());
+    };
+    check_opening(&snapshot());
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let ending = if stop_requested { "END_AFTER_CANCEL" } else { "RETURN_CANCELLED" };
+    let message = format!("use B HOLD:skill_update {ending}");
+    assert_eq!(tell(&host, &bot, &done, &message).await["reopened"], true);
+    let interrupted = wait("the held skill update", async || thread_prompts(&host, &bot).into_iter().next()).await;
+    let text = interrupted["text"].as_str().unwrap();
+    assert_eq!(interrupted["session"], session);
+    assert_eq!(text.matches("<skills_update>").count(), 1);
+    let (_, update) = text.split_once("<skills_update>\n").unwrap();
+    assert!(update.contains("\n- B: Release steps. "), "{text}");
+    let overlay = host.workspace(&bot).join(format!("fixture-skills-{session}"));
+    wait("the held agent to see B", async || {
+        std::fs::read_to_string(&overlay).ok().filter(|skills| skills.contains("- B: Release steps."))
+    })
+    .await;
+    check_opening(&snapshot());
+    let context_at_end = record_task_end_context(&db, &bot, &done, &snapshot_key);
+    assert_eq!(host.call("updateBot", json!({"id": bot, "skills": []})).await["bot"]["skills"], json!([]));
+
+    if stop_requested {
+        host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+    } else {
+        release(&host, &bot, "skill_update");
+    }
+    let stopped = task(&host, &bot, title, "stopped").await;
+    let retry = "continue with the current skills";
+    let again = "check the result once more";
+    let continued = tell(&host, &bot, &stopped, retry).await;
+    assert_eq!(continued["reopened"], true);
+    assert_stopped_task_prompt(&host, &bot, &stopped, session, stop_requested).await;
+    let resumed = result(&host, &bot, title, &format!("Thread {retry}:")).await;
+    assert_eq!(resumed["thread"], done["thread"]);
+
+    let at_stop = context_at_end("stopped");
+    let at_notice = context_at_end("stop_notice");
+    let at_done = context_at_end("done");
+    for saved in [&at_stop, &at_notice, &at_done] {
+        check_opening(saved);
+    }
+    eprintln!(
+        "Task {session}: continuation queued {}, uncertainty at stopped {}, stop notice {} and done {}",
+        continued["queued"],
+        at_stop["taskSkillsUncertain"],
+        at_notice["taskSkillsUncertain"],
+        at_done["taskSkillsUncertain"],
+    );
+    assert_eq!(at_notice["taskSkillsUncertain"], true, "skill delivery is uncertain when the actor closes the turn");
+    if !stop_requested {
+        assert_eq!(at_stop["taskSkillsUncertain"], true, "ACP cancellation publishes the settled task");
+    }
+    assert!(at_done.get("taskSkillsUncertain").is_none(), "the successful revocation is settled at task completion");
+
+    assert_eq!(tell(&host, &bot, &resumed, again).await["reopened"], true);
+    task(&host, &bot, title, "done").await;
+    check_opening(&snapshot());
+
+    let [interrupted, retried, after] = thread_prompts(&host, &bot).try_into().unwrap();
+    let texts = [&interrupted, &retried, &after].map(|prompt| {
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap()
+    });
+    let counts = texts.map(|text| text.matches("<skills_update>").count());
+    let revoked = texts[1].contains("\nSkills: none.\n</skills_update>");
+    assert!(texts[2].contains(again), "{}", texts[2]);
+    eprintln!("Task {session}: skill update counts {counts:?}, revoked {revoked}");
+    assert_eq!(counts, [1, 1, 0], "restate the current list once after the interrupted update");
+    assert!(revoked, "{}", texts[1]);
+    assert!(std::fs::read_to_string(overlay).unwrap().ends_with("\nSkills: none."));
+}
+
+fn record_task_end_context<'a>(
+    db: &'a rusqlite::Connection,
+    bot: &str,
+    task: &Value,
+    snapshot_key: &str,
+) -> impl Fn(&str) -> Value + 'a {
+    // Capture each boundary in SQLite so a later snapshot write cannot race the observation.
+    db.execute_batch(
+        "CREATE TABLE fixture_task_end_keys(box_key TEXT, task_id TEXT, thread_id TEXT, snapshot_key TEXT);
+         CREATE TABLE fixture_task_end_context(status TEXT PRIMARY KEY, snapshot TEXT NOT NULL);
+         CREATE TRIGGER fixture_capture_task_end AFTER UPDATE OF v ON kv
+         WHEN NEW.k = (SELECT box_key FROM fixture_task_end_keys)
+         BEGIN
+             INSERT INTO fixture_task_end_context
+             SELECT json_extract(task.value, '$.status'), context.v
+             FROM fixture_task_end_keys JOIN kv AS context ON context.k = snapshot_key
+             CROSS JOIN json_each(NEW.v) AS task
+             WHERE json_extract(task.value, '$.id') = task_id
+               AND json_extract(task.value, '$.status') IN ('stopped', 'done')
+             ON CONFLICT (status) DO NOTHING;
+         END;
+         CREATE TRIGGER fixture_capture_stop_notice AFTER INSERT ON entries
+         WHEN json_extract(NEW.data, '$.stopReason') = 'cancelled'
+         BEGIN
+             INSERT INTO fixture_task_end_context
+             SELECT 'stop_notice', context.v
+             FROM fixture_task_end_keys JOIN kv AS context ON context.k = snapshot_key
+             WHERE thread_id = NEW.bot_id
+             ON CONFLICT (status) DO NOTHING;
+         END;",
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO fixture_task_end_keys VALUES (?1, ?2, ?3, ?4)",
+        [&format!("work.{bot}"), id(task), task["thread"].as_str().unwrap(), snapshot_key],
+    )
+    .unwrap();
+    move |status| {
+        let raw: String = db
+            .query_row("SELECT snapshot FROM fixture_task_end_context WHERE status = ?1", [status], |row| row.get(0))
+            .unwrap();
+        serde_json::from_str(&raw).unwrap()
+    }
+}
+
+async fn assert_stopped_task_prompt(host: &Host, bot: &str, stopped: &Value, session: &str, stop_requested: bool) {
+    wait("a cancelled turn in the task transcript", async || {
+        transcript(host, bot, stopped)
+            .await
+            .into_iter()
+            .find(|e| e["data"]["stopReason"] == "cancelled" && e["data"]["text"] == "Stopped.")
+    })
+    .await;
+    assert!(stopped["result"].is_null(), "{stopped}");
+    let outcomes = host.log(bot, "prompt_outcomes.jsonl");
+    let reason = if stop_requested { "end_turn" } else { "cancelled" };
+    assert_eq!(outcomes, [json!({"session": session, "stopReason": reason, "cancelReceived": stop_requested})]);
+    eprintln!("Stopped task {session}: ACP {reason}, session/cancel received: {stop_requested}");
+}
+
+enum CompactedSkill {
+    Enabled,
+    Disabled,
+    Legacy,
+    FailedReopen,
+    RetryPrompt,
+    CancelledPrompt,
+    StoppedPrompt,
+}
+
+async fn compacted_task_skills_on_reopen(mode: &str, skill: CompactedSkill) {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", mode).await;
+    host.reply(&bot, "ADD Ship it|COMPACT_NOW HOLD:compact").await;
+    let initial =
+        wait("the initial task prompt", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
+    let session = initial["session"].as_str().unwrap();
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let stored =
+        |key: &str| -> Option<String> { db.query_row("SELECT v FROM kv WHERE k = ?1", [key], |row| row.get(0)).ok() };
+    let snapshot_key = format!("context.{bot}.{session}");
+    let snapshot = || -> Value { serde_json::from_str(&stored(&snapshot_key).unwrap()).unwrap() };
+    let epoch_key = format!("context.epoch.{bot}.{session}");
+    let compaction = format!("{session}\t1\ttask-compaction");
+    wait("the compaction notification to advance the epoch", async || {
+        (stored(&epoch_key).as_deref() == Some(&compaction)).then_some(())
+    })
+    .await;
+    assert_eq!(snapshot()["systemIdentity"]["skills_brief"], "");
+    assert_eq!(snapshot()["announced"]["skills_brief"], "");
+
+    let log = if mode == "claude" { "claude_sessions.jsonl" } else { "standard_sessions.jsonl" };
+    let sessions = || host.log(&bot, log);
+    let ended = async |pid: &Value| {
+        wait("the task agent to exit", async || {
+            sessions().into_iter().any(|e| e["method"] == "exit" && &e["pid"] == pid).then_some(())
+        })
+        .await;
+    };
+    let opening = sessions().into_iter().find(|e| e["method"] == "session/new" && e["session"] == session).unwrap();
+    release(&host, &bot, "compact");
+    let done = task(&host, &bot, "Ship it", "done").await;
+    ended(&opening["pid"]).await;
+
+    host.call(
+        "chatCall",
+        json!({"botId": bot, "name": "save_skill",
+            "arguments": {"name": "B", "description": "Release steps.", "instructions": "1. Build."}}),
+    )
+    .await;
+    let method = if mode.contains("resume-only") { "session/resume" } else { "session/load" };
+    let loads = || -> Vec<Value> {
+        sessions().into_iter().filter(|e| e["method"] == method && e["session"] == session).collect()
+    };
+    let gate = host.workspace(&bot).join(format!("hold-load-{session}"));
+    std::fs::write(&gate, "").unwrap();
+    let retry_status = match skill {
+        CompactedSkill::RetryPrompt => Some("failed"),
+        CompactedSkill::CancelledPrompt | CompactedSkill::StoppedPrompt => Some("stopped"),
+        _ => None,
+    };
+    let enabled = matches!(skill, CompactedSkill::Enabled) || retry_status.is_some();
+    let first_message = match skill {
+        CompactedSkill::Enabled => "finish with B HOLD:delivery",
+        CompactedSkill::RetryPrompt => "finish with B HOLD:delivery FAIL_SKILL_PROMPT",
+        CompactedSkill::CancelledPrompt => "finish with B HOLD:delivery RETURN_CANCELLED",
+        CompactedSkill::StoppedPrompt => "finish with B HOLD:delivery END_AFTER_CANCEL",
+        _ => "finish without B",
+    };
+    assert_eq!(tell(&host, &bot, &done, first_message).await["reopened"], true);
+    let load = wait("the held reopen request", async || loads().into_iter().next()).await;
+    let applied = load["system"].as_str().unwrap();
+    let rendered = snapshot();
+    assert_eq!(rendered["epoch"], 1);
+    assert_ne!(applied, opening["system"].as_str().unwrap());
+    assert!(applied.contains("- B: Release steps."), "{applied}");
+    assert_eq!(rendered["system"], applied);
+    assert_eq!(rendered["announced"]["skills_brief"], "", "the new opening has yet to be loaded");
+    if enabled {
+        assert_eq!(load["activeSystem"], opening["system"], "the agent deferred the system carrying B");
+    } else {
+        let bot_change = host.call("updateBot", json!({"id": bot, "skills": []})).await;
+        assert_eq!(bot_change["bot"]["skills"], json!([]));
+    }
+    assert!(thread_prompts(&host, &bot).is_empty(), "the task still awaits the load response");
+    if matches!(skill, CompactedSkill::FailedReopen) {
+        flag(&host, &bot, &format!("fail-load-{session}"));
+    }
+    std::fs::remove_file(gate).unwrap();
+    if matches!(skill, CompactedSkill::FailedReopen) {
+        let fresh = result(&host, &bot, "Ship it", &format!("Thread {first_message}:")).await;
+        assert_eq!(fresh["thread"], done["thread"]);
+        let prompts = thread_prompts(&host, &bot);
+        assert_eq!(prompts.len(), 1);
+        assert_ne!(prompts[0]["session"], session);
+        assert!(!prompts[0]["text"].as_str().unwrap().contains("<skills_update>"));
+        let opened = sessions()
+            .into_iter()
+            .find(|e| e["method"] == "session/new" && e["session"] == prompts[0]["session"])
+            .unwrap();
+        assert!(!opened["system"].as_str().unwrap().contains("- B: Release steps."));
+        assert_eq!(snapshot(), rendered, "a failed reopen leaves the old snapshot intact");
+        eprintln!("failed standard load of {session} left its snapshot intact, new session {}", prompts[0]["session"]);
+        return;
+    }
+    let early_announcement = if enabled {
+        wait("the held prompt after reopen", async || thread_prompts(&host, &bot).into_iter().next()).await;
+        let announced = snapshot()["announced"]["skills_brief"].clone();
+        if matches!(skill, CompactedSkill::StoppedPrompt) {
+            host.call("stopWork", json!({"botId": bot, "taskId": id(&done)})).await;
+        } else {
+            release(&host, &bot, "delivery");
+        }
+        Some(announced)
+    } else {
+        None
+    };
+
+    let finished = async |message: &str, load_count: usize| {
+        let finished = result(&host, &bot, "Ship it", &format!("Thread {message}:")).await;
+        assert_eq!(finished["thread"], done["thread"]);
+        let loads = loads();
+        assert_eq!(loads.len(), load_count);
+        assert_eq!(loads.last().unwrap()["system"], applied);
+        ended(&loads.last().unwrap()["pid"]).await;
+        let prompt = thread_prompts(&host, &bot)
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains(message)))
+            .unwrap();
+        assert_eq!(prompt["session"], session);
+        prompt["text"].as_str().unwrap().to_owned()
+    };
+    let mut interrupted_announcement = None;
+    let (mut notice, mut load_count) = if let Some(status) = retry_status {
+        let interrupted = task(&host, &bot, "Ship it", status).await;
+        if status == "stopped" {
+            assert_stopped_task_prompt(
+                &host,
+                &bot,
+                &interrupted,
+                session,
+                matches!(skill, CompactedSkill::StoppedPrompt),
+            )
+            .await;
+        }
+        ended(&load["pid"]).await;
+        let prompts = thread_prompts(&host, &bot);
+        assert_eq!(prompts[0]["session"], session);
+        let text = prompts[0]["text"].as_str().unwrap();
+        assert_eq!(text.matches("<skills_update>").count(), 1);
+        assert!(text.contains("- B: Release steps."), "{text}");
+        interrupted_announcement = Some(snapshot()["announced"]["skills_brief"].clone());
+        assert_eq!(tell(&host, &bot, &interrupted, "retry with B").await["reopened"], true);
+        (finished("retry with B", 2).await, 3)
+    } else {
+        (finished(first_message, 1).await, 2)
+    };
+    if matches!(skill, CompactedSkill::Legacy) {
+        assert!(notice.contains("Skills: none."), "the saved opening has B after the task heard the revocation");
+        let mut legacy = snapshot();
+        assert_eq!(legacy["announced"]["skills_brief"], "");
+        legacy.as_object_mut().unwrap().retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "session" | "epoch" | "system" | "systemIdentity" | "announced" | "memory" | "unprompted"
+            )
+        });
+        assert_eq!(
+            db.execute("UPDATE kv SET v = ?1 WHERE k = ?2", rusqlite::params![legacy.to_string(), snapshot_key])
+                .unwrap(),
+            1
+        );
+        assert_eq!(tell(&host, &bot, &done, "continue the upgraded task").await["reopened"], true);
+        notice = finished("continue the upgraded task", load_count).await;
+        load_count += 1;
+    }
+    let delivered = snapshot();
+    assert_eq!(tell(&host, &bot, &done, "check the final result").await["reopened"], true);
+    let replay = finished("check the final result", load_count).await;
+    let latest = snapshot();
+    let updates = [&notice, &replay].map(|text| text.matches("<skills_update>").count());
+    let expected_list = if enabled { "- B: Release steps." } else { "Skills: none." };
+    let has_list = notice.contains(expected_list);
+    eprintln!(
+        "{mode} {method} of {session} at epoch 1: updates {updates:?}, expected list {has_list}, \
+         legacy {}, announced before prompt reply {early_announcement:?}",
+        matches!(skill, CompactedSkill::Legacy),
+    );
+    if let Some(announced) = interrupted_announcement {
+        eprintln!(
+            "{session}: update counts [1, {}, {}], announced after interruption {announced}",
+            updates[0], updates[1]
+        );
+        assert_eq!(announced, "", "the interrupted prompt must leave the skill update pending");
+    }
+    assert_eq!(updates, [1, 0], "confirm the current skills once after reopening");
+    assert!(has_list, "{notice}");
+    if enabled {
+        assert_eq!(early_announcement, Some(json!("")), "the held prompt has not completed");
+    }
+    let expected = if enabled { rendered["systemIdentity"]["skills_brief"].as_str().unwrap() } else { "" };
+    for state in [delivered, latest] {
+        assert_eq!(state["announced"]["skills_brief"], expected);
+    }
+    for text in [notice, replay] {
+        for absent in ["<agent_profile_update>", "Title: Mika", "<memory_update>"] {
+            assert!(!text.contains(absent), "{absent} in the task prompt: {text}");
+        }
+        assert!(enabled || !text.contains("- B: Release steps."), "{text}");
+    }
 }
 
 /// What a thread's `ask_chat` calls got back, oldest first.

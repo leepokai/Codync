@@ -4,6 +4,7 @@ use super::sign_in::Held;
 use super::{
     Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
+use crate::LockExt;
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
@@ -530,6 +531,7 @@ impl Actor {
             r.message = None;
             r.session = None;
         });
+        *self.thread_turn.locked() = None;
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
     }
@@ -564,7 +566,8 @@ impl Actor {
     /// instead, which then stays as it is ([`work::finished`]).
     pub(super) fn turn_over(&mut self, outcome: Outcome) -> bool {
         if self.cfg.is_thread() {
-            let goes_on = work::finished(&self.hub, &self.cfg, outcome);
+            let turn = self.thread_turn.locked().clone();
+            let goes_on = work::finished(&self.hub, &self.cfg, outcome, turn);
             if !goes_on {
                 // Its task's next round begins from what runs then.
                 self.detached_before = None;

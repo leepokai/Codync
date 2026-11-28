@@ -4,9 +4,9 @@
 //! in the bot's chat shows each save.
 
 use crate::hub::Hub;
-use crate::market::{self, Installed};
+use crate::market;
 use crate::store::{EntryKind, Lane};
-use anyhow::{Result, bail};
+use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -41,19 +41,22 @@ pub fn tool() -> Value {
     })
 }
 
-pub async fn call(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+pub async fn call(hub: &Arc<Hub>, caller: &str, args: &Value) -> Result<Value> {
     let name = field(args, "name", MAX_NAME_CHARS)?.to_owned();
     let description = field(args, "description", MAX_DESCRIPTION_CHARS)?.to_owned();
     let instructions = field(args, "instructions", MAX_INSTRUCTIONS_CHARS)?.to_owned();
     let id = rewritten_id(args).map(str::to_owned);
-    let (hub, bot) = (hub.clone(), bot.to_owned());
+    let (hub, caller) = (hub.clone(), caller.to_owned());
     tokio::task::spawn_blocking(move || {
+        // A thread saves and updates skills as its bot, so the bot gets them and can rewrite them later.
+        let bot = crate::chat::work::owner(&hub.store, &caller);
+        ensure!(hub.store.bot(&bot)?.is_some_and(|row| !row.deleted), "unknown bot");
         let (skill, notice) = if let Some(id) = id {
             let skill = market::update_custom_skill(&hub.store, &bot, &id, &name, &description, &instructions)?;
             (skill, "Updated the skill")
         } else {
             let skill = market::add_custom_skill(&hub.store, &name, &description, &instructions, Some(&bot))?;
-            market::turn_on(&hub, Installed::Skills, std::slice::from_ref(&skill.id), Some(&bot))?;
+            hub.enable_skills(&bot, std::slice::from_ref(&skill.id)).map_err(market::SkillSaveError::Enable)?;
             (skill, "Saved the skill")
         };
         let notice = json!({"text": format!("{notice} {}", skill.name)});
@@ -72,7 +75,10 @@ pub fn rewritten_id(args: &Value) -> Option<&str> {
 fn field<'a>(args: &'a Value, key: &str, max_chars: usize) -> Result<&'a str> {
     let text = args[key].as_str().map(str::trim).unwrap_or_default();
     if text.is_empty() || text.chars().count() > max_chars {
-        bail!("`{key}` must be nonempty and at most {max_chars} characters");
+        return Err(market::SkillSaveError::Invalid(format!(
+            "`{key}` must be nonempty and at most {max_chars} characters"
+        ))
+        .into());
     }
     Ok(text)
 }
@@ -139,5 +145,193 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).unwrap();
         let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[tokio::test]
+    async fn startup_adopts_a_skill_saved_by_an_archived_thread() {
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let dir = std::env::temp_dir().join(format!("codync-archived-skills-{tag}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": &dir})).unwrap()
+        };
+        let parent = "owner";
+        store.save_bot(&config(parent)).unwrap();
+        store.save_bot(&config("other")).unwrap();
+        let mut thread = config("thread-archived");
+        thread.thread_of = Some(parent.into());
+        store.save_bot(&thread).unwrap();
+        let name = format!("Archived {tag}");
+        let legacy = market::add_custom_skill(&store, &name, "Legacy skill.", "Old.", Some(&thread.id)).unwrap();
+        store.park_thread(&thread).unwrap();
+        assert!(store.bot(&thread.id).unwrap().is_none());
+
+        let hub =
+            Hub::new(store, "archived-skills-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let rewrite = json!({"id": legacy.id, "name": name, "description": "Adopted skill.", "instructions": "New."});
+        assert!(call(&hub, parent, &rewrite).await.is_err(), "runtime cannot claim a parked author's skill");
+        hub.start().unwrap();
+
+        let read_parent = || hub.store.bot(parent).unwrap().unwrap().config;
+        let mut adopted = read_parent();
+        assert_eq!(adopted.skills, [legacy.id.as_str()], "startup enables the parked thread's skill for its parent");
+        let author = || market::skills(&hub.store).pop().unwrap().written_by;
+        assert_eq!(author().as_deref(), Some(parent));
+        assert_eq!(hub.store.bot("other").unwrap().unwrap().config.skills, Vec::<String>::new());
+
+        adopted.skills.clear();
+        hub.store.save_bot(&adopted).unwrap();
+        market::adopt_thread_skills(&hub.store).unwrap();
+        assert!(read_parent().skills.is_empty(), "a second migration leaves the skill off");
+        assert_eq!(author().as_deref(), Some(parent));
+        assert!(call(&hub, &thread.id, &rewrite).await.is_err(), "the parked thread still cannot save a skill");
+        assert!(call(&hub, "other", &rewrite).await.is_err(), "another bot cannot rewrite it");
+        let rewritten = call(&hub, parent, &rewrite).await.unwrap();
+        assert_eq!(rewritten["skill"]["id"], legacy.id);
+        assert!(std::fs::read_to_string(legacy.dir().join("SKILL.md")).unwrap().ends_with("New.\n"));
+
+        hub.shutdown().await;
+        market::remove_skill(&hub.store, &legacy.id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_thread_saves_and_updates_skills_as_its_bot() {
+        let dir = std::env::temp_dir().join(format!("codync-thread-skills-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let save_cfg = |store: &Store, id: &str, thread_of: Option<&str>| {
+            let mut cfg: BotConfig = serde_json::from_value(
+                json!({"id": id, "name": id, "backend": "claude", "cwd": dir.to_string_lossy()}),
+            )
+            .unwrap();
+            cfg.thread_of = thread_of.map(str::to_owned);
+            store.save_bot(&cfg).unwrap();
+        };
+        for id in ["a", "b"] {
+            save_cfg(&store, id, None);
+        }
+        let hub =
+            Hub::new(store, "thread-skills-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        hub.start().unwrap();
+        for (id, owner) in [("thread-a1", "a"), ("thread-a2", "a"), ("thread-b1", "b")] {
+            save_cfg(&hub.store, id, Some(owner));
+        }
+        let skill_md = |skill: &Value| std::fs::read_to_string(skill["path"].as_str().unwrap()).unwrap();
+        let skills_of = |bot: &str| hub.store.bot(bot).unwrap().unwrap().config.skills;
+
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let first_name = format!("Thread deploy {}", &tag[..8]);
+        let thread_cfg = hub.store.bot("thread-a1").unwrap().unwrap().config;
+        let (thread_system, thread_identity) =
+            crate::chat::context::render_with_identity(&hub.store, &thread_cfg.as_owner());
+        let thread_snap = crate::chat::context::adopt(
+            &hub.store,
+            &thread_cfg,
+            "s-thread",
+            thread_system,
+            thread_identity,
+            String::new(),
+        )
+        .unwrap();
+
+        let args = json!({"name": first_name, "description": "Deploy steps.", "instructions": "1. Build."});
+        let saved = call(&hub, "thread-a1", &args).await.unwrap()["skill"].clone();
+        let id = saved["id"].as_str().unwrap().to_owned();
+        let first_folder = std::path::Path::new(saved["path"].as_str().unwrap()).parent().unwrap().to_owned();
+
+        let stored = market::skills(&hub.store).into_iter().find(|s| s.id == id).unwrap();
+        assert_eq!(stored.written_by.as_deref(), Some("a"), "ownership goes to the parent bot, not the thread");
+        assert_eq!(skills_of("a"), std::slice::from_ref(&id), "turned on for the parent bot");
+        assert!(skills_of("thread-a1").is_empty(), "not kept on the temporary thread");
+        assert!(skills_of("b").is_empty(), "other bots stay untouched");
+
+        // The saving thread itself sees the skill on its next message (both in-session and when reopened).
+        let (update, _) =
+            crate::chat::context::profile_update(&hub.store, &thread_snap, &thread_cfg.as_owner()).expect("updated");
+        assert!(update.contains(&format!("- {first_name}: Deploy steps.")), "{update}");
+        let reopened = crate::chat::context::render(&hub.store, &thread_cfg.as_owner());
+        assert!(reopened.contains(&format!("- {first_name}: Deploy steps.")), "{reopened}");
+        let slash = hub
+            .add_entry(&Lane::main("thread-a1"), EntryKind::User, 1, &json!({"text": format!("/{id} now")}))
+            .unwrap();
+        let prompt = crate::chat::prompt::of_entry(&hub, &thread_cfg, &slash);
+        assert!(prompt.contains(&format!("the \"{first_name}\" skill")), "{prompt}");
+
+        // Even if the parent bot's workspace folder is unavailable, saving from a thread still enables it.
+        let mut missing_cwd = hub.store.bot("a").unwrap().unwrap().config;
+        missing_cwd.cwd = dir.join("gone-workspace").to_string_lossy().into_owned();
+        hub.store.save_bot(&missing_cwd).unwrap();
+        let offline_name = format!("Offline skill {}", &tag[..8]);
+        let offline_saved = call(
+            &hub,
+            "thread-a1",
+            &json!({"name": offline_name, "description": "Works while parent cwd is gone.", "instructions": "1. Go."}),
+        )
+        .await
+        .unwrap()["skill"]
+            .clone();
+        let offline_id = offline_saved["id"].as_str().unwrap().to_owned();
+        let offline_folder = std::path::Path::new(offline_saved["path"].as_str().unwrap()).parent().unwrap().to_owned();
+        assert!(skills_of("a").contains(&offline_id), "enabled on parent bot even when its workspace is missing");
+        missing_cwd.cwd = dir.to_string_lossy().into_owned();
+        hub.store.save_bot(&missing_cwd).unwrap();
+
+        let rewrite = |step: &str| json!({"id": id, "name": first_name, "description": "Deploy steps.", "instructions": format!("1. Build.\n2. {step}.")});
+        assert!(call(&hub, "b", &rewrite("Wrong")).await.is_err(), "another bot cannot rewrite it");
+        assert!(call(&hub, "thread-b1", &rewrite("Wrong")).await.is_err(), "another bot's thread cannot rewrite it");
+
+        let from_chat = call(&hub, "a", &rewrite("Ship")).await.unwrap()["skill"].clone();
+        assert!(skill_md(&from_chat).ends_with("2. Ship.\n"), "the parent bot can rewrite it from its main chat");
+        let from_later_thread = call(&hub, "thread-a2", &rewrite("Verify")).await.unwrap()["skill"].clone();
+        assert!(
+            skill_md(&from_later_thread).ends_with("2. Verify.\n"),
+            "a later thread of the same bot can rewrite it"
+        );
+
+        let notices = |bot: &str| -> Vec<Value> {
+            hub.store
+                .history(bot, i64::MAX, 10)
+                .unwrap()
+                .into_iter()
+                .filter(|e| e.kind == EntryKind::Notice.as_str())
+                .map(|e| e.data["text"].clone())
+                .collect()
+        };
+        assert_eq!(
+            notices("a"),
+            [
+                json!(format!("Saved the skill {first_name}")),
+                json!(format!("Saved the skill {offline_name}")),
+                json!(format!("Updated the skill {first_name}")),
+                json!(format!("Updated the skill {first_name}")),
+            ]
+        );
+        assert!(notices("thread-a1").is_empty(), "notices go to the bot's chat, not the thread");
+        assert_eq!(notices("thread-a2"), Vec::<Value>::new());
+
+        let second_name = format!("Chat deploy {}", &tag[..8]);
+        let from_main =
+            call(&hub, "a", &json!({"name": second_name, "description": "From main.", "instructions": "1. Start."}))
+                .await
+                .unwrap()["skill"]
+                .clone();
+        let second_id = from_main["id"].as_str().unwrap().to_owned();
+        let second_folder = std::path::Path::new(from_main["path"].as_str().unwrap()).parent().unwrap().to_owned();
+        let updated_by_thread = call(
+            &hub,
+            "thread-a1",
+            &json!({"id": second_id, "name": second_name, "description": "From main.", "instructions": "1. Start.\n2. Done."}),
+        )
+        .await
+        .unwrap()["skill"]
+            .clone();
+        assert!(skill_md(&updated_by_thread).ends_with("2. Done.\n"), "a thread can update a skill its bot saved");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(first_folder);
+        let _ = std::fs::remove_dir_all(offline_folder);
+        let _ = std::fs::remove_dir_all(second_folder);
     }
 }

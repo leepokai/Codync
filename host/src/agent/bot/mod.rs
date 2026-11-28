@@ -60,7 +60,7 @@ use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -76,7 +76,11 @@ pub struct BotHandle {
     pub tx: mpsc::UnboundedSender<Cmd>,
     /// The actor task; it kills its agent process on the way out.
     pub task: tokio::task::JoinHandle<()>,
+    pub(crate) thread_turn: ThreadTurn,
 }
+
+// A token for the running turn, shared only by this actor and its handle.
+type ThreadTurn = Arc<Mutex<Option<Arc<()>>>>;
 
 pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -93,6 +97,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    let thread_turn = ThreadTurn::default();
     let actor = Actor {
         hub,
         base,
@@ -110,7 +115,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_completion: None,
         session_fresh: false,
         unfiled: codex_section::Unfiled::default(),
-        profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
         handoff: None,
@@ -125,6 +129,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         announce: None,
         first_prompt: None,
         turn: None,
+        thread_turn: thread_turn.clone(),
         queue: VecDeque::new(),
         steers_in_flight: HashMap::new(),
         held_done: None,
@@ -161,7 +166,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         relay: fallback::Relay::default(),
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
-    BotHandle { tx, task }
+    BotHandle { tx, task, thread_turn }
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -204,8 +209,7 @@ pub(crate) struct Conn {
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
     spent: bool,
     started: Instant,
-    /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
-    /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
+    /// An opening request is in flight, or an accepted resume is still being prepared or closed.
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
@@ -300,9 +304,6 @@ struct Actor {
     session_fresh: bool,
     /// The new Codex sessions that aren't in Codex's Codync section yet.
     unfiled: codex_section::Unfiled,
-    /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
-    /// a fresh one.
-    profile_resend: HashSet<String>,
     /// The running turn is a compaction the host started (`Some(true)` while the user is away).
     compacting: Option<bool>,
     /// The next prompt goes as it is: a command such as `/compact`, with nothing put before or after it.
@@ -329,6 +330,7 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
+    thread_turn: ThreadTurn,
     queue: VecDeque<Queued>,
     /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
     steers_in_flight: HashMap<String, steer::InFlight>,

@@ -7,7 +7,7 @@ mod common;
 
 use common::host::Host;
 use serde_json::json;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[tokio::test]
 async fn an_agent_that_only_resumes_keeps_its_conversation_and_gives_sessions_back() {
@@ -73,4 +73,84 @@ async fn a_model_refused_after_a_resume_leaves_the_session_to_resume_again() {
     host.reply(&bot, "three").await;
     assert_eq!(host.requests(&bot, "session/resume").len(), 2);
     assert_eq!(host.requests(&bot, "session/new").len(), 1, "the agent refused to resume a session it still held");
+}
+
+#[tokio::test]
+async fn stop_reaches_a_retry_after_an_unanswered_close_on_a_failed_resume() {
+    if common::python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Resumes", "resume_agent.py", "").await;
+    host.call("updateBot", json!({"id": bot, "model": "fixture"})).await;
+    host.reply(&bot, "before restart").await;
+    let original = host.requests(&bot, "session/prompt")[0]["params"]["sessionId"].clone();
+
+    let workspace = host.workspace(&bot);
+    let refused = workspace.join("model.refused");
+    std::fs::write(&refused, "").unwrap();
+    std::fs::write(workspace.join("close.unanswered"), "").unwrap();
+    host.restart(|_| {}).await;
+    host.call("send", json!({"botId": bot, "text": "refuse the resumed model", "clientNonce": "refuse"})).await;
+    common::eventually("the refused resume to wait for close", Duration::from_secs(30), async || {
+        host.requests(&bot, "session/close").iter().any(|e| e["params"]["sessionId"] == original)
+    })
+    .await;
+    let closing = &host.requests(&bot, "session/close")[0];
+    assert_eq!(closing["params"]["sessionId"], original);
+    assert_eq!(closing["held"], json!([original]));
+    assert_eq!(closing["pid"], host.requests(&bot, "session/resume")[0]["pid"]);
+
+    std::fs::remove_file(&refused).unwrap();
+    host.call("send", json!({"botId": bot, "text": "HOLD[resume-stop]", "clientNonce": "retry"})).await;
+    let started = Instant::now();
+    let cancelled = tokio::time::timeout(Duration::from_secs(15), async {
+        host.call("stop", json!({"botId": bot})).await;
+        loop {
+            if let Some(cancel) = host.requests(&bot, "session/cancel").into_iter().next() {
+                return cancel;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    eprintln!(
+        "close unanswered on PID {} for session {original}, Stop reached ACP={} after {:.2?}",
+        closing["pid"],
+        cancelled.is_ok(),
+        started.elapsed()
+    );
+    let cancelled = cancelled.expect("Stop reaches the ACP prompt within 15 seconds");
+    assert_eq!(cancelled["params"]["sessionId"], original);
+    assert_eq!(cancelled["held"], json!([original]));
+    assert_ne!(cancelled["pid"], closing["pid"]);
+    common::eventually("the agent that did not answer close to exit", Duration::from_secs(10), async || {
+        host.requests(&bot, "exit").iter().any(|e| e["pid"] == closing["pid"])
+    })
+    .await;
+    let exited = host.requests(&bot, "exit").into_iter().find(|e| e["pid"] == closing["pid"]).unwrap();
+    let close_wait = Duration::from_secs_f64(exited["at"].as_f64().unwrap() - closing["at"].as_f64().unwrap());
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(
+        history["entries"].as_array().unwrap().iter().any(|e| {
+            e["data"]["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("Couldn't select model fixture: unknown model option"))
+        }),
+        "{history}"
+    );
+
+    host.reply(&bot, "after Stop").await;
+    let prompts = host.requests(&bot, "session/prompt");
+    let [_, retry, after]: [serde_json::Value; 3] = prompts.try_into().unwrap();
+    for prompt in [&retry, &after] {
+        assert_eq!(prompt["params"]["sessionId"], original);
+        assert_eq!(prompt["held"], json!([original]));
+        assert_eq!(prompt["pid"], cancelled["pid"]);
+    }
+    assert_eq!(host.requests(&bot, "session/new").len(), 1);
+    eprintln!(
+        "retired PID {} after {close_wait:.2?}, cancellation and the later chat used PID {} holding {original}",
+        closing["pid"], cancelled["pid"]
+    );
 }

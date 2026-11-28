@@ -4,6 +4,7 @@ use super::{SKILLS_REPO, Skill, TIMEOUT, UA, save, skills, skills_dir, slug, uni
 use crate::LockExt;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::fmt;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -309,6 +310,46 @@ pub fn add_custom_skill(
     })
 }
 
+#[derive(Debug)]
+pub(crate) enum SkillSaveError {
+    Invalid(String),
+    NotOwner(String),
+    ParkedThreadOwner(String),
+    Enable(anyhow::Error),
+}
+
+impl SkillSaveError {
+    pub(crate) fn category(&self) -> &'static str {
+        match self {
+            Self::Invalid(_) => "invalid",
+            Self::NotOwner(_) => "not_owner",
+            Self::ParkedThreadOwner(_) => "parked_thread_owner",
+            Self::Enable(_) => "enable",
+        }
+    }
+}
+
+impl fmt::Display for SkillSaveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Invalid(message) => f.write_str(message),
+            Self::NotOwner(name) | Self::ParkedThreadOwner(name) => {
+                write!(f, "{name} wasn't saved by you: only skills you saved can be changed")
+            }
+            Self::Enable(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for SkillSaveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Enable(error) => error.source(),
+            _ => None,
+        }
+    }
+}
+
 /// New text for a skill `bot` wrote; files beside its `SKILL.md` stay. The user's and other bots' skills stay as
 /// they are.
 pub fn update_custom_skill(
@@ -320,10 +361,25 @@ pub fn update_custom_skill(
     body: &str,
 ) -> Result<Skill> {
     update_skills(store, |all| {
-        let s = all.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("There's no skill with the id {id}"))?;
-        if s.written_by.as_deref() != Some(bot) {
-            bail!("{} wasn't saved by you: only skills you saved can be changed", s.name);
+        let s = all
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| SkillSaveError::Invalid(format!("There's no skill with the id {id}")))?;
+        let owner = s.written_by.as_deref().map(|writer| crate::chat::work::owner(store, writer));
+        if owner.as_deref() != Some(bot) {
+            let parked_owner = s.written_by.as_deref().is_some_and(|writer| {
+                crate::store::is_thread_id(writer)
+                    && matches!(store.bot(writer), Ok(None))
+                    && matches!(store.parked_thread(writer), Ok(Some(cfg)) if cfg.thread_of.as_deref() == Some(bot))
+            });
+            return Err(if parked_owner {
+                SkillSaveError::ParkedThreadOwner(s.name.clone())
+            } else {
+                SkillSaveError::NotOwner(s.name.clone())
+            }
+            .into());
         }
+        s.written_by = Some(bot.to_owned());
         s.name = one_line(name);
         s.description = one_line(description);
         write_skill_md(s, body)?;
@@ -410,6 +466,57 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
     store.kv_set(DONE, "1")
 }
 
+/// Turns on each skill saved by an old thread and gives its bot ownership in the same commit.
+pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
+    #[cfg(test)]
+    if let Ok(read) = tests::PARKED_THREAD_READER.try_with(|read| *read) {
+        return adopt_thread_skills_with(store, |writer| read(store, writer));
+    }
+    adopt_thread_skills_with(store, |writer| store.parked_thread(writer))
+}
+
+fn adopt_thread_skills_with(
+    store: &crate::store::Store,
+    parked_thread: impl Fn(&str) -> Result<Option<crate::store::BotConfig>>,
+) -> Result<()> {
+    let _guard = SKILLS_LOCK.locked();
+    let Some(raw) = store.kv_read("skills")? else { return Ok(()) };
+    let mut all: Vec<Skill> = serde_json::from_str(&raw)?;
+    for index in 0..all.len() {
+        let Some(writer) = all[index].written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
+            continue;
+        };
+        let owner = match store.bot(writer) {
+            Ok(Some(row)) => row.config.thread_of,
+            Ok(None) => match parked_thread(writer) {
+                Ok(Some(cfg)) => cfg.thread_of,
+                Ok(None) => None,
+                Err(_) => {
+                    // Archive decode errors can contain text from the record.
+                    tracing::warn!("couldn't read a parked thread during skill adoption");
+                    continue;
+                }
+            },
+            Err(_) => {
+                tracing::warn!("couldn't read an active thread during skill adoption");
+                continue;
+            }
+        };
+        let Some(owner) = owner else { continue };
+        let previous = all[index].written_by.replace(owner.clone());
+        let saved = serde_json::to_string(&all)
+            .map_err(anyhow::Error::from)
+            .and_then(|list| store.adopt_thread_skill(&owner, &all[index].id, &list));
+        match saved {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(_) => tracing::warn!("couldn't commit a thread skill adoption"),
+        }
+        all[index].written_by = previous;
+    }
+    Ok(())
+}
+
 /// The skills block of a bot's profile: what each is for and where to read it.
 pub fn skills_brief(store: &crate::store::Store, enabled: &[String]) -> Option<String> {
     let lines: Vec<String> = skills(store)
@@ -425,6 +532,10 @@ pub fn skills_brief(store: &crate::store::Store, enabled: &[String]) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    tokio::task_local! {
+        pub(super) static PARKED_THREAD_READER: fn(&crate::store::Store, &str) -> Result<Option<crate::store::BotConfig>>;
+    }
 
     /// Serves `/declared` (a Content-Length over the limit), `/streamed` (chunks past the limit, no
     /// length) and anything else as a five-byte body.
@@ -536,5 +647,231 @@ mod tests {
         store.save_bot(&cfg).expect("save bot");
         turn_on_installed_once(&store).expect("second run");
         assert!(skills_of(&store).is_empty(), "a skill turned off afterwards stays off");
+    }
+
+    #[test]
+    fn parked_thread_skills_keep_their_author_until_their_parent_can_adopt_them() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str, kind: &str| -> crate::store::BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "kind": kind, "backend": "fixture", "cwd": "/tmp"}))
+                .unwrap()
+        };
+        store.save_bot(&config("group", "group")).unwrap();
+        store.save_bot(&config("deleted", "agent")).unwrap();
+        store.delete_bot("deleted").unwrap();
+        store.save_bot(&config("unrelated", "agent")).unwrap();
+        let legacy = ["missing", "group", "deleted"].map(|parent| {
+            let mut thread = config(&format!("thread-{parent}"), "agent");
+            thread.thread_of = Some(parent.into());
+            store.save_bot(&thread).unwrap();
+            store.park_thread(&thread).unwrap();
+            Skill {
+                id: format!("skill-{parent}"),
+                name: parent.into(),
+                description: "Old skill".into(),
+                source: CUSTOM.into(),
+                written_by: Some(thread.id),
+            }
+        });
+        save(&store, "skills", &legacy).unwrap();
+
+        adopt_thread_skills(&store).unwrap();
+        assert_eq!(skills(&store), legacy, "ineligible parents leave each original author intact");
+        for id in ["group", "deleted", "unrelated"] {
+            assert!(store.bot(id).unwrap().unwrap().config.skills.is_empty(), "{id} received no skill");
+        }
+
+        store.save_bot(&config("missing", "agent")).unwrap();
+        adopt_thread_skills(&store).unwrap();
+        let after = skills(&store);
+        assert_eq!(after[0].written_by.as_deref(), Some("missing"));
+        assert_eq!(after[1..], legacy[1..]);
+        assert_eq!(store.bot("missing").unwrap().unwrap().config.skills, ["skill-missing"]);
+    }
+
+    #[tokio::test]
+    async fn startup_skips_an_unreadable_parked_thread_and_retries_its_skill_later() {
+        use crate::hub::Hub;
+        use crate::remote::identity::Identity;
+        use crate::store::{BotConfig, Store};
+        use std::sync::Arc;
+
+        const SKILL_DESCRIPTION: &str = "sample private skill instructions";
+        const ARCHIVE_PATH: &str = "/sample/private-archive";
+
+        #[derive(Clone, Default)]
+        struct Log(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.locked().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("codync-skill-adoption-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = |id: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": &dir})).unwrap()
+        };
+        store.save_bot(&config("owner")).unwrap();
+        turn_on_installed_once(&store).unwrap();
+        let legacy = ["unreadable", "readable"].map(|id| {
+            let mut thread = config(&format!("thread-{id}"));
+            thread.thread_of = Some("owner".into());
+            store.save_bot(&thread).unwrap();
+            store.park_thread(&thread).unwrap();
+            Skill {
+                id: id.into(),
+                name: id.into(),
+                description: SKILL_DESCRIPTION.into(),
+                source: CUSTOM.into(),
+                written_by: Some(thread.id),
+            }
+        });
+        save(&store, "skills", &legacy).unwrap();
+
+        let hub =
+            Hub::new(store, "skill-adoption-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let log = Log::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt().with_ansi(false).with_writer(move || writer.clone()).finish();
+        let read = |store: &Store, writer: &str| {
+            if writer == "thread-unreadable" {
+                bail!("couldn't decode an archive at {ARCHIVE_PATH}: {SKILL_DESCRIPTION}");
+            }
+            store.parked_thread(writer)
+        };
+        let started =
+            PARKED_THREAD_READER.sync_scope(read, || tracing::subscriber::with_default(subscriber, || hub.start()));
+        assert!(started.is_ok(), "one parked thread read failure does not fail startup");
+        assert!(hub.has_actor("owner"));
+        let after = skills(&hub.store);
+        assert_eq!(after[0], legacy[0]);
+        assert_eq!(after[1].written_by.as_deref(), Some("owner"));
+        let enabled = || hub.store.bot("owner").unwrap().unwrap().config.skills;
+        assert_eq!(enabled(), ["readable"]);
+        let log = String::from_utf8(log.0.locked().clone()).unwrap();
+        assert!(
+            log.lines()
+                .any(|line| line.contains("WARN")
+                    && line.contains("couldn't read a parked thread during skill adoption"))
+        );
+        assert!(!log.contains(SKILL_DESCRIPTION) && !log.contains(ARCHIVE_PATH));
+
+        adopt_thread_skills(&hub.store).unwrap();
+        assert_eq!(enabled(), ["readable", "unreadable"]);
+        assert_eq!(skills(&hub.store)[0].written_by.as_deref(), Some("owner"));
+
+        hub.shutdown().await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn thread_owned_skills_are_adopted_by_their_bot() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+        let bot_cfg = |id: &str, thread_of: Option<&str>| -> crate::store::BotConfig {
+            let mut cfg: crate::store::BotConfig = serde_json::from_value(
+                json!({"id": id, "name": id, "backend": "fixture", "command": "true", "cwd": "/tmp", "notify": false}),
+            )
+            .expect("bot config");
+            cfg.thread_of = thread_of.map(str::to_owned);
+            cfg
+        };
+        store.save_bot(&bot_cfg("a", None)).expect("save a");
+        store.save_bot(&bot_cfg("b", None)).expect("save b");
+        store.save_bot(&bot_cfg("thread-1", Some("a"))).expect("save thread-1");
+        // Even a soft-deleted thread row keeps its `threadOf` in `bots`.
+        store.delete_bot("thread-1").expect("soft delete thread-1");
+
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let orphan_id = format!("orphan-{}", &tag[..8]);
+        let direct_id = format!("direct-{}", &tag[..8]);
+        let list = vec![
+            Skill {
+                id: orphan_id.clone(),
+                name: "Orphan".into(),
+                description: "Saved in a thread".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-1".into()),
+            },
+            Skill {
+                id: direct_id.clone(),
+                name: "Direct".into(),
+                description: "Rewritten before restart".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-1".into()),
+            },
+            Skill {
+                id: "missing-thread".into(),
+                name: "Missing".into(),
+                description: "Thread row gone".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-gone".into()),
+            },
+        ];
+        save(&store, "skills", &list).expect("save skills");
+
+        assert!(update_custom_skill(&store, "b", &direct_id, "Direct", "x", "body").is_err());
+        let updated =
+            update_custom_skill(&store, "a", &direct_id, "Direct", "x", "body").expect("owner updates orphan");
+        assert_eq!(updated.written_by.as_deref(), Some("a"));
+        let _ = std::fs::remove_dir_all(updated.dir());
+
+        adopt_thread_skills(&store).expect("adopt");
+        let after = skills(&store);
+        let orphan = after.iter().find(|s| s.id == orphan_id).expect("orphan skill");
+        assert_eq!(orphan.written_by.as_deref(), Some("a"));
+        let missing = after.iter().find(|s| s.id == "missing-thread").expect("missing skill");
+        assert_eq!(missing.written_by.as_deref(), Some("thread-gone"));
+
+        let skills_of = |id: &str| store.bot(id).expect("read").expect("bot").config.skills;
+        assert_eq!(skills_of("a"), [orphan_id.as_str()]);
+        assert_eq!(skills_of("b"), Vec::<String>::new());
+
+        let mut cfg = store.bot("a").expect("read").expect("bot").config;
+        cfg.skills.clear();
+        store.save_bot(&cfg).expect("save a without skill");
+        adopt_thread_skills(&store).expect("second adopt");
+        assert!(skills_of("a").is_empty(), "a skill turned off afterwards stays off");
+
+        // Recovery after a mid-adoption interruption: bot `a` already had its skill enabled, `b` did not,
+        // and `written_by` still pointed to the threads. Re-running finishes enabling `b` without duplicating `a`.
+        store.save_bot(&bot_cfg("thread-2", Some("b"))).expect("save thread-2");
+        let mut a_cfg = store.bot("a").expect("read").expect("bot").config;
+        a_cfg.skills = vec!["partial-a".into()];
+        store.save_bot(&a_cfg).expect("save a with partial skill");
+        save(
+            &store,
+            "skills",
+            &[
+                Skill {
+                    id: "partial-a".into(),
+                    name: "Partial A".into(),
+                    description: "Already enabled before crash".into(),
+                    source: CUSTOM.into(),
+                    written_by: Some("thread-1".into()),
+                },
+                Skill {
+                    id: "pending-b".into(),
+                    name: "Pending B".into(),
+                    description: "Not yet enabled before crash".into(),
+                    source: CUSTOM.into(),
+                    written_by: Some("thread-2".into()),
+                },
+            ],
+        )
+        .expect("save interrupted skills");
+        adopt_thread_skills(&store).expect("recover interrupted adoption");
+        assert_eq!(skills_of("a"), ["partial-a"], "no duplicate when already enabled");
+        assert_eq!(skills_of("b"), ["pending-b"], "remaining bot gets its skill on retry");
+        let recovered = skills(&store);
+        assert_eq!(recovered.iter().find(|s| s.id == "partial-a").unwrap().written_by.as_deref(), Some("a"));
+        assert_eq!(recovered.iter().find(|s| s.id == "pending-b").unwrap().written_by.as_deref(), Some("b"));
     }
 }

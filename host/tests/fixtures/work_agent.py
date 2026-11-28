@@ -35,7 +35,10 @@ notes say whether the session is the one that did the work (`same session`) or a
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
 Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
-session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+session can't be picked up again. `standard` advertises ACP `systemPrompt` without the usual close and fork capabilities.
+`resume-only` exchanges load for resume in that mode. `defer-system` keeps the original system across reopens.
+In that mode, `apply-system-<session>` permits replacing the active opening and `COMPACT_AGAIN` emits a second compaction.
+`steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`; the bot's question (`ask_task`) it answers at once with `Answer: <the question>` (`SLOW` in it: after 62 seconds), and
 a late answer's turn in the chat replies `Late: <the answer>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
@@ -60,6 +63,28 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
+if "background-worker" in sys.argv:
+    workspace = pathlib.Path.cwd()
+    pathlib.Path("background-ready").write_text(f"{os.getpid()} {os.getppid()}", encoding="utf-8")
+    for _ in range(1200):
+        if not workspace.exists():
+            break
+        if pathlib.Path("release-background").exists():
+            pathlib.Path("background-finished").write_text(f"{os.getpid()} {os.getppid()}", encoding="utf-8")
+            break
+        time.sleep(0.05)
+    sys.exit(0)
+
+CLAUDE = "claude" in sys.argv
+STANDARD = "standard" in sys.argv
+RESUME_ONLY = "resume-only" in sys.argv
+STRICT_RESUME = "strict-resume" in sys.argv
+CAN_CLOSE = "with-close" in sys.argv
+DEFER_SYSTEM = "defer-system" in sys.argv
+TRACK_SKILLS = "track-skills" in sys.argv
+REPORT_COMPACTION = "report-compaction" in sys.argv
+NATIVE_COMPACT = "native-compact" in sys.argv
+SESSION_LOG = "claude_sessions.jsonl" if CLAUDE else "standard_sessions.jsonl"
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
 # Like Claude's adapter, it reports its background work to a host that asks (`asyncTasks`).
@@ -84,6 +109,7 @@ cancel = threading.Event()
 permission = threading.Event()
 servers = []
 forked = set()
+resumed = set()
 # The host asked for the work it runs in the background (`asyncTasks`).
 reports_tasks = False
 count = 0
@@ -450,12 +476,55 @@ def prompt(request):
     if pathlib.Path("signedout").exists():
         send({"id": request["id"], "error": SIGNED_OUT})
         return
+    compaction = None
+    if NATIVE_COMPACT and text == "/compact":
+        compaction = "native-compaction"
+    elif (CLAUDE or STANDARD or REPORT_COMPACTION) and "[Task]" in text and "COMPACT_NOW" in text:
+        compaction = "task-compaction"
+    elif (DEFER_SYSTEM or REPORT_COMPACTION) and "COMPACT_AGAIN" in text:
+        compaction = "task-compaction-again"
+    if TRACK_SKILLS:
+        overlay = pathlib.Path(f"fixture-skills-{session}")
+        update = re.search(r"<skills_update>\n(.*?)\n</skills_update>", text, re.S)
+        if not update and REPORT_COMPACTION:
+            update = re.search(r"<agent_profile_update>\n(.*?)\n</agent_profile_update>", text, re.S)
+        if update:
+            overlay.write_text(update.group(1), encoding="utf-8")
+        if compaction and overlay.exists():
+            log("compacted_skills.jsonl", {"session": session, "dropped": overlay.read_text(encoding="utf-8")})
+            overlay.unlink()
+    if compaction:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "compaction_update", "compactionId": compaction, "status": "completed"}}})
     reply = answer(text, session)
-    if cancel.is_set():
-        send({"id": request["id"], "result": {"stopReason": "cancelled"}})
+    if (STANDARD or REPORT_COMPACTION) and "FAIL_SKILL_PROMPT" in text:
+        send({"id": request["id"], "error": {"code": -32603, "message": "Fixture rejected the prompt"}})
+        return
+    task_prompt = "[Task]" in text or "in this task's thread" in text
+    returns_cancelled = task_prompt and "RETURN_CANCELLED" in text
+    refuses = task_prompt and "RETURN_REFUSAL" in text
+    ends_after_cancel = (task_prompt and "END_AFTER_CANCEL" in text) or "STOP_CHAT_WITH_END_TURN" in text.splitlines()
+    if ends_after_cancel and not cancel.wait(10):
+        send({"id": request["id"], "error": {"code": -32603, "message": "Fixture did not receive session/cancel"}})
+        return
+    cancel_gate = re.search(r"HOLD_CANCEL:(\w+)", text) if ends_after_cancel else None
+    if cancel_gate:
+        name = cancel_gate.group(1)
+        pathlib.Path(f"release-cancel-seen-{name}").touch()
+        deadline = time.monotonic() + 12
+        while not pathlib.Path(f"release-cancel-{name}").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    cancel_received = cancel.is_set()
+    stop_reason = "cancelled" if returns_cancelled or (cancel_received and not ends_after_cancel) else "end_turn"
+    if refuses and stop_reason == "end_turn":
+        stop_reason = "refusal"
+    if returns_cancelled or ends_after_cancel or refuses or (compaction and REPORT_COMPACTION and TRACK_SKILLS):
+        log("prompt_outcomes.jsonl", {"session": session, "stopReason": stop_reason, "cancelReceived": cancel_received})
+    if stop_reason != "end_turn":
+        send({"id": request["id"], "result": {"stopReason": stop_reason}})
         return
     failure = {"thread-signedout": SIGNED_OUT, "thread-limit": LIMIT}
-    failed = [error for name, error in failure.items() if "[Task]" in text and pathlib.Path(name).exists()]
+    failed = [error for name, error in failure.items() if task_prompt and pathlib.Path(name).exists()]
     asked = pathlib.Path("sign-in-asked")
     if "[Task]" in text and "SIGNIN" in text and not asked.exists():
         asked.write_text("")
@@ -465,7 +534,16 @@ def prompt(request):
         return
     send({"method": "session/update", "params": {"sessionId": session, "update": {
         "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}}}})
-    send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+    send({"id": request["id"], "result": {"stopReason": stop_reason}})
+
+
+def finish_held_reopen(request_id, session, gate):
+    while gate.exists() and not cancel.wait(0.01):
+        pass
+    if pathlib.Path(f"fail-load-{session}").exists():
+        send({"id": request_id, "error": {"code": -32603, "message": "Fixture rejected the reopen"}})
+    else:
+        send({"id": request_id, "result": {}})
 
 
 for line in sys.stdin:
@@ -478,23 +556,86 @@ for line in sys.stdin:
         log("initialize.jsonl", {"asyncTasks": "asyncTasks" in asked.get("capabilities", [])})
         initialized = {"protocolVersion": 1, "agentCapabilities": {
             "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}, "_meta": {}}
+        if CLAUDE:
+            initialized["agentCapabilities"]["_meta"] = {"claudeCode": {}}
+        elif STANDARD:
+            initialized["agentCapabilities"]["sessionCapabilities"] = {"systemPrompt": {}}
+            if RESUME_ONLY:
+                initialized["agentCapabilities"]["loadSession"] = False
+                initialized["agentCapabilities"]["sessionCapabilities"]["resume"] = {}
+            if CAN_CLOSE:
+                initialized["agentCapabilities"]["sessionCapabilities"]["close"] = {}
         if CAN_STEER:
             initialized["_meta"]["steering"] = {"supported": True}
         if reports_tasks:
             initialized["_meta"]["jetbrains"] = {"air": {"version": 1, "capabilities": ["asyncTasks"]}}
         send({"id": message["id"], "result": initialized})
-    elif method in ("session/new", "session/fork", "session/load"):
+    elif method in ("session/new", "session/fork", "session/load", "session/resume"):
         servers = params.get("mcpServers", servers)
-        session = params["sessionId"] if method == "session/load" else new_session()
+        reopened = method in ("session/load", "session/resume")
+        session = params["sessionId"] if reopened else new_session()
         if method == "session/fork":
             forked.add(session)
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
-        if method != "session/load":
+        if not reopened:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
-        send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
+        if NATIVE_COMPACT and method == "session/new":
+            send({"method": "session/update", "params": {"sessionId": session, "update": {
+                "sessionUpdate": "available_commands_update",
+                "availableCommands": [{"name": "compact", "description": "Summarize context"}]}}})
+        if CLAUDE or STANDARD:
+            if CLAUDE:
+                system = params.get("_meta", {}).get("systemPrompt", {}).get("append")
+            else:
+                system_prompt = params["systemPrompt"]
+                assert system_prompt["mode"] == "append"
+                system = system_prompt["content"][0]["text"]
+            event = {"method": method, "session": session, "pid": os.getpid(), "system": system}
+            if DEFER_SYSTEM:
+                opening = pathlib.Path(f"fixture-system-{session}")
+                if not reopened or pathlib.Path(f"apply-system-{session}").exists():
+                    opening.write_text(system, encoding="utf-8")
+                event["activeSystem"] = opening.read_text(encoding="utf-8")
+            if STRICT_RESUME and method == "session/resume":
+                if session in resumed:
+                    log(SESSION_LOG, event)
+                    send({"id": message["id"], "error": {"code": -32603, "message": "Session already held"}})
+                    continue
+                resumed.add(session)
+            held_gate = None
+            if reopened:
+                gate = pathlib.Path(f"hold-load-{session}")
+                retry_gate = pathlib.Path(f"hold-retry-load-{session}")
+                if gate.exists():
+                    held_gate = ("initial", gate)
+                elif retry_gate.exists():
+                    held_gate = ("retry", retry_gate)
+            if held_gate is not None:
+                gate_kind, gate_path = held_gate
+                event["gate"] = gate_kind
+                if gate_kind == "initial" and CAN_CLOSE and method == "session/resume":
+                    child = subprocess.Popen(
+                        [sys.executable, __file__, "background-worker"],
+                        start_new_session=os.name == "posix",
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    threading.Thread(target=child.wait, daemon=True).start()
+                threading.Thread(target=finish_held_reopen, args=(message["id"], session, gate_path), daemon=True).start()
+                log(SESSION_LOG, event)
+                continue
+            log(SESSION_LOG, event)
+        send({"id": message["id"], "result": {} if reopened else {"sessionId": session}})
     elif method == "session/close":
-        log("closed.jsonl", {"session": params.get("sessionId"), "prompts": prompted})
-        send({"id": message["id"], "result": {}})
+        session = params["sessionId"]
+        rejected = CAN_CLOSE and pathlib.Path(f"fail-close-{session}").exists()
+        if CAN_CLOSE:
+            log(SESSION_LOG, {"method": method, "session": session, "pid": os.getpid(), "rejected": rejected})
+        if rejected:
+            send({"id": message["id"], "error": {"code": -32603, "message": "Fixture rejected the close"}})
+        else:
+            resumed.discard(session)
+            log("closed.jsonl", {"session": session, "prompts": prompted})
+            send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
         prompted += 1
         cancel.clear()
@@ -516,3 +657,6 @@ for line in sys.stdin:
         permission.set()
     elif "id" in message and method:
         send({"id": message["id"], "error": {"code": -32601, "message": "not supported"}})
+
+if CLAUDE or STANDARD:
+    log(SESSION_LOG, {"method": "exit", "pid": os.getpid()})

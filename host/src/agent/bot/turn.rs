@@ -3,6 +3,7 @@
 use super::background_work::Left;
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
+use crate::LockExt;
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -14,17 +15,20 @@ use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 /// Leads a `<bot-profile>` sent again after a compaction, so the agent drops an older copy it may still hold.
 const PROFILE_AGAIN: &str = "Your context was summarized. This is your full, current profile and memory; it replaces any earlier bot profile in this conversation.";
+const TASK_AGAIN: &str = "Your context was summarized. Codync's task framing and skill list below replace their earlier versions. Continue following the user's original brief.";
 
 impl Actor {
     /// This session's frozen instructions (reads memory files when re-rendering).
-    pub(super) async fn snapshot(&self, session: &str) -> Result<Snapshot> {
+    pub(super) async fn snapshot(&self, session: &str, instructions: Instructions) -> Result<Snapshot> {
         let (hub, cfg, session) = (self.hub.clone(), self.cfg.clone(), session.to_owned());
-        tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session)).await?
+        let opening_in_prompt = instructions == Instructions::FirstMessage;
+        tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session, opening_in_prompt)).await?
     }
 
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
@@ -36,9 +40,8 @@ impl Actor {
             return Ok(text.to_owned());
         }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
-        let mut snapshot = self.snapshot(sid).await?;
-        // Sessions whose frozen instructions predate send_file, artifacts or the follow-up brief as it is now hear about
-        // them each turn.
+        let mut snapshot = self.snapshot(sid, instructions).await?;
+        // Sessions whose frozen instructions lack a tool or the current follow-up brief hear reminders each turn.
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
         let remind_follow_ups = !snapshot.system.contains(crate::routines::BRIEF);
@@ -49,13 +52,12 @@ impl Actor {
             prompt = format!("{first}\n\n{prompt}");
         }
         // A compaction may have dropped the profile the session's first message carried.
-        let resend = instructions == Instructions::FirstMessage && self.profile_resend.remove(sid);
+        let resend = instructions == Instructions::FirstMessage && snapshot.needs_resend();
         if snapshot.unprompted || resend {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
         }
-        // A thread on a handed-out task holds neither memory nor who the bot is in its instructions, so no change to
-        // them is news.
+        // A handed-out task looks up memory as needed and only hears changes to its skill list.
         let as_bot = context::as_bot(&self.cfg, &self.task_source);
         if as_bot && let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
             prompt = format!("{notice}\n\n{prompt}");
@@ -69,11 +71,23 @@ impl Actor {
         if snapshot.unprompted && instructions == Instructions::FirstMessage {
             prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         } else if resend {
-            context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, snapshot.system_identity.clone())?;
-            snapshot.announced = snapshot.system_identity.clone();
-            prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
+            let intro = if as_bot {
+                snapshot.announced = snapshot.system_identity.clone();
+                PROFILE_AGAIN
+            } else {
+                snapshot.announced.skills_brief.clone_from(&snapshot.system_identity.skills_brief);
+                TASK_AGAIN
+            };
+            self.announce = Some((snapshot.clone(), snapshot.announced.clone()));
+            prompt = format!("<bot-profile>\n{intro}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
-        if as_bot && let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
+        let update = if as_bot {
+            context::profile_update(&self.hub.store, &snapshot, &self.cfg)
+        } else {
+            let resend_skills = instructions == Instructions::SystemPrompt && snapshot.needs_resend();
+            context::task_skills_update(&self.hub.store, &snapshot, &self.cfg, resend_skills)
+        };
+        if let Some((update, identity)) = update {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
@@ -115,6 +129,7 @@ impl Actor {
     ) -> Result<()> {
         self.task_source = work::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_thread() {
+            *self.thread_turn.locked() = Some(Arc::new(()));
             // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
             self.hub.ceilings.set(&self.cfg.id, work::access_of(&self.hub, &self.cfg));
             // A run worked as a thread: its session's setup ends by the routine's time limit too, where the box's
@@ -230,6 +245,7 @@ impl Actor {
                 r.message = None;
                 r.session = None;
             });
+            *self.thread_turn.locked() = None;
             return Ok(());
         }
         // Session-start chatter (banners, command lists) isn't part of the reply.
@@ -285,6 +301,10 @@ impl Actor {
         // thread started: what the user wants forgotten, the bot does in the chat.
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
+        if let Some((snapshot, identity)) = &mut self.announce {
+            let as_bot = context::as_bot(&self.cfg, &self.task_source);
+            context::mark_announcement_pending(&self.hub.store, self.cfg.owner(), snapshot, identity, as_bot)?;
+        }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
         if std::mem::take(&mut self.relay.handing_off) {
@@ -337,7 +357,7 @@ impl Actor {
         // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it. Only its
         // folder: its bot's fallbacks may have reached the row meanwhile (`work::fallbacks_changed`).
         let saved = {
-            let _g = crate::LockExt::locked(&self.hub.emit_lock);
+            let _g = self.hub.emit_lock.locked();
             self.hub.store.bot(&self.cfg.id).and_then(|row| {
                 let row = row.map_or_else(|| self.base.clone(), |row| row.config);
                 self.hub.store.save_bot(&BotConfig { cwd: worktree.cwd.clone(), ..row })
@@ -377,6 +397,11 @@ impl Actor {
         if self.turn.is_none() {
             return false;
         }
+        let reason = done.as_ref().ok().map(StopReason::of);
+        let cancelled = reason == Some(StopReason::Cancelled);
+        let stopped = self.stop_requested || cancelled;
+        // The task can resume in another actor once its turn's end is published.
+        self.settle_context(!stopped && reason.as_ref().is_some_and(|r| *r != StopReason::Refusal));
         self.after_turn(done);
         self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
@@ -386,11 +411,9 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
         if cancelled && !self.stop_requested {
             self.requeue_unheard();
         }
-        let stopped = self.stop_requested || cancelled;
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
@@ -427,10 +450,7 @@ impl Actor {
         if final_text.is_none() {
             final_text = self.files.summary.take();
         }
-        let stop_reason = match &done {
-            Ok(v) => StopReason::of(v).as_str().to_owned(),
-            Err(_) => "error".into(),
-        };
+        let stop_reason = reason.as_ref().map_or("error", StopReason::as_str).to_owned();
         match (&done, stop_reason.as_str()) {
             (Err(e), _) if !self.stop_requested => {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
@@ -529,17 +549,6 @@ impl Actor {
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
-        // The message reached the agent: the profile update it carried is now known to it.
-        if let (Ok(_), Some((snapshot, identity))) = (&done, self.announce.take())
-            && let Err(error) = context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, identity)
-        {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the profile update");
-        }
-        if let (Ok(_), Some(sent)) = (&done, self.first_prompt.take())
-            && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)
-        {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
-        }
         if done.is_ok() {
             self.file_codex_session();
         }
@@ -562,6 +571,7 @@ impl Actor {
             r.message = None;
             r.session = None;
         });
+        *self.thread_turn.locked() = None;
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
@@ -584,6 +594,23 @@ impl Actor {
             push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
         }
         waits
+    }
+
+    pub(super) fn settle_context(&mut self, delivered: bool) {
+        let store = &self.hub.store;
+        let owner = self.cfg.owner();
+        if let Some((snapshot, identity)) = self.announce.take()
+            && delivered
+            && let Err(error) = context::acknowledge_announcement(store, owner, &snapshot, identity)
+        {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
+        }
+        if let Some(sent) = self.first_prompt.take()
+            && delivered
+            && let Err(error) = context::mark_prompted(store, owner, &sent)
+        {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
+        }
     }
 }
 

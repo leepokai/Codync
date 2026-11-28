@@ -282,7 +282,7 @@ what a thread may call: `ask_chat`, `request_decision`, `send_file`, artifacts a
 message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`, `work::chat_only`;
 a call to one is still refused, and counted as `thread_tool_refused`). Its instructions are kept with its bot's
 sessions (`context::resolve` keys by `BotConfig::owner`), and a profile update is announced only to a thread that was
-told who the bot is.
+told who the bot is. A task handed out by a bot hears changes to its enabled skills on its next message.
 
 A thread's message for a task says what it is, gives the brief, the user's own words and what they said since, and
 how its words reach the user (`prompts::task_prompt`). A task that follows another is the thread's next message in

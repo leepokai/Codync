@@ -303,4 +303,26 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// A pause is saved in the bot's config, but the gate that refuses messages is in memory: at start it has to be
+    /// closed again, or a message that arrives after a restart is queued and answered on resume instead of refused.
+    #[tokio::test]
+    async fn a_pause_saved_before_the_restart_is_closed_again_at_start() {
+        let dir = std::env::temp_dir().join(format!("codync-pause-start-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("work")).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "pause-start".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "b", "name": "b", "backend": "claude", "cwd": dir.join("work"), "paused": true,
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+        assert!(!hub.pause.blocked("b"), "a fresh host has not blocked anything yet");
+
+        hub.start().unwrap();
+
+        assert!(hub.pause.blocked("b"), "a message that arrives after the restart is refused, not queued");
+        assert_eq!(hub.pause.epoch("b"), 1, "the start is the one pause generation this bot is on");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

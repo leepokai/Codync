@@ -247,6 +247,12 @@ impl Hub {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;
             } else if !row.config.is_group() {
+                // A pause outlives the process in the saved flag, but the admission gate is in memory: a bot paused
+                // before the restart would take a message that arrives now into its queue instead of refusing it.
+                // Close the gate again before its actor can accept one; a resume reopens it.
+                if row.config.paused {
+                    self.pause.block(&row.config.id);
+                }
                 self.spawn_bot(row.config);
             }
         }

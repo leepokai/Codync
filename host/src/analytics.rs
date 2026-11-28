@@ -157,6 +157,20 @@ enum Msg {
 }
 
 impl Analytics {
+    #[cfg(test)]
+    pub(crate) fn drain_test_events(&self) -> Vec<Value> {
+        let Some(mut rx) = self.rx.locked().take() else {
+            return Vec::new();
+        };
+        let mut events = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Msg::Event(v) = msg {
+                events.push(v);
+            }
+        }
+        events
+    }
+
     pub fn load(store: &Store) -> Self {
         // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
         // location or version. Stored, so a release the machine updates to keeps the mark.

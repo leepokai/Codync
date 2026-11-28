@@ -242,6 +242,10 @@ pub enum Event {
     NetworkSession,
     /// `codync-host network setup` set up (or removed) one agent (`reported::SetupOutcome`).
     NetworkSetup,
+    /// A configured decision sidecar was called for bot auto-naming (`outcome`, `ms`, `targets`, `attempted`).
+    SidecarNamingCalled,
+    /// A configured decision sidecar call fell back to `oneshot::one_shot` (`reason`, `ms`, `oneshot_outcome`).
+    SidecarNamingFallback,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -397,6 +401,8 @@ impl Event {
             Self::NetworkFailed => "network_failed",
             Self::NetworkSession => "network_session",
             Self::NetworkSetup => "network_setup",
+            Self::SidecarNamingCalled => "sidecar_naming_called",
+            Self::SidecarNamingFallback => "sidecar_naming_fallback",
             Self::Exception => "$exception",
         }
     }

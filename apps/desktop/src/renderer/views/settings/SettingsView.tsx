@@ -3,6 +3,7 @@ import type { Screen } from '@shared/analytics'
 import { APPEARANCES, type Appearance } from '@shared/appearance'
 import { islandLabel } from '@shared/island'
 import { VOICE_SHORTCUTS, VOICE_TAPS, type VoiceShortcut } from '@shared/voice-shortcut'
+import { CharacterAvatar } from '../../components/Avatar'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, ProgressBar, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, IconSlot, VStack } from '../../components/Stack'
@@ -10,7 +11,7 @@ import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { appLanguages, languageTitle } from '../../lib/l10n'
 import { useTr } from '../../lib/use-language'
-import { DEFAULT_TEXT_SIZE, prefs, TEXT_SIZES, usePref } from '../../lib/prefs'
+import { clampRosterIconSize, DEFAULT_TEXT_SIZE, prefs, ROSTER_ICON_MAX, ROSTER_ICON_MIN, ROSTER_ICON_STEP, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
 import { analytics, openLink, useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
@@ -129,6 +130,7 @@ function GeneralSettings() {
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
   const [agentLogos, setAgentLogos] = usePref(prefs.agentLogos)
+  const [iconSize, setIconSize] = usePref(prefs.rosterIconSize)
   const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
   const [voiceTap, setVoiceTap] = usePref(prefs.voiceShortcutTap)
   const [showInDock, setShowInDock] = useState(true)
@@ -185,6 +187,22 @@ function GeneralSettings() {
             options={TEXT_SIZES.map((s) => ({ id: s, label: s === DEFAULT_TEXT_SIZE ? tr('{size} pt (Default)').replace('{size}', String(s)) : `${s} pt` }))}
             onChange={setTextSize}
           />
+        </ValueRow>
+        <ValueRow label="Bot icon size" detail="The Bots list's icons, with their agent mark, at a readable size.">
+          <HStack gap={10} className="settings-icon-size">
+            <CharacterAvatar shape="cloud" color="blue" size={iconSize} mood="idle" />
+            <input
+              type="range"
+              className="settings-range"
+              min={ROSTER_ICON_MIN}
+              max={ROSTER_ICON_MAX}
+              step={ROSTER_ICON_STEP}
+              value={iconSize}
+              aria-label={tr('Bot icon size')}
+              onChange={(e) => setIconSize(clampRosterIconSize(Number(e.target.value)))}
+            />
+            <Text size="caption" tone="secondary" className="settings-icon-size-value">{iconSize} px</Text>
+          </HStack>
         </ValueRow>
         <ValueRow label="Usage icons">
           <ChoicePicker selection={usageIconStyle} options={[{ id: 'character', label: 'Character' }, { id: 'original', label: 'Original' }]} onChange={setUsageIconStyle} />

@@ -271,7 +271,7 @@ struct BotSettingsForm: View {
                 }
                 // Only from a host that has it (its bots say).
                 if model.bots.values.contains(where: { $0.manageTeam != nil }) {
-                    SwitchRow("Manage the team", detail: "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
+                    SwitchRow("Manage the team", detail: "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.",
                               isOn: Binding(get: { draft.manageTeam ?? false }, set: { draft.manageTeam = $0 }))
                 }
                 // Each only where it applies: the computer is in a network, cloud assistants are on.

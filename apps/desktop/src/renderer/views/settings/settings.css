@@ -38,6 +38,17 @@
 .settings-item.selected {
   background: rgba(var(--text-rgb), 0.08);
 }
+
+/* The Appearance slider (Bot icon size): the app's accent on a quiet track; the row's preview
+   carries the chosen size inline, so nothing here sizes it. */
+.settings-range {
+  width: 140px;
+  accent-color: var(--accent-fill);
+}
+.settings-icon-size-value {
+  min-width: 38px;
+  text-align: right;
+}
 /* A row's leading icon, centered in a fixed column so the labels line up. */
 /* A page takes the whole width beside the rail. */
 .settings-main {

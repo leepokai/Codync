@@ -2,15 +2,17 @@
 
 use super::sign_in::Held;
 use super::{
-    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, PAUSED_NOTICE, Queued, RESUME_PROMPT,
+    RoutineCompletion,
 };
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
-use crate::store::{Lane, now_ms};
+use crate::store::{EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
+use serde_json::json;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -167,6 +169,23 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
+                // A pause stops the running turn (nothing more is spent), cancels its queued routine runs and
+                // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
+                if old.paused != self.base.paused {
+                    if self.base.paused {
+                        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
+                            tracing::error!(
+                                error = format!("{error:#}"),
+                                "couldn't cancel a paused bot's queued routines"
+                            );
+                        }
+                        self.cancel_turn().await;
+                        self.refuse_paused();
+                    } else {
+                        self.next_in_queue(done_tx).await;
+                        work::dispatch(&self.hub, &self.cfg.id);
+                    }
+                }
             }
             Cmd::Shutdown => return false,
         }
@@ -271,6 +290,11 @@ impl Actor {
     pub(super) async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
+        }
+        // Paused: no turn of its starts, so nothing is spent. What waits on it hears so now (see `refuse_paused`).
+        if self.paused() {
+            self.refuse_paused();
+            return;
         }
         let main = Lane::main(&self.cfg.id);
         while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
@@ -496,6 +520,48 @@ impl Actor {
             if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
                 self.start_error(e, done_tx).await;
             }
+        }
+    }
+
+    /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. The user's messages go out
+    /// cancelled with a notice (they don't wait to run on a later resume), a bot's request ends as not started,
+    /// replies go to their notices, and a room's turn is dropped with why. Host turns (a task's report, the
+    /// watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due routine run is
+    /// cancelled instead (see below): its schedule continues from the next trigger after the resume.
+    fn refuse_paused(&mut self) {
+        let (kept, refused): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queue).into_iter().partition(|q| {
+            !matches!(q, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
+        });
+        // A routine run that came due while it is paused is cancelled too (a pause stops its queued ones):
+        // its schedule continues from the next trigger after the resume.
+        if kept.iter().any(|q| matches!(q, Queued::Routine(_)))
+            && let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id)
+        {
+            tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+        }
+        self.queue = kept.into_iter().collect();
+        let mut told = false;
+        for item in refused {
+            match item {
+                Queued::User { entry_id, .. } => {
+                    if let Some(mut e) = self.hub.store.entry(&entry_id) {
+                        e.data["status"] = "cancelled".into();
+                        self.hub.set_entry(&entry_id, &e.data);
+                    }
+                    told = true;
+                }
+                Queued::BotRequest(request) => {
+                    request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+                }
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
+                Queued::Group(turn) => {
+                    let _ = turn.reply.send(Err(anyhow!("this bot is paused")));
+                }
+                _ => unreachable!("only the queued kinds above are refused"),
+            }
+        }
+        if told {
+            self.add_between_turns(EntryKind::Notice, &json!({"text": PAUSED_NOTICE, "style": "info"}));
         }
     }
 

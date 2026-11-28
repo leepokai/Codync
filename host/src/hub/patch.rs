@@ -32,10 +32,8 @@ pub(crate) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     if cfg.name != stored.name && patch.get("autoName").is_none() {
         cfg.auto_name = false;
     }
-    // Options belong to one model; an app that doesn't know them can't clear them itself.
-    if (cfg.model != stored.model || cfg.backend != stored.backend) && patch.get("modelOptions").is_none() {
-        cfg.model_options.clear();
-    }
+    // A field the patch leaves out keeps its saved value, so a partial update never resets what it
+    // doesn't name; what it does send is checked against the model it will run on (`checks::change`).
     // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
     if cfg.backend != stored.backend && patch.get("mode").is_none() {
         cfg.mode = codync_agent::modes::on_other_agent(cfg.mode.as_deref());
@@ -103,16 +101,34 @@ mod tests {
     }
 
     #[test]
-    fn a_new_model_keeps_only_the_options_sent_with_it() {
+    fn a_model_change_keeps_the_saved_options_unless_the_patch_sets_them() {
         let stored: BotConfig = serde_json::from_value(
             json!({"id": "a", "name": "a", "backend": "claude", "model": "opus", "modelOptions": {"effort": "low"}}),
         )
         .expect("a bot config");
         let effort = |patch| patched(&stored, &patch).expect("a valid patch").model_options.get("effort").cloned();
-        assert_eq!(effort(json!({"model": "sonnet"})), None, "left out: the new model's defaults");
+        assert_eq!(
+            effort(json!({"model": "sonnet"})).as_deref(),
+            Some("low"),
+            "left out: kept, and the change is checked against the model it will run on"
+        );
         let sent = json!({"model": "sonnet", "modelOptions": {"effort": "medium"}});
         assert_eq!(effort(sent).as_deref(), Some("medium"));
         assert_eq!(effort(json!({"name": "b"})).as_deref(), Some("low"), "same model: kept");
+        let cleared = patched(&stored, &json!({"model": "sonnet", "modelOptions": {}})).expect("a valid patch");
+        assert!(cleared.model_options.is_empty(), "an empty object the patch sends is a clear");
+    }
+
+    #[test]
+    fn a_patch_leaves_the_paused_flag_alone_unless_the_patch_passes_it() {
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "a", "name": "a", "backend": "claude", "paused": true, "fallbacks": [{"backend": "codex"}]}),
+        )
+        .expect("a bot config");
+        let cfg = |patch| patched(&stored, &patch).expect("a valid patch");
+        assert!(cfg(json!({"model": "sonnet"})).paused, "a model change does not resume the bot");
+        assert_eq!(cfg(json!({"model": "sonnet"})).fallbacks.len(), 1, "left out: kept");
+        assert!(!cfg(json!({"paused": false})).paused, "an explicit false resumes it");
     }
 
     #[test]

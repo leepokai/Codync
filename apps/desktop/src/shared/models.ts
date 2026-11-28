@@ -63,6 +63,8 @@ export interface Bot {
   hidden: boolean
   /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
   plain: boolean
+  /** Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed; missing from an older host reads as not paused. */
+  paused: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -171,6 +173,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     plain: raw.plain === true,
+    paused: raw.paused ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -908,6 +911,8 @@ export interface BotDraft {
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
   hidden?: boolean
+  /** Pause the bot: it answers nothing and spends nothing until it is resumed; left out, the host keeps it. */
+  paused?: boolean
   notify?: boolean | null
   connectors?: string[]
   skills?: string[]
@@ -964,6 +969,7 @@ export function draftOf(bot: Bot): BotDraft {
     ...(bot.worktreeMode === null
       ? { threadWorktrees: bot.threadWorktrees ?? undefined }
       : { projects: bot.projects, worktreeMode: bot.worktreeMode }),
+    paused: bot.paused,
     ...(bot.sharedFolders === null ? {} : { sharedFolders: bot.sharedFolders }),
   }
 }

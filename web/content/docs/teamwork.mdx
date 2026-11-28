@@ -125,9 +125,9 @@ A bot with **Manage the team** on can set up the team for you: list your bots, c
 
 ### What a manager can do
 
-- **List the team:** every bot with its setup and routines, including hidden bots and the manager itself.
+- **List the team:** every bot with its setup and routines, including hidden bots and the manager itself. It can also list the model ids any agent offers, each with its settings, the same choices your model pickers show.
 - **Create bots** with a name, standing instructions, agent, model and model settings such as effort, fallbacks, avatar, projects and routines. A new bot gets the manager's approval setting, connectors and skills, so it can't do more than the manager. It can manage the team too. It never gets computer use. Without a chosen avatar it gets a random one.
-- **Change any bot**, itself included: name, standing instructions, model and model settings such as effort, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, and its [routines](/docs/routines) (add new ones or replace existing ones). A model setting has to be one the bot's model offers, the same choices its settings show you. Changing a bot's model clears that bot's model settings unless the manager sets new ones in the same change. A manager that changes its own model gets the new one after its current turn.
+- **Change any bot**, itself included: name, standing instructions, model and model settings such as effort, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, pause or resume it, and its [routines](/docs/routines) (add new ones or replace existing ones). A model setting has to be one the bot's model offers, the same choices its settings show you, and a model — the bot's or a fallback's — has to be one that agent offers. A change leaves every setting it doesn't name as it was, so changing only a bot's model keeps its model settings; setting them to {} in the same change goes back to the model's defaults. A manager that changes its own model gets the new one after its current turn.
 
 Bots stop creating bots once 20 bots made by bots exist (deleted ones don't count). Past that, the manager asks you.
 

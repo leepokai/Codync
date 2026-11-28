@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, type CSSProperties } from 'react'
 import { isGroup, type Bot } from '@shared/models'
 import { outsideStatus } from '@shared/work'
+import { crownSize, pauseMarkSize, pauseMarkTop } from '../lib/avatar-marks'
 import { dotGrid, dotRadius } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 import { Icon } from './Icon'
@@ -297,15 +298,27 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
  * (a registry id) puts the agent's logo in the bottom-left corner. */
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
+  // The crown and the pause mark are sized by avatar-marks.ts, which the roster icon size feeds
+  // (Settings › Appearance). The mark is never shrunk into the gap the crown leaves: a lead bot
+  // that is ALSO paused keeps a readable mark and is nudged down clear of the crown instead, so
+  // the both-at-once case still says Paused at every icon size.
+  const mark = { crown: crownSize(size), pause: pauseMarkSize(size), pauseTop: pauseMarkTop(size, bot.lead === true) }
   return (
-    <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
+    <div className="avatar-frame" style={{ width: size, height: size }}>
       <BotOrGroupAvatar bot={bot} members={members} size={size} />
       {agent ? (
         <span className="avatar-agent" style={{ width: size * 0.4, height: size * 0.4 }}>
           <AgentIcon registry={agent} size={size * 0.28} color={agentTint(agent)} />
         </span>
       ) : null}
-      {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
+      {bot.lead ? <LeadAgentBadge size={mark.crown} /> : null}
+      {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet
+          row doesn't — this mark says paused wherever the bot's face shows. */}
+      {bot.paused && !isGroup(bot) ? (
+        <span className="avatar-paused" style={{ top: mark.pauseTop }} aria-hidden="true">
+          <Icon name="pause.circle" size={mark.pause} weight="semibold" color="var(--warning)" scaled={false} />
+        </span>
+      ) : null}
       {outsideStatus(bot) === 'needsInput' ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />

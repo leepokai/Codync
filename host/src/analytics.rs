@@ -331,6 +331,18 @@ async fn send(batch: &[Value]) -> bool {
     }
 }
 
+/// Events still sitting on the channel. Tests call this before [`start`] takes the receiver.
+#[cfg(test)]
+pub(crate) fn queued_for_test(hub: &Hub) -> Vec<Value> {
+    let mut queued = hub.analytics.rx.locked();
+    let rx = queued.as_mut().expect("analytics receiver still held; start() takes it");
+    let mut sent = Vec::new();
+    while let Ok(Msg::Event(event)) = rx.try_recv() {
+        sent.push(event);
+    }
+    sent
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -99,6 +99,11 @@ pub fn spawn_dreamer(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Dre
                 event = rx.recv() => match event {
                     None => break,
                     Some(DreamEvent::Turn(turn)) => {
+                        // Naming spends too: while the bot is paused the turn is dropped, so its
+                        // naming call never happens; the observation is lost, not deferred.
+                        if hub.paused(&bot_id) {
+                            continue;
+                        }
                         if let Err(e) = naming::observe(&hub, &bot_id, turn).await {
                             tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "naming the bot failed");
                         }
@@ -198,6 +203,10 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     let Some(cfg) = hub.store.bot(bot_id)?.filter(|b| !b.deleted).map(|b| b.config) else {
         return Ok(Ran::Done { more: false });
     };
+    // Paused: dreaming spends, so it waits (as `Later`) until the bot is resumed.
+    if hub.paused(bot_id) {
+        return Ok(Ran::Later);
+    }
     // Dreaming never spends the user's last headroom.
     if crate::usage::near_limit(hub, &cfg) {
         return Ok(Ran::Later);

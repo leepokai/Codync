@@ -168,7 +168,8 @@ The `chat` server's `list_agents` (agents on this computer, signed in, resting; 
 `set_fallbacks` (replaces the list) let a bot set up its chain, when the user asks or wants it to keep working through
 limits. On by default; the user turns it off per bot ("Let the bot change its fallbacks", `selfFallbacks`). A notice
 in its chat records each change. A bot that manages the team sets any bot's with `update_bot`'s `fallbacks`, its own
-only while `selfFallbacks` is on. Both name agents and models only: an agent already in the list keeps its custom
+only while `selfFallbacks` is on; a model the change sets, the bot's or a fallback's, must be one that agent lists.
+Both name agents and models only: an agent already in the list keeps its custom
 command, its login profile, and its model options while the model stays. An agent that is in the list again on another
 login profile keeps them in order (the n-th step of an agent is the n-th saved one of it), and the notice names each
 step's login profile ("Fallbacks set: Claude Code (Work)").

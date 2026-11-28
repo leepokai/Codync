@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
-import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus.ts'
+import { makeLeadItems, offersDelete, pauseItems, voiceTarget } from './lead-menus.ts'
 
-/** A computer's store as the menus read it, logging the bots made lead. */
+/** A computer's store as the menus read it, logging the bots made lead and paused. */
 function computer(hasLeadChoice = true) {
   const made: string[] = []
-  const store = { hasLeadChoice, setLead: (bot: Bot) => made.push(bot.id) } as unknown as BotStore
-  return { store, made }
+  const paused: [string, boolean][] = []
+  const store = { hasLeadChoice, setLead: (bot: Bot) => made.push(bot.id), setPaused: (bot: Bot, p: boolean) => paused.push([bot.id, p]) } as unknown as BotStore
+  return { store, made, paused }
 }
 
 const lead = { id: 'lead', lead: true } as Bot
@@ -37,4 +38,18 @@ test('the voice shortcut talks to the lead, else the top bot', () => {
   assert.equal(voiceTarget({ items: [row(bot), row(lead)], navigable: [row(bot)] })?.bot, lead)
   assert.equal(voiceTarget({ items: [row(group), row(bot)], navigable: [row(bot)] })?.bot, bot, 'no lead: the top bot shown')
   assert.equal(voiceTarget({ items: [], navigable: [] }), undefined)
+})
+
+test('a bot row pauses and resumes it; a group has nothing to pause', () => {
+  const { store, paused } = computer()
+  const running = { id: 'bot', lead: false, paused: false } as Bot
+  const pause = pauseItems(running, store)
+  assert.deepEqual(pause.map((i) => [i.title, i.icon]), [['Pause bot', 'pause']])
+  pause[0]!.action?.()
+  assert.deepEqual(paused, [['bot', true]])
+  const resume = pauseItems({ ...running, paused: true } as Bot, store)
+  assert.deepEqual(resume.map((i) => [i.title, i.icon]), [['Resume bot', 'play']])
+  resume[0]!.action?.()
+  assert.deepEqual(paused, [['bot', true], ['bot', false]])
+  assert.deepEqual(pauseItems(group, store), [], 'a group has no agent')
 })

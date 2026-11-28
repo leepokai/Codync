@@ -61,7 +61,7 @@ import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { DesktopActionMenu } from './DesktopActionMenu'
 import { moveToSectionItems, sectionHeaderItems } from './section-menus'
-import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
+import { makeLeadItems, offersDelete, pauseItems, voiceTarget } from './lead-menus'
 import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
@@ -230,6 +230,7 @@ function ChatSplitView() {
   const [listHidden, setListHidden] = usePref(prefs.listHidden)
   const [botsByComputer, setBotsByComputer] = usePref(prefs.botsByComputer)
   const [botsByStatus, setBotsByStatus] = usePref(prefs.botsByStatus)
+  const [freezeLead, setFreezeLead] = usePref(prefs.freezeLeadAtTop)
   const [threadsGroup, setThreadsGroup] = usePref(prefs.threadsGroup)
   const [threadsByStatus, setThreadsByStatus] = usePref(prefs.threadsByStatus)
   const [threadsByActivity, setThreadsByActivity] = usePref(prefs.threadsByActivity)
@@ -436,6 +437,7 @@ function ChatSplitView() {
     { title: 'Copy conversation ID', icon: 'square.on.square', action: () => window.codync.app.copy(bot.id) },
     // A group has no agent session of its own.
     ...(isGroup(bot) ? [] : [{ title: 'New session', icon: 'arrow.counterclockwise', action: () => setNewSessionBot({ bot, store }) }]),
+    ...pauseItems(bot, store),
     ...makeLeadItems(bot, store),
     ...(bot.lead ? [] : [{ title: 'Hide from sidebar', icon: 'eye.slash', action: () => store.setHidden(bot, true) }]),
     ...(offersDelete(bot, store) ? [{ title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) }] : []),
@@ -563,9 +565,19 @@ function ChatSplitView() {
         for (const store of ordering) void store.setAutoOrder(!byActivity)
       },
     }] : []),
+    // This device's own choice: the lead bot keeps the very top of the list, whatever the bumping above does.
+    ...(page === 'bots'
+      ? [{
+          title: 'Freeze the lead bot at the top', selected: freezeLead, keepsOpen: true,
+          action: () => {
+            analytics.track({ event: 'list_layout_changed', list: 'bots', option: 'freezeLead', on: !freezeLead })
+            setFreezeLead(!freezeLead)
+          },
+        }]
+      : []),
   ]
   // Grouping or sorting the list another way slides its rows to their new places.
-  useListFlip(sidebar, page, page === 'threads' ? `${threadsGroup}/${threadsByStatus}/${threadsByActivity}` : `${botsByComputer}/${botsByStatus}/${byActivity}`)
+  useListFlip(sidebar, page, page === 'threads' ? `${threadsGroup}/${threadsByStatus}/${threadsByActivity}` : `${botsByComputer}/${botsByStatus}/${freezeLead}/${byActivity}`)
   const settingsPages: Partial<Record<AppPage, SettingsPage>> = { computers: 'computers', network: 'network', usage: 'usage', settings: settingsPage }
   return (
     <OpenExtensions.Provider value={openExtensions}>

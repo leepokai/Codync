@@ -4,24 +4,62 @@ use super::{Hub, patch, projects, sections, validate};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::store::BotConfig;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
 impl Hub {
+    /// Whether `id` (a bot, or one of its threads) is paused: it answers nothing and spends nothing until it is
+    /// resumed. A thread stands for its bot's pause.
+    pub fn paused(&self, id: &str) -> bool {
+        let owner = if crate::store::is_thread_id(id) {
+            self.store.bot(id).ok().flatten().filter(|b| !b.deleted).and_then(|b| b.config.thread_of)
+        } else {
+            Some(id.to_owned())
+        };
+        owner.is_some_and(|owner| {
+            self.store.bot(&owner).ok().flatten().filter(|b| !b.deleted).is_some_and(|b| b.config.paused)
+        })
+    }
+
     /// Makes `cfg` ready to save over `before` (none: a new bot). Called under `emit_lock`, with the save: its login
     /// profile can't be removed in between (`login_profiles::remove`).
     fn settle_config(&self, cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<()> {
-        crate::agent::login_profiles::settle(&self.store, cfg)?;
-        crate::agent::fallback::tidy(cfg);
-        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-        projects::settle(cfg, before)?;
         // ponytail: validated under the lock, so a workspace folder on a hung network share (its `is_dir`)
         // stalls every bot's events until it answers. Upgrade: build and validate outside the lock from a
         // snapshot, then save under it only if the stored config is unchanged (compare the serialized configs,
         // not rev), else retry.
-        validate(cfg)?;
+        self.check_config(cfg, before)?;
         crate::agent::workspace::prepare(cfg)
+    }
+
+    /// What `settle_config` holds a change to before it prepares the workspace: the checks a save refuses on, with
+    /// nothing written and no folder made. A dry run calls this outside the lock.
+    fn check_config(&self, cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<()> {
+        crate::agent::login_profiles::settle(&self.store, cfg)?;
+        crate::agent::fallback::tidy(cfg);
+        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
+        projects::settle(cfg, before)?;
+        validate(cfg)
+    }
+
+    /// The config `patch` would save over its bot, checked the way `update_bot` checks it, without saving, emitting
+    /// or preparing a workspace folder (`validateOnly` and `dryRun`).
+    pub(crate) fn preview_update(&self, patch: &Value) -> Result<BotConfig> {
+        let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
+        let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+        let mut cfg = patch::patched(&row.config, patch)?;
+        if cfg.is_group() {
+            cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
+        }
+        // Only the host makes the box of threads without a bot (`chat::work::plain`).
+        cfg.plain = row.config.plain;
+        self.check_config(&mut cfg, Some(&row.config))?;
+        // A dry run doesn't make the folder `workspace::prepare` would: it only refuses an id that can't become one.
+        if !cfg.is_group() && cfg.cwd.is_empty() {
+            uuid::Uuid::parse_str(&cfg.id).context("invalid bot workspace id")?;
+        }
+        Ok(cfg)
     }
 
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {

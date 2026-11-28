@@ -161,7 +161,7 @@ function Identity({ bot }: { bot: Bot }) {
   const group = isGroup(bot)
   return (
     <div className="details-identity">
-      {group ? <GroupAvatar members={store.members(bot)} size={48} /> : <div className="avatar-frame"><BotAvatar bot={bot} size={48} />{bot.lead ? <LeadAgentBadge size={24} interactive /> : null}</div>}
+      {group ? <GroupAvatar members={store.members(bot)} size={48} /> : <div className="avatar-frame"><BotAvatar bot={bot} size={48} />{bot.lead ? <LeadAgentBadge size={24} /> : null}</div>}
       <span className="details-name">{bot.name}</span>
       <span className="details-subtitle">
         {group ? (

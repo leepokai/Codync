@@ -392,6 +392,10 @@ pub enum ListOption {
     Computer,
     Status,
     Activity,
+    /// The desktop sends `freezeLead`. `rename_all = "snake_case"` would emit `freeze_lead`, which
+    /// would not match that wire value and would fall through to `Other`.
+    #[serde(rename = "freezeLead")]
+    FreezeLead,
     #[serde(other)]
     Other,
 }
@@ -749,6 +753,10 @@ mod tests {
             (json!({"event": "preview_opened", "app": "desktop", "from": "dev_server"}), Event::PreviewOpened),
             (
                 json!({"event": "list_layout_changed", "app": "desktop", "list": "threads", "option": "computer", "on": true}),
+                Event::ListLayoutChanged,
+            ),
+            (
+                json!({"event": "list_layout_changed", "app": "desktop", "list": "bots", "option": "freezeLead", "on": true}),
                 Event::ListLayoutChanged,
             ),
             (

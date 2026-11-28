@@ -41,6 +41,25 @@
   background: var(--accent-fill);
 }
 
+/* A paused bot wears its state on its face (AvatarWithStatus): a pause mark pinned to the frame's
+   top-right, over whatever the avatar draws. The badge family keeps the bottom corners — the
+   agent's logo bottom-left, needs-you and unread bottom-right — and the crown the top-center, so
+   this mark keeps the top-right corner for itself and is nudged down clear of the crown's overhang
+   in JS (avatar-marks.ts) rather than shrunk into the gap. It sits on a disc of the app's own
+   background so the amber ring reads against any character behind it. Decorative: it never takes a
+   pointer, and the row's own marks announce Paused to a screen reader. */
+.avatar-paused {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border-radius: 50%;
+  background: var(--background);
+  box-shadow: 0 0 0 1px var(--background);
+}
+
 .avatar-agent {
   position: absolute;
   left: 0;
@@ -51,19 +70,27 @@
   background: var(--background);
 }
 
+/* The lead's crown, worn on the avatar's top: a gold crown straddling the frame's top edge (LeadAgentBadge). */
 .lead-agent-badge {
   position: absolute;
-  right: 0;
-  bottom: 0;
+  left: 50%;
+  bottom: auto;
+  top: 0;
+  transform: translate(-50%, -44%);
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--warning);
-  color: white;
+  background: none;
+  color: var(--warning);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5));
+  overflow: visible;
 }
-.lead-agent-badge.interactive { cursor: pointer; }
+/* The larger details badge sits under the window-drag strip: a smaller overhang keeps the crown's tip clear of it. */
+.lead-agent-badge.interactive {
+  cursor: pointer;
+  transform: translate(-50%, -22%);
+}
 .lead-agent-badge.interactive::after {
   content: '';
   position: absolute;
@@ -71,7 +98,6 @@
   border-radius: 50%;
 }
 .lead-agent-badge.interactive:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-.lead-avatar > .avatar-badge { bottom: auto; top: 0; }
 
 /* An empty seat: no bot here (NoBotAvatar). */
 .no-bot-avatar {

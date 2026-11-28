@@ -10,6 +10,16 @@ export const rosterBand = (b: Pick<Bot, 'pinned'>) => (b.pinned ? 0 : 1)
 /** Roster order: by band, then where the user dragged them, then most recent activity. */
 export const rosterOrder = (a: Ranked, b: Ranked) => rosterBand(a) - rosterBand(b) || a.position - b.position || b.lastAt - a.lastAt
 
+/** Reorder `ids` moving `from` to `to` while a frozen lead keeps its slot: the lead is lifted out for the
+ * move and spliced back at its index, so a move across it never rewrites the lead's host position. */
+export function movePreservingFrozenLead(ids: readonly string[], from: string, to: string, leadId: string | undefined): string[] {
+  if (from === leadId || to === leadId) return [...ids]
+  if (leadId === undefined) return moveInOrder([...ids], from, to)
+  const moved = moveInOrder(ids.filter((id) => id !== leadId), from, to)
+  moved.splice(ids.indexOf(leadId), 0, leadId)
+  return moved
+}
+
 /** Saved computers retain their order; newly connected computers follow them. */
 export function orderedComputers<T extends { id: string }>(computers: T[], order: string[]): T[] {
   const ranks = new Map(order.map((id, index) => [id, index]))

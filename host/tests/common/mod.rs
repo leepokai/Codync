@@ -44,6 +44,8 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
             .env("CODYNC_AGENT_CHECKS", "off")
             // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
             .env("CODYNC_VAULT", "folder")
+            // A test host doesn't share the machine's graphical session (`codync-screen`) unless a test opts in.
+            .env("CODYNC_DISABLE_SCREEN", "1")
             .envs(env.iter().copied())
             .stdout(output(&log))
             .stderr(output(&log))

@@ -119,18 +119,122 @@ fn watch(data: &Path, stall: Duration) {
                     tracing::error!(stalled_ms = now - beaten, "the host is stuck again soon after a restart");
                 }
             }
-            Verdict::Restart => restart(data, now, now - beaten),
+            Verdict::Restart => restart(data, now, beaten, stall),
         }
     }
 }
 
-/// Leaves the mark the next start reports, and aborts.
-fn restart(data: &Path, now: i64, stalled_ms: i64) -> ! {
-    tracing::error!(stalled_ms, "the host stopped answering: restarting it");
-    if let Err(error) = std::fs::write(data.join(MARK), now.to_string()) {
-        // Restarted all the same: the next start just won't report it, nor hold back a second stall soon after.
-        tracing::error!(error = format!("{error:#}"), "couldn't leave the watchdog's mark");
+/// Parses `(pid, ppid, pgrp)` from a Linux `/proc/<pid>/stat` line, handling spaces or
+/// parentheses inside the executable's `comm` field.
+#[cfg(target_os = "linux")]
+fn parse_proc_stat_ppid_pgrp(stat: &str) -> Option<(i32, i32, i32)> {
+    let rparen = stat.rfind(')')?;
+    let proc_id: i32 = stat.split_whitespace().next()?.parse().ok()?;
+    let rest: Vec<&str> = stat.get(rparen + 1..)?.split_whitespace().collect();
+    // Fields after `(comm)`: 0=state, 1=ppid, 2=pgrp.
+    let parent_id: i32 = rest.get(1)?.parse().ok()?;
+    let group_id: i32 = rest.get(2)?.parse().ok()?;
+    Some((proc_id, parent_id, group_id))
+}
+
+/// Picks PIDs to notify before `std::process::abort()`: direct children of `self_pid`, plus
+/// process-group peers when this process leads its own group (`own_group == self_pid`), never
+/// `self_pid` itself or an inherited parent/test-runner process group.
+#[cfg(target_os = "linux")]
+fn select_abort_signal_targets(entries: &[(i32, i32, i32)], self_pid: i32, own_group: i32) -> Vec<i32> {
+    let leads_group = own_group == self_pid;
+    entries
+        .iter()
+        .copied()
+        .filter(|&(proc_id, parent_id, group_id)| {
+            proc_id > 0 && proc_id != self_pid && (parent_id == self_pid || (leads_group && group_id == own_group))
+        })
+        .map(|(proc_id, _, _)| proc_id)
+        .collect()
+}
+
+/// Best-effort `SIGTERM` notification to child processes (and owned process group) before aborting.
+#[cfg(target_os = "linux")]
+fn notify_before_abort() -> usize {
+    // SAFETY: `getpid` and `getpgrp` take no pointers and cannot fail.
+    let (self_pid, own_group) = unsafe { (libc::getpid(), libc::getpgrp()) };
+    let mut entries = Vec::new();
+    if let Ok(dir) = std::fs::read_dir("/proc") {
+        for entry in dir.flatten() {
+            let name = entry.file_name();
+            if name.to_string_lossy().bytes().all(|b| b.is_ascii_digit())
+                && let Ok(stat) = std::fs::read_to_string(entry.path().join("stat"))
+                && let Some(parsed) = parse_proc_stat_ppid_pgrp(&stat)
+            {
+                entries.push(parsed);
+            }
+        }
     }
+    let targets = select_abort_signal_targets(&entries, self_pid, own_group);
+    let mut signalled = 0;
+    for pid in targets {
+        // SAFETY: Sends `SIGTERM` only to child or owned-group PIDs excluding `self_pid`.
+        if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+            signalled += 1;
+        }
+    }
+    if signalled > 0 {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    signalled
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn notify_before_abort() -> usize {
+    // SAFETY: `getpid` and `getpgrp` take no pointers and cannot fail.
+    let (self_pid, own_group) = unsafe { (libc::getpid(), libc::getpgrp()) };
+    if own_group == self_pid {
+        // SAFETY: Ignore `SIGTERM` in the host itself right before signalling our owned process
+        // group so `std::process::abort()` still fires `SIGABRT` deterministically.
+        let rc = unsafe {
+            libc::signal(libc::SIGTERM, libc::SIG_IGN);
+            libc::killpg(own_group, libc::SIGTERM)
+        };
+        if rc == 0 {
+            std::thread::sleep(Duration::from_millis(50));
+            return 1;
+        }
+    }
+    0
+}
+
+#[cfg(not(unix))]
+fn notify_before_abort() -> usize {
+    0
+}
+
+/// Leaves the mark the next start reports, notifies child processes, logs diagnostics, and aborts.
+fn restart(data: &Path, now: i64, beaten: i64, stall: Duration) -> ! {
+    let mark_path = data.join(MARK);
+    let mark_written = match std::fs::write(&mark_path, now.to_string()) {
+        Ok(()) => true,
+        Err(error) => {
+            // Restarted all the same: the next start just won't report it, nor hold back a second stall soon after.
+            tracing::error!(
+                error = format!("{error:#}"),
+                mark = %mark_path.display(),
+                "couldn't leave the watchdog's mark"
+            );
+            false
+        }
+    };
+    let notified_children = notify_before_abort();
+    tracing::error!(
+        pid = std::process::id(),
+        now_ms = now,
+        beaten_ms = beaten,
+        stalled_ms = now - beaten,
+        stall_ms = ms(stall),
+        mark_written,
+        mark = %mark_path.display(),
+        notified_children,
+        "the host stopped answering: restarting it"
+    );
     std::process::abort();
 }
 
@@ -169,5 +273,40 @@ mod tests {
         assert!(!restarted(&data), "reported once");
         assert_eq!(std::fs::read_to_string(data.join(LAST)).ok().as_deref(), Some("42"));
         let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn watchdog_verdict_boundary_transitions_match_thresholds() {
+        let stall = STALL;
+        let now = 100 * 60_000;
+        assert_eq!(verdict(now, now - ms(stall) + 1, None, stall), Verdict::Fine);
+        assert_eq!(verdict(now, now - ms(stall), None, stall), Verdict::Restart);
+        assert_eq!(verdict(now, now - ms(stall), Some(now - ms(AGAIN) + 1), stall), Verdict::StuckAgain);
+        assert_eq!(verdict(now, now - ms(stall), Some(now - ms(AGAIN)), stall), Verdict::Restart);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn proc_stat_parser_and_abort_target_selection_protect_parent_groups() {
+        let parsed = parse_proc_stat_ppid_pgrp("42 (codync (screen) 1) S 10 10 10 0 -1 4194304").unwrap();
+        assert_eq!(parsed, (42, 10, 10));
+
+        let entries = vec![
+            (1, 0, 1),
+            (99, 1, 99),     // test runner / parent process
+            (100, 99, 99),   // self when inheriting runner pgid
+            (101, 100, 99),  // direct child in inherited pgid
+            (102, 100, 102), // direct child in its own pgid (e.g. cua-driver)
+            (103, 99, 99),   // sibling in inherited pgid: MUST NOT be signalled
+        ];
+        assert_eq!(select_abort_signal_targets(&entries, 100, 99), vec![101, 102]);
+
+        let owned = vec![
+            (200, 1, 200),   // self as group leader (systemd service)
+            (201, 200, 200), // direct child
+            (202, 201, 200), // grandchild in owned group
+            (203, 1, 300),   // unrelated process
+        ];
+        assert_eq!(select_abort_signal_targets(&owned, 200, 200), vec![201, 202]);
     }
 }

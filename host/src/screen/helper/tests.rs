@@ -229,3 +229,78 @@ fn a_helper_that_keeps_exiting_is_retried_less_often_and_reported_once_per_strea
     assert!(!restarts.exited(quick));
     assert!(restarts.exited(quick), "a new streak is reported again");
 }
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn linux_helper_command_sets_parent_death_signal_and_exits_with_parent() {
+    struct Cleanup {
+        pid: Option<libc::pid_t>,
+        pid_file: Option<std::path::PathBuf>,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            if let Some(pid) = self.pid {
+                // SAFETY: best-effort cleanup of test child pid if still alive on panic.
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+            if let Some(path) = &self.pid_file {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    const MODE_ENV: &str = "CODYNC_TEST_HELPER_PDEATHSIG_MODE";
+    const PID_FILE_ENV: &str = "CODYNC_TEST_HELPER_PDEATHSIG_PID_FILE";
+    if std::env::var(MODE_ENV).ok().as_deref() == Some("parent_abort") {
+        let pid_file = std::env::var_os(PID_FILE_ENV).expect("pid file env");
+        let child = helper_command(std::path::Path::new("sleep")).arg("60").spawn().unwrap();
+        std::fs::write(pid_file, child.id().unwrap().to_string()).unwrap();
+        std::process::abort();
+    }
+
+    // 1. Verify PR_GET_PDEATHSIG on the spawned child's main thread equals SIGTERM (when python3 is present).
+    if let Ok(out) = helper_command(std::path::Path::new("python3"))
+        .args([
+            "-c",
+            "import ctypes; libc=ctypes.CDLL('libc.so.6'); sig=ctypes.c_int(0); rc=libc.prctl(2, ctypes.byref(sig)); assert rc == 0; print(sig.value)",
+        ])
+        .output()
+        .await
+        && out.status.success()
+    {
+        let sig: libc::c_int = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+        assert_eq!(sig, libc::SIGTERM);
+    }
+
+    // 2. Verify an abrupt parent abort kills the spawned helper child instead of orphaning it to PID 1.
+    let exe = std::env::current_exe().unwrap();
+    let test_name = format!(
+        "{}::linux_helper_command_sets_parent_death_signal_and_exits_with_parent",
+        module_path!().strip_prefix("codync_host::").unwrap_or(module_path!())
+    );
+    let pid_file = std::env::temp_dir().join(format!("codync-pdeathsig-{}.pid", uuid::Uuid::new_v4()));
+    let mut cleanup = Cleanup { pid: None, pid_file: Some(pid_file.clone()) };
+    let output = tokio::process::Command::new(&exe)
+        .args(["--exact", &test_name])
+        .env(MODE_ENV, "parent_abort")
+        .env(PID_FILE_ENV, &pid_file)
+        .output()
+        .await
+        .unwrap();
+    assert!(!output.status.success(), "parent should have aborted");
+    let child_pid: libc::pid_t = std::fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    cleanup.pid = Some(child_pid);
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        // SAFETY: signal 0 probes process existence without sending a signal.
+        let alive = unsafe { libc::kill(child_pid, 0) } == 0;
+        if !alive {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "child {child_pid} survived parent abort as an orphan");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}

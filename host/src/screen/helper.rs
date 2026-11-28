@@ -137,7 +137,7 @@ pub async fn supervise_linux_helper(screen: Arc<Screen>) {
             restarts = Restarts::default();
             next_start = Instant::now();
         } else if child.is_none() && Instant::now() >= next_start {
-            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
+            match helper_command(&program).spawn() {
                 Ok(c) => child = Some((c, Instant::now())),
                 Err(error) => {
                     if restarts.exited(Duration::ZERO) {
@@ -154,6 +154,29 @@ pub async fn supervise_linux_helper(screen: Arc<Screen>) {
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
+}
+
+/// Builds the Linux `codync-screen` command with `kill_on_drop(true)` and `PR_SET_PDEATHSIG(SIGTERM)`
+/// so any host exit—including `std::process::abort()` or `SIGKILL`—terminates the helper immediately.
+#[cfg(target_os = "linux")]
+fn helper_command(program: &std::path::Path) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.kill_on_drop(true);
+    let parent_pid = libc::pid_t::try_from(std::process::id()).unwrap_or(0);
+    // SAFETY: `pre_exec` runs between `fork` and `exec` and only invokes async-signal-safe
+    // libc calls (`prctl`, `getppid`, `raise`) and `last_os_error` without locking or allocating.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if parent_pid > 0 && libc::getppid() != parent_pid {
+                let _ = libc::raise(libc::SIGTERM);
+            }
+            Ok(())
+        });
+    }
+    cmd
 }
 
 /// A helper that exits this soon after starting can't run here yet: missing `GStreamer` libraries,

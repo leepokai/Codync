@@ -50,6 +50,10 @@ enum class SourceKind { @SerialName("routine") Routine, @SerialName("request") R
 @Serializable
 data class WorkSource(val kind: SourceKind, val id: String? = null)
 
+/** The outside app that started a thread over MCP (docs/features/mcp-access.md); only its name shows. */
+@Serializable
+data class StartedBy(val label: String = "")
+
 /** The git worktree a thread works in, when it started while another thread of the bot worked in the same repository. */
 @Serializable
 data class Worktree(val branch: String, val path: String = "")
@@ -100,6 +104,8 @@ data class WorkTask(
     val seat: Boolean? = null,
     /** The agent its thread runs on now, or ran on last (a backend id); null before a thread took it, and from an older host. */
     val runsOn: String? = null,
+    /** The outside app that started it over MCP; null for the user's own, and from an older host. */
+    val startedBy: StartedBy? = null,
     /** What its thread's agent runs in the background, oldest first: the task waits on it. Empty from an older host, and for an agent that doesn't say. */
     val background: List<BackgroundTask> = emptyList(),
 ) {

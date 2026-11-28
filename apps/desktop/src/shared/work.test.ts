@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { agentOf, backgroundLabel, threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
+import { agentOf, backgroundLabel, threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus, startedByLine } from './work.ts'
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
@@ -425,4 +425,14 @@ test('a thread shows the agent it runs on, else the one it started on, else its 
   const bot = { backend: 'claude' }
   assert.deepEqual([on, waiting, started].map((t) => agentOf(t, bot)), ['codex', 'claude', 'gemini'])
   assert.equal(agentOf(waiting, { ...bot, plain: true }), null, 'the box of threads without a bot has no agent of its own')
+})
+
+test('a thread an outside app started names it, and an older host says nothing', () => {
+  const [mine, other] = normalizeWork([
+    { id: 'a', status: 'working', startedBy: { label: 'Laptop agent', client: 'c1', level: 'ask' } },
+    { id: 'b', status: 'done' },
+  ])
+  assert.equal(mine?.startedBy, 'Laptop agent')
+  assert.equal(startedByLine(mine!, (t) => t), 'Started by Laptop agent (MCP)')
+  assert.equal(startedByLine(other!, (t) => t), null)
 })

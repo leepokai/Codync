@@ -275,6 +275,10 @@ pub(super) struct Task {
     /// gets a copy of each as it starts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<Value>,
+    /// The outside app that started it over MCP (`external`), for a thread of the user's: its turns run at the level
+    /// the app was given, and its words are the app's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_by: Option<super::external::StartedBy>,
 }
 
 /// Where a task's thread works, as `work_added` says it (`folder`), never the path: the bot's own folder, one of
@@ -358,6 +362,7 @@ impl Task {
             told: Vec::new(),
             said: None,
             files: Vec::new(),
+            started_by: None,
         }
     }
 
@@ -595,6 +600,10 @@ pub(super) fn row(
     }
     if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
         row["worktree"] = worktree;
+    }
+    // The outside app that started it (`external`): every client names it on the thread.
+    if let Some(by) = &task.started_by {
+        row["startedBy"] = json!({"label": by.label, "client": by.client, "level": by.level});
     }
     // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
     if let Some(agent) = &task.setup.backend {

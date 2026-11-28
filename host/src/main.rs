@@ -298,10 +298,15 @@ enum McpServer {
     /// For a Claude Code, Codex or other coding agent's session on this computer that isn't a Codync
     /// bot: each session gets its own Network address and mailbox, lists the user's bots and the
     /// other sessions (here and on their other computers), messages them and reads its mail.
+    /// It also starts and follows threads on this computer's agents, at the level the user gave.
     /// `codync-host network setup` adds it to the agents installed here.
     Network {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
+        /// An outside app's token from Codync's settings (MCP access): its level, bots and folders
+        /// apply; without one, the computer's level for its own sessions does.
+        #[arg(long, env = "CODYNC_MCP_TOKEN", hide_env_values = true)]
+        token: Option<String>,
     },
     /// Tools of the apps connected through Composio.
     Composio {
@@ -517,7 +522,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
         Sub::Mcp { server: McpServer::Memory { bot, port } } => mcp::serve(bot, port, mcp::Server::Memory).await,
         Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
-        Sub::Mcp { server: McpServer::Network { port } } => mcp::serve(String::new(), port, mcp::Server::Network).await,
+        Sub::Mcp { server: McpServer::Network { port, token } } => mcp::serve_network(port, token).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
         Sub::Tui { url, token, port } => tui::run(url, port, token).await,

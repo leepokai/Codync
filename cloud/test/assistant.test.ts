@@ -85,7 +85,13 @@ describe("discovery and sign-in", () => {
     expect((await rpc(token, "initialize", { protocolVersion: "1999-01-01" })).body.result.protocolVersion).toBe("2025-11-25");
     expect((await rpc(token, "ping")).body.result.resultType).toBe("complete");
     const tools = (await rpc(token, "tools/list")).body.result.tools.map((t: Json) => t.name);
-    expect(tools).toEqual(["list_computers", "list_bots", "message_bot", "read_replies"]);
+    expect(tools).toEqual([
+      "list_computers", "list_bots", "message_bot", "read_replies", "worker_capabilities", "thread_list", "thread_launch",
+      "thread_send", "thread_wait", "thread_read", "thread_steer", "thread_interrupt", "thread_pending", "routine_list",
+      "routine_run", "workflow_list", "workflow_run",
+    ]);
+    const init2 = (await rpc(token, "initialize", { protocolVersion: "2025-06-18" })).body.result;
+    expect(init2.instructions).toContain("not end-to-end encrypted");
     const note = await SELF.fetch(`${ORIGIN}/mcp`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -146,6 +152,27 @@ describe("tool calls", () => {
     const call = await answers(laptop, { ok: true, result: { requestId: "r1" } });
     expect(call.args).toEqual({ botId: "d", message: "hi" });
     expect((await sent).result).toEqual({ requestId: "r1" });
+    desk.ws.close();
+    laptop.ws.close();
+  });
+
+  it("asks every online computer only for what reads, names the assistant app, and says when a Codync is too old", async () => {
+    const token = await oauthToken("user_three");
+    const desk = await hostSocket(await owned("user_three", "desk"));
+    const laptop = await hostSocket(await owned("user_three", "laptop"));
+    await expect.poll(async () => (await callTool(token, "list_computers")).result.computers.filter((c: Json) => c.online).length).toBe(2);
+    // A launch never fans out: it would start a thread on every computer.
+    for (const name of ["thread_launch", "thread_send", "thread_steer", "routine_run", "workflow_run", "thread_pending"]) {
+      expect((await callTool(token, name, { message: "x", botId: "b", taskId: "t" })).error).toBe("Say which computer: desk, laptop.");
+    }
+    const listing = callTool(token, "thread_list");
+    const call = await answers(desk, { ok: true, result: { threads: [] } });
+    expect(call).toMatchObject({ tool: "thread_list", client: "https://assistant.example/client.json" });
+    await answers(laptop, { ok: true, result: { threads: [] } });
+    expect((await listing).result.computers).toHaveLength(2);
+    const old = callTool(token, "thread_launch", { message: "fix it", agent: "codex", computer: "desk" });
+    await answers(desk, { ok: false, error: "unknown tool: thread_launch" });
+    expect((await old).error).toBe("desk's Codync is too old for thread_launch: update Codync on desk, then try again.");
     desk.ws.close();
     laptop.ws.close();
   });

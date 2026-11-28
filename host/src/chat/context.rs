@@ -339,6 +339,9 @@ fn render_thread(store: &Store, cfg: &BotConfig, source: &Source) -> String {
         }
         .to_owned(),
     );
+    if let Some(by) = crate::chat::work::external::of_thread(store, cfg) {
+        lines.push(crate::chat::work::external::instructions(&by));
+    }
     lines.push(String::new());
     lines.push(environment(cfg, false));
     lines.push(String::new());

@@ -263,6 +263,7 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
                     Text(tr(task.status.title), style = Type.footnote, color = Palette.secondary, maxLines = 1)
                     WorkElapsed(task)
                 }
+                startedByLine(task, translator())?.let { Text(it, style = Type.footnote, color = Palette.tertiary, maxLines = 1) }
                 if (showsWhere) whereLine(task, state.home)?.let { WherePath(it, Modifier.weight(1f, fill = false)) }
             }
         }

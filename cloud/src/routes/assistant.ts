@@ -7,6 +7,7 @@
 
 import type { Answer } from "../host-calls";
 import { verifyAssistant } from "../auth";
+import { ALL_TOOLS, type Assistant, FAN_OUT } from "./assistant-tools";
 import { ApiError, type Ctx } from "./common";
 
 /** Newest first; the first takes no `initialize` (every request names its version). */
@@ -23,86 +24,10 @@ const INSTRUCTIONS =
   "Codync connects you to the user's own coding bots, running on their computers. Use list_bots to find one, " +
   "message_bot to give it a self-contained task, and read_replies to collect its answer. Bots work in their own " +
   "folders with their own tools and can take minutes: after messaging one, tell the user what you asked for and " +
-  "check read_replies when they come back or ask, instead of waiting in a loop.";
-
-const COMPUTER = {
-  type: "string",
-  description: "Which of the user's computers, by name from list_computers. Needed only when several are online.",
-};
-
-const TOOLS = [
-  {
-    name: "list_computers",
-    title: "List computers",
-    description: "The computers in the user's Codync account, and whether each is online.",
-    inputSchema: { type: "object", properties: {} },
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  },
-  {
-    name: "list_bots",
-    title: "List bots",
-    description:
-      "The user's Codync bots you can message, with their IDs, kinds, specialties and status, also those on the user's " +
-      "other computers in that computer's network (IDs like reviewer@laptop), where Claude Code sessions and Codex " +
-      "threads can be offered too. Narrow it with query or kind; it returns at most limit at a time, with next for " +
-      "the rest. Without computer, every online computer answers. Rows without kind come from a computer whose " +
-      "Codync is older and doesn't filter by kind.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Words that must all appear in the bot's name or description." },
-        kind: {
-          type: "string",
-          enum: ["codync", "claude-code", "codex", "terminal", "other"],
-          description:
-            "Only this kind of agent: codync (Codync bots), claude-code (Claude Code sessions), codex (Codex threads), " +
-            "terminal (a person at a terminal on another computer) or other (on a computer whose Codync doesn't say " +
-            "its kind yet).",
-        },
-        limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many (default 20)." },
-        cursor: { type: "string", description: "next from the previous call, for the rest." },
-        computer: COMPUTER,
-      },
-    },
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  },
-  {
-    name: "message_bot",
-    title: "Message a bot",
-    description:
-      "Send a self-contained request to one of the user's Codync bots. It runs in that bot's own chat on the " +
-      "user's computer, with the bot's tools, folder and permissions, and this returns as soon as it is queued. " +
-      "Get the reply later with read_replies.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        botId: {
-          type: "string",
-          description: "The bot's id from list_bots; with computer set to the computer that listed it when several are online.",
-        },
-        message: { type: "string", description: "The task, relevant context, file paths and the expected result." },
-        computer: COMPUTER,
-      },
-      required: ["botId", "message"],
-    },
-    annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
-  },
-  {
-    name: "read_replies",
-    title: "Read replies",
-    description:
-      "Your recent message_bot requests, newest first, with each bot's reply once it's done. status is queued, " +
-      "sent (running), completed, failed or cancelled. Give requestId for one request.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        requestId: { type: "string", description: "One request's id from message_bot." },
-        computer: COMPUTER,
-      },
-    },
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  },
-];
+  "check read_replies when they come back or ask, instead of waiting in a loop. To run a coding agent yourself, " +
+  "call worker_capabilities (what the user lets you do on that computer: read only unless they raised it there), " +
+  "then thread_launch, thread_wait and thread_read. Approvals are always the user's, in Codync. These calls pass " +
+  "through the Codync cloud, which can read them: they are not end-to-end encrypted.";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -138,7 +63,7 @@ export async function authServerMetadata(c: Ctx) {
 }
 
 /** The account the request's token stands for, or `null` and the challenge that says where to sign in. */
-async function signedIn(c: Ctx): Promise<[string, null] | [null, Response]> {
+async function signedIn(c: Ctx): Promise<[Assistant, null] | [null, Response]> {
   const user = await verifyAssistant(c.req, c.env, `${c.url.origin}/mcp`);
   if (user) return [user, null];
   const metadata = `${c.url.origin}/.well-known/oauth-protected-resource/mcp`;
@@ -153,9 +78,9 @@ export async function mcpStream(c: Ctx): Promise<Response> {
 }
 
 export async function mcp(c: Ctx): Promise<Response> {
-  const [user, refused] = await signedIn(c);
+  const [who, refused] = await signedIn(c);
   if (refused) return refused;
-  if (c.env.ASSISTANT_LIMITER && !(await c.env.ASSISTANT_LIMITER.limit({ key: user })).success) {
+  if (c.env.ASSISTANT_LIMITER && !(await c.env.ASSISTANT_LIMITER.limit({ key: who.user })).success) {
     return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
   }
   let msg: { id?: unknown; method?: unknown; params?: Record<string, unknown> };
@@ -198,14 +123,14 @@ export async function mcp(c: Ctx): Promise<Response> {
     case "ping":
       return json(success(id, {}));
     case "tools/list":
-      return json(success(id, { tools: TOOLS, ttlMs: TOOLS_TTL_MS, cacheScope: "public" }));
+      return json(success(id, { tools: ALL_TOOLS, ttlMs: TOOLS_TTL_MS, cacheScope: "public" }));
     case "tools/call": {
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
-      if (typeof name !== "string" || !TOOLS.some((t) => t.name === name)) return json(failure(id, -32602, `Unknown tool: ${name}`));
+      if (typeof name !== "string" || !ALL_TOOLS.some((t) => t.name === name)) return json(failure(id, -32602, `Unknown tool: ${name}`));
       if (typeof args !== "object" || Array.isArray(args)) return json(failure(id, -32602, "arguments must be an object"));
       try {
-        const result = await tool(c, user, name, args as Record<string, unknown>);
+        const result = await tool(c, who, name, args as Record<string, unknown>);
         return json(success(id, { content: [{ type: "text", text: JSON.stringify(result) }] }));
       } catch (e) {
         if (!(e instanceof ToolError)) throw e;
@@ -236,7 +161,8 @@ interface Computer {
   last_seen_at: number | null;
 }
 
-async function tool(c: Ctx, user: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+async function tool(c: Ctx, who: Assistant, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const user = who.user;
   const { results: all } = await c.env.DB.prepare(
     "SELECT id, name, online, last_seen_at FROM computers WHERE owner_user_id = ? AND status = 'active' ORDER BY claimed_at",
   )
@@ -249,12 +175,12 @@ async function tool(c: Ctx, user: string, name: string, args: Record<string, unk
   // Every other tool (`mcp` takes only listed ones) is the computer's to answer.
   const { computer: wanted, ...rest } = args;
   const online = all.filter((x) => x.online);
-  // Every online computer answers a listing that names none.
-  if (wanted === undefined && name !== "message_bot" && online.length > 1) {
+  // Every online computer answers a listing that names none; anything that changes things needs one computer.
+  if (wanted === undefined && FAN_OUT.has(name) && online.length > 1) {
     return {
       computers: await Promise.all(
         online.map((x) =>
-          ask(c, x, user, name, rest).then(
+          ask(c, x, who, name, rest).then(
             (result) => ({ computer: x.name, ...(result as object) }),
             (e: Error) => ({ computer: x.name, error: e.message }),
           ),
@@ -262,7 +188,7 @@ async function tool(c: Ctx, user: string, name: string, args: Record<string, unk
       ),
     };
   }
-  return ask(c, pick(all, online, wanted), user, name, rest);
+  return ask(c, pick(all, online, wanted), who, name, rest);
 }
 
 function pick(all: Computer[], online: Computer[], wanted: unknown): Computer {
@@ -279,12 +205,18 @@ function pick(all: Computer[], online: Computer[], wanted: unknown): Computer {
   );
 }
 
-async function ask(c: Ctx, computer: Computer, user: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
+async function ask(
+  c: Ctx,
+  computer: Computer,
+  who: Assistant,
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
   const res = await c.env.RELAY.get(c.env.RELAY.idFromName(computer.id)).fetch(
     new Request("https://do/internal/assistant", {
       method: "POST",
       headers: { "X-Codync-Internal": "1" },
-      body: JSON.stringify({ user, tool, args }),
+      body: JSON.stringify({ user: who.user, client: who.client, tool, args }),
     }),
   );
   const a = (await res.json()) as Answer;
@@ -294,6 +226,10 @@ async function ask(c: Ctx, computer: Computer, user: string, tool: string, args:
     throw new ToolError(
       `${computer.name} didn't answer. Its Codync may be too old for cloud assistants: update it, then turn them on there (Cloud assistants in its Codync settings, or codync-host cloud --assistants on).`,
     );
+  }
+  // A Codync from before the worker tools doesn't know them.
+  if (a.error?.startsWith(`unknown tool: ${tool}`)) {
+    throw new ToolError(`${computer.name}'s Codync is too old for ${tool}: update Codync on ${computer.name}, then try again.`);
   }
   throw new ToolError(a.error ?? "Refused");
 }

@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { isTold } from '@shared/threads'
-import { agentOf, isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
+import { agentOf, startedByLine, isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { IconButton, Spinner } from '../../components/Controls'
@@ -131,6 +131,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
       <WorkDot mark={WORK_MARK[task.status]} />
       <Text size="body" tone="secondary">{tr(workStatusWord(task.status))}</Text>
       {task.startedAt !== null ? <Timer since={task.startedAt} until={task.endedAt ?? undefined} /> : null}
+      {startedByLine(task, tr) ? <Text size="caption" tone="tertiary">{startedByLine(task, tr)}</Text> : null}
     </HStack>
   )
   return (

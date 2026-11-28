@@ -135,6 +135,10 @@ pub enum Event {
     ThreadsDeleted,
     /// An app listed a page of older threads (`count`, `more`, `first`: the first page) (`olderThreads`).
     OlderThreadsListed,
+    McpClientCreated,
+    McpClientRevoked,
+    McpCall,
+    McpThreadLaunched,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
     /// The watchdog found one of a bot's own tasks looking stuck (`signal`) and woke the bot, reminded the user of a
@@ -334,6 +338,10 @@ impl Event {
             Self::WorkRecalled => "work_recalled",
             Self::ThreadsDeleted => "threads_deleted",
             Self::OlderThreadsListed => "older_threads_listed",
+            Self::McpClientCreated => "mcp_client_created",
+            Self::McpClientRevoked => "mcp_client_revoked",
+            Self::McpCall => "mcp_call",
+            Self::McpThreadLaunched => "mcp_thread_launched",
             Self::WorkMessaged => "work_messaged",
             Self::WatchdogFlagged => "watchdog_flagged",
             Self::DevServerStarted => "dev_server_started",

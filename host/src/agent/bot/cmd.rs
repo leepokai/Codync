@@ -107,10 +107,11 @@ pub enum Cmd {
         deadline: std::time::Instant,
         reply: tokio::sync::oneshot::Sender<Result<Value>>,
     },
-    /// The user pressed one of a card's options (`respondDecision`).
+    /// The user pressed one of a card's options (`respondDecision`), or an outside app picked one (`by`).
     Decision {
         entry_id: String,
         choice: String,
+        by: Option<crate::chat::work::external::StartedBy>,
         reply: tokio::sync::oneshot::Sender<Result<Value>>,
     },
     Permission {

@@ -139,7 +139,8 @@ export async function verifyClerk(req: Request, env: Env): Promise<ClerkUser | n
  * connector's authorization server for `audience` (the connector's URL) alone. Opaque tokens are
  * checked with Clerk, JWTs against its keys. `null` when the bearer token is missing or doesn't verify.
  */
-export async function verifyAssistant(req: Request, env: Env, audience: string): Promise<string | null> {
+/** The account an assistant's token stands for, and the OAuth client (the assistant app) it was issued to. */
+export async function verifyAssistant(req: Request, env: Env, audience: string): Promise<{ user: string; client: string } | null> {
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return null;
   try {
@@ -149,7 +150,7 @@ export async function verifyAssistant(req: Request, env: Env, audience: string):
     );
     if (r.errors || r.tokenType !== "oauth_token" || !("clientId" in r.data)) return null;
     const t = r.data;
-    return !t.revoked && !t.expired && t.subject.startsWith("user_") ? t.subject : null;
+    return !t.revoked && !t.expired && t.subject.startsWith("user_") ? { user: t.subject, client: String(t.clientId) } : null;
   } catch {
     return null;
   }

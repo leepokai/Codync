@@ -287,6 +287,9 @@ private struct ThreadStatusLine: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("thread-status")
+            if let started = task.startedByLine() {
+                Text(started).font(.footnote).foregroundStyle(Palette.tertiary).lineLimit(1)
+            }
             if showsWhere { WhereCopy(task: task) }
         }
     }

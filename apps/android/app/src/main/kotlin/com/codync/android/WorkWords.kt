@@ -103,6 +103,10 @@ internal fun outsideLine(bot: Bot, tr: (String) -> String): String = when {
     else -> workCounts(bot.work, tr)
 }
 
+/** Which outside app started it, under the thread's title; null for the user's own. */
+internal fun startedByLine(task: WorkTask, tr: (String) -> String): String? =
+    task.startedBy?.label?.takeIf { it.isNotEmpty() }?.let { tr("Started by {name} (MCP)").replace("{name}", it) }
+
 /** Why a waiting task waits. */
 internal fun waitText(task: WorkTask, tr: (String) -> String): String {
     if (task.cutIn) return tr("Was cut in on; starts again")

@@ -120,6 +120,8 @@ pub struct Hub {
     pub workflows: crate::workflows::Workflows,
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
+    /// What outside apps' MCP calls keep while the host runs (`chat::team::control`).
+    pub control: crate::chat::team::control::Control,
     pub work: crate::chat::work::Work,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -195,6 +197,7 @@ impl Hub {
             workflows: crate::workflows::Workflows::default(),
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
+            control: crate::chat::team::control::Control::default(),
             work: crate::chat::work::Work::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),

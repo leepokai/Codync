@@ -356,7 +356,14 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             Source::Bot => Ok(json!({"text": prompts::task_prompt(task, first), "from": "host"})),
             // The user's own words, as the message that opens their thread (`thread`'s turn says who speaks), with
             // the files they started it with.
-            Source::User => files.map(|files| json!({"text": task.brief, "attachments": files})),
+            // An outside app's words are marked as its own (`external`).
+            Source::User => files.map(|files| {
+                let mut message = json!({"text": task.brief, "attachments": files});
+                if let Some(by) = &task.started_by {
+                    by.mark(&mut message, &task.brief);
+                }
+                message
+            }),
             Source::Routine { .. } | Source::Request { .. } => Ok(json!({"text": task.brief, "from": "host"})),
         };
         message.and_then(|message| crate::chat::messages::post(hub, thread, message))

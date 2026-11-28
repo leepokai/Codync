@@ -19,6 +19,7 @@ mod goto;
 mod help;
 mod kofi;
 mod lead_agent;
+mod mcp_access;
 mod network;
 mod network_rules;
 mod new_bot;

@@ -191,10 +191,11 @@ async fn a_session_on_this_computer_asks_without_the_cloud_and_reads_only_its_ow
     // No cloud switch or account: it's on the computer, and the cloud scope doesn't apply to it.
     hub.update_bot(&json!({"id": "b", "reachableByAssistants": false})).unwrap();
     let claude = session(ClaudeCode, "s1");
-    let listed = local_call(hub, &claude, "list_bots", &json!({})).await.unwrap();
+    let listed = local_call(hub, &claude, None, "list_bots", &json!({})).await.unwrap();
     assert!(listed["bots"].as_array().unwrap().iter().any(|b| b["id"] == "b"), "{listed}");
     assert_eq!(listed["you"], "api-claude", "every result names the caller's address");
-    let sent = local_call(hub, &claude, "message_bot", &json!({"botId": "b", "message": "review this"})).await.unwrap();
+    let sent =
+        local_call(hub, &claude, None, "message_bot", &json!({"botId": "b", "message": "review this"})).await.unwrap();
     let request = sent["requestId"].as_str().unwrap().to_owned();
     let read = |c: &Caller| hub.assistant.read(&format!("session:{}", c.key()), Some(&request))["replies"][0].clone();
     f.until(|| read(&claude)["status"] == "completed").await;
@@ -212,36 +213,41 @@ async fn sessions_mail_each_other_and_read_it_once() {
     let f = Fixture::new();
     let hub = &f.hub;
     let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
-    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    let me = local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap();
     assert_eq!((&me["address"], &me["kind"], &me["tier"]), (&json!("api-codex"), &json!("codex"), &json!("pull")));
-    let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    let listed = local_call(hub, &claude, None, "list_bots", &json!({"kind": "codex"})).await.unwrap();
     assert_eq!(listed["bots"][0]["id"], "api-codex", "{listed}");
     let sent =
-        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
+        local_call(hub, &claude, None, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
             .await
             .unwrap();
     assert_eq!((&sent["status"], &sent["tier"]), (&json!("delivered"), &json!("pull")));
-    let notice = local_call(hub, &codex, "read_replies", &json!({})).await.unwrap();
+    let notice = local_call(hub, &codex, None, "read_replies", &json!({})).await.unwrap();
     assert_eq!(notice["unread"], 1, "a count, never the text: {notice}");
     assert!(!notice.to_string().contains("did the API"));
-    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    let inbox = local_call(hub, &codex, None, "check_inbox", &json!({})).await.unwrap();
     assert!(inbox["letters"].as_str().unwrap().contains("from=\"api-claude\""), "{inbox}");
-    assert!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap().get("unread").is_none(), "read once taken");
+    assert!(
+        local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap().get("unread").is_none(),
+        "read once taken"
+    );
     // A wait ends when a letter comes.
     let wait = json!({"waitSecs": 20});
-    let waiting = local_call(hub, &codex, "check_inbox", &wait);
+    let waiting = local_call(hub, &codex, None, "check_inbox", &wait);
     let later = async {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "again"})).await.unwrap();
+        local_call(hub, &claude, None, "message_bot", &json!({"botId": "api-codex", "message": "again"}))
+            .await
+            .unwrap();
     };
     let (inbox, ()) = tokio::join!(waiting, later);
     assert_eq!(inbox.unwrap()["count"], 1);
     // An explicit rename; the old address is never handed out again.
-    let renamed = local_call(hub, &codex, "set_name", &json!({"name": "API Reviewer"})).await.unwrap();
+    let renamed = local_call(hub, &codex, None, "set_name", &json!({"name": "API Reviewer"})).await.unwrap();
     assert_eq!(renamed["address"], "api-reviewer");
-    let again = local_call(hub, &codex, "set_name", &json!({"name": "api-reviewer"})).await.unwrap();
+    let again = local_call(hub, &codex, None, "set_name", &json!({"name": "api-reviewer"})).await.unwrap();
     assert_eq!(again["address"], "api-reviewer", "asking again keeps it");
-    let next = local_call(hub, &session(Codex, "t2"), "whoami", &json!({})).await.unwrap();
+    let next = local_call(hub, &session(Codex, "t2"), None, "whoami", &json!({})).await.unwrap();
     assert_eq!(next["address"], "api-codex-2");
     f.shutdown().await;
 }
@@ -263,7 +269,7 @@ async fn letters_from_another_computer_wait_in_a_sessions_mailbox() {
     let f = Fixture::new();
     let hub = &f.hub;
     let codex = session(codync_network::AgentKind::Codex, "t1");
-    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    let me = local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap();
     let address = me["address"].as_str().unwrap().to_owned();
     let (tx, rx) = tokio::sync::mpsc::channel(4);
     tokio::spawn(remote::listen(hub.clone(), "network".into(), rx));
@@ -282,7 +288,7 @@ async fn letters_from_another_computer_wait_in_a_sessions_mailbox() {
     tx.send(letter(&format!("{HANDLE}@laptop"), "from the cloud")).await.unwrap();
     tx.send(letter("lead@laptop", "review the API")).await.unwrap();
     f.until(|| hub.network.sessions.unread(&hub.store, &codex.key()) == 1).await;
-    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    let inbox = local_call(hub, &codex, None, "check_inbox", &json!({})).await.unwrap();
     let letters = inbox["letters"].as_str().unwrap();
     assert!(letters.contains("from=\"lead@laptop\"") && letters.contains("review the API"), "{inbox}");
     assert!(!letters.contains("from the cloud"), "{inbox}");
@@ -305,10 +311,10 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     let f = Fixture::new();
     let hub = &f.hub;
     let codex = session(Codex, "t1");
-    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    let me = local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap();
     assert!(me["address"].is_string(), "{me}");
     // A session can't take a bot's id as its address, so it can't catch the bot's messages.
-    let renamed = local_call(hub, &codex, "set_name", &json!({"name": "b"})).await.unwrap();
+    let renamed = local_call(hub, &codex, None, "set_name", &json!({"name": "b"})).await.unwrap();
     let address = renamed["address"].as_str().unwrap().to_owned();
     assert_ne!(address, "b", "{renamed}");
     hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
@@ -327,22 +333,22 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     .await
     .unwrap();
     let request = sent["requestId"].as_str().unwrap().to_owned();
-    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    let inbox = local_call(hub, &codex, None, "check_inbox", &json!({})).await.unwrap();
     assert!(inbox["letters"].as_str().unwrap().contains(&format!("id=\"{request}\"")), "{inbox}");
     // Another session can't end it; the one it went to can.
     let other = session(Codex, "t2");
     let wrong =
-        local_call(hub, &other, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
+        local_call(hub, &other, None, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
     let wrong = wrong.unwrap_err().to_string();
     assert!(wrong.contains("went to another session"), "no new work on the bot either: {wrong}");
     // Paired with another bot's id, the answer is refused, and the request still waits for it.
     let mixed = json!({"botId": "nobody", "message": "yes", "replyTo": request});
-    let mixed = local_call(hub, &codex, "message_bot", &mixed).await.unwrap_err().to_string();
+    let mixed = local_call(hub, &codex, None, "message_bot", &mixed).await.unwrap_err().to_string();
     assert!(mixed.contains("answer it with botId"), "{mixed}");
     let answer = json!({"botId": "b", "message": "yes, merged", "replyTo": request});
-    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    assert_eq!(local_call(hub, &codex, None, "message_bot", &answer).await.unwrap()["status"], "delivered");
     // Sent again (a retry), it's delivered already: no new request to the bot.
-    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    assert_eq!(local_call(hub, &codex, None, "message_bot", &answer).await.unwrap()["status"], "delivered");
     let notice = || {
         let history = hub.store.history("b", i64::MAX, 50).unwrap();
         history.into_iter().find(|e| e.data["delegationId"] == *request).map(|e| e.data)
@@ -356,7 +362,7 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     let sent = crate::chat::team::call_async(hub, "b", "b", "message_bot", &ask).await.unwrap();
     let dropped = sent["requestId"].as_str().unwrap().to_owned();
     for n in 0..100 {
-        local_call(hub, &other, "message_bot", &json!({"botId": address, "message": format!("note {n}")}))
+        local_call(hub, &other, None, "message_bot", &json!({"botId": address, "message": format!("note {n}")}))
             .await
             .unwrap();
     }
@@ -380,13 +386,13 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
         json!({}),
         "a session its MCP server never registered"
     );
-    local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap();
     assert_eq!(hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(), json!({}), "no mail");
-    assert_eq!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
-    let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    assert_eq!(local_call(hub, &codex, None, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
+    let listed = local_call(hub, &claude, None, "list_bots", &json!({"kind": "codex"})).await.unwrap();
     assert_eq!(listed["bots"][0]["tier"], "turn", "{listed}");
     let sent =
-        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
+        local_call(hub, &claude, None, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
             .await
             .unwrap();
     assert_eq!(sent["tier"], "turn");
@@ -419,7 +425,7 @@ async fn a_push_waits_for_a_letter_and_wakes_a_session_only_so_often() {
     let f = Fixture::new();
     let hub = &f.hub;
     let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
-    local_call(hub, &claude, "whoami", &json!({})).await.unwrap();
+    local_call(hub, &claude, None, "whoami", &json!({})).await.unwrap();
     let push = |told: Option<String>, secs: u64| async move {
         let ask = HookAsk {
             told: told.as_deref(),
@@ -430,7 +436,7 @@ async fn a_push_waits_for_a_letter_and_wakes_a_session_only_so_often() {
         hook(hub, ClaudeCode, "s1", ask).await.unwrap()
     };
     let send = || async {
-        local_call(hub, &codex, "message_bot", &json!({"botId": "api-claude", "message": "hi"})).await.unwrap();
+        local_call(hub, &codex, None, "message_bot", &json!({"botId": "api-claude", "message": "hi"})).await.unwrap();
     };
     let waiting = push(None, 20);
     let later = async {
@@ -439,7 +445,7 @@ async fn a_push_waits_for_a_letter_and_wakes_a_session_only_so_often() {
     };
     let (told, ()) = tokio::join!(waiting, later);
     assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "a wait ends when a letter comes: {told}");
-    assert_eq!(local_call(hub, &claude, "whoami", &json!({})).await.unwrap()["tier"], "push");
+    assert_eq!(local_call(hub, &claude, None, "whoami", &json!({})).await.unwrap()["tier"], "push");
     assert_eq!(push(told["letter"].as_str().map(str::to_owned), 0).await["saved"], true);
     for _ in 1..WAKES_PER_HOUR {
         send().await;

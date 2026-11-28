@@ -4,6 +4,7 @@ use super::Actor;
 use crate::analytics::{self, Event};
 use crate::chat::decision::{self, Asker, Expiry, Via};
 use crate::chat::replies;
+use crate::chat::work::external::StartedBy;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Entry, EntryKind, Lane};
@@ -143,8 +144,14 @@ impl Actor {
         }
     }
 
-    /// Returns the tool's acknowledged answer. It never queues `Cmd::Send`.
-    pub(super) fn decided(&mut self, id: &str, wanted: &str, typed: Option<&Entry>) -> Result<Value> {
+    /// Returns the tool's acknowledged answer. It never queues `Cmd::Send`. `by`: the outside app that picked it.
+    pub(super) fn decided(
+        &mut self,
+        id: &str,
+        wanted: &str,
+        typed: Option<&Entry>,
+        by: Option<&StartedBy>,
+    ) -> Result<Value> {
         self.expire_abandoned_decisions();
         let mut card = decision::pending_card(&self.hub.store, id)?;
         // A thread's card is in its bot's chat, numbered with that chat's turns.
@@ -167,6 +174,9 @@ impl Actor {
         data["decisionId"] = id.into();
         data["decisionChoice"] = choice.clone().into();
         data["status"] = "sent".into();
+        if let Some(by) = by {
+            by.mark(&mut data, &choice);
+        }
         let user = match typed {
             Some(e) => self.hub.set_entry_turn(&e.id, Some(card.turn), &data),
             None => self.hub.add_entry(&Lane { chat: card.bot_id.clone() }, EntryKind::User, card.turn, &data),
@@ -224,7 +234,7 @@ impl Actor {
         let Some(card) = self.hub.store.entry(&id) else { return false };
         if typed_answer(&card, &entry).is_some() {
             let text = entry.data["text"].as_str().unwrap_or_default();
-            match self.decided(&id, text, Some(&entry)) {
+            match self.decided(&id, text, Some(&entry), None) {
                 Ok(_) => return true,
                 Err(error) => {
                     tracing::warn!(%error, "typed choice was not acknowledged");
@@ -238,13 +248,16 @@ impl Actor {
     }
 
     /// A press on the open card: answered, and the choice goes to the bot as the user's next message, quoting it.
-    pub(super) fn answer_open_card(&mut self, id: &str, wanted: &str) -> Result<Value> {
+    pub(super) fn answer_open_card(&mut self, id: &str, wanted: &str, by: Option<&StartedBy>) -> Result<Value> {
         let card = decision::pending_card(&self.hub.store, id)?;
         let (choice, _) =
             decision::answer_card(&card, wanted, false).ok_or_else(|| anyhow!("no such option on that card"))?;
         self.open_card = None;
-        let data = json!({"text": choice, "from": "decision", "decisionId": id, "decisionChoice": choice,
+        let mut data = json!({"text": choice, "from": "decision", "decisionId": id, "decisionChoice": choice,
             "replyTo": self.quote_card(&card)});
+        if let Some(by) = by {
+            by.mark(&mut data, &choice);
+        }
         self.answered_late(card, &choice)?;
         crate::chat::messages::post(&self.hub, &self.cfg, data)?;
         Ok(json!({"choice": choice}))

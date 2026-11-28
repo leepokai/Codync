@@ -43,6 +43,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot-to-bot collaboration](features/bot-collaboration.md)
 - [codync-network](features/codync-network.md) (your computers' network: bots message bots on the user's other computers)
 - [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
+- [MCP access](features/mcp-access.md) (outside apps start and follow threads, run routines and workflows, at a level the user picks)
 - [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
 - [Usage limits](features/usage-limits.md) (which agents show, how each one is read, and which can't be)

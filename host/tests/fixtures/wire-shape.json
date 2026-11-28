@@ -264,6 +264,7 @@
     "hello.iconsRevision": "number",
     "hello.joinAccount": "bool",
     "hello.latestVersion": "null",
+    "hello.mcpAccess": "bool",
     "hello.minApp": "string",
     "hello.name": "string",
     "hello.os": "string",

@@ -46,7 +46,9 @@ import com.codync.android.core.LinkState
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -62,6 +64,7 @@ import kotlinx.serialization.json.put
     var naming by remember { mutableStateOf<Naming?>(null) }
     var voice by remember { mutableStateOf<String?>(null) }
     var network by remember { mutableStateOf<String?>(null) }
+    var mcp by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(app.contextId) { accounts.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         PageHeader("Computer management", icon = "gearshape")
@@ -73,7 +76,7 @@ import kotlinx.serialization.json.put
                 val inAccount = app.cloudComputers.firstOrNull { it.computerId == id }
                 CardSection {
                     computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code, app.account.userId != null,
-                        ComputerActions({ extensions(id) }, { workflows(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
+                        ComputerActions({ extensions(id) }, { workflows(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, mcp = { mcp = id }, color = { coloring = id },
                             rename = { naming = Naming("Computer name", state.hello?.text("name") ?: state.computer.name, "Leave it empty to use the hostname.",
                                 store::setComputerName) },
                             ask = inAccount?.let { c -> { ask(c) } }, revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) {
@@ -113,6 +116,7 @@ import kotlinx.serialization.json.put
         accounts.store(state.computer.id)?.let { NetworkSheet(view, it::refreshNetwork) }
     }
     NameDialog(naming, "Name", { naming = null }, { it.take(CLOUD_NAME_LIMIT) }) { it.trim() }
+    CodyncSheet(accounts.store(mcp), { mcp = null }) { McpAccessSheet(it) }
     val recoloring = lastOf(coloring)
     SwatchPanel(coloring != null, states.firstOrNull { it.computer.id == coloring }?.computer?.color, { coloring = null }) {
         accounts.store(recoloring)?.setColor(it)
@@ -129,12 +133,14 @@ import kotlinx.serialization.json.put
 }
 
 /** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
-private class ComputerActions(val extensions: () -> Unit, val workflows: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit, val color: () -> Unit,
+private class ComputerActions(val extensions: () -> Unit, val workflows: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit,
+    val mcp: () -> Unit, val color: () -> Unit,
     val rename: () -> Unit, val ask: (() -> Unit)?, val revoke: (() -> Unit)?, val remove: () -> Unit)
 
 /**
  * The paired computer as the rows of its card: its connection and whether it's in the account, then
- * Extensions, Voice chat (its keys live on the computer), Screen, whether it sends push alerts here
+ * Extensions, Voice chat (its keys live on the computer), Screen, Network, MCP access (list and revoke), how long it keeps
+ * threads, whether it sends push alerts here
  * (saved with the computer, so another account's computer keeps its own), how it's reached, the Codync it runs
  * (and its update) and, for a stale pairing, Remove (iOS `ComputerRows`).
  */
@@ -146,6 +152,9 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
         if (state.screen != null) row { RowLabel("Screen", "display", chevron = true, modifier = Modifier.plainButton(action = actions.screen)) }
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
+        if (state.hello?.get("mcpAccess")?.jsonPrimitive?.booleanOrNull == true) row {
+            RowLabel("MCP access", "key", chevron = true, modifier = Modifier.plainButton(action = actions.mcp))
+        }
         threadKeepDays(state.hello)?.let { days -> row { DeleteOldThreadsRow(days, store::setThreadKeepDays) } }
     }
     if (state.connection !is LinkState.Ready && state.offersWorkflows) row { WorkflowsComputerRow(state, online = false, action = {}) }

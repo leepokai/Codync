@@ -1,0 +1,53 @@
+Other apps can start Codync threads and follow them: a coding agent in your terminal, an editor, or a [cloud assistant](/docs/cloud-assistants). They talk to Codync over MCP, the protocol these tools use for their own tools. Each one can start a thread on a bot or without one, write to it, wait for it, read what it did, and, if you allow it, run routines and workflows. The threads run on your computer like any other, and you see them in Codync.
+
+## Levels
+
+Every app works at a level you choose:
+
+- **Read only:** it can list and read threads, routines and workflows, and start or change none of them.
+- **Ask for every request:** it can start threads and write to them. Every request those threads make comes to your devices as an approval.
+- **Auto:** its threads run in the agent's own auto mode. Anything the agent asks for still comes to you.
+- **Full access:** its threads approve their own requests, and it can run routines and workflows.
+
+**Approvals are never answered through MCP.** An app can see that a thread is waiting on you and tell you, but only you can answer the approval, in Codync. It can answer a question a thread asks with a choice.
+
+Levels cover threads, routines and workflows. Messaging a bot (the way a [cloud assistant](/docs/cloud-assistants) or another bot asks one for help) keeps its own switches: **Cloud assistants** on the computer and **Reachable by cloud assistants** on each bot.
+
+A thread keeps the level it was started at. An app can't act on a thread that works more freely than the app is allowed to.
+
+## Set it up on the desktop
+
+Open **Computers**, then **MCP access** under the computer. There you set:
+
+- **Most an app may do:** an app you gave more acts at this level. Auto at first.
+- **Sessions on this computer:** coding agents on this computer that use Codync's MCP server without a token. Ask at first. Any program you run can act as one, so keep it low.
+- **Cloud assistants:** ChatGPT, Claude or another assistant through your Codync account. Read only at first.
+
+To give an app its own access, press **+** and name it. Codync shows its token once: copy it into the app's MCP settings. It starts at Ask on all your bots for 30 days, for threads only. You can change the level, let it run routines and workflows too (with Full access), renew it for another 30 days (at most 90), or revoke it, which stops the token at once.
+
+The **terminal UI** has the same list under **MCP access** in its actions: `←` and `→` change a level, `s` lets an app run routines and workflows or stops it, `n` adds an app, `r` renews it and `x` twice revokes it.
+
+## Connect a coding agent
+
+`codync-host network setup` adds Codync's server, `codync`, to the coding agents on your computer. To have one act as an app you added, give it the token in its environment:
+
+```
+CODYNC_MCP_TOKEN=cdy_mcp_… codync-host mcp network
+```
+
+Keep the token out of chats and repositories: anyone who has it can act as that app.
+
+## What you see
+
+A thread an app started names the app under its title, for example **Started by Cursor (MCP)**, on the desktop, iPhone, Android and in the terminal UI. Its messages are marked as coming from that app, not from you, so the agent and your bot's memory never take them as your own words.
+
+## Current limits
+
+- **Apps are added and changed on the computer**, in the desktop app or the terminal UI. On the iPhone and Android, **Manage computers** shows each computer's apps under **MCP access**, where you can revoke one.
+- **At most 8 threads** of one app run at once, and an app can make 60 calls a minute.
+- **A cloud assistant waits at most 8 seconds** for a thread at a time, and asks again.
+- **A computer needs Codync 2.55.0 or later.** On an older one the section isn't there, and a cloud assistant is told to update Codync.
+
+## Privacy
+
+On your computer, these calls stay on your computer. A cloud assistant's calls pass through Codync's cloud in readable form, as described in [Cloud assistants](/docs/cloud-assistants#privacy). Codync keeps a short log of the last calls (which app, which tool, whether it worked and when, never what it said) on your computer.

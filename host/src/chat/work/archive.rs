@@ -194,8 +194,14 @@ fn delete_old(hub: &Hub) -> bool {
 /// the first page), newest first, [`PAGE`] at a time but never splitting the ones that ended at once; the wire carries
 /// only the last day's. Each is its bot's `work` row with `botId`.
 pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value> {
-    let first = before.is_none();
-    let before = before.unwrap_or(i64::MAX);
+    let (threads, more) = older_page(hub, only, before.unwrap_or(i64::MAX))?;
+    let properties = json!({"count": threads.len(), "more": more, "first": before.is_none()});
+    analytics::capture(hub, Event::OlderThreadsListed, properties.as_object().cloned().unwrap_or_default());
+    Ok(json!({"threads": threads, "more": more}))
+}
+
+/// [`older`]'s page, newest first, and whether more come after it.
+pub fn older_page(hub: &Hub, only: Option<&str>, before: i64) -> Result<(Vec<Value>, bool)> {
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let mut found: Vec<(String, Task)> = tasks::bots(&hub.store)
         .into_iter()
@@ -229,7 +235,6 @@ pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value
     } else {
         found.truncate(PAGE);
     }
-    let count = found.len();
     let threads: Vec<Value> = found
         .into_iter()
         .map(|(bot, task)| {
@@ -241,9 +246,7 @@ pub fn older(hub: &Hub, only: Option<&str>, before: Option<i64>) -> Result<Value
             row
         })
         .collect();
-    let properties = json!({"count": count, "more": more, "first": first});
-    analytics::capture(hub, Event::OlderThreadsListed, properties.as_object().cloned().unwrap_or_default());
-    Ok(json!({"threads": threads, "more": more}))
+    Ok((threads, more))
 }
 
 /// Every box's tasks that ended over a week ago go to the archive, then what the user keeps no longer goes; once a

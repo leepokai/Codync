@@ -65,6 +65,15 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(owner.work[1].agent(of: plain) == nil, "the box of threads without a bot has no agent of its own")
     }
 
+    @Test func aThreadAnOutsideAppStartedSaysWhichOne() throws {
+        let work = try bot(#","work":[{"id":"a","status":"working","startedBy":{"label":"Cursor","client":"c1","level":"ask"}},{"id":"b","status":"working","startedBy":{"label":""}},{"id":"c","status":"working"}]"#).work
+        #expect(work.map(\.startedBy) == ["Cursor", nil, nil])
+        #expect(work[0].startedByLine(english) == "Started by Cursor (MCP)")
+        #expect(work[2].startedByLine(english) == nil, "the user's own thread says nothing")
+        let copy = try JSONDecoder().decode(WorkTask.self, from: JSONEncoder().encode(work[0]))
+        #expect(copy.startedBy == "Cursor", "it survives this app's own copy")
+    }
+
     @Test func aTaskSaysWhetherItWorksInItsOwnFolder() throws {
         let owner = try bot(#","work":[{"id":"o","status":"working","folder":"/h/.codync/threads/1","ownFolder":true},{"id":"p","status":"working","folder":"/h/p"}]"#)
         #expect(owner.work.map(\.ownFolder) == [true, false], "an older host sends no flag")

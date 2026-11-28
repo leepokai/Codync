@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 pub mod assistant;
 mod ceilings;
+pub mod control;
 mod directory;
 pub mod limit;
 pub mod mailbox;

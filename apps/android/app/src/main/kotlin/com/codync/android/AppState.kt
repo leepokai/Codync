@@ -143,6 +143,8 @@ data class AppState(
     val screen: ScreenState? = null,
     /** The computer's network as phones see it (`null`: the host predates it). */
     val network: NetworkView? = null,
+    /** The apps given MCP access here, as last read (`null`: not read yet). */
+    val mcpApps: List<McpApp>? = null,
     /** The remote screen viewer is open (`codync://screen`, the chat header, Computers). */
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */

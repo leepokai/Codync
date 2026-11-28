@@ -25,6 +25,11 @@ pub fn of_entry(hub: &Hub, bot: &BotConfig, e: &Entry) -> String {
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
     let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments);
+    // An outside app's message (`work::external`) says whose it is, on a thread without a bot too.
+    let asked = match data["mcp"]["label"].as_str() {
+        Some(app) => format!("[Codync: a message from {app}, an outside app the user connected over MCP]\n{asked}"),
+        None => asked,
+    };
     if bot.plain {
         return asked;
     }

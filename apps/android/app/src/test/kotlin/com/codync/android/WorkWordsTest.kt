@@ -8,6 +8,7 @@ import com.codync.android.core.MirrorEvent
 import com.codync.android.core.PendingSend
 import com.codync.android.core.SendStatus
 import com.codync.android.core.SourceKind
+import com.codync.android.core.StartedBy
 import com.codync.android.core.WaitKind
 import com.codync.android.core.WorkTask
 import com.codync.android.core.WorkSource
@@ -128,6 +129,8 @@ class WorkWordsTest {
         assertEquals("Read only: a routine's run", readOnlyLine(own.copy(source = WorkSource(SourceKind.Routine, "r1"))))
         assertEquals("Read only: another bot's request", readOnlyLine(own.copy(source = WorkSource(SourceKind.Request))))
         assertNull(readOnlyLine(own))
+        assertEquals("Started by Cursor (MCP)", startedByLine(own.copy(startedBy = StartedBy("Cursor")), english))
+        assertNull("the user's own thread says nothing", startedByLine(own, english))
     }
 
     @Test fun `a message to a thread shows until its transcript has it, and a refused one keeps its place and why`() {

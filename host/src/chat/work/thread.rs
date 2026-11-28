@@ -154,6 +154,28 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
 /// twice is one. Answers `{entry, reopened, queued}`: the message as the thread's transcript holds it, whether it
 /// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
 pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
+    send(hub, bot, id, text, nonce, Author::User { uploads }, |_, _| Ok(()))
+}
+
+/// Who writes a message to a task's thread.
+#[derive(Clone, Copy)]
+pub(super) enum Author<'a> {
+    /// The user, with the files they uploaded to it.
+    User { uploads: &'a [String] },
+    /// An outside app (`external`), with no files: its words are marked as its own.
+    App(&'a super::external::StartedBy),
+}
+
+/// [`message`] from `author`; `check` sees the task and its bot under the box's lock before anything is written.
+pub(super) fn send(
+    hub: &Arc<Hub>,
+    bot: &str,
+    id: &str,
+    text: &str,
+    nonce: &str,
+    author: Author,
+    check: impl FnOnce(&Task, &BotConfig) -> Result<()>,
+) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     // A thread that ended over a week ago is in the archive: it comes back to be written to.
     super::archive::bring_back(hub, bot, id)?;
@@ -161,19 +183,28 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[Strin
     // this or after it, so neither ends a thread a message is on its way to.
     let (entry, reopened, queued) = tasks::change(hub, bot, |tasks| {
         let task = tasks::find(tasks, id)?;
-        let ended = task.status.ended();
         let mut thread = thread_of(&hub.store, task)?;
+        // A message sent already is answered as it was, before `check`: it sends nothing, so no limit applies.
         if let Some(sent) = Some(nonce).filter(|n| !n.is_empty()).and_then(|n| hub.store.find_by_nonce(&thread.id, n)) {
             return Ok((sent, None, None));
         }
+        check(task, &owner)?;
+        let ended = task.status.ended();
         // Its thread may be on a task that followed it by now: the message is for that session all the same.
         let reopened = ended && tasks::of_thread(tasks, &thread.id).is_none();
         if reopened {
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
+        let uploads = match author {
+            Author::User { uploads } => uploads,
+            Author::App(_) => &[],
+        };
         let root = crate::chat::uploads::root(&thread);
         let attachments = crate::chat::uploads::resolve_all(&root, uploads)?;
-        let data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
+        let mut data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
+        if let Author::App(by) = author {
+            by.mark(&mut data, text);
+        }
         let (entry, queued) = post_to(hub, &thread, data)?;
         Ok((entry, Some(reopened), Some(queued)))
     })?;

@@ -258,13 +258,15 @@ export class ComputerRelay extends DurableObject<Env> {
 
   // ---- the cloud assistant (§7.9) ----
 
-  /** `POST /internal/assistant {user, tool, args}`: the host's answer, as an `Answer`. */
+  /** `POST /internal/assistant {user, client, tool, args}`: the host's answer, as an `Answer`. */
   private async assistant(req: Request): Promise<Response> {
-    const body = (await req.json().catch(() => null)) as { user?: unknown; tool?: unknown; args?: unknown } | null;
+    const body = (await req.json().catch(() => null)) as { user?: unknown; client?: unknown; tool?: unknown; args?: unknown } | null;
     if (typeof body?.user !== "string" || typeof body.tool !== "string") return errorResponse(400, "badRequest");
     const host = this.readyHost();
     if (!host) return Response.json({ ok: false, code: "offline" }, { status: 503 });
-    const call = { t: "assistant.call", user: body.user, tool: body.tool, args: body.args ?? {} };
+    // `client`: the assistant app its token was issued to, for the computer's record of what each one did.
+    const client = typeof body.client === "string" ? body.client : undefined;
+    const call = { t: "assistant.call", user: body.user, client, tool: body.tool, args: body.args ?? {} };
     return Response.json(await this.calls.ask(host, call, ASSISTANT_TIMEOUT_MS));
   }
 

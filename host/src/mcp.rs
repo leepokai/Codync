@@ -51,6 +51,17 @@ act on a control by its element_token, then look again. Use pixel coordinates on
 Never type a password yourself: use type_login with a saved login (request_login asks the user for one). \
 Don't approve payments: ask the user to do that from their phone.";
 
+/// An outside app's token for the `codync` server (`codync-host mcp network --token`), sent with each of its calls.
+static APP_TOKEN: OnceLock<String> = OnceLock::new();
+
+/// Serves the `codync` server for a session on this computer, with an outside app's `token` when it has one.
+pub async fn serve_network(port: u16, token: Option<String>) -> Result<()> {
+    if let Some(token) = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()) {
+        let _ = APP_TOKEN.set(token);
+    }
+    serve(String::new(), port, Server::Network).await
+}
+
 /// Serves MCP on stdio until the agent closes it.
 pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
@@ -209,7 +220,11 @@ async fn network_call(port: u16, token: &str, client: &str, params: &Value) -> V
         process: PROCESS.clone(),
         cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
     };
-    send(port, token, Server::Network, params, json!({"agent": caller})).await
+    let mut body = json!({"agent": caller});
+    if let Some(app) = APP_TOKEN.get() {
+        body["mcpToken"] = app.as_str().into();
+    }
+    send(port, token, Server::Network, params, body).await
 }
 
 /// The network server's answer to an agent the host runs for a bot (`BOT_ENV` set): nothing.
@@ -258,8 +273,12 @@ async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: 
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
-        // A session may wait for its mail.
-        Server::Network if params["name"] == "check_inbox" => ("agentCall", WAIT_REPLY),
+        // A session may wait for its mail, or on a thread.
+        Server::Network if params["name"] == "check_inbox" || params["name"] == "thread_wait" => {
+            ("agentCall", WAIT_REPLY)
+        }
+        // Listing an agent's models starts it.
+        Server::Network if params["name"] == "worker_capabilities" => ("agentCall", Duration::from_mins(2)),
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
     };

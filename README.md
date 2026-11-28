@@ -46,7 +46,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 > [!WARNING]
 > **Official account:** `@trycodync` is my only official account. Beware of impersonators and scams.
 
-Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot, Hermes Agent and ~40 more — into persistent *bots* you delegate to from your iPhone, Mac, Windows PC, Linux desktop or any terminal, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
+Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot, Hermes Agent and ~40 more — into persistent *bots* you delegate to from your phone, Mac, Windows PC, Linux desktop or any terminal, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
 
 > Why bots? On a phone, "find the right working session, then pick an environment" is too slow. With bots you already know who to hand the intent to: open the chat, type, done.
 
@@ -57,12 +57,12 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 - **Agent-agnostic: bring any coding agent.** Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode, Pi, Grok Build and ~40 more — everything in the [ACP registry](https://agentclientprotocol.com/registry). Installed agents are found automatically, the rest are fetched on first use, and every bot picks its own. Mix them freely: a Claude bot can ask a Codex bot for a review.
 - **Many bots, one team.** Run as many bots as you like side by side, each with its own agent, project folder and approvals, all working at once. Put several in a **group chat** and they answer in turn, like a team channel; `@name` picks who replies. **Reply** to any message, yours or a bot's, right in the chat.
 - **Built in Rust.** `codync-host` is one small, fast Rust binary for macOS, Windows and Linux (static on Linux, runs on any distro) that drives every agent, keeps the transcripts and serves every client.
-- **One app per kind of device.** Native SwiftUI on the iPhone, one desktop app for Mac, Windows and Linux (Electron), and a terminal UI for SSH.
+- **One app per kind of device.** Native phone apps on iPhone (SwiftUI) and Android (Jetpack Compose), one desktop app for Mac, Windows and Linux (Electron), and a terminal UI for SSH.
 - **A Grok Bot, Muse and Dots alternative.** Persistent named bots, group chats, quote replies, bots asking each other for help, approval cards, per-bot memory, remote screen, voice calls and "needs you / done" notifications — the same features, without being tied to one model or one subscription.
 - **Reach your computer from anywhere, free.** The hosted Cloudflare relay is included at no cost: no Tailscale, no VPN, no port forwarding. Traffic is end-to-end encrypted between your phone and your computer, so the relay only forwards ciphertext. Same Wi-Fi or Tailscale? The phone connects directly instead.
-- **Every computer, one app.** Sign in and your iPhone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); open Computers and tap **Ask for access**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the desktop app on Mac, Windows and Linux reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
-- **Remote screen.** See and control your computer from the iPhone over WebRTC (hardware H.264), and let bots use the screen themselves through the built-in `computer` tool.
-- **Voice calls.** Talk to a bot hands-free from the iPhone and hear its replies read aloud.
+- **Every computer, one app.** Sign in and your phone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); open Computers and tap **Ask for access**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the desktop app on Mac, Windows and Linux reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
+- **Remote screen.** See and control your computer from your phone over WebRTC (hardware H.264), and let bots use the screen themselves through the built-in `computer` tool.
+- **Voice calls.** Talk to a bot hands-free from your phone and hear its replies read aloud.
 - **Private push.** Notification text is sealed to your phone's key, so the push relay never sees what your bots said.
 
 ## Platforms
@@ -70,9 +70,10 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 | | Platform | App | Highlights |
 |---|---|---|---|
 | 📱 | **iPhone** | Native SwiftUI | Chat with bots, approvals, push notifications, Live Activity, widgets, remote screen, voice calls |
-| 💻 | **macOS** | Desktop app (Electron), menu bar + window | Runs the host, chat window, usage in the menu bar, iPhone pairing |
-| 🪟 | **Windows** | Desktop app (Electron), tray + window | Runs the host, chat window, iPhone pairing (no remote screen yet) |
-| 🐧 | **Linux** | Desktop app (Electron), tray + window | Chat window, iPhone pairing; the host runs on desktops and headless servers |
+| 🤖 | **Android** | Jetpack Compose | Same as iPhone except Live Activities; ongoing notification while bots work |
+| 💻 | **macOS** | Desktop app (Electron), menu bar + window | Runs the host, chat window, usage in the menu bar; **Pair phone…** in the menu |
+| 🪟 | **Windows** | Desktop app (Electron), tray + window | Runs the host, chat window, phone pairing (no remote screen yet) |
+| 🐧 | **Linux** | Desktop app (Electron), tray + window | Chat window, phone pairing; the host runs on desktops and headless servers |
 | ⌨️ | **Terminal** | `codync-host tui` | Message your bots from any terminal, over SSH too |
 
 The host (`codync-host`, Rust) runs on macOS, Windows and Linux; every client talks to it, so all your bots and chats are the same everywhere.
@@ -124,7 +125,7 @@ Open Codync: it sets up the host on first launch. **Open Codync** opens the full
 
 **iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair phone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
-> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
+> **Why the phone apps can trail the computer apps:** every App Store release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the phone apps show a reminder when a newer version is available.
 
 **Linux** — the host, plus the desktop app:
 
@@ -203,7 +204,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **Do I need an account?** No. Without one, your phone pairs by scanning a QR code and connects over Wi-Fi or Tailscale. A free account (Apple, Google or GitHub) adds the relay, which needs the computer and the phone in the same account. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
 
-**Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.
+**Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The phone apps and the terminal UI over SSH talk to the same host.
 
 ## Repository
 

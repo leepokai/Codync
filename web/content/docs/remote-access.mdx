@@ -1,4 +1,4 @@
-Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through a **relay** that passes encrypted traffic between your phone and your computer when they can't see each other. By default that is the Codync relay on Cloudflare, for a computer in your account and a phone signed in to that account. You can point the computer at a relay you run yourself. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
+Your bots run on your computer. The phone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through a **relay** that passes encrypted traffic between your phone and your computer when they can't see each other. By default that is the Codync relay on Cloudflare, for a computer in your account and a phone signed in to that account. You can point the computer at a relay you run yourself. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
 
 The desktop app and the terminal UI work differently: they talk to the host on the same computer, or to another computer over SSH. They don't use the relay.
 
@@ -125,7 +125,7 @@ A private relay does not do everything the Codync relay does:
 - Remote screen through the relay is not available. Screen over Wi-Fi or Tailscale still works.
 - Notifications still go through Codync's push service.
 
-The iPhone learns the address from the pairing code and the next connection. It has no address field of its own, and it never receives the token.
+The phone learns the address from the pairing code and the next connection. It has no address field of its own, and it never receives the token.
 
 ## Your own HTTPS reverse proxy
 

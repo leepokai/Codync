@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, MotionConfig } from "framer-motion";
-import { ArrowRight, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
+import { AndroidLogo, ArrowRight, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
 import { agentName, agents } from "./agent-mark";
 import AgentRotator from "./agent-rotator";
 import { AppleLogo } from "./apple-logo";
@@ -86,7 +86,8 @@ export default function Hero() {
             <span className="inline-flex items-center gap-1.5"><AppleLogo size={15} weight="fill" /> macOS</span>
             <span className="inline-flex items-center gap-1.5"><WindowsLogo size={15} weight="fill" /> Windows</span>
             <span className="inline-flex items-center gap-1.5"><LinuxLogo size={15} weight="fill" /> Linux</span>
-            <span className="inline-flex items-center gap-1.5"><DeviceMobile size={15} weight="fill" /> iPhone</span>
+            <span className="inline-flex items-center gap-1.5"><AppleLogo size={15} weight="fill" /> iPhone</span>
+            <span className="inline-flex items-center gap-1.5"><AndroidLogo size={15} weight="fill" /> Android</span>
             <span className="inline-flex items-center gap-1.5"><Terminal size={15} weight="bold" /> Terminal</span>
             <a href={GITHUB} className="underline underline-offset-4 hover:text-neutral-300">Apache 2.0 licensed</a>
           </motion.p>

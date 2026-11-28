@@ -30,7 +30,7 @@ const questions: [string, string][] = [
   ],
   [
     "Which computers can run it?",
-    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
+    "A Mac, a Windows PC, or a Linux desktop or headless server. The phone apps and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
   ],
   [
     "Can my bots run in the cloud?",

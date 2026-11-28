@@ -20,7 +20,7 @@ const steps = [
   },
   {
     title: "Glance without opening the app",
-    body: "Widgets, Live Activities and the Dynamic Island show what your bots are doing on iPhone.",
+    body: "Widgets and live status show what your bots are doing on your phone (Live Activities and the Dynamic Island on iPhone).",
     visual: <Phone src="/screens/activity.webp" alt="A Live Activity: Reviewer is running the test suite, with a thinking orb" />,
   },
 ];

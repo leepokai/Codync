@@ -13,8 +13,8 @@ export default function AgentLanding({ page }: { page: AgentPage }) {
   const { agent } = page;
   const points = [
     { icon: ChatsCircle, title: `${agent} as named bots`, body: `Give each ${agent} bot a name, a project folder and instructions. Each keeps one ongoing chat, and you see its final reply for every turn.` },
-    { icon: ShieldCheck, title: "Approve from your phone", body: `When ${agent} wants to edit a file or run a command, the request comes to your iPhone: allow once, always allow or deny.` },
-    { icon: BellRinging, title: "Pinged only when it matters", body: "A notification when a bot needs you or finishes, plus a Live Activity and the Dynamic Island while it works." },
+    { icon: ShieldCheck, title: "Approve from your phone", body: `When ${agent} wants to edit a file or run a command, the request comes to your phone: allow once, always allow or deny.` },
+    { icon: BellRinging, title: "Pinged only when it matters", body: "A notification when a bot needs you or finishes. On iPhone, a Live Activity and the Dynamic Island while it works." },
     { icon: ChartBar, title: "Your limits at a glance", body: page.usage },
   ];
   const steps = [
@@ -38,7 +38,7 @@ export default function AgentLanding({ page }: { page: AgentPage }) {
           <Halftone corner="top-right" className="w-[36rem] max-w-[80vw] text-neutral-50 opacity-[0.14]" />
           <div className="relative mx-auto max-w-6xl">
             <h1 className="max-w-[44rem] text-4xl font-semibold tracking-tighter text-neutral-50 md:text-6xl">
-              {agent} on your iPhone. 100% free.
+              {agent} on your phone. 100% free.
             </h1>
             <p className="mt-6 max-w-[40rem] text-lg leading-relaxed text-neutral-400">{page.lead}</p>
             <div className="mt-9 flex flex-wrap gap-3">

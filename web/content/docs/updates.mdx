@@ -1,4 +1,4 @@
-Codync has three parts that update separately: the desktop app, the host that runs your bots, and the iPhone app. On macOS and Windows the host ships inside the desktop app and updates with it. On Linux, and on any computer where you installed only the host, the host updates on its own. The iPhone app comes from the App Store.
+Codync has three parts that update separately: the desktop app, the host that runs your bots, and the phone apps (iPhone and Android). On macOS and Windows the host ships inside the desktop app and updates with it. On Linux, and on any computer where you installed only the host, the host updates on its own. The iPhone app comes from the App Store; the Android app comes from Google Play.
 
 ## The desktop app
 
@@ -53,11 +53,17 @@ A Windows computer shows only its version there, with **Update** only when this 
 
 **Desktop:** the **Computers** page shows the same **Codync** row on the card of each computer you reach over SSH, and on Linux on this computer's card too. On macOS and Windows this computer's Codync is the desktop app itself, updated from **Settings → Updates**.
 
-## The iPhone app
+## Phone apps
 
-The iPhone app updates through the App Store. Every iPhone release goes through Apple's App Review first, so the App Store version can be a day or more behind the desktop app and the host. When a newer version is out, a card at the top of the bot list tells you which version is available, with an **Update** button that opens the App Store. You can dismiss it.
+### iPhone
 
-Your computer accounts for the review delay: a computer update that needs a newer phone app isn't offered to computers until the App Store has the iPhone version and Google Play has the Android version.
+The iPhone app updates through the App Store. Every App Store release goes through Apple's App Review first, so it can be a day or more behind the desktop app and the host. When a newer version is out, a card at the top of the bot list tells you which version is available, with an **Update** button that opens the App Store. You can dismiss it.
+
+### Android
+
+The Android app updates through Google Play. When a newer version is out, a card at the top of the bot list tells you which version is available, with an **Update** button that opens Google Play. You can dismiss it.
+
+Your computer accounts for store review delays: a computer update that needs a newer phone app isn't offered to computers until the App Store has the iPhone version and Google Play has the Android version.
 
 ## What's new after an update
 
@@ -69,7 +75,7 @@ Each side knows the oldest version of the other side it still works with. When o
 
 | Notice | What to do |
 | --- | --- |
-| **Update this app** | The app you're using is too old for that computer. On the iPhone, **Update Codync** opens the App Store; if the version you need is still in App Store review, the button stays greyed out until it's available. In the desktop app, use the update button on the notice. |
+| **Update this app** | The app you're using is too old for that computer. On a phone, **Update Codync** opens the App Store or Google Play; if the version you need is still in review there, the button stays greyed out until it's available. In the desktop app, use the update button on the notice. |
 | **Update Codync on** and the computer's name | The computer's host is too old for this app. Choose **Update now** on the notice: the computer downloads the new version and restarts into it, usually within a few minutes, and the notice goes away once it's back. A computer doesn't update while a bot is working on it; the notice then says so, and you can try again when the bot is done. A Mac or Windows computer updates this way while the Codync app is open on it. When the computer can't be updated from another device (the app isn't open there, or its Codync is older), the notice says how to do it there: on a Mac, open Codync and check for updates; on Linux, run `codync-host update`. |
 
 In the terminal UI, the status line shows **needs update** with the reason, and sending is blocked until you update.
@@ -104,6 +110,6 @@ With Homebrew, quit Codync and run `brew reinstall --cask leepokai/codync/codync
 
 To erase everything from the desktop app in one step, choose **Reset everything** under **Reset** at the bottom of the **Computers** page, or **Settings → Reset all data…** in the menu bar or tray menu, and confirm twice. It removes the computer from your account, revokes every paired device, signs you out, uninstalls the host, removes the Codync Screen helper (macOS), deletes its data and the app's settings, and restarts Codync at the welcome screen. With Homebrew, `brew uninstall --zap --cask leepokai/codync/codync` also deletes `~/.codync` and the app's settings.
 
-### On the iPhone
+### On your phone
 
 In **Manage computers** (tap the filter button at the top right of the Bots tab), remove a computer. On the **Settings** tab, choose **Start over** to sign out and forget every computer. Deleting the app removes its cache. Your computers keep their bots and chats either way.

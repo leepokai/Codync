@@ -28,7 +28,7 @@ If you point a computer at [a relay you run yourself](/docs/remote-access#your-o
 
 - that your computer is registered, with its name, platform, device type, Codync version and public keys;
 - when your computer and your devices connect, how often, and how much data passes;
-- messages you send from the iPhone while the computer is offline, which wait there, encrypted, for up to 24 hours until the computer picks them up;
+- messages you send from your phone while the computer is offline, which wait there, encrypted, for up to 24 hours until the computer picks them up;
 - your account's email address, the names and platforms of your signed-in devices, and which of them may use which computer. Sign-in itself is handled by Clerk, the sign-in service Codync uses. You can delete your account in the apps; see [Deleting your account](/docs/remote-access#deleting-your-account).
 
 The relay can't add a device to your computer. A new device needs either a pairing code shown on the computer or your approval there. The one exception is the setting **Skip the 6-digit check**, which lets any device signed in to your account in without that check.
@@ -45,12 +45,12 @@ The relay can't add a device to your computer. A new device needs either a pairi
 
 ## Push notifications
 
-On the iPhone, a bot can notify you when it needs you, when it's done, or when it failed. Your computer encrypts each notification's text (the bot's name and a short preview) to a key that only your iPhone holds. Codync's push service, a separate Cloudflare Worker, forwards it to Apple's push service with only a generic text such as "Your task is complete. Open Codync to read the result." Your iPhone decrypts the real text on the device. If it can't (for example before you first unlock the phone after a restart), you see the generic text.
+On your phone, a bot can notify you when it needs you, when it's done, or when it failed. Your computer encrypts each notification's text (the bot's name and a short preview) to a key that only your phone holds. Codync's push service, a separate Cloudflare Worker, forwards it to Apple Push Notification service (iPhone) or Firebase Cloud Messaging (Android) with only a generic text such as "Your task is complete. Open Codync to read the result." Your phone decrypts the real text on the device. If it can't (for example before you first unlock the phone after a restart), you see the generic text.
 
-- The push service and Apple see the generic text, the encrypted text, and identifiers that say which computer and bot the alert is for (not their names).
+- The push service and Apple or Google see the generic text, the encrypted text, and identifiers that say which computer and bot the alert is for (not their names).
 - Your phone's push token is wrapped in a ticket that only the push service can open. Your computer never sees the raw token. The push service doesn't store notifications.
-- Live Activities on the Lock Screen and in the Dynamic Island get only the bot's status from the computer, never message text.
-- No notification is sent while the iPhone app is connected to the computer. Muted and hidden bots don't notify.
+- On iPhone, Live Activities on the Lock Screen and in the Dynamic Island get only the bot's status from the computer, never message text.
+- No notification is sent while the phone app is connected to the computer. Muted and hidden bots don't notify.
 
 To turn notifications off on an iPhone, tap the filter button at the top right of the Bots tab, choose **Manage computers**, and turn off **Push notifications** on that computer. Each bot's settings have their own notification options.
 
@@ -88,7 +88,7 @@ Analytics are never sold, never used for ads and never used to track you across 
 
 Each phone and each computer has its own switch, **Share usage analytics**. Turning it off stops sending right away and drops anything not sent yet.
 
-- **iPhone:** the **Settings** tab, **Share usage analytics**.
+- **Phone (iPhone and Android):** the **Settings** tab, **Share usage analytics**.
 - **Desktop app:** **Settings → General**, under **Privacy**. This switch belongs to the computer's host, so it also covers the terminal UI on that computer.
 - **Terminal UI:** press `^k` and choose **Share usage analytics**.
 - **Windows installer:** it asks whether to share usage analytics from the computer (not when Codync updates itself). **No** turns off the same switch the desktop app shows.
@@ -98,11 +98,11 @@ The info button next to the switch (**About usage analytics…** in the terminal
 
 ## Removing your data
 
-Delete a bot to remove its conversation. To remove everything from a computer, see "Uninstalling" in [Updates](/docs/updates). On the iPhone, **Start over** on the **Settings** tab signs out and forgets every computer; your computers keep their bots and chats. Deleting the iPhone app removes its cache.
+Delete a bot to remove its conversation. To remove everything from a computer, see "Uninstalling" in [Updates](/docs/updates). On your phone, **Start over** on the **Settings** tab signs out and forgets every computer; your computers keep their bots and chats. Deleting the app removes its cache.
 
 ## Rating invitations
 
-Codync may invite you to rate it when you've sent your fifth message from your iPhone or Android phone. It
+Codync may invite you to rate it when you've sent your fifth message from your phone. It
 does not ask when you open the app, and voice calls don't count.
 Invitations are at least 120 days apart, with at most two requests in a year. Apple (on Android, Google Play) decides
 whether to show its rating window. You can also choose **Rate on the App Store** (on Android, **Rate on Google Play**) on the

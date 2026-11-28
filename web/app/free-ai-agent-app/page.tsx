@@ -11,9 +11,9 @@ import { DMG, WINDOWS } from "../links";
 
 // For people searching "free AI agent" / "AI agent app": what free means here, and what the bots do.
 export const metadata: Metadata = {
-  title: "Free AI agent app for iPhone, Mac, Windows and Linux",
+  title: "Free AI agent app for iPhone, Android, Mac, Windows and Linux",
   description:
-    "Codync is a 100% free, open-source AI agent app. Run Claude Code, Codex, Cursor, Gemini and 40+ agents as named bots on your own computer, for code and everyday tasks, and message them from your iPhone. No subscription.",
+    "Codync is a 100% free, open-source AI agent app. Run Claude Code, Codex, Cursor, Gemini and 40+ agents as named bots on your own computer, for code and everyday tasks, and message them from your phone. No subscription.",
   alternates: { canonical: "/free-ai-agent-app" },
 };
 
@@ -39,7 +39,7 @@ const faq: [string, string][] = [
   ],
   [
     "Does it work on my phone?",
-    "Yes. The agents run on your Mac, Windows PC or Linux machine, and the free iPhone app lets you message them, approve their actions and get notified from anywhere.",
+    "Yes. The agents run on your Mac, Windows PC or Linux machine, and the free phone apps let you message them, approve their actions and get notified from anywhere.",
   ],
 ];
 
@@ -63,7 +63,7 @@ export default function Page() {
             </h1>
             <p className="mt-6 max-w-[40rem] text-lg leading-relaxed text-neutral-400">
               Codync turns Claude Code, Codex, Cursor, Gemini and 40+ AI agents into named bots on your own computer, for
-              code and everyday tasks. Message them from your iPhone, Mac, Windows PC or Linux desktop. No subscription, no
+              code and everyday tasks. Message them from your phone, Mac, Windows PC or Linux desktop. No subscription, no
               paid tier: it&apos;s open source.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">

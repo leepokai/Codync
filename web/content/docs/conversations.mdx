@@ -18,7 +18,7 @@ To see more, turn on **Show thinking details** in Settings, under **Chat**. It's
 
 Everything else the agent did (its narration, thinking, tool calls, diffs and plans) is in **Full conversation**:
 
-- **iPhone:** touch and hold a bot message, then **Show what it did**.
+- **iPhone and Android:** touch and hold a bot message, then **Show what it did**.
 - **Desktop:** hover a bot message and choose **More message actions**, then **Show what it did**, or right-click the message.
 - **Terminal UI:** `t` opens the trace pane, `T` opens it full screen, and `o` shows the last turn's steps.
 
@@ -29,7 +29,7 @@ When a Claude Code bot hands part of its work to a subagent, the subagent's step
 Type in the box at the bottom and send.
 
 - **Desktop:** Return sends. Shift-Return or Option/Alt-Return starts a new line.
-- **iPhone:** tap the send button. With a hardware keyboard, Return starts a new line and Cmd-Return sends.
+- **iPhone and Android:** tap the send button. With a hardware keyboard on iPhone, Return starts a new line and Cmd-Return sends.
 - **Terminal UI:** press `i` or Enter to start typing, Enter to send, and Shift-Enter, Alt-Enter or Ctrl+J for a new line.
 
 Each chat keeps its own draft on each device, and the draft comes back when you return to the chat or reopen the app. Drafts aren't synced between devices.
@@ -41,7 +41,7 @@ Each chat keeps its own draft on each device, and the draft comes back when you 
 
 In the terminal, the waiting messages show above the input; press `esc`, then `S` to send the oldest one now or `D` to take back the newest.
 
-**When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. With no relay (a computer in no account), it waits on the phone instead and goes when the phone reaches the computer again. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
+**When the computer is offline**, your phone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. With no relay (a computer in no account), it waits on the phone instead and goes when the phone reaches the computer again. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
 
 If a message fails to send, it shows **Failed to send** with buttons to resend or delete it. On **iPhone** and **Desktop**, a message's files stay on the device only until the app closes. After that, resending it shows an error instead of sending the text without its files: delete it and attach them again.
 
@@ -178,7 +178,7 @@ Stop ends the running turn and drops the messages still queued for it, which the
 
 You can reply to any of your messages or any message from the bot. The reply goes in the chat in time order and shows a quote of the message it answers at the top.
 
-- **iPhone:** touch and hold the message, then **Reply**.
+- **iPhone and Android:** touch and hold the message, then **Reply**.
 - **Desktop:** hover the message and click **Reply**, or right-click it.
 - **Terminal UI:** press `r`, move to the message with `j` and `k`, then Enter or `r`. Esc cancels.
 
@@ -197,7 +197,7 @@ Tap or click a quote to scroll to the message it quotes. In the terminal, pick t
 
 ## Reactions
 
-- **iPhone:** touch and hold a message; the reactions are at the top of the menu.
+- **iPhone and Android:** touch and hold a message; the reactions are at the top of the menu.
 - **Desktop:** hover a message and click **Add reaction**, or right-click it.
 - **Terminal UI:** pick a message (`v`), then `1`…`6`.
 
@@ -262,7 +262,7 @@ Fresh conversations come only from a Claude Code or Codex bot whose [Summarize l
 
 ## Notifications
 
-Your iPhone gets a notification when a bot:
+Your phone gets a notification when a bot:
 
 | Kind | When | Action |
 | --- | --- | --- |
@@ -272,7 +272,7 @@ Your iPhone gets a notification when a bot:
 
 You don't get one when:
 
-- the Codync app on your iPhone is open and connected to the computer,
+- the Codync app on your phone is open and connected to the computer,
 - the bot's **Notifications** switch is off, or the bot is hidden,
 - you stopped the turn yourself.
 
@@ -280,7 +280,7 @@ The Codync icon on the Home Screen can show how many unread messages your chats 
 
 Routine runs notify you too. A group chat sends one "done" once its bots have finished answering your message.
 
-If system notification permission is off, **Push notifications** in **Manage computers** shows **Turn on notifications in Settings** instead of a switch. Tap it to allow notifications, or open iOS Settings if you previously denied permission. Returning to Codync refreshes the status in both Settings and Computer management. Your saved preference for that computer stays unchanged.
+If system notification permission is off, **Push notifications** in **Manage computers** shows **Turn on notifications in Settings** instead of a switch. Tap it to allow notifications, or open your phone's notification settings if you previously denied permission. Returning to Codync refreshes the status in both Settings and Computer management. Your saved preference for that computer stays unchanged.
 
 To turn notifications off on the iPhone, tap the filter button at the top right of the Bots tab, choose **Manage computers**, and switch off **Push notifications** on the computer whose alerts you don't want; each computer has its own switch. Previews, sounds and Focus follow your iOS settings. The push relay and Apple see only a generic line ("Your task is complete. Open Codync to read the result.") plus routing IDs. The bot's name and the message text are encrypted to your iPhone's key and decrypted on the phone. See [Privacy](/docs/privacy).
 
@@ -288,9 +288,9 @@ To turn notifications off on the iPhone, tap the filter button at the top right 
 
 The desktop app can show the same notifications as system notifications on your Mac, Linux or Windows computer. They're off by default, since your phone already gets them and turning both on alerts you twice. Turn them on in Settings → General → System → **Notifications**. The computer shows one for each computer the app is connected to, even while your phone app is open, but not for a chat you have open in a focused window. Clicking it opens that chat, or the workflow when the notification is from a workflow. The bot's **Notifications** switch and hiding a bot apply here too. On macOS, allow notifications for Codync in System Settings → Notifications if none appear.
 
-### Live Activities
+### Live Activities (iPhone)
 
-When you send a message from the iPhone, a Live Activity for that bot appears on the Lock Screen and in the Dynamic Island. It shows whether the bot is working, needs you, is done or failed, without the message text. On the Lock Screen, a progress line of four segments in the state's color fills as the turn moves: one while your message is sent or queued, two while the bot works, three when it needs you, four once it ends. While the bot has [work](#work) going or waiting, the Live Activity stays on working after the bot's reply, shows that it needs you when a thread waits on a card, and ends when that work is finished and reported. A [voice call](/docs/voice#start-a-call) with the bot shows on its Live Activity too, with what the bot is doing while you talk. Turn it off in the **State** tab under **Live Activity**; that also keeps calls off it. The **Live Activity** and **Dynamic Island** settings control the same switch: the Lock Screen and Dynamic Island turn on and off together.
+When you send a message from the iPhone app, a Live Activity for that bot appears on the Lock Screen and in the Dynamic Island. It shows whether the bot is working, needs you, is done or failed, without the message text. On the Lock Screen, a progress line of four segments in the state's color fills as the turn moves: one while your message is sent or queued, two while the bot works, three when it needs you, four once it ends. While the bot has [work](#work) going or waiting, the Live Activity stays on working after the bot's reply, shows that it needs you when a thread waits on a card, and ends when that work is finished and reported. A [voice call](/docs/voice#start-a-call) with the bot shows on its Live Activity too, with what the bot is doing while you talk. Turn it off in the **State** tab under **Live Activity**; that also keeps calls off it. The **Live Activity** and **Dynamic Island** settings control the same switch: the Lock Screen and Dynamic Island turn on and off together.
 
 ## Usage limits
 

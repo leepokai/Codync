@@ -45,9 +45,12 @@ the change.
 - English only. Plain, short sentences in the second person. Name things the way the apps show them (the bot's
   settings, **Manage the team**), with the real English UI labels in bold; no source paths, type or method names
   unless the reader types them (a CLI command, an environment variable).
-- Where the apps differ, say how in each, briefly: **iPhone**, **Desktop**, **Terminal UI**.
-- Describe the current release only. Leave out the Android app until it's public, Codync 1.x, products the UI
-  was modeled on, roadmap and internal investigations.
+- Where the apps differ, say how in each, briefly: **iPhone**, **Android**, **Desktop**, **Terminal UI**. When the
+  behavior is the same on both phones, write **mobile** or **phone** (or **iPhone and Android**) instead of naming
+  only the iPhone. Reserve **iPhone** or **Android** alone for store-specific steps (App Store, Google Play), OS
+  features (Live Activity, Siri, Share sheet quirks), or real UI differences.
+- Describe the current release only. Leave out Codync 1.x, products the UI was modeled on, roadmap and internal
+  investigations.
 - Every claim is checkable against the code or a doc above. Numbers and limits are written as the code has them.
   Security guidance (what the relay sees, loopback-only API, reverse-proxy rules) is exact.
 - MDX: the page's title (its `#` heading) and description live in `pages.ts`, so the file holds only `##` and

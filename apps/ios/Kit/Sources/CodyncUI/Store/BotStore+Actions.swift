@@ -328,6 +328,14 @@ extension BotStore {
         Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
     }
 
+    /// Whether another bot may review a chain stopped at the hop limit. False before hello.
+    public var hopReview: Bool { hello?.hopReview ?? false }
+
+    public func setHopReview(_ on: Bool) {
+        hello?.hopReview = on
+        Task { await attempt(replay: true, undo: { self.hello?.hopReview = !on }) { try await $0.setHopReview(on) } }
+    }
+
     /// How many days after a thread last finished this computer deletes it, 0 never; the older threads listed start
     /// over, as the computer deletes the ones past it.
     public func setThreadKeepDays(_ days: Int) {

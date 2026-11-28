@@ -230,6 +230,10 @@ async fn user_report_queued_behind_a_request_is_delivered_in_the_recipient_chat(
 #[tokio::test]
 async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delegate() {
     let host = Host::start().await;
+    // The host auto-creates a lead with no runnable agent. Its hop-limit notice would never finish, and a deleted
+    // lead is not made again.
+    let (lead, _) = auto_lead(&host).await;
+    host.call("deleteBot", json!({"botId": lead})).await;
     let first = host.bot("first").await;
     let second = host.bot("second").await;
     for (name, target) in [("first", &second), ("second", &first)] {
@@ -268,4 +272,150 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
     assert_eq!(sent["entry"]["kind"], "user");
     assert_eq!(sent["entry"]["data"]["text"], "Continue");
     host.wait_finished().await;
+}
+
+/// The host's auto-made lead, once it exists: `(id, name)`.
+async fn auto_lead(host: &Host) -> (String, String) {
+    let found = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let sync = common::snapshot(&host.base, &host.token).await;
+            if let Some(lead) =
+                sync["bots"].as_array().unwrap().iter().find(|bot| bot["lead"] == true && bot["deleted"] != true)
+            {
+                return (lead["id"].as_str().unwrap().to_owned(), lead["name"].as_str().unwrap().to_owned());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    found.expect("the host did not make its lead")
+}
+
+fn refusal_in(text: &str) -> u64 {
+    let rest = text.split("refusal ").nth(1).unwrap_or_else(|| panic!("no refusal id in {text}"));
+    rest.chars().take_while(char::is_ascii_digit).collect::<String>().parse().expect("refusal id")
+}
+
+#[tokio::test]
+async fn a_hop_limit_notice_reaches_the_lead_and_a_reset_reopens_the_chain() {
+    let host = Host::start().await;
+    host.call("setHopReview", json!({"enabled": true})).await;
+    let (lead, lead_name) = auto_lead(&host).await;
+    let cwd = host.home.join(&lead_name);
+    std::fs::create_dir_all(&cwd).unwrap();
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
+    let updated = host
+        .call(
+            "updateBot",
+            json!({
+                "id": lead,
+                "backend": "custom",
+                "cwd": cwd,
+                "permission": "ask",
+                "notify": false,
+                "manageTeam": true,
+                "command": common::python_agent(&agent),
+            }),
+        )
+        .await;
+    assert!(updated["bot"]["command"].as_str().unwrap().contains("team_agent.py"));
+
+    let first = host.bot("first").await;
+    let second = host.bot("second").await;
+    for (name, target) in [("first", &second), ("second", &first)] {
+        std::fs::write(common::folder(&host.home, name).join("handoff.json"), json!({"target": target}).to_string())
+            .unwrap();
+    }
+    host.call("send", json!({"botId": first, "text": "CHAIN"})).await;
+    let stopped = host
+        .wait_for(&first, |e| {
+            e["kind"] == "agent" && e["data"]["text"].as_str().is_some_and(|text| text.contains("hop limit (8)"))
+        })
+        .await;
+    let stopped_text = stopped["data"]["text"].as_str().unwrap();
+    assert!(stopped_text.contains("Chain stopped"), "{stopped_text}");
+    let refusal = refusal_in(stopped_text);
+    // The revision boundary the wake's delegation must sit after: nothing the wake does may predate it.
+    let before_approval = host.call("history", json!({"botId": first})).await["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["rev"].as_i64().unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+
+    let sync = host.wait_finished().await;
+    let notice = sync["entries"].as_array().unwrap().iter().find(|entry| {
+        entry["botId"] == lead
+            && entry["data"]["heading"]
+                .as_str()
+                .is_some_and(|heading| heading.contains(&format!("Hop limit refusal {refusal}")))
+    });
+    let notice = notice.expect("the lead did not get the hop-limit notice");
+    assert_eq!(notice["data"]["status"], "completed");
+    assert_eq!(notice["data"]["sourceBotId"], first);
+    assert_eq!(notice["data"]["targetBotId"], lead);
+    assert_eq!(notice["data"]["botMessage"]["text"], "CHAIN");
+    assert!(notice["data"]["botMessage"]["reply"].as_str().unwrap().contains("reply:"));
+    let lead_prompts = host.fixture_log(&lead_name, "prompts.jsonl");
+    assert!(lead_prompts.iter().any(|prompt| prompt.as_str().unwrap().contains("Hop limit reached")));
+    assert!(lead_prompts.iter().any(|prompt| prompt.as_str().unwrap().contains("Use only the hop-limit tools")));
+
+    host.call(
+        "send",
+        json!({
+            "botId": lead,
+            "text": format!("TEAM reset_hop_count {{\"refusalId\":{refusal},\"botId\":\"{first}\"}}"),
+        }),
+    )
+    .await;
+    host.wait_for(&lead, |entry| {
+        entry["kind"] == "agent"
+            && entry["data"]["final"] == true
+            && entry["data"]["text"]
+                .as_str()
+                .is_some_and(|text| text.starts_with("Done:") && text.contains("\"reset\""))
+    })
+    .await;
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let path = common::folder(&host.home, "first").join("prompts.jsonl");
+            if std::fs::read_to_string(&path).unwrap_or_default().contains("starts at 0") {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the reset wake did not reach the blocked bot");
+    // The wake's own turn runs on the grant: its handoff is admitted at hop 0 and the chain goes on. This
+    // delegate happens on the wake, before any user message: only the reset could have admitted it. The entry
+    // must also sit after the pre-approval boundary, so an earlier chain's "Chain forwarded" cannot match.
+    host.wait_for(&first, |entry| {
+        entry["kind"] == "agent"
+            && entry["data"]["text"].as_str() == Some("Chain forwarded")
+            && entry["rev"].as_i64().unwrap_or(0) > before_approval
+    })
+    .await;
+    let wake_rev = host.call("history", json!({"botId": first})).await["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "agent" && e["data"]["text"] == "Chain forwarded")
+        .map(|e| e["rev"].as_i64().unwrap())
+        .max()
+        .unwrap();
+    let sync = host.wait_finished().await;
+    let previous_rev = sync["rev"].as_i64().unwrap();
+    assert!(previous_rev > wake_rev, "the wake's delegation was not its own turn");
+
+    // The wake already proved the grant by delegating at hop 0. Another chain from here is admitted too.
+    host.call("send", json!({"botId": first, "text": "CHAIN"})).await;
+    host.wait_for(&first, |entry| {
+        entry["rev"].as_i64().unwrap_or(0) > previous_rev
+            && entry["kind"] == "agent"
+            && entry["data"]["final"] == true
+            && entry["data"]["text"] == "Chain forwarded"
+    })
+    .await;
 }

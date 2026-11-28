@@ -273,6 +273,11 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                   : []),
               ]
             : []),
+          online && store.hopReview != null ? (
+            <Switch key="hop-review" className="settings-appear" on={store.hopReview} onChange={(on) => void run(() => store.setHopReview(on))}>
+              Let another bot review a stopped chain.
+            </Switch>
+          ) : null,
           // Hosts before thread retention delete a thread a week after it ends, with no choice.
           online && store.threadKeepDays !== undefined ? (
             <ValueRow key="thread-keep" label="Delete old threads" detail="Counts from when a thread last finished. Its chat and its own folder are deleted with it.">

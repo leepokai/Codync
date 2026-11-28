@@ -131,6 +131,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         active_request: None,
         task_source: crate::chat::work::Source::Bot,
         reply_hops: None,
+        spent_carry: false,
         host_turn: None,
         reports: Vec::new(),
         prompt_call: None,
@@ -340,6 +341,9 @@ struct Actor {
     task_source: crate::chat::work::Source,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
+    /// The running turn spent a carried reset (`take_dropped_wake`): if it still fails to start,
+    /// `start_failed` puts the carry back so the approval isn't lost.
+    spent_carry: bool,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
     host_turn: Option<HostTurn>,
     /// The reports the running turn answers (`HostTurn::TaskReport`), kept until it ends (`end_host_turn`).
@@ -498,7 +502,7 @@ impl Actor {
             }
         }
         self.files.cancel();
-        self.hub.team.end_turn(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         // Its cards may sit in another chat (a group's, a thread's parent's), which outlives it.

@@ -182,6 +182,10 @@ impl Actor {
         let Queued::User { text, .. } = &item else { return };
         let text = text.clone();
         self.unheard.push(item);
+        // A steered message joins the running turn instead of starting its own, so the queue path's
+        // `user_message_started` never runs for it: the user's own message still closes an open lift, any
+        // unused grant and a remembered reset, and restarts the reset budget, exactly as a new turn would.
+        self.hub.team.user_message_started(&self.cfg.id);
         // The host's copy, never `removed`, also brings it back to a client that took it back meanwhile.
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = json!(RequestStatus::Sent);

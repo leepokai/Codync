@@ -733,6 +733,8 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** Another bot may review a chain stopped at the hop limit (`setHopReview`). Absent from older hosts. Off when false. */
+  hopReview?: boolean
   /** Days after a thread last ended that the computer deletes it, 0 never (`setThreadKeepDays`); it lists older threads
    * (`olderThreads`). Absent from older hosts. */
   threadKeepDays?: number

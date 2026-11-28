@@ -309,6 +309,22 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** Whether another bot may review a chain stopped at the hop limit; undefined before hello or on older hosts. */
+  get hopReview() {
+    return this.hello?.hopReview
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setHopReview(enabled: boolean) {
+    this.showHopReview(enabled)
+    try {
+      await (await this.ready()).call('setHopReview', { enabled })
+    } catch (e) {
+      this.showHopReview(!enabled)
+      throw e
+    }
+  }
+
   /** Days after a thread last ended that this computer deletes it (0: never); undefined before hello or on older hosts. */
   get threadKeepDays() {
     return this.hello?.threadKeepDays

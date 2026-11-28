@@ -13,6 +13,7 @@ mod fallbacks;
 mod find;
 mod forms;
 mod group_form;
+mod hop_review;
 mod input;
 mod kofi;
 mod login_profiles;
@@ -184,6 +185,8 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// Whether another bot may review a stopped chain (`None`: before `hello`, or an older host).
+    pub hop_review: Option<bool>,
     /// How many days after it last ended a thread is deleted, 0 never (`None`: before `hello`, or an older host, which
     /// lists no older threads either).
     pub thread_keep_days: Option<u32>,
@@ -272,6 +275,7 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            hop_review: None,
             thread_keep_days: None,
             workflows: false,
             credentials_reset: false,

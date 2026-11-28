@@ -158,12 +158,38 @@ impl Actor {
         let opens = self.prompt_call.take().filter(|call| crate::chat::calls::is_live(&self.hub.store, call));
         self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered).or(opens);
         self.reset_turn_state();
+        // A hop-limit control turn is still a chat at hop 0. reply_hops stays as it is.
+        // A carried reset is spent by the turn that starts at hop 0 on it - the approval wake's own turn, or a
+        // reply turn (the one arm that sets reply_hops). A turn with reply_hops unset - a request, a room turn, a
+        // routine, a compaction - is not a reply and must not spend it. The take happens at this turn's commit
+        // point (the take below, just before the prompt goes out), so a failed start before the prompt puts the
+        // carry back (`start_failed`, or the hidden-turn path) for the next reply; until then the turn only plans
+        // the hop-0 admission. A task report or other host turn takes neither.
+        let carried = self.hub.team.dropped_wake(&self.cfg.id);
+        // Only a turn that carries hops is a spender: the approval wake's own (hop 0, set by the queue) or a
+        // reply (its hops from the reply). A routine run, a room turn or another bot's request has no reply_hops
+        // and must never spend the carry.
+        let wake_turn = carried && self.reply_hops == Some(0);
+        let reply_carry = carried && self.reply_hops.is_some_and(|hops| hops > 0) && self.host_turn.is_none();
+        // A control turn, the wake's own turn and a carried reply all begin at hop 0.
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
+        } else if self.hub.team.in_control(&self.cfg.id) || wake_turn || reply_carry {
+            crate::chat::team::Turn::Chat(0)
         } else {
             crate::chat::team::Turn::Chat(self.reply_hops.unwrap_or(0))
         };
         self.hub.team.start_turn(&self.cfg.id, team_turn);
+        // The turn is committed: spend a carried reset now, once, for the hop-0 admission planned above. From
+        // here the turn runs (or its end paths clean up), so the carry cannot outlive its turn. If the start
+        // still fails before the prompt is sent, `start_failed` puts the carry back: the approval was not
+        // used. The flag is sticky: a fallback retry re-enters `start_turn` with the carry already gone and
+        // must not unmark it. It clears once the agent hears the prompt.
+        self.spent_carry = wake_turn || reply_carry || self.spent_carry;
+        if wake_turn || reply_carry {
+            self.hub.team.take_dropped_wake(&self.cfg.id);
+            self.reply_hops = Some(0);
+        }
         if hidden {
             self.hidden_turn();
         } else {
@@ -217,11 +243,16 @@ impl Actor {
             );
             self.turn_over(Outcome::Failed(Failure::Restart, work::CUT_OFF.into()));
             self.turn = None;
+            // This hidden turn spent a carried reset to begin at hop 0, then failed to start: the approval
+            // was never used, so the carry goes back for the next reply.
+            if std::mem::take(&mut self.spent_carry) {
+                self.hub.team.restore_dropped_wake(&self.cfg.id);
+            }
             self.end_host_turn(false);
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
-            self.hub.team.end_turn(&self.cfg.id);
+            self.hub.team.end_turn_in_control(&self.cfg.id);
             self.hub.set_runtime(&self.id(), |r| {
                 r.status = BotStatus::Idle;
                 r.activity = String::new();
@@ -287,6 +318,14 @@ impl Actor {
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
+        // The agent heard the prompt: the turn reached the model, so the spent carry is used. Any failure from
+        // here is the turn's own end, not a failed start.
+        self.spent_carry = false;
+        self.hub.team.wake_delivered(&self.cfg.id);
+        if matches!(self.host_turn, Some(HostTurn::HopLift)) {
+            let action = if self.hub.team.in_control(&self.cfg.id) { "ask" } else { "reset" };
+            crate::chat::team::hop_lift_finished(&self.hub, action, "applied");
+        }
         if std::mem::take(&mut self.relay.handing_off) {
             self.handed_off(true);
         }
@@ -563,7 +602,7 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
-        self.hub.team.end_turn(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.

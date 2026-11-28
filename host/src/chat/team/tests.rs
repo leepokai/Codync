@@ -508,6 +508,165 @@ async fn hop_limit_refusal_leaves_the_user_a_notice() {
     f.shutdown().await;
 }
 
+/// The review stays off until the setting is exactly on. Continue still starts a fresh chain.
+#[tokio::test]
+async fn hop_review_defaults_off_and_continue_still_works() {
+    let f = Fixture::new();
+    assert!(!f.hub.hop_review_enabled());
+    f.hub.store.kv_set("hopReview", "0").unwrap();
+    assert!(!f.hub.hop_review_enabled(), "a stored 0 is not on");
+    f.hub.store.kv_delete("hopReview").unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err =
+        call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err().to_string();
+    assert!(err.contains("hop limit"), "{err}");
+    assert!(!err.contains("notified"), "{err}");
+    let lead_headings = f.hub.store.history("c", i64::MAX, 100).unwrap();
+    assert!(lead_headings.iter().all(|e| !e.data["heading"].as_str().unwrap_or("").contains("Hop limit refusal")));
+    let reset =
+        call(&f.hub, "c", "c", "reset_hop_count", &json!({"refusalId": 1, "botId": "a"})).unwrap_err().to_string();
+    assert!(reset.contains("off"), "{reset}");
+    let notices = f
+        .hub
+        .store
+        .history("a", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "notice" && e.data["continueChain"] == true)
+        .collect::<Vec<_>>();
+    assert_eq!(notices.len(), 1, "Continue stays");
+    let sent = crate::api::dispatch(
+        &f.hub,
+        &crate::api::devices::Caller::Local,
+        "continueChain",
+        json!({"entryId": notices[0].id}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent["entry"]["kind"], "user");
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    f.hub.set_hop_review(true).unwrap();
+    assert!(f.hub.hop_review_enabled());
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let on = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck again"}))
+        .unwrap_err()
+        .to_string();
+    assert!(on.contains("the lead was notified"), "{on}");
+    f.shutdown().await;
+}
+
+/// A local coding-agent session is a request like any other: at the limit it must notify the lead, not bypass review.
+#[tokio::test]
+async fn a_local_session_request_at_the_hop_limit_notifies_the_lead() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("b", Turn::Chat(8));
+    let caller = crate::network::sessions::Caller {
+        kind: codync_network::AgentKind::Codex,
+        session: Some("local".into()),
+        process: "test".into(),
+        cwd: ".".into(),
+    };
+    // Use the production constructor: later Session fields keep their production defaults too.
+    let (session, _) =
+        f.hub.network.sessions.register(&f.hub.store, &caller, None, None, || Ok("local-agent".into())).unwrap();
+    let source = f.hub.store.bot("b").unwrap().unwrap().config;
+    let err = remote::to_local_session(&f.hub, &source, "b", &session, "blocked").unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.shutdown().await;
+}
+
+/// The lead's tools require `botId`. Both notice prompts name the blocked actor's id, not only its name.
+#[tokio::test]
+async fn hop_limit_notices_name_the_blocked_actors_id() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    f.until(|| f.prompts_of("c").iter().any(|p| p.contains("botId a"))).await;
+    let opening = f.prompts_of("c").into_iter().find(|p| p.contains("Hop limit reached")).unwrap();
+    assert!(opening.contains("Blocked bot: a (botId a)"), "{opening}");
+    call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": 1, "text": "because the chain is done"})).unwrap();
+    f.until(|| f.prompts_of("c").iter().any(|p| p.contains("explained why"))).await;
+    let explanation = f.prompts_of("c").into_iter().find(|p| p.contains("explained why")).unwrap();
+    assert!(explanation.contains("Blocked bot: a (botId a)"), "{explanation}");
+    f.shutdown().await;
+}
+
+/// Stop before the opening notice runs is not a denial. The lift closes, and a later refusal can notify again.
+#[tokio::test]
+async fn stopping_the_lead_before_the_lift_notice_runs_lets_a_later_refusal_notify() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.send_to("c", "BLOCK lead work").await;
+    f.until(|| f.prompts_of("c").len() == 1).await;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let first = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err();
+    assert!(first.to_string().contains("the lead was notified"), "{first}");
+    assert!(f.hub.team.lift_open("a"), "the notice is queued and the lift is open");
+    f.hub.send_cmd("c", Cmd::Stop).unwrap();
+    f.until(|| f.idle("c") && !f.hub.team.lift_open("a")).await;
+    let notice = f
+        .hub
+        .store
+        .history("c", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.data["heading"].as_str().is_some_and(|h| h.starts_with("Hop limit refusal")))
+        .expect("the cancelled notice");
+    assert_eq!(notice.data["status"], "cancelled");
+    assert!(notice.data["text"].as_str().unwrap().ends_with("Cancelled before execution."));
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let second = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck again"})).unwrap_err();
+    assert!(second.to_string().contains("the lead was notified"), "{second}");
+    assert!(f.hub.team.lift_open("a"));
+    f.shutdown().await;
+}
+
+/// A lift's in-memory refusal state is gone after a restart. Its saved notice expires, never becoming ordinary work
+/// for the lead or a reply turn that wakes the blocked bot without an approved reset.
+#[tokio::test]
+async fn a_hop_lift_notice_expires_on_restart_instead_of_becoming_work() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.send_to("c", "BLOCK lead work").await;
+    f.until(|| f.prompts_of("c").len() == 1).await;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "REFUSED work"})).unwrap_err();
+    assert!(err.to_string().contains("the lead was notified"), "{err}");
+    let notice = f
+        .hub
+        .store
+        .history("c", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.data["heading"].as_str().is_some_and(|heading| heading.starts_with("Hop limit refusal")))
+        .expect("the lift waits behind the lead's work");
+    assert_eq!(notice.data["status"], "queued");
+    let id = notice.id.clone();
+
+    let f = f.restart().await;
+    std::fs::write(f.dir.join("c/release"), "").unwrap();
+    f.until(|| {
+        let status = f.hub.store.entry(&id).unwrap().data["status"].as_str().unwrap_or_default().to_owned();
+        matches!(status.as_str(), "completed" | "failed" | "cancelled")
+    })
+    .await;
+    f.until(|| f.idle("c")).await;
+    let notice = f.hub.store.entry(&id).unwrap();
+    assert!(f.prompts_of("c").iter().all(|prompt| !prompt.contains("REFUSED work")), "never executed as work");
+    assert!(f.prompts_of("a").is_empty(), "the blocked bot was not woken without a reset");
+    assert_eq!(notice.data["status"], "failed", "the lift cannot be judged after its state was lost");
+    assert_eq!(notice.data["botMessage"]["detail"], crate::store::INTERRUPTED);
+    f.shutdown().await;
+}
+
 #[path = "quota_tests.rs"]
 mod quotas;
 
@@ -550,6 +709,152 @@ async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
     assert!(result.is_err());
     assert_eq!(f.hub.team.0.locked().messages, 0);
     assert_eq!(f.prompts().len(), 0);
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn deleting_a_bot_drops_what_the_hop_limit_kept_for_it() {
+    let f = Fixture::new();
+    f.hub.team.user_message_started("b");
+    assert_eq!(f.hub.team.generation("b"), 1);
+    f.hub.delete_bot("b").unwrap();
+    assert_eq!(f.hub.team.generation("b"), 0, "a deleted bot keeps no hop-limit entry");
+    f.shutdown().await;
+}
+
+/// A user message already in the bot's channel is handled after the user deletes the bot: `Hub::delete_bot` sends
+/// `Shutdown` behind it. Handled, it starts a turn and `user_message_started` puts back the hop-limit entry the delete
+/// just dropped — one entry per create/delete cycle in a long-lived host. The send path checks the row instead.
+#[tokio::test]
+async fn a_message_handled_after_the_delete_leaves_no_entry() {
+    let f = Fixture::new();
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "hello"}));
+    // The actor's task doesn't run while this current-thread test does, so both commands wait in its channel.
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "hello".into() }).unwrap();
+    // Handled after the message, so an answer says the message before it was taken (sent or dropped).
+    let (reply, handled) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    f.hub.delete_bot("b").unwrap();
+    assert!(!f.hub.team.tracked("b"));
+    let _ = handled.await.unwrap();
+    assert!(!f.hub.team.tracked("b"), "a message handled after the delete leaves no hop-limit entry");
+    assert!(f.prompts().is_empty(), "and starts no turn");
+    f.shutdown().await;
+}
+
+/// #537, second guard: a message the user sent while the bot was live, still queued behind the turn it interrupted,
+/// reaches the batch start in `next_in_queue` after the delete. `Hub::delete_bot` sends `Shutdown` behind it, but the
+/// running turn's done event can win the actor's `select!`, and `user_message_started` then put back the hop-limit
+/// entry the delete just dropped. The batch start checks the row too, as the send path does.
+///
+/// `Shutdown` and the done event race, so a test through `delete_bot` would pass on the unfixed code whenever
+/// `Shutdown` won. Removing the record while the turn still runs, as the delete does (`store.delete_bot` and
+/// `team.forget`), puts the batch start in the state the delete leaves behind on every run.
+#[tokio::test]
+async fn a_message_queued_behind_the_turn_of_a_bot_deleted_meanwhile_starts_no_turn() {
+    let f = Fixture::new();
+    // b's turn holds the chat, so the user's next message waits in the queue, as one sent while the bot worked does.
+    f.send_to("b", "BLOCK work").await;
+    f.until(|| f.prompts_of("b").len() == 1).await;
+    // The message the user sends while b works: accepted for a live bot, it waits in the actor's queue behind the turn.
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "second"}));
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "second".into() }).unwrap();
+    // An answer to a command sent behind it says the actor took that message while the bot was still there.
+    let (reply, taken) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = taken.await.unwrap();
+    // The delete: its record and what the hop limit kept for it, the delete's own two writes.
+    f.hub.store.delete_bot("b").unwrap();
+    f.hub.team.forget("b");
+    assert!(!f.hub.team.tracked("b"));
+    // The turn ends: the batch it unblocks must not start a turn or put the entry back. An answer to a command sent
+    // afterwards says the actor got past that batch, as the actor handles commands only between queue passes.
+    std::fs::write(f.dir.join("b").join("release"), "go").unwrap();
+    f.until(|| f.idle("b")).await;
+    let (reply, handled) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = handled.await.unwrap();
+    assert!(!f.hub.team.tracked("b"), "a queued message for a deleted bot leaves no hop-limit entry");
+    assert_eq!(f.prompts_of("b").len(), 1, "and starts no turn");
+    f.shutdown().await;
+}
+
+/// #537, the other half of the batch start's row check: a read that failed is not a delete. Dropping the batch there
+/// would lose a live bot's message over one transient store error, so the batch runs and the error is only logged.
+///
+/// The error is real: the `bots` table is renamed away for the moment the batch start reads it, which is exactly what a
+/// failing read looks like to `store.bot`, then put back so the turn that must run can finish.
+#[tokio::test]
+async fn a_failed_row_read_lets_the_queued_batch_run() {
+    let f = Fixture::new();
+    f.send_to("b", "BLOCK work").await;
+    f.until(|| f.prompts_of("b").len() == 1).await;
+    // Queued behind the running turn, as a message accepted while the bot was live is.
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "second"}));
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "second".into() }).unwrap();
+    let (reply, taken) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = taken.await.unwrap();
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    db.execute_batch("ALTER TABLE bots RENAME TO bots_away;").unwrap();
+    std::fs::write(f.dir.join("b").join("release"), "go").unwrap();
+    f.until(|| f.prompts_of("b").len() == 2).await;
+    db.execute_batch("ALTER TABLE bots_away RENAME TO bots;").unwrap();
+    drop(db);
+    f.until(|| f.idle("b")).await;
+    assert_eq!(f.prompts_of("b").len(), 2, "a read error does not drop the batch");
+    f.shutdown().await;
+}
+
+/// A refusal already produced can reach the host after the bot is deleted. It must not put the bot back into the
+/// hop-limit map: `open_lift` reads a missing actor as generation 0, so an unguarded refusal re-creates the entry the
+/// delete just removed, for the life of the process. Nothing is delivered and the sender gets the plain limit error.
+#[tokio::test]
+async fn a_refusal_for_a_bot_deleted_mid_flight_leaves_no_entry() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    let source = f.hub.store.bot("a").unwrap().unwrap().config;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    // The refusal is captured while `a` is still working (`generation` and the turn under one lock)…
+    let error = f.hub.team.reserve_message_in("a", "a").unwrap_err();
+    // …then the user deletes the bot before the host handles it.
+    f.hub.delete_bot("a").unwrap();
+    assert!(!f.hub.team.tracked("a"));
+    let late = on_hop_limit(&f.hub, &source, "a", "b", "stuck", error).unwrap_err();
+    assert!(late.to_string().contains("hop limit"), "{late}");
+    assert!(!late.to_string().contains("the lead was notified"), "nothing is delivered for a deleted bot");
+    assert!(!f.hub.team.lift_open("a"));
+    assert!(!f.hub.team.tracked("a"), "the refusal cannot re-create a deleted bot's entry");
+    assert!(f.prompts_of("c").iter().all(|p| !p.contains("Hop limit reached")));
+    f.shutdown().await;
+}
+
+/// The hop-limit state goes only after the row is really deleted. A delete that fails leaves a live bot with the
+/// reset it was approved, instead of wiping the budget for a bot that is still stored.
+#[tokio::test]
+async fn a_failed_delete_keeps_a_live_bots_hop_limit_state() {
+    let f = Fixture::new();
+    f.hub.team.start_turn("b", Turn::Chat(0));
+    f.hub.team.user_message_started("b");
+    let refusal = f.hub.team.open_lift("a", "b", 1).unwrap();
+    f.hub.team.approve(refusal).unwrap();
+    assert!(f.hub.team.grant_is_pending("b"));
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER reject_delete BEFORE UPDATE ON bots WHEN NEW.deleted = 1 \
+         BEGIN SELECT RAISE(ABORT, 'fixture delete failure'); END;",
+    )
+    .unwrap();
+    let failed = f.hub.delete_bot("b").unwrap_err().to_string();
+    assert!(failed.contains("fixture delete failure"), "{failed}");
+    db.execute_batch("DROP TRIGGER reject_delete;").unwrap();
+    drop(db);
+    assert_eq!(f.hub.team.generation("b"), 1, "the stored bot keeps its generation");
+    assert!(f.hub.team.grant_is_pending("b"), "and the reset it was approved");
     f.shutdown().await;
 }
 

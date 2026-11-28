@@ -188,6 +188,13 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
+  /** Hop-limit review as the computer has it: switched here, or its `hopReview` event (another device). */
+  showHopReview(on: boolean) {
+    if (!this.hello || this.hello.hopReview === on) return
+    this.hello = { ...this.hello, hopReview: on }
+    this.changed()
+  }
+
   /** When old threads are deleted as the computer has it: chosen here, or its `threadKeepDays` event (another device). */
   showThreadKeepDays(days: number) {
     if (!this.hello || this.hello.threadKeepDays === days) return

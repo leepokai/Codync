@@ -131,6 +131,8 @@ export type HostEvent =
   | { type: 'name'; name: string }
   /** The computer's automatic bot order was switched (from any device): its `hello` says it from now on. */
   | { type: 'autoOrder'; enabled: boolean }
+  /** Hop-limit review was switched (from any device): its `hello` says it from now on. */
+  | { type: 'hopReview'; enabled: boolean }
   /** The computer's choice of when old threads are deleted changed (from any device): its `hello` says it from now on. */
   | { type: 'threadKeepDays'; days: number }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
@@ -208,6 +210,8 @@ export function parseEvent(line: string): HostEvent | null {
     case 'name':
       return typeof raw.name === 'string' ? { type, name: raw.name } : null
     case 'autoOrder':
+      return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
+    case 'hopReview':
       return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
     case 'threadKeepDays':
       return typeof raw.days === 'number' ? { type, days: raw.days } : null

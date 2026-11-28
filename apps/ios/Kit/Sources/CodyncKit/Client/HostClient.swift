@@ -25,6 +25,8 @@ public enum HostEvent: Sendable {
     case name(String)
     /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
     case autoOrder(Bool)
+    /// Hop-limit review was switched (from any device): its `hello` says it from now on.
+    case hopReview(Bool)
     /// How long the computer keeps ended threads changed (from any device): its `hello` says it from now on.
     case threadKeepDays(Int)
     case resync
@@ -177,6 +179,9 @@ public struct HostClient: Sendable {
         case "autoOrder":
             struct AutoOrderWrap: Decodable { var enabled: Bool }
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
+        case "hopReview":
+            struct HopReviewWrap: Decodable { var enabled: Bool }
+            return (try? d.decode(HopReviewWrap.self, from: data)).map { .hopReview($0.enabled) }
         case "threadKeepDays":
             struct KeepWrap: Decodable { var days: Int }
             return (try? d.decode(KeepWrap.self, from: data)).map { .threadKeepDays($0.days) }
@@ -401,6 +406,11 @@ public extension HostClient {
     /// Whether a bot with a new message moves to the top of the roster.
     func setAutoOrder(_ enabled: Bool) async throws {
         let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
+    }
+
+    /// Whether another bot may review a chain stopped at the hop limit.
+    func setHopReview(_ enabled: Bool) async throws {
+        let _: Empty = try await self.call("setHopReview", ["enabled": enabled])
     }
 
     /// How many days after a thread last finished the computer deletes it (0 never, else 7 to 3650); answers the

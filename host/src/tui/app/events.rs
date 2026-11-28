@@ -94,6 +94,7 @@ impl App {
                 }
             }
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
+            Some("hopReview") => self.hop_review = v["enabled"].as_bool(),
             Some("threadKeepDays") => {
                 self.thread_keep_days = super::thread_keep::days(&v["days"]);
                 self.relist_older();
@@ -284,6 +285,7 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.hop_review = v["hopReview"].as_bool();
                 self.thread_keep_days = super::thread_keep::days(&v["threadKeepDays"]);
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
@@ -297,6 +299,7 @@ impl App {
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::HopReview => self.hop_review_set(&v),
             After::ThreadKeep => self.thread_keep_set(&v),
             After::CredentialsReset => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();

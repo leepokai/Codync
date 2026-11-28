@@ -8,6 +8,8 @@ use anyhow::Result;
 
 /// The `kv` key of the automatic order switch: "1" when on.
 const AUTO_ORDER: &str = "autoOrderBots";
+/// The `kv` key of hop-limit review: "1" when on. Anything else, including a missing key, is off.
+const HOP_REVIEW: &str = "hopReview";
 
 impl Hub {
     /// Puts `ids` (the roster as shown, top first) in that order. Unknown and deleted ids are
@@ -38,6 +40,18 @@ impl Hub {
     pub fn set_auto_order(&self, on: bool) -> Result<()> {
         if on { self.store.kv_set(AUTO_ORDER, "1") } else { self.store.kv_delete(AUTO_ORDER) }?;
         let _ = self.events.send(serde_json::json!({"type": "autoOrder", "enabled": on}));
+        Ok(())
+    }
+
+    /// Whether another bot may review a chain stopped at the hop limit. Off unless the key is exactly "1".
+    pub fn hop_review_enabled(&self) -> bool {
+        self.store.kv_get(HOP_REVIEW).as_deref() == Some("1")
+    }
+
+    /// Apps connected now hear the switch as a `hopReview` event, the others in their next `hello`.
+    pub fn set_hop_review(&self, on: bool) -> Result<()> {
+        if on { self.store.kv_set(HOP_REVIEW, "1") } else { self.store.kv_delete(HOP_REVIEW) }?;
+        let _ = self.events.send(serde_json::json!({"type": "hopReview", "enabled": on}));
         Ok(())
     }
 

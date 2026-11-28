@@ -259,6 +259,7 @@
     "hello.credentialsReset": "bool",
     "hello.device": "string",
     "hello.home": "string",
+    "hello.hopReview": "bool",
     "hello.hostId": "string",
     "hello.icons": "object",
     "hello.iconsRevision": "number",

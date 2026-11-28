@@ -257,6 +257,9 @@ internal fun AppStore.reorder(ids: List<String>) =
 /** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
 internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
 
+/** Whether another bot may review a chain stopped at the hop limit (iOS `hopReview`); missing from older hosts. */
+internal fun hopReview(hello: JsonObject?): Boolean? = hello?.get("hopReview")?.jsonPrimitive?.booleanOrNull
+
 /** The user's name for this computer, empty for its hostname (iOS `setComputerName`); its `name` event shows it. */
 internal fun AppStore.setComputerName(name: String) = command("setComputerName", buildJsonObject { put("name", name) }, "computerName")
 
@@ -279,6 +282,16 @@ internal fun AppStore.setAutoOrder(on: Boolean) {
 /** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
 internal fun AppStore.showAutoOrder(on: Boolean) =
     mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
+
+/** Turns hop-limit review on or off, shown at once and put back if the computer refuses. */
+internal fun AppStore.setHopReview(on: Boolean) {
+    showHopReview(on)
+    command("setHopReview", buildJsonObject { put("enabled", on) }, "hopReview", onFailure = { showHopReview(!on) })
+}
+
+/** Hop-limit review as the computer has it: switched here, or its `hopReview` event. */
+internal fun AppStore.showHopReview(on: Boolean) =
+    mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("hopReview" to JsonPrimitive(on)))) } ?: state }
 
 /** How many days after a thread last finished the computer deletes it, 0 for never (iOS `threadKeepDays`); missing from older hosts. */
 internal fun threadKeepDays(hello: JsonObject?): Int? = hello?.get("threadKeepDays")?.jsonPrimitive?.intOrNull

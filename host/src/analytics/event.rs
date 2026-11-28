@@ -87,6 +87,8 @@ pub enum Event {
     ChainLimitReached,
     /// The user continued a chain stopped at the handoff limit (`continueChain`).
     ChainContinued,
+    /// A hop-limit lift step finished (`action`, `outcome`). Never text or bot/refusal ids.
+    HopLiftFinished,
     /// A bot's `save_progress` ended (`outcome`).
     RoutineProgressSaved,
     /// A bot's `follow_up` ended (`outcome`).
@@ -311,6 +313,7 @@ impl Event {
             Self::RoutineRetried => "routine_retried",
             Self::ChainLimitReached => "chain_limit_reached",
             Self::ChainContinued => "chain_continued",
+            Self::HopLiftFinished => "hop_lift_finished",
             Self::RoutineProgressSaved => "routine_progress_saved",
             Self::FollowUpSet => "follow_up_set",
             Self::FollowUpFired => "follow_up_fired",

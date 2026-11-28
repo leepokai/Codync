@@ -62,6 +62,7 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    HopReview,
     /// "Delete old threads" set to these days (0: keep forever).
     ThreadKeep(u32),
     ComputerName,
@@ -72,7 +73,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 27] = [
+pub const ACTIONS: [(&str, &str, Action); 28] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -82,6 +83,7 @@ pub const ACTIONS: [(&str, &str, Action); 27] = [
     ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
+    ("Let another bot review a stopped chain.", "", Action::HopReview),
     // Each choice its own row, as the apps' menus offer them: nothing changes on the way to another.
     ("Delete old threads: Keep forever", "", Action::ThreadKeep(0)),
     ("Delete old threads: After 7 days", "", Action::ThreadKeep(7)),

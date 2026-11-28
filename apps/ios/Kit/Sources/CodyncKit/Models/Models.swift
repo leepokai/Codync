@@ -368,6 +368,8 @@ public struct Hello: Codable, Sendable {
     public var canJoinAccount: Bool?
     /// A bot with a new message moves to the top of the roster (missing from older hosts).
     public var autoOrder: Bool?
+    /// Another bot may review a chain stopped at the hop limit (missing from older hosts). Off when false.
+    public var hopReview: Bool?
     /// This host serves workflows. Missing on older hosts, which is the same as false.
     public var workflows: Bool?
     /// This host starts a thread the user asks for (`startThread`). Missing on older hosts: it doesn't.

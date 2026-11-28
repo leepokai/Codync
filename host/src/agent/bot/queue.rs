@@ -5,12 +5,14 @@ use super::{
     Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
 use crate::agent::own_memory;
+use crate::analytics::{self, Event};
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
+use serde_json::Map;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -31,6 +33,15 @@ impl Actor {
             }
             Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
             Cmd::Send { lane, entry_id, mut text } => {
+                // `Hub::delete_bot` sends `Shutdown` behind a message already in this channel. Handled, it starts a
+                // turn for a bot whose row is gone, and `user_message_started` puts back the hop-limit entry the delete
+                // just dropped: one entry per create/delete cycle in a long-lived host. The row is the authority, as
+                // in `chat::team::on_hop_limit`, and the chat went with the bot.
+                if self.hub.store.bot(&self.cfg.id).ok().flatten().is_none_or(|row| row.deleted) {
+                    tracing::debug!(bot = %self.cfg.id, entry_id, "dropped a message for a deleted bot");
+                    // The actor goes on: its `Shutdown` is waiting behind this message.
+                    return true;
+                }
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
                 if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {
@@ -53,12 +64,16 @@ impl Actor {
                 }
             }
             // A task in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
-            Cmd::BotRequest(request) if work::boxed(&self.base) => {
+            // A hop-limit notice stays a request turn in this chat, including when other requests wait in the box.
+            Cmd::BotRequest(request) if work::boxed(&self.base) && !request.hop_notice() => {
                 work::add_request(&self.hub, &self.cfg.id, request);
             }
             Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
             Cmd::Prompt { text, call } => self.enqueue(Queued::Prompt { text, call }, done_tx).await,
+            Cmd::HopLift { text, refusal_id, control } => {
+                self.enqueue(Queued::HopLift { text, refusal_id, control }, done_tx).await;
+            }
             Cmd::SendToUser { text, quote, reply } => {
                 let _ = reply.send(self.send_to_user(text, quote));
             }
@@ -182,7 +197,7 @@ impl Actor {
     }
 
     pub(super) async fn stop(&mut self) {
-        self.hub.team.end_turn(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
         if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
         }
@@ -209,6 +224,16 @@ impl Actor {
                         e.data["status"] = "cancelled".into();
                         self.hub.set_entry(&entry_id, &e.data);
                     }
+                }
+                // The approval wake will not run. Take its grant and remember hop 0 for the next reply under the
+                // one lock, so no lift can open in the gap between the grant and the carry. A dropped
+                // clarification wake likewise frees the once-only `asked`: the lead may ask again. In both
+                // cases a user message drops the lift anyway; this only covers Stop landing while it sits.
+                Queued::HopLift { refusal_id, control: false, .. } => {
+                    self.hub.team.drop_wake_grant(&self.cfg.id, refusal_id);
+                }
+                Queued::HopLift { refusal_id, control: true, .. } => {
+                    self.hub.team.abandon_open_ask_by_refusal(refusal_id);
                 }
                 _ => {}
             }
@@ -356,6 +381,9 @@ impl Actor {
                     let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
+                    // A pending approval waits for its own hop-limit wake: a reply must not spend that grant.
+                    // A wake that already failed to start is remembered as a carry; start_turn spends it and
+                    // makes this reply begin at 0. If the start fails, the carry stands for the next reply.
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
                     let result = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await;
                     let started = result.is_ok();
@@ -425,6 +453,38 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::HopLift { .. }) => {
+                    let Some(Queued::HopLift { text, refusal_id, control }) = self.queue.pop_front() else {
+                        unreachable!("front is a hop-limit lift")
+                    };
+                    if control {
+                        // A clarification that ended (denied, replaced or closed by a user message) starts no turn.
+                        if !self.hub.team.refusal_open(refusal_id) {
+                            tracing::info!(bot = %self.cfg.id, refusal_id, "hop-limit clarification wake dropped");
+                            continue;
+                        }
+                        self.hub.team.control(&self.cfg.id, true);
+                    } else {
+                        // The grant, the carry and the hop-0 reply are settled under the one lock, before this
+                        // turn can fail to start: `take_grant_for_chat_start` consumed the grant and recorded
+                        // the carry, and the turn below replaces the carry with the live hop-0 turn. A start
+                        // that still fails puts the carry back (`start_failed`).
+                        let generation = self.hub.team.generation(&self.cfg.id);
+                        if !self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, Some(refusal_id)) {
+                            tracing::info!(bot = %self.cfg.id, refusal_id, "hop-limit approval wake dropped");
+                            continue;
+                        }
+                        self.reply_hops = Some(0);
+                    }
+                    self.host_turn = Some(HostTurn::HopLift);
+                    tracing::info!(bot = %self.cfg.id, refusal_id, control, "hop-limit lift turn");
+                    if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
+                        self.start_error(e, done_tx).await;
+                    }
+                    // start_turn spent the carry when the turn was committed (it starts at hop 0). A start that
+                    // failed put the carry back (`start_failed`), so the next reply still begins at 0.
+                    continue;
+                }
                 Some(Queued::FollowUp(_)) => {
                     let Some(Queued::FollowUp(id)) = self.queue.pop_front() else {
                         unreachable!("front is a follow-up")
@@ -488,11 +548,39 @@ impl Actor {
             }
             let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
             let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
+            // The row check `Cmd::Send` makes, for a message it accepted while the bot was live: that message waits
+            // behind the running turn, and `Hub::delete_bot` sends `Shutdown` behind it, so if the turn's done event
+            // wins the actor's `select!` this batch starts for a bot whose row is gone. `user_message_started` would
+            // put back the hop-limit entry the delete just dropped: one entry per create/delete cycle in a long-lived
+            // host. The row is the authority.
+            //
+            // Only a row that is known to be gone drops the batch. A read that failed is not a delete: dropping a live
+            // bot's queued message because the store errored once would lose it, so the batch runs instead.
+            match self.hub.store.bot(&self.cfg.id) {
+                Ok(Some(row)) if !row.deleted => {}
+                Ok(_) => {
+                    // Dropped with no trace, asymmetric with `stop` (queue.rs:222), which marks the same entries
+                    // `cancelled` so their reader sees why they never ran.
+                    tracing::debug!(bot = %self.cfg.id, messages = batch.len(), "dropped queued messages for a deleted bot");
+                    continue;
+                }
+                // The debug event is this host's only counter: it has no metrics subsystem, so these fields are what
+                // one would need (`error` included).
+                Err(error) => tracing::debug!(
+                    bot = %self.cfg.id,
+                    messages = batch.len(),
+                    error = format!("{error:#}"),
+                    "couldn't read the bot row; the queued batch runs"
+                ),
+            }
             // A handoff waiting in the chat starts a new conversation with this message, as does one already taken
             // for a turn that couldn't start.
             if lane == main {
                 self.handoff = self.take_handoff().or_else(|| self.handoff.take());
             }
+            // The user's own message closes an open hop-limit lift, any unused grant, and a reset whose wake
+            // never started.
+            self.hub.team.user_message_started(&self.cfg.id);
             if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
                 self.start_error(e, done_tx).await;
             }
@@ -516,6 +604,12 @@ impl Actor {
         self.relay.carried = None;
         self.turn = None;
         self.reply_hops = None;
+        // A turn that spent the carried reset and still failed to start never used the approval: put it back,
+        // so the next reply still begins at 0.
+        if std::mem::take(&mut self.spent_carry) {
+            self.hub.team.restore_dropped_wake(&self.cfg.id);
+        }
+        let hop_lift_failed = matches!(self.host_turn, Some(HostTurn::HopLift));
         self.end_host_turn(false);
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {
@@ -531,7 +625,21 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
-        self.hub.team.end_turn(&self.cfg.id);
+        // Capture before the teardown clears it: only the failed clarification turn itself (it set `control`)
+        // frees the ask. A later unrelated failed start must not refund an ask whose prompt was delivered.
+        let was_control = self.hub.team.in_control(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
+        if was_control {
+            self.hub.team.abandon_open_ask(&self.cfg.id);
+        }
+        if hop_lift_failed {
+            let action = if was_control { "ask" } else { "reset" };
+            analytics::capture(
+                &self.hub,
+                Event::HopLiftFinished,
+                Map::from_iter([("action".into(), action.into()), ("outcome".into(), "start_failed".into())]),
+            );
+        }
     }
 
     /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it
@@ -541,7 +649,7 @@ impl Actor {
         match ended {
             Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
             Some(HostTurn::TaskReport) => self.reports_over(answered),
-            Some(HostTurn::Opening | HostTurn::Watchdog | HostTurn::TaskAnswer) | None => {}
+            Some(HostTurn::Opening | HostTurn::Watchdog | HostTurn::HopLift | HostTurn::TaskAnswer) | None => {}
         }
         ended
     }

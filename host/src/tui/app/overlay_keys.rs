@@ -39,6 +39,7 @@ impl App {
                     .iter()
                     .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(_, _, a)| !matches!(a, Action::ThreadKeep(_)) || self.thread_keep_days.is_some())
+                    .filter(|(_, _, a)| !matches!(a, Action::HopReview) || self.hop_review.is_some())
                     .filter(|(label, _, a)| {
                         let translated = super::palette_label(label, *a);
                         fuzzy(q, &[label, translated.as_ref()])
@@ -65,6 +66,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::HopReview => self.toggle_hop_review(),
             Action::ThreadKeep(days) => self.set_thread_keep(days),
             Action::ComputerName => self.ask_computer_name(),
             Action::ResetCredentials => self.ask_reset_credentials(),

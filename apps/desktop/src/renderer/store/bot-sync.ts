@@ -354,6 +354,9 @@ export class BotSync extends BotMirror {
       case 'autoOrder':
         this.showAutoOrder(event.enabled)
         break
+      case 'hopReview':
+        this.showHopReview(event.enabled)
+        break
       case 'threadKeepDays':
         this.showThreadKeepDays(event.days)
         // Sent once the computer deleted threads, the choice the same or not: list them again.

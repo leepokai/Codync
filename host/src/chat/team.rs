@@ -5,6 +5,7 @@
 //! the Codync connector (`assistant`).
 
 use crate::agent::bot::Cmd;
+use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::network::Recipient;
 use crate::store::{BotConfig, BotRow, EntryKind, Lane, Store};
@@ -12,7 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use codync_agent::acp::truncate;
 use codync_network::Access;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::sync::Arc;
 
 pub mod assistant;
@@ -25,7 +26,7 @@ mod requests;
 pub mod restart;
 pub use ceilings::Ceilings;
 pub(crate) use remote::expire_loop;
-pub use requests::{Requests, Turn};
+pub use requests::{Requests, Turn, hop_generation};
 
 const MAX_MESSAGE_BYTES: usize = 32_000;
 const MAX_PENDING_MESSAGES: usize = 64;
@@ -83,6 +84,77 @@ pub fn tools() -> Value {
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
             "_meta": {"anthropic/alwaysLoad": true},
+        },
+        {
+            "name": "explain_hop_block",
+            "description": "Only for a hop-limit lift, and only for the bot that was blocked. Tell the lead, once, why this send should go through. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit error."},
+                    "text": {"type": "string", "description": "Why the lead should allow another chain."},
+                },
+                "required": ["refusalId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
+        },
+        {
+            "name": "ask_hop_clarification",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Ask the blocked bot one question. That question wakes the blocked bot on a hop-limit turn, where message_bot stays unavailable.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                    "text": {"type": "string", "description": "The question for the blocked bot."},
+                },
+                "required": ["refusalId", "botId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
+        },
+        {
+            "name": "answer_hop_clarification",
+            "description": "Only for a hop-limit lift, and only for the bot that was blocked, after the lead has asked. Answer that question once. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit turn."},
+                    "text": {"type": "string", "description": "The answer for the lead."},
+                },
+                "required": ["refusalId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
+        },
+        {
+            "name": "reset_hop_count",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Let the blocked bot start another chain. At most 3 successful resets since that bot's last user message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                },
+                "required": ["refusalId", "botId"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
+        },
+        {
+            "name": "deny_hop_reset",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Deny another chain. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                },
+                "required": ["refusalId", "botId"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         }
     ])
 }
@@ -132,8 +204,13 @@ impl BotRequest {
     pub fn sender(&self) -> Option<&str> {
         match &self.lifetime.back {
             Back::Local { sender } => Some(sender),
-            Back::Remote(_) | Back::Assistant { .. } => None,
+            Back::Remote(_) | Back::Assistant { .. } | Back::Lift { .. } => None,
         }
+    }
+
+    /// A hop-limit notice for the lead. It stays a request turn in the lead's chat.
+    pub fn hop_notice(&self) -> bool {
+        matches!(self.lifetime.back, Back::Lift { .. })
     }
 
     /// The start of the request, as it was written.
@@ -252,9 +329,26 @@ pub(crate) enum RequestStatus {
 /// Where a request's outcome goes: a bot on this computer, an agent on another one, or the
 /// user's cloud assistant.
 enum Back {
-    Local { sender: String },
+    Local {
+        sender: String,
+    },
     Remote(remote::Return),
-    Assistant { request: String },
+    Assistant {
+        request: String,
+    },
+    /// A hop-limit notice for the lead: no message reservation and no reply turn.
+    /// `opening` is set only for the first notice of a lift. Stop before that notice
+    /// runs closes the lift without a denial, so a later refusal can notify again.
+    /// An explanation or an answer leaves the lift as the lead left it.
+    Lift {
+        opening: Option<OpeningNotice>,
+    },
+}
+
+/// The lift whose opening notice has not been judged yet.
+struct OpeningNotice {
+    actor: String,
+    refusal: u64,
 }
 
 /// Owned by the recipient's command/queue/turn after admission, never by the sender.
@@ -342,7 +436,17 @@ impl MessageLifetime {
                     self.hub.assistant.cancelled(request);
                 }
                 Back::Assistant { request } => self.hub.assistant.answered(request, outcome),
+                // The lead judges with the hop-limit tools. The blocked bot is not woken with this text.
                 Back::Local { .. } => {}
+                Back::Lift { opening } => {
+                    // Queued, never run: the lead did not judge. Same refund as a notice that
+                    // never queued. A started turn may already have approved, denied, or asked.
+                    if !self.started
+                        && let Some(opening) = opening
+                    {
+                        self.hub.team.abort_unsent_notice(&opening.actor, opening.refusal);
+                    }
+                }
             }
             return;
         };
@@ -439,6 +543,10 @@ struct Exchange<'a> {
 impl Exchange<'_> {
     /// Saves its notice in `bot`'s chat, waiting for the reply; the recipient's opens its next turn.
     fn notice(&self, hub: &Hub, bot: &str, heading: &str, recipient: bool) -> Result<String> {
+        self.save_notice(hub, bot, heading, recipient, false)
+    }
+
+    fn save_notice(&self, hub: &Hub, bot: &str, heading: &str, recipient: bool, lift: bool) -> Result<String> {
         let mut message = json!({"sourceBotId": self.source, "targetBotId": self.target, "text": self.text});
         if let Some(peer) = self.peer_name {
             message["peerName"] = peer.into();
@@ -448,6 +556,9 @@ impl Exchange<'_> {
             "heading": heading, "style": "info", "status": RequestStatus::Queued, "delegationId": self.request,
             "sourceBotId": self.source, "targetBotId": self.target, "botMessage": message,
         });
+        if lift {
+            data["hopLift"] = true.into();
+        }
         if let Some(hops) = self.hops {
             data["hops"] = hops.into();
         }
@@ -540,6 +651,11 @@ fn call(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Res
                 Recipient::There(target) => bail!("{} is on another computer", target.address),
             }
         }
+        "explain_hop_block" => explain_hop_block(hub, &source, turn, args),
+        "ask_hop_clarification" => ask_hop_clarification(hub, &source, args),
+        "answer_hop_clarification" => answer_hop_clarification(hub, &source, turn, args),
+        "reset_hop_count" => reset_hop_count(hub, &source, args),
+        "deny_hop_reset" => deny_hop_reset(hub, &source, args),
         _ => bail!("unknown team tool: {name}"),
     }
 }
@@ -568,7 +684,8 @@ fn check_request(hub: &Hub, turn: &str, message: &str) -> Result<()> {
 }
 
 /// Takes one of `source`'s places for a message from `turn`'s running turn; a chain stopped at the hop limit leaves
-/// the user a notice to continue it.
+/// the user a notice to continue it. When this computer has a lead and the sender is not that lead, the send also
+/// opens a hop-limit lift: the lead gets one notice and can reset or deny the chain.
 fn reserve(hub: &Hub, source: &str, turn: &str) -> Result<u8> {
     hub.team.reserve_message_in(source, turn).inspect_err(|_| {
         if hub.team.at_hop_limit(turn) {
@@ -583,7 +700,13 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
-    let hops = reserve(hub, &source.id, turn)?;
+    let hops = match reserve(hub, &source.id, turn) {
+        Ok(hops) => hops,
+        Err(error) if hop_limit_error(&error) => {
+            return on_hop_limit(hub, source, turn, &target.name, message, error);
+        }
+        Err(error) => return Err(error),
+    };
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.
     let back = Back::Local { sender: source.id.clone() };
@@ -606,6 +729,265 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         "requestId": id, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,
         "note": "Queued. The reply comes back to you as a new turn in your chat: don't wait or poll for it.",
     }))
+}
+
+pub(super) fn hop_limit_error(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<requests::HopLimited>().is_some()
+}
+
+/// What the lead reads when the blocked bot explains itself or answers a question: a hop notice in the lead's chat,
+/// at hop 0, asking it to judge with the hop-limit tools. The stored text is the text delivered; it is never logged.
+fn hop_notice_to_lead(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    actor: &str,
+    refusal: u64,
+    heading: &str,
+    introduction: &str,
+    text: &str,
+) -> Result<()> {
+    // No lead (deleted mid-lift): nothing was delivered, so the caller's once-only state must not be spent.
+    let Some(lead) = local_lead(hub) else {
+        bail!("this computer has no lead bot to judge hop-limit refusal {refusal}")
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let prompt = format!(
+        "{introduction} Refusal {refusal}. Blocked bot: {} (botId {actor}). Use only the hop-limit tools. Do not use message_bot.\n{text}",
+        source.name
+    );
+    let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift { opening: None }, &lead.name, 0);
+    let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text, peer_name: None, hops: None };
+    // A hop-limit lift keeps its origin, so a restart cannot restore it as an ordinary request.
+    lifetime.entries.push(exchange.save_notice(hub, &lead.id, heading, true, true)?);
+    lifetime.deliver(&lead.id, Access::Allow, prompt)
+}
+
+fn refusal_arg(args: &Value) -> Result<u64> {
+    let value = if args["refusalId"].is_null() { &args["refusal"] } else { &args["refusalId"] };
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().and_then(|n| u64::try_from(n).ok()))
+        .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+        .ok_or_else(|| anyhow!("refusalId is required"))
+}
+
+fn local_lead(hub: &Hub) -> Option<BotConfig> {
+    hub.store.bots().ok()?.into_iter().find(|row| !row.deleted && row.config.lead).map(|row| row.config)
+}
+
+/// One lift's use and its outcome, with no message text or bot/refusal id. Delivery failures are `not_queued`.
+pub(crate) fn hop_lift_finished(hub: &Hub, action: &str, outcome: &str) {
+    analytics::capture(
+        hub,
+        Event::HopLiftFinished,
+        Map::from_iter([("action".into(), action.into()), ("outcome".into(), outcome.into())]),
+    );
+}
+
+fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
+    let refusal = refusal_arg(args)?;
+    let explanation = args["text"].as_str().unwrap_or("").trim();
+    if explanation.is_empty() || explanation.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    let stored = hub.team.explain(turn, refusal, explanation)?;
+    let heading = format!("Explanation from {} for hop-limit refusal {refusal}.", source.name);
+    let introduction = "The bot blocked by the hop limit explained why its send should go through.";
+    // The explanation stays once-only only after the notice is queued. A send that cannot queue it leaves the
+    // text in place, the same way an unsent reset gives its grant back.
+    if let Err(error) = hop_notice_to_lead(hub, source, turn, refusal, &heading, introduction, &stored) {
+        hub.team.abort_unsent_explanation(turn, refusal);
+        hop_lift_finished(hub, "explain", "not_queued");
+        return Err(error);
+    }
+    hop_lift_finished(hub, "explain", "delivered");
+    tracing::info!(actor = %turn, refusal, "hop-limit explanation recorded");
+    Ok(json!({ "refusal": refusal, "status": "recorded" }))
+}
+
+fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
+    if !source.lead {
+        bail!("only the lead bot can ask about a hop-limit block");
+    }
+    let refusal = refusal_arg(args)?;
+    let question = args["text"].as_str().unwrap_or("").trim();
+    if question.is_empty() || question.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
+    }
+    hub.team.ask(refusal)?;
+    let shown = truncate(question, 400);
+    let wake = Cmd::HopLift {
+        text: format!(
+            "The lead asked for more about hop-limit refusal {refusal}. Answer with answer_hop_clarification. Do not use message_bot.\n{shown}"
+        ),
+        refusal_id: refusal,
+        control: true,
+    };
+    if let Err(error) = hub.send_cmd(&actor, wake) {
+        // The wake was never queued: the ask did not happen, so the lead can ask again.
+        hub.team.abort_unsent_ask(refusal);
+        hop_lift_finished(hub, "ask", "not_queued");
+        return Err(error);
+    }
+    hop_lift_finished(hub, "ask", "queued");
+    tracing::info!(lead = %source.id, refusal, "hop-limit clarification asked");
+    Ok(json!({ "refusal": refusal, "status": "asked" }))
+}
+
+fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
+    let refusal = refusal_arg(args)?;
+    let answer = args["text"].as_str().unwrap_or("").trim();
+    if answer.is_empty() || answer.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    let stored = hub.team.answer(turn, refusal, answer)?;
+    let heading = format!("Answer from {} for hop-limit refusal {refusal}.", source.name);
+    let introduction = "The bot blocked by the hop limit answered your clarification.";
+    if let Err(error) = hop_notice_to_lead(hub, source, turn, refusal, &heading, introduction, &stored) {
+        hub.team.abort_unsent_answer(turn, refusal);
+        hop_lift_finished(hub, "answer", "not_queued");
+        return Err(error);
+    }
+    hop_lift_finished(hub, "answer", "delivered");
+    tracing::info!(actor = %turn, refusal, "hop-limit clarification answered");
+    Ok(json!({ "refusal": refusal, "status": "answered" }))
+}
+
+fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
+    if !source.lead {
+        bail!("only the lead bot can reset a hop count");
+    }
+    let refusal = refusal_arg(args)?;
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
+    }
+    hub.team.approve(refusal)?;
+    if hub.team.grant_is_pending(&actor) {
+        // The wake is the only consumer of this grant. If it cannot be queued, drop the grant too: leaving it
+        // pending would block every later notice, and the tool is about to report that the reset did not happen.
+        let text = format!(
+            "Hop-limit refusal {refusal} was approved: your hop count was reset, so your next send starts at 0. \
+             This is not a message from the user; nothing here asks you to reply to them."
+        );
+        if let Err(error) = hub.send_cmd(&actor, Cmd::HopLift { text, refusal_id: refusal, control: false }) {
+            hub.team.abort_unsent_reset(&actor, refusal);
+            hop_lift_finished(hub, "reset", "not_queued");
+            return Err(error);
+        }
+    }
+    hop_lift_finished(hub, "reset", "queued");
+    tracing::info!(lead = %source.id, actor = %actor, refusal, "hop count reset");
+    Ok(json!({ "refusal": refusal, "status": "reset" }))
+}
+
+fn deny_hop_reset(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
+    if !source.lead {
+        bail!("only the lead bot can deny a hop reset");
+    }
+    let refusal = refusal_arg(args)?;
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
+    }
+    hub.team.deny(refusal)?;
+    hop_lift_finished(hub, "deny", "done");
+    tracing::info!(lead = %source.id, refusal, "hop reset denied");
+    Ok(json!({ "refusal": refusal, "status": "denied" }))
+}
+
+pub(super) fn on_hop_limit(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    turn: &str,
+    target_name: &str,
+    message: &str,
+    error: anyhow::Error,
+) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        return Err(error);
+    }
+    if source.lead {
+        return Err(error);
+    }
+    let Some(lead) = local_lead(hub) else { return Err(error) };
+    if lead.id == source.id {
+        return Err(error);
+    }
+    // Captured with the rejection. A later read can belong to a user message that started in the gap, and storing
+    // that generation would let an approval reset the new chain.
+    let Some(generation) = hop_generation(&error) else { return Err(error) };
+    // The bot was deleted while its refusal was in flight: `open_lift` reads a missing actor as generation 0 and would
+    // insert a fresh entry for a bot that is gone, staying for the life of the process. The row is the authority, and
+    // `Hub::delete_bot` drops the entry only after its row is deleted. Nothing is delivered and the sender gets the
+    // plain hop-limit error, as if review were off: a graceful degradation, the bot can no longer act on it.
+    if !matches!(&hub.store.bot(turn), Ok(Some(row)) if !row.deleted) {
+        return Err(error);
+    }
+    let Some(refusal) = hub.team.open_lift(&source.id, turn, generation) else { return Err(error) };
+    let shown = truncate(message, 400);
+    let id = uuid::Uuid::new_v4().to_string();
+    let prompt = format!(
+        "Hop limit reached. Refusal {refusal}. Blocked bot: {} (botId {turn}). It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
+        source.name
+    );
+    let notice = (|| -> Result<()> {
+        let mut lifetime = MessageLifetime::new(
+            hub,
+            &id,
+            &shown,
+            Back::Lift { opening: Some(OpeningNotice { actor: turn.to_owned(), refusal }) },
+            &lead.name,
+            0,
+        );
+        let exchange =
+            Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None, hops: None };
+        lifetime.entries.push(exchange.save_notice(
+            hub,
+            &lead.id,
+            &format!("Hop limit refusal {refusal} from {}.", source.name),
+            true,
+            true,
+        )?);
+        lifetime.deliver(&lead.id, Access::Allow, prompt)
+    })();
+    if let Err(delivery) = notice {
+        // The lift never reached the lead: close it so a later send can open a fresh notice instead of sitting
+        // open with no refusal the tool results name. The lift is keyed by the actor whose turn was blocked
+        // (`turn`, the caller of `reserve`), not the sender; they differ when a thread acts for its bot.
+        let actor = hub.team.lift_actor(refusal).unwrap_or_else(|_| source.id.clone());
+        hub.team.abort_unsent_notice(&actor, refusal);
+        hop_lift_finished(hub, "notice", "not_queued");
+        return Err(delivery);
+    }
+    hop_lift_finished(hub, "notice", "delivered");
+    tracing::info!(actor = %turn, refusal, "hop-limit notice queued");
+    bail!("bot request hop limit ({}) reached; the lead was notified (refusal {refusal})", hub.team.hop_limit())
 }
 
 #[cfg(test)]

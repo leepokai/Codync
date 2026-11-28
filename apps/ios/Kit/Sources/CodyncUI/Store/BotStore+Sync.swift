@@ -182,6 +182,8 @@ extension BotStore {
             hello?.name = name
         case let .autoOrder(on):
             hello?.autoOrder = on
+        case let .hopReview(on):
+            hello?.hopReview = on
         case let .threadKeepDays(days):
             hello?.threadKeepDays = days
             resetOlderThreads()

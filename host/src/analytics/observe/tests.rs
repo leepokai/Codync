@@ -95,6 +95,10 @@ fn settings_routines_screen_and_devices() {
     assert_eq!(keep, Some((json!("thread_keep_days"), json!(true), json!(30))));
     assert_eq!(setting("setThreadKeepDays", json!({"days": 0})).map(|s| s.2), Some(json!(false)));
     assert_eq!(
+        setting("setHopReview", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("hop_review"), json!(true)))
+    );
+    assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
     );

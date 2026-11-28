@@ -84,6 +84,7 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                     let hint = match a {
                         Action::Analytics => on_off(app.analytics),
                         Action::AutoOrder => on_off(app.auto_order),
+                        Action::HopReview => on_off(app.hop_review),
                         // The computer's choice now.
                         Action::ThreadKeep(days) if app.thread_keep_days == Some(*days) => "✓",
                         Action::ComputerName => app.host.as_str(),

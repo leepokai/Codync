@@ -116,6 +116,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "threadFolders": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // Whether another bot may review a chain stopped at the hop limit (`setHopReview`). Off when unset.
+                "hopReview": hub.hop_review_enabled(),
                 // How many days after it last ended a thread is deleted, 0 never (`setThreadKeepDays`); a host that
                 // says it also lists older threads (`olderThreads`).
                 "threadKeepDays": crate::chat::work::archive::keep_days(&hub.store),
@@ -338,6 +340,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
             json!({"enabled": hub.auto_order()})
+        }
+        "setHopReview" => {
+            hub.set_hop_review(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
+            json!({"enabled": hub.hop_review_enabled()})
         }
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;

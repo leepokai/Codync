@@ -41,6 +41,13 @@ import Testing
     #expect(HostClient.parseEvent(Data(#"{"type":"autoOrder"}"#.utf8)) == nil)
 }
 
+@Test func parsesHopReviewEvents() {
+    guard case .hopReview(true) = HostClient.parseEvent(Data(#"{"type":"hopReview","enabled":true}"#.utf8)) else {
+        Issue.record("hopReview"); return
+    }
+    #expect(HostClient.parseEvent(Data(#"{"type":"hopReview"}"#.utf8)) == nil)
+}
+
 @Test func screenViewportMapsAndZooms() {
     // A 16:10 display in a wider landscape phone view: letterboxed left and right.
     var v = ScreenViewport(display: CGSize(width: 1600, height: 1000), view: CGSize(width: 800, height: 400))

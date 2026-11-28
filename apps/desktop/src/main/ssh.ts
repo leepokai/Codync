@@ -67,7 +67,8 @@ class SSHComputers {
   private needsLinger = new Set<string>()
   private shells = new RemoteShells((p) => run(SSH, probeArguments(p, home, dataDir)))
 
-  constructor(private file: string, private emit: (s: SSHState) => void) {
+  /** `reportStale`: a cancelled attempt reached a status it no longer owns (`ssh_step_after_disconnect`). */
+  constructor(private file: string, private emit: (s: SSHState) => void, private reportStale: () => void) {
     try {
       this.profiles = JSON.parse(readFileSync(file, 'utf8')) as SSHProfile[]
     } catch {}
@@ -214,9 +215,15 @@ class SSHComputers {
     const id = profile.id
     const stop = (status: SSHStatus): Outcome => ({ kind: 'stop', status })
     const idle = stop({ kind: 'idle' })
+    // A disconnected or replaced attempt still runs to its next check: it never shows a step again, or a
+    // disconnected computer would stay on that step.
+    const show = (status: SSHStatus) => {
+      if (!token.cancelled) return show(status)
+      this.reportStale()
+    }
     const problem = missingTools() ?? validate(profile)
     if (problem) return stop({ kind: 'failed', message: sshMessage(problem) })
-    this.setStatus(id, { kind: 'connecting', step: 'Reading SSH settings…' })
+    show({ kind: 'connecting', step: 'Reading SSH settings…' })
     const config = await run(SSH, resolveArguments(profile))
     if (token.cancelled) return idle
     const resolved = config.status === 0 ? parseConfig(config.stdout) : null
@@ -229,7 +236,7 @@ class SSHComputers {
       if (usesProxy(resolved)) {
         return stop({ kind: 'failed', message: sshMessage('{name} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.', { name: profile.host }) })
       }
-      this.setStatus(id, { kind: 'connecting', step: 'Reading the host key…' })
+      show({ kind: 'connecting', step: 'Reading the host key…' })
       const lines = knownHostsLines(await scanHostKeys(resolved), name)
       if (lines.length === 0) return { kind: 'retry', message: sshMessage("Can't reach {address}.", { address: `${resolved.hostname}:${resolved.port}` }) }
       const prints = await run(KEYGEN, ['-l', '-f', '-'], lines.join('\n') + '\n')
@@ -239,7 +246,7 @@ class SSHComputers {
       return stop({ kind: 'confirmHostKey', name, fingerprints })
     }
 
-    this.setStatus(id, { kind: 'connecting', step: 'Signing in…' })
+    show({ kind: 'connecting', step: 'Signing in…' })
     const shell = await this.shells.of(profile, token)
     if (token.cancelled) return idle
     const result = await run(SSH, infoArguments(profile, home, identity.dataFolder, dataDir, shell))
@@ -278,7 +285,7 @@ class SSHComputers {
     for (let attempt = 0; attempt < 3; attempt++) {
       const port = await freeLocalPort()
       if (port === null) return { kind: 'retry', message: sshMessage('No free local port for the tunnel.') }
-      this.setStatus(id, { kind: 'connecting', step: 'Opening the tunnel…' })
+      show({ kind: 'connecting', step: 'Opening the tunnel…' })
       const tunnel = this.startTunnel(profile, port)
       if (!tunnel) return stop({ kind: 'failed', message: sshMessage("Couldn't start ssh.") })
       const { child, tail } = tunnel
@@ -326,7 +333,7 @@ class SSHComputers {
         baseURL,
         token: info.token,
       })
-      this.setStatus(id, { kind: 'connected', localPort: port })
+      show({ kind: 'connected', localPort: port })
       return { kind: 'attached' }
     }
     if (authRefused(tunnelFailure.detail ?? '')) return stop({ kind: 'failed', message: signInRefused(profile) })
@@ -402,10 +409,10 @@ class SSHComputers {
 }
 
 /** SSH computers for every window: `ssh:*` handlers, `ssh:change` events, tunnels stopped on quit. */
-export function registerSSH(getWindows: () => BrowserWindow[]) {
+export function registerSSH(getWindows: () => BrowserWindow[], reportStale: () => void) {
   const ssh = new SSHComputers(join(app.getPath('userData'), 'ssh-profiles.json'), (state) => {
     for (const w of getWindows()) if (!w.isDestroyed()) w.webContents.send('ssh:change', state)
-  })
+  }, reportStale)
   ipcMain.handle('ssh:state', () => ssh.state)
   ipcMain.handle('ssh:save', (_e, profile: SSHProfile) => ssh.save(profile))
   ipcMain.on('ssh:remove', (_e, id: string) => ssh.remove(id))

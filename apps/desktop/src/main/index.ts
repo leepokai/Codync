@@ -31,6 +31,7 @@ import { Island } from './island'
 import { registerNotifications } from './notifications'
 import { registerErrorReports } from './error-reports'
 import { registerRendererRecovery } from './renderer-recovery'
+import { trackBody } from '../shared/analytics'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
 import { applyMenu } from './app-menu'
@@ -263,7 +264,8 @@ if (yieldsToInstall()) {
     registerCloud(account)
     registerCloudAccess(account)
     registerChannels(account)
-    registerSSH(() => BrowserWindow.getAllWindows())
+    // Best effort, like `window_recovery`: the host may be down or restarting.
+    registerSSH(() => BrowserWindow.getAllWindows(), () => void host.call('track', trackBody({ event: 'ssh_step_after_disconnect' })).catch(() => {}))
     registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))

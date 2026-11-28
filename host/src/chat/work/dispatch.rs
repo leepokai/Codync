@@ -222,8 +222,14 @@ pub(super) fn dispatch_with_startup(hub: &Arc<Hub>, bot: &str, startup: (bool, V
 /// [`dispatch`], from the end of `over`'s turn (the bot's own, or one of its threads').
 pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>, startup: Option<(bool, Vec<String>)>) {
     let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted).map(|r| r.config) else { return };
-    // Paused: the box starts nothing (nothing is spent); resuming looks over it again.
-    if hub.paused(bot) {
+    // Paused, or admission closed by a pause transaction still in flight: the box starts nothing (nothing is spent),
+    // and a resume looks over it again when it is done. `blocked` is the second case: a pause sets it before its flag
+    // is saved, and a resume clears it only once its own cleanup has run and its threads have been told, so a pass
+    // inside a resume's window would read the resume's own `blocked` bit as a starting thread's pause flag
+    // (`startup_flag`), register that thread's actor after the resume's thread scan, and cut its first task off
+    // (`CUT_OFF`) though nothing was interrupted. `blocked` clears once, in a resume, so a pass that reads it clear
+    // starts from the flag as it stands; only a pause beginning after that can close it again.
+    if hub.paused(bot) || hub.pause.blocked(bot) {
         return;
     }
     let plan = match tasks::change(hub, bot, |tasks| plan(hub, &cfg, tasks, over)) {
@@ -658,6 +664,30 @@ mod tests {
         release.send(()).expect("the transition was released");
         holding.join().expect("the holder ended");
         assert!(hub.has_actor("thread-1"), "it did not start");
+    }
+
+    /// A box pass inside a resume's window starts nothing. The resume has saved its flag and admission is not open
+    /// yet (`blocked`): read in that window, a starting thread's flag is the resume's own `blocked` bit, its actor
+    /// registers after the resume's thread scan, and its first task ends as cut off by a restart that never
+    /// happened. The resume's own pass starts the task after it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_box_pass_inside_a_resume_starts_no_thread() {
+        let hub = hub();
+        hub.store.save_bot(&BotConfig { max_threads: 2, ..bot("b1", "Mika", "/tmp") }).expect("saved");
+        let waiting =
+            json!({"id": "w1", "title": "Work", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0});
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([waiting]).to_string()).expect("saved");
+        // A resume from a pause: the flag is already saved false, and admission opens later (`unblock`).
+        hub.pause.block("b1");
+        run(&hub, "b1", None, None);
+        let task = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(task.status, Status::Waiting, "the task started while the resume still held admission");
+        assert!(task.thread.is_none(), "a thread started inside the resume's window");
+
+        hub.pause.unblock("b1");
+        run(&hub, "b1", None, None);
+        let thread = tasks::load(&hub.store, "b1").remove(0).thread.expect("a thread of its own");
+        assert!(hub.has_actor(&thread), "the pass after the resume did not start it");
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { isGroup, type Bot } from '@shared/models'
 import { outsideStatus } from '@shared/work'
 import { dotGrid, dotRadius } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
+import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
 import './avatar.css'
 import { AgentIcon, agentTint } from './AgentIcon'
@@ -297,6 +298,7 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
  * (a registry id) puts the agent's logo in the bottom-left corner. */
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
+  const tr = useTr()
   // The crown's width is named once: the mark's clearance math and the badge itself must stay
   // in sync for the 2px gap to hold. A paused bot's mark takes the top-right gap the lead's
   // crown leaves; a gap too small for a readable mark skips it — the row still fades and
@@ -314,9 +316,10 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
       ) : null}
       {bot.lead ? <LeadAgentBadge size={crownSize} /> : null}
       {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet
-          row doesn't — this mark says paused wherever the bot's face shows. */}
+          row doesn't — this mark says paused wherever the bot's face shows. It is labelled, not
+          hidden: a search row that shows only this mark must still tell a reader it is paused. */}
       {bot.paused && !isGroup(bot) && pausedMark >= 8 ? (
-        <span className="avatar-paused" aria-hidden="true">
+        <span className="avatar-paused" role="img" aria-label={tr('Paused')}>
           <Icon name="pause.circle" size={pausedMark} weight="medium" color="var(--secondary)" scaled={false} />
         </span>
       ) : null}

@@ -239,7 +239,13 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     if hub.paused(bot_id) {
         return Ok(Ran::Later);
     }
-    let raw = oneshot::one_shot(hub, &cfg, &system, &material).await?;
+    let raw = match oneshot::one_shot(hub, &cfg, &system, &material).await {
+        Ok(raw) => raw,
+        // A pause landed while the agent or its session was set up: nothing was spent, and the run waits for a
+        // resume rather than counting a failure.
+        Err(error) if error.downcast_ref::<oneshot::Paused>().is_some() => return Ok(Ran::Later),
+        Err(error) => return Err(error),
+    };
     let plan = dream::parse(&raw).ok_or_else(|| anyhow!("dreaming answered without a plan"))?;
     let (kept, mut rejected) = dream::audit(&snapshot, &messages, plan);
     let (edits, dropped) = hub.store.memory_read(|c| dream::edits(c, &snapshot, &kept, &messages))?;

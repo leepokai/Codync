@@ -8,6 +8,7 @@ import { prefs, usePref } from '../lib/prefs'
 import { sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
+import { useTr } from '../lib/use-language'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import type { useComputerRoster } from '../store/computer-roster'
@@ -50,6 +51,7 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
   openWorkflows: (computerId: string, workflowId?: string) => void
 }) {
   const app = useApp()
+  const tr = useTr()
   const frozen = roster.freezeLead
   const selected = app.selection
   const [agentLogos] = usePref(prefs.agentLogos)
@@ -199,11 +201,13 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const many = roster.sections.length > 1
     const agent = logoAgent(item, agentLogos)
     const name = agent ? `${item.bot.name}, ${item.store.backendName(agent)}` : item.bot.name
+    // The row's own text says Paused, but a button's label replaces it for a screen reader: say it here too.
+    const spoken = item.bot.paused && !isGroup(item.bot) ? `${name}, ${tr('Paused')}` : name
     return (
       <RosterRow
         key={key}
         hovered={hovered === key || held}
-        label={many ? `${name}, on ${item.store.hostName}` : name}
+        label={many ? `${spoken}, on ${item.store.hostName}` : spoken}
         title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
         dragKey={key}

@@ -34,11 +34,27 @@ pub(crate) async fn start_with(
     login_profile: Option<&str>,
     extra: &[(&str, &str)],
 ) -> Result<Started> {
-    let mut candidates = backends::launch_candidates(backend)?;
-    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    if matches!(candidates.first(), Some(Candidate::Ready(_))) {
-        candidates.truncate(1);
-    }
+    start_with_command(store, backend, login_profile, extra, None).await
+}
+
+/// [`start_with`], launching `command` (a bot's custom one) when there is one instead of the backend's own ways.
+pub(crate) async fn start_with_command(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+    extra: &[(&str, &str)],
+    command: Option<&str>,
+) -> Result<Started> {
+    let candidates = if let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) {
+        vec![Candidate::Ready(Cmd { program: command.to_owned(), args: String::new() })]
+    } else {
+        let mut candidates = backends::launch_candidates(backend)?;
+        // The installed CLI alone when there is one: resolving the registry build can mean a long download.
+        if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+            candidates.truncate(1);
+        }
+        candidates
+    };
     let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();

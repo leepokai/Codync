@@ -11,10 +11,7 @@ import { canOpenWorkflows } from './workflows/pins'
 
 /** The bots, by name, description or last message; a group's subtitle lists its members. */
 export function botItems(roster: RosterItem[], open: (ref: BotRef) => void): PaletteItem[] {
-  // A paused bot is not marked here: this row shows the name, description and last message only, so
-  // typing "paused" finds nothing even though the roster row outside says Paused. That is a known
-  // accessibility gap, left on purpose for now — the cue has to go in this shared row, which the
-  // model-path change is rewriting at the same time, so placing it here would collide with that work.
+  // A paused bot's avatar carries a labelled mark (AvatarWithStatus), so a reader hears Paused here too.
   return roster.map((item) => {
     const members = isGroup(item.bot) ? item.store.members(item.bot) : []
     const names = members.map((m) => m.name).join(', ')

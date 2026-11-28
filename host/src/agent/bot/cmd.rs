@@ -124,9 +124,19 @@ pub enum Cmd {
         reply: tokio::sync::oneshot::Sender<bool>,
     },
     NewSession,
-    Reconfigure(Box<BotConfig>),
+    /// The bot's setup as it was just saved. `pause_generation` is the pause number the save took
+    /// (`Hub::pause_generation`), or `None` for a snapshot that isn't about pausing (a fallback or lead
+    /// change): its pause flag is then left to the pause commands.
+    Reconfigure {
+        base: Box<BotConfig>,
+        pause_generation: Option<u64>,
+    },
     /// Its bot's pause changed and this actor is one of its threads: the owner's config is the one that says so.
-    Paused(bool),
+    /// `pause_generation` orders it against a later save whose command arrived first.
+    Paused {
+        paused: bool,
+        pause_generation: u64,
+    },
     /// The user wants the bot's own agent again (`switchBack`).
     SwitchBack,
     /// A voice call ended (`chat::calls`): its replies show in the chat again, and dreaming reads it.

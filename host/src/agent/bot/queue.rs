@@ -87,7 +87,7 @@ impl Actor {
                 let _ = reply.send(self.post_artifact(data));
             }
             Cmd::Stop => self.stop().await,
-            Cmd::Paused(paused) => self.pause_changed(paused, done_tx).await,
+            Cmd::Paused { paused, pause_generation } => self.pause_changed(paused, pause_generation, done_tx).await,
             Cmd::Permission { entry_id, option_id } => self.answer_permission(&entry_id, option_id).await,
             Cmd::Approve { title, detail, reply } => self.ask_approval(&title, &detail, reply),
             Cmd::NewSession => {
@@ -108,10 +108,18 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(mut base) => {
+            Cmd::Reconfigure { mut base, pause_generation } => {
                 // A thread's folder is its own (`enter_worktree`): its bot's changes (`work::fallbacks_changed`) keep it.
                 if self.cfg.is_thread() {
                     base.cwd.clone_from(&self.base.cwd);
+                }
+                // Saving a bot releases the hub's lock before its commands are sent, so this one can arrive after
+                // a later save's: an older pause or resume must not undo the newer one. `None` (a fallback or lead
+                // change) says nothing about pausing and leaves the flag alone.
+                match pause_generation {
+                    Some(generation) if generation < self.pause_generation => base.paused = self.base.paused,
+                    Some(generation) => self.pause_generation = generation,
+                    None => base.paused = self.base.paused,
                 }
                 let old = std::mem::replace(&mut self.base, *base);
                 self.versions.ready(&self.hub, &self.base);
@@ -175,7 +183,8 @@ impl Actor {
                 // cancelled the bot's routine runs (`Hub::update_bot`), so a notification that arrives late
                 // cannot cancel a run admitted after a resume.
                 if old.paused != self.base.paused {
-                    self.pause_changed(self.base.paused, done_tx).await;
+                    self.pause_changed(self.base.paused, pause_generation.unwrap_or(self.pause_generation), done_tx)
+                        .await;
                 }
             }
             Cmd::Shutdown => return false,
@@ -254,7 +263,18 @@ impl Actor {
     /// it; a resume lets what stayed queued go on and, for the bot's own chat, looks the box over again. The host's
     /// pause transaction cancelled the bot's routine runs, so this never does: a late notification would otherwise
     /// cancel a run admitted after a resume.
-    pub(super) async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
+    pub(super) async fn pause_changed(
+        &mut self,
+        paused: bool,
+        pause_generation: u64,
+        done_tx: &mpsc::UnboundedSender<Done>,
+    ) {
+        // A notice from before a newer pause or resume is already out of date: it must not stop the turn that
+        // resume started, nor start one a later pause has to stop.
+        if pause_generation < self.pause_generation {
+            return;
+        }
+        self.pause_generation = pause_generation;
         if paused {
             self.cancel_turn().await;
             self.refuse_paused();

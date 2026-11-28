@@ -7,6 +7,7 @@ use crate::store::BotConfig;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 impl Hub {
     /// Whether `id` (a bot, or one of its threads) is paused: it answers nothing and spends nothing until it is
@@ -95,9 +96,15 @@ impl Hub {
     }
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
+        self.update_bot_returning(patch).map(|(value, _)| value)
+    }
+
+    /// [`Hub::update_bot`], also returning the target as it was inside the save's own lock: a caller that audits
+    /// the change records what this save replaced, not a copy it read before an approval card waited.
+    pub fn update_bot_returning(&self, patch: &Value) -> Result<(Value, BotConfig)> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg, paused_runs) = {
+        let (before, cfg, paused_runs, pause_generation) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -114,7 +121,14 @@ impl Hub {
             // these afterwards cannot reach what the resume started (Greptile on this file, #587).
             let paused_runs =
                 if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
-            (row.config, cfg, paused_runs)
+            // A pause change takes the next number here, under the lock: the command that carries it can arrive
+            // after a later save's, and this says which one a bot's actor should keep.
+            let pause_generation = if row.config.paused == cfg.paused {
+                self.pause_generation.load(Ordering::SeqCst)
+            } else {
+                self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1
+            };
+            (row.config, cfg, paused_runs, pause_generation)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
@@ -144,7 +158,8 @@ impl Hub {
                 // pause (`Actor::paused`) is told separately, so a running thread turn stops now too.
                 for thread in crate::chat::work::of(&self.store, &id) {
                     if self.has_actor(&thread.id)
-                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                        && let Err(error) =
+                            self.send_cmd(&thread.id, Cmd::Paused { paused: cfg.paused, pause_generation })
                     {
                         tracing::warn!(
                             thread = %thread.id, error = format!("{error:#}"),
@@ -153,11 +168,11 @@ impl Hub {
                     }
                 }
             }
-            self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+            self.send_cmd(&id, Cmd::Reconfigure { base: Box::new(cfg), pause_generation: Some(pause_generation) })?;
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);
-        Ok(self.bot_value(&id).unwrap_or(Value::Null))
+        Ok((self.bot_value(&id).unwrap_or(Value::Null), before))
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {

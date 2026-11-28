@@ -93,9 +93,11 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    let pause_generation = hub.pause_generation();
     let actor = Actor {
         hub,
         base,
+        pause_generation,
         cfg,
         conn: None,
         session_id,
@@ -279,6 +281,9 @@ struct Actor {
     hub: Arc<Hub>,
     /// The bot as the user set it up.
     base: BotConfig,
+    /// The pause number of the last `Reconfigure` or `Paused` this actor applied: a command carrying an older
+    /// one arrives late and must not undo a newer pause or resume.
+    pause_generation: u64,
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,
     conn: Option<Conn>,

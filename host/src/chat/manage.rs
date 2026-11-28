@@ -175,21 +175,39 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             Ok(json!({"bots": bots}))
         }
         "list_models" => {
-            // The agent to list: named directly, or else a managed bot's own agent (`botId`), on its login profile.
-            let (agent, profile, bot_model) = if let Some(agent) = text(args, "agent")? {
-                (agent, None, None)
+            // The agent to list: named directly, or else a managed bot's own agent (`botId`), on its login profile
+            // and with its custom command when it has one.
+            let (agent, profile, command, bot_model) = if let Some(agent) = text(args, "agent")? {
+                (agent, None, None, None)
             } else {
                 let bot = text(args, "botId")?.context("pass agent, or botId for a managed bot's agent")?;
                 let cfg = agent_bot(hub, &bot)?;
-                (cfg.backend, cfg.login_profile, Some(cfg.model))
+                (cfg.backend, cfg.login_profile, cfg.command, Some(cfg.model))
             };
             let query = text(args, "query")?.map(|q| q.to_ascii_lowercase());
             // A first-ever load can build the agent's model registry, which is slow: cap it at the window
             // the clients give a tool call, so a wedged agent launch can't outlive them silently.
             let deadline = Instant::now() + APPROVAL_TIMEOUT;
-            let catalog =
-                tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent, profile.as_deref(), crate::agent::auth::ModelListWanted::Fresh))
+            // A custom command answers its own model list (`launch_commands`); the backend's kept list would be
+            // another agent's, so the command is asked directly and its answer isn't kept.
+            let wanted = crate::agent::auth::ModelListWanted::Fresh;
+            let loaded = match command.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                Some(command) => {
+                    tokio::time::timeout_at(
+                        deadline,
+                        crate::agent::auth::models_with_command(&hub.store, &agent, profile.as_deref(), command),
+                    )
                     .await
+                }
+                None => {
+                    tokio::time::timeout_at(
+                        deadline,
+                        crate::agent::auth::shared_models(hub, &agent, profile.as_deref(), wanted),
+                    )
+                    .await
+                }
+            };
+            let catalog = loaded
                 .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
                 .map_err(|e| {
                     anyhow!("couldn't list {agent}'s models: {e:#} — install and sign in to {agent} on this computer, or list an agent that is set up here")
@@ -354,6 +372,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     checked?;
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
+    // The card can wait minutes, and another change may land while it does: the save hands back the target as it
+    // was inside its own lock, so the audit records what this save replaced.
+    let mut before = target.clone();
     let audited_fields = fields.clone();
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
@@ -361,7 +382,8 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         let mut patch = Value::Object(fields);
         patch["id"] = id.clone().into();
         let hub = hub.clone();
-        tokio::task::spawn_blocking(move || hub.update_bot(&patch)).await??;
+        let (_, replaced) = tokio::task::spawn_blocking(move || hub.update_bot_returning(&patch)).await??;
+        before = replaced;
     }
     let saved = save_routines(hub, &id, &routines);
     let routines_saved = saved.iter().filter(|r| r["error"].is_null()).count();
@@ -375,7 +397,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         // or a refusal never reaches this point. Routines count here too: a manager that changed nothing but
         // routines made a change, so it is audited like one.
         if let Ok(after) = agent_bot(hub, &id) {
-            audit_change(hub, source, &target, &after, &audited_fields, routines_saved);
+            audit_change(hub, source, &before, &after, &audited_fields, routines_saved);
         }
     }
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))

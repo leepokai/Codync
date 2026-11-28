@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
@@ -142,6 +142,10 @@ pub struct Hub {
     runtime: Mutex<HashMap<String, Runtime>>,
     /// Bot → the status its Live Activities last heard (`outside_changed`).
     outside: Mutex<HashMap<String, BotStatus>>,
+    /// One number per change of a bot's pause flag, taken under `emit_lock`. Saving a bot releases the lock
+    /// before its `Reconfigure` and `Paused` commands are sent, so an older pause or resume can reach an actor
+    /// after a newer one; it carries its number and an actor leaves the flag to the newer one.
+    pause_generation: AtomicU64,
     pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
     /// An agent became wanted: its usage is read now, not at the next poll.
@@ -211,6 +215,7 @@ impl Hub {
             runtime: Mutex::default(),
             outside: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
+            pause_generation: AtomicU64::new(0),
             usage: Mutex::default(),
             usage_wake: tokio::sync::Notify::new(),
             keep_awake: Mutex::default(),
@@ -295,6 +300,12 @@ impl Hub {
     pub(crate) fn forget_runtime(&self, bot_id: &str) {
         self.runtime.locked().remove(bot_id);
         self.update_keep_awake();
+    }
+
+    /// The pause number this host has reached: a `Reconfigure` or `Paused` command carries the one its save
+    /// took, so an actor can tell an older pause or resume from a newer one.
+    pub fn pause_generation(&self) -> u64 {
+        self.pause_generation.load(Ordering::SeqCst)
     }
 
     pub fn send_cmd(&self, bot_id: &str, cmd: Cmd) -> Result<()> {

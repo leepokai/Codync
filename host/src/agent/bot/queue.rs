@@ -100,6 +100,7 @@ impl Actor {
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
+            Cmd::Paused(paused) => self.pause_changed(paused, done_tx).await,
             Cmd::SwitchBack => self.switch_back().await,
             Cmd::CallEnded { call } => {
                 if self.turn_call.as_ref() == Some(&call) {
@@ -169,22 +170,11 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
-                // A pause stops the running turn (nothing more is spent), cancels its queued routine runs and
-                // closes what waits on it; resuming lets what stayed queued go on and looks over the box again.
+                // A pause stops the running turn (nothing more is spent) and closes what waits on it; resuming
+                // lets what stayed queued go on and looks over the box again. The host cancelled the bot's
+                // routine runs under the lock its flag was saved with, so this never does.
                 if old.paused != self.base.paused {
-                    if self.base.paused {
-                        if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
-                            tracing::error!(
-                                error = format!("{error:#}"),
-                                "couldn't cancel a paused bot's queued routines"
-                            );
-                        }
-                        self.cancel_turn().await;
-                        self.refuse_paused();
-                    } else {
-                        self.next_in_queue(done_tx).await;
-                        work::dispatch(&self.hub, &self.cfg.id);
-                    }
+                    self.pause_changed(self.base.paused, done_tx).await;
                 }
             }
             Cmd::Shutdown => return false,
@@ -523,6 +513,21 @@ impl Actor {
         }
     }
 
+    /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
+    /// lets what was already waiting go on. The host's `update_bot` cancelled the bot's routine runs while it saved
+    /// the flag, so a late notification cannot cancel a run a resume already admitted.
+    async fn pause_changed(&mut self, paused: bool, done_tx: &mpsc::UnboundedSender<Done>) {
+        if paused {
+            self.cancel_turn().await;
+            self.refuse_paused();
+        } else {
+            self.next_in_queue(done_tx).await;
+            if !self.cfg.is_thread() {
+                work::dispatch(&self.hub, &self.cfg.id);
+            }
+        }
+    }
+
     /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. The user's messages go out
     /// cancelled with a notice (they don't wait to run on a later resume), a bot's request ends as not started,
     /// replies go to their notices, and a room's turn is dropped with why. Host turns (a task's report, the
@@ -533,9 +538,17 @@ impl Actor {
             !matches!(q, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
         });
         // A routine run that came due while it is paused is cancelled too (a pause stops its queued ones):
-        // its schedule continues from the next trigger after the resume.
-        if kept.iter().any(|q| matches!(q, Queued::Routine(_)))
-            && let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id)
+        // its schedule continues from the next trigger after the resume. Only the runs still in this queue are
+        // named, so a late pause cannot cancel a run a resume already admitted.
+        let routine_runs: Vec<String> = kept
+            .iter()
+            .filter_map(|q| match q {
+                Queued::Routine(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        if !routine_runs.is_empty()
+            && let Err(error) = self.hub.routines.cancel_ids_for_pause(&self.hub.store, &routine_runs)
         {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
         }

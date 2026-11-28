@@ -474,8 +474,9 @@ impl Actor {
                     tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
                 }
             }
-            if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
-                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+            let runs = self.hub.routines.active_ids(&self.cfg.id);
+            if let Err(error) = self.hub.routines.cancel_ids_for_pause(&self.hub.store, &runs) {
+                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
             }
         } else if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
             self.active_routine = Some(run.id.clone());

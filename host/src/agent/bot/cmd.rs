@@ -125,6 +125,8 @@ pub enum Cmd {
     },
     NewSession,
     Reconfigure(Box<BotConfig>),
+    /// Its bot's pause changed and this actor is one of its threads: the owner's config is the one that says so.
+    Paused(bool),
     /// The user wants the bot's own agent again (`switchBack`).
     SwitchBack,
     /// A voice call ended (`chat::calls`): its replies show in the chat again, and dreaming reads it.

@@ -257,6 +257,33 @@ impl Routines {
         })
     }
 
+    /// The runs of `bot` that are still going or still to go, for a caller that must name what it is about to cancel:
+    /// a pause captures them while it saves the flag, and cancels those ids afterwards.
+    pub fn active_ids(&self, bot: &str) -> Vec<String> {
+        self.state.locked().runs.iter().filter(|r| r.bot_id == bot && r.status.active()).map(|r| r.id.clone()).collect()
+    }
+
+    /// A pause is not the bot's Stop: it ends every run it names, including one working in its box and a webhook
+    /// delivery whose sender was already told the delivery was taken, and a run that came due while it is paused.
+    /// The routine's schedule keeps its next trigger, so a resume starts nothing from this pause.
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| ids.contains(&r.id) && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
+            }
+            Ok(())
+        })
+    }
+
     pub fn disable_bot(&self, store: &Store, bot: &str) -> Result<()> {
         self.change(store, |s| {
             for r in &mut s.routines {
@@ -528,5 +555,33 @@ mod tests {
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
         assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
+    }
+
+    /// A pause is not Stop: it ends the runs it names, including one waiting in the box and a webhook delivery,
+    /// and a retry still waiting for its time (nothing of it runs after the resume). Nothing it doesn't name.
+    #[test]
+    fn a_pause_cancels_the_runs_it_names_and_leaves_the_rest() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let routines = Routines::default();
+        let routine = super::super::tests::routine();
+        let mut boxed = new_run(&routine, Value::Null, None);
+        boxed.boxed = true;
+        let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+        let mut retry = new_run(&routine, Value::Null, None);
+        retry.not_before = Some(now_ms() + 60_000);
+        let other = new_run(&routine, Value::Null, None);
+        let ids: Vec<String> = vec![boxed.id.clone(), delivery.id.clone(), retry.id.clone()];
+        routines
+            .change(&store, |s| {
+                s.runs.extend([boxed, delivery, retry, other.clone()]);
+                s.routines.push(routine);
+                Ok(())
+            })
+            .unwrap();
+        routines.cancel_ids_for_pause(&store, &ids).unwrap();
+        let state = routines.state.locked();
+        assert!(state.runs[..3].iter().all(|r| r.status == Status::Cancelled), "a pause ends all three");
+        assert_eq!(state.runs[2].not_before, None, "a retry waiting for later does not run after the resume");
+        assert!(state.runs[3].status == Status::Pending, "a run of another pause's set is untouched");
     }
 }

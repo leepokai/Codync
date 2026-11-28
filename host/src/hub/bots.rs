@@ -97,7 +97,7 @@ impl Hub {
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg) = {
+        let (before, cfg, paused_runs) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -109,11 +109,21 @@ impl Hub {
             self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
-            (row.config, cfg)
+            // A pause takes the runs it will cancel while it still holds the lock the flag was saved under: a
+            // resume saves under this same lock, so a run admitted after the resume can never be in this set.
+            let paused_runs =
+                if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
+            (row.config, cfg, paused_runs)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
+        if !paused_runs.is_empty()
+            && let Err(error) = self.routines.cancel_ids_for_pause(&self.store, &paused_runs)
+        {
+            tracing::error!(bot = %id, error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
+        }
         if !cfg.is_group() {
+            let pause_changed = before.paused != cfg.paused;
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
@@ -122,6 +132,20 @@ impl Hub {
                 || cfg.thread_fallbacks != before.thread_fallbacks
             {
                 crate::chat::work::fallbacks_changed(self, &cfg);
+            }
+            if pause_changed {
+                // The bot's own actor learns from `Reconfigure` below; each live thread that stands for its
+                // owner's pause (`Hub::paused`) is told separately, so a running thread turn stops now too.
+                for thread in crate::chat::work::of(&self.store, &id) {
+                    if self.has_actor(&thread.id)
+                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                    {
+                        tracing::warn!(
+                            thread = %thread.id, error = format!("{error:#}"),
+                            "couldn't give a thread its bot's pause"
+                        );
+                    }
+                }
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }

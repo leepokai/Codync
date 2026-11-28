@@ -57,7 +57,7 @@ test('the Workflows page lists each computer\'s workflows beside the canvas, lik
   const before = new Set(await ids())
   try {
     await page.locator('.nav-rail [data-page="workflows"]').click()
-    await expect(list.locator('.sidebar-title')).toHaveText('Workflows')
+    await expect(list.locator('span.sidebar-title')).toHaveText('Workflows')
     const local = (await list.locator('section.thread-group').first().getAttribute('aria-label')) ?? ''
     expect(local).not.toBe('')
 

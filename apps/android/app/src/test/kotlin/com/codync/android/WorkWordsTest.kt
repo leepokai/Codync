@@ -1,5 +1,6 @@
 package com.codync.android
 
+import com.codync.android.core.BackgroundTask
 import com.codync.android.core.Bot
 import com.codync.android.core.Computer
 import com.codync.android.core.Entry
@@ -287,5 +288,13 @@ class WorkWordsTest {
         // A working chat comes before a quiet chat whose background task works (desktop `rosterRank`, iOS `rosterLine`).
         val background = bot(work = listOf(working)).copy(id = "background")
         assertEquals(listOf("busy", "background"), sortedByStatus(listOf(background, busy)).map { it.id })
+    }
+
+    @Test fun `the background capsule says what one piece does, or names several, and hides with none`() {
+        val one = BackgroundTask("a", "probe", "Count: two", 7)
+        assertNull(backgroundLabel(WorkTask("w", status = WorkStatus.Working)))
+        assertEquals(BackgroundLabel("probe · Count: two", 7), backgroundLabel(WorkTask("w", status = WorkStatus.Working, background = listOf(one))))
+        val two = listOf(one, BackgroundTask("b", "Sleep", startedAt = 9))
+        assertEquals(BackgroundLabel("probe, Sleep", 7), backgroundLabel(WorkTask("w", status = WorkStatus.Working, background = two)))
     }
 }

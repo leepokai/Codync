@@ -5,6 +5,12 @@
 //! A `messages.jsonl` line with a time and a token or cost count contributes
 //! only when that time is today, including a session opened yesterday. A
 //! session with no such lines counts only when its folder started today.
+//!
+//! Vibe 3.x keeps each session under `unified/<id>/` instead. Its running total
+//! is the `tokenUsage` of the generation `CURRENT` names; the journal and the
+//! chunks only repeat single replies (the journal twice, and folded away after
+//! each turn), so they are not added. 3.x records no cost, and no time per
+//! reply, so a session counts only when its `meta.json` `start_time` is today.
 
 use serde_json::Value;
 use std::path::Path;
@@ -55,7 +61,41 @@ fn windows_in(root: &Path, start: i64, now: i64) -> Vec<Window> {
             cost += session_cost;
         }
     }
+    let unified = unified_tokens(&root.join("unified"), start, end);
+    if unified > 0.0 {
+        from_stamp = true;
+        tokens += unified;
+    }
     notes(tokens, cost, from_stamp && !from_dated)
+}
+
+/// The published totals of the Vibe 3.x sessions that started today.
+// ponytail: a turn still running shows once Vibe folds it into the next generation.
+fn unified_tokens(root: &Path, start: i64, end: i64) -> f64 {
+    let Ok(entries) = std::fs::read_dir(root) else { return 0.0 };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|dir| {
+            read_json(&dir.join("meta.json"))
+                .and_then(|meta| super::iso_ms(meta["start_time"].as_str()?))
+                .is_some_and(|at| (start..=end).contains(&at))
+        })
+        .filter_map(|dir| published_tokens(&dir))
+        .sum()
+}
+
+fn published_tokens(dir: &Path) -> Option<f64> {
+    let current = read_json(&dir.join("CURRENT"))?;
+    // The store is not ours: the generation is a path part only as Vibe's 16 digits.
+    let generation =
+        current["generation"].as_str().filter(|g| g.len() == 16 && g.bytes().all(|b| b.is_ascii_digit()))?;
+    let state = read_json(&dir.join("generations").join(generation).join("projection-state.json"))?;
+    json_f64(&state["snapshot"]["session"]["tokenUsage"]["totalTokens"])
+}
+
+fn read_json(path: &Path) -> Option<Value> {
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
 /// Whether `path` was last written at or after `start` (ms). Missing counts as not written.
@@ -149,8 +189,7 @@ fn notes(tokens: f64, cost: f64, stamp_only: bool) -> Vec<Window> {
 }
 
 fn read_meta(path: &Path) -> Option<(f64, f64)> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let value: Value = serde_json::from_str(&text).ok()?;
+    let value = read_json(path)?;
     let stats = &value["stats"];
     let tokens = json_f64(&stats["session_total_llm_tokens"]).unwrap_or(0.0);
     let cost = json_f64(&stats["session_cost"]).unwrap_or(0.0);
@@ -280,6 +319,76 @@ mod tests {
         let windows = windows_in(&root, start, now);
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(windows, []);
+    }
+
+    /// A Vibe 3.x store, laid out as 3.1.5 writes it: `CURRENT` names the
+    /// published generation, whose `projection-state.json` holds the session's
+    /// running total. The journal and chunks repeat per-reply usage.
+    fn unified_session(root: &Path, id: &str, started: i64, generations: &[(&str, u64)]) {
+        let dir = root.join("unified").join(id);
+        let started = chrono::DateTime::from_timestamp_millis(started).unwrap().to_rfc3339();
+        std::fs::create_dir_all(dir.join("journal")).unwrap();
+        std::fs::create_dir_all(dir.join("chunks")).unwrap();
+        std::fs::write(
+            dir.join("meta.json"),
+            format!(
+                r#"{{"session_id":"{id}","start_time":{started:?},"end_time":{started:?},"title":"t","config":{{}}}}"#
+            ),
+        )
+        .unwrap();
+        for (generation, total) in generations {
+            let generation_dir = dir.join("generations").join(generation);
+            std::fs::create_dir_all(&generation_dir).unwrap();
+            std::fs::write(
+                generation_dir.join("projection-state.json"),
+                format!(
+                    r#"{{"projection_state_version":1,"session_id":"{id}","snapshot_sequence":3,"watermark":3,"snapshot":{{"format":"harness.public-session-state/v1","session":{{"id":"{id}","tokenUsage":{{"inputTokens":{total},"outputTokens":0,"totalTokens":{total},"cachedInputTokens":0}}}},"history":{{"entries":[]}}}}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let current = generations.last().unwrap().0;
+        std::fs::write(
+            dir.join("CURRENT"),
+            format!(r#"{{"store_format":"mistral.vibe.unified-session-store/v1","session_id":"{id}","generation":"{current}","snapshot_sequence":3}}"#),
+        )
+        .unwrap();
+        let usage = r#"{"usage":{"cache_write_tokens":0,"cached_input_tokens":1920,"input_tokens":23299,"output_tokens":183,"reasoning_tokens":55,"total_tokens":23482}}"#;
+        std::fs::write(
+            dir.join("journal/0000000000000004.jsonl"),
+            format!(
+                "{{\"sequence\":4,\"type\":\"action_result\",\"payload\":{{\"result\":{{\"type\":\"completion_succeeded\",\"result\":{usage}}}}}}}\n{{\"sequence\":5,\"type\":\"core_input\",\"payload\":{{\"input\":{{\"command\":{{\"type\":\"completion_succeeded\",\"result\":{usage}}}}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("chunks/0a.json"), format!("[{usage}]")).unwrap();
+    }
+
+    #[test]
+    fn a_vibe_3_session_started_today_reads_its_published_total() {
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 25)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let start = local_midnight(now).unwrap();
+        let root = std::env::temp_dir().join(format!("codync-vibe-unified-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for name in ["active", "continue-pointers", "plugins"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        // The older generation is the retained predecessor: only CURRENT's counts.
+        unified_session(
+            &root,
+            "today",
+            start + 3_600_000,
+            &[("0000000000000002", 1_000), ("0000000000000003", 40_000)],
+        );
+        unified_session(&root, "yesterday", start - 3_600_000, &[("0000000000000001", 50_000)]);
+        let windows = windows_in(&root, start, now);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(windows, [Window::note("tokens", "Tokens (started today)", "40.0k tokens")]);
     }
 
     #[test]

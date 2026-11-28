@@ -1,6 +1,7 @@
 //! A task's thread, opened from its row on the Details page: its thread's own transcript (everything the thread did,
-//! whatever session it was in), a line for each thing the thread put in the bot's chat, which `↵` shows there, and its
-//! composer: the user writes to the thread of the bot's own task as to a chat.
+//! whatever session it was in), what the thread put in the bot's chat as the chat shows it (its cards answer here too;
+//! `↵` on a picked one shows it there), and its composer: the user writes to the thread of the bot's own task as to a
+//! chat.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
@@ -8,7 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Editor, Entry, Focus, Overlay, Queued, WorkTask, shared_line};
+use super::super::app::{After, App, Editor, Entry, Focus, Kind, Overlay, Queued, WorkTask, card_to_answer, is_shared};
+use super::super::net::artifacts::ArtifactTo;
 use super::scroll::up_from_end;
 use super::{Reply, ctrl};
 
@@ -122,9 +124,53 @@ fn works(work: &[WorkTask], thread: &str) -> bool {
 }
 
 impl App {
-    /// What `thread` put in `bot`'s chat that its thread has a line for (`shared_line`), oldest first.
+    /// What `thread` put in `bot`'s chat that its page shows (`is_shared`), oldest first.
     pub fn shared(&self, bot: &str, thread: &str) -> Vec<&Entry> {
-        self.lane(bot).into_iter().filter(|e| e.data["thread"]["id"] == thread && shared_line(e).is_some()).collect()
+        self.lane(bot).into_iter().filter(|e| e.data["thread"]["id"] == thread && is_shared(e)).collect()
+    }
+
+    /// What `s`'s thread put in its bot's chat that `wanted` takes and the chat's keys act on, as in the chat: the
+    /// picked one, else the newest.
+    fn thread_card(&self, s: &ThreadSheet, wanted: impl Fn(&Entry) -> bool) -> Option<Entry> {
+        card_to_answer(self.shared(&s.bot, &s.thread).into_iter().filter(|e| wanted(e)), s.pick.as_ref()).cloned()
+    }
+
+    /// The chat's keys on what the thread put in its bot's chat: y / a / n / N answer an approval (N then writes to
+    /// the thread why), F1… a choice, 1–9 either; `o` opens a picked artifact in the browser, `f` saves a picked
+    /// message's files. Whether it took `k`: with nothing of the kind there, the key is the page's.
+    fn thread_card_key(&mut self, s: &mut ThreadSheet, k: KeyEvent, talks: bool) -> bool {
+        let card = match k.code {
+            KeyCode::Char('y' | 'a' | 'n' | 'N') => self.thread_card(s, |e| e.pending() && e.kind == Kind::Permission),
+            KeyCode::F(1..=12) => self.thread_card(s, |e| e.pending() && e.kind == Kind::Decision),
+            KeyCode::Char('1'..='9') => self.thread_card(s, Entry::pending),
+            KeyCode::Char('o' | 'f') => self.thread_card(s, |e| s.pick.as_ref() == Some(&e.id)),
+            _ => None,
+        };
+        let Some(e) = card else { return false };
+        match k.code {
+            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N')) => {
+                if self.answer_card_kind(&e, c) && c == 'N' {
+                    s.typing = talks;
+                }
+            }
+            KeyCode::F(n) => {
+                if let Some(option) = e.choices().get(usize::from(n - 1)) {
+                    self.answer(&e.id, option);
+                }
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(option) = e.answer_options().get((c as usize) - ('1' as usize)) {
+                    self.answer(&e.id, option);
+                }
+            }
+            KeyCode::Char('o') => {
+                if let Some(artifact) = e.artifact() {
+                    self.fetch_artifact(&s.bot, artifact, ArtifactTo::Browser);
+                }
+            }
+            _ => self.save_files(&s.bot, &e.id, &e.data),
+        }
+        true
     }
 
     /// Opens the transcript of the thread that has or had `task`; a task no thread took has none.
@@ -302,6 +348,9 @@ impl App {
             return Some(Overlay::Thread(s));
         }
         let live = task.filter(|i| i.status.live());
+        if self.thread_card_key(&mut s, k, talks) {
+            return Some(Overlay::Thread(s));
+        }
         match k.code {
             KeyCode::Tab | KeyCode::BackTab => s.step_pick(self, k.code == KeyCode::Tab),
             KeyCode::Enter if s.pick.is_some() => {
@@ -311,6 +360,13 @@ impl App {
                 return None;
             }
             KeyCode::Esc if s.pick.is_some() => s.pick = None,
+            // `C`: its agent's sign-in, the picked one, else the newest.
+            KeyCode::Char('C') => {
+                let request = self.thread_card(&s, |e| e.data["connectionRequest"]["status"] == "pending");
+                self.overlays.push(Overlay::Thread(s));
+                self.open_connection_of(request.as_ref());
+                return None;
+            }
             KeyCode::Char('i') | KeyCode::Enter if talks => s.typing = true,
             KeyCode::Char('S') => self.on_thread_queued(&s, Queued::SendNow),
             KeyCode::Char('D') => self.on_thread_queued(&s, Queued::Remove),
@@ -597,5 +653,85 @@ mod tests {
         assert!(sheet(&app).pick.is_none());
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert!(sheet(&app).typing);
+    }
+
+    #[tokio::test]
+    async fn the_threads_cards_answer_in_the_thread_as_in_the_chat() {
+        let mut app = test_app();
+        let work = json!([{"id": "i", "title": "Fix login", "status": "needsYou", "thread": "thread-1", "talk": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        let thread = json!({"id": "thread-1", "title": "Fix login"});
+        let chat = |id: &str, seq: i64, kind: &str, mut data: Value| {
+            data["thread"] = thread.clone();
+            data["task"] = json!("i");
+            let entry = json!({"id": id, "botId": "a", "seq": seq, "kind": kind, "turn": 1, "data": data});
+            Msg::Event(json!({"type": "entry", "entry": entry}))
+        };
+        let options = json!([{"optionId": "ok", "name": "Allow", "kind": "allow_once"},
+            {"optionId": "no", "name": "Deny", "kind": "reject_once"}]);
+        let approval = |title: &str| json!({"status": "pending", "title": title, "options": options});
+        app.on_msg(chat("old", 1, "permission", approval("Read the logs")));
+        app.on_msg(chat("card", 2, "permission", approval("Run tests")));
+        let choice =
+            json!({"decision": true, "status": "pending", "question": "Squash?", "choices": ["Squash", "Merge"]});
+        app.on_msg(chat("choice", 3, "notice", choice));
+        let meta = json!([{"id": "f1", "name": "log.txt", "size": 3, "sha256": "00"}]);
+        let file = json!({"text": "log.txt", "final": true, "files": meta});
+        app.on_msg(chat("file", 4, "agent", file));
+        let artifact = json!({"text": "Report", "final": true, "artifact": {"id": "art-1", "title": "Report"}});
+        app.on_msg(chat("art", 5, "agent", artifact));
+        let own = app.bots["a"].work[0].clone();
+        app.open_thread("a", &own);
+        let pick = |app: &mut App, id: &str| match app.overlays.last_mut() {
+            Some(Overlay::Thread(s)) => s.pick = Some(id.to_owned()),
+            _ => panic!("no transcript is open"),
+        };
+        let hint = |app: &App| app.hint.as_ref().map(|(text, _)| text.clone()).unwrap_or_default();
+
+        // Nothing picked: `o` is the page's, and opens nothing.
+        app.on_key(KeyEvent::from(KeyCode::Char('o')));
+        assert_eq!(hint(&app), "");
+        // The picked card first: 1 answers the older approval.
+        pick(&mut app, "old");
+        app.on_key(KeyEvent::from(KeyCode::Char('1')));
+        assert_eq!(app.answering.get("old").map(String::as_str), Some("ok"));
+        assert!(!app.answering.contains_key("card"), "only the picked one");
+        // Else the newest: N denies the newer approval and gives the keys to the thread's composer, to say why.
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Char('N')));
+        assert_eq!(app.answering.get("card").map(String::as_str), Some("no"));
+        assert!(sheet(&app).typing, "N writes to the thread");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // A choice: F2 picks its second, as 2 does.
+        app.on_key(KeyEvent::from(KeyCode::F(2)));
+        assert_eq!(app.answering.remove("choice").as_deref(), Some("Merge"));
+        app.on_key(KeyEvent::from(KeyCode::Char('2')));
+        assert_eq!(app.answering.get("choice").map(String::as_str), Some("Merge"), "the newest card of any kind");
+        // A picked file saves; a picked artifact opens in the browser.
+        pick(&mut app, "file");
+        app.on_key(KeyEvent::from(KeyCode::Char('f')));
+        assert!(hint(&app).starts_with("Downloading"), "{}", hint(&app));
+        pick(&mut app, "art");
+        app.on_key(KeyEvent::from(KeyCode::Char('o')));
+        assert!(hint(&app).starts_with("Opening the artifact"), "{}", hint(&app));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Thread(_))), "it stays open");
+    }
+
+    #[tokio::test]
+    async fn c_opens_the_threads_agent_sign_in_over_the_thread() {
+        let mut app = test_app();
+        let work = json!([{"id": "i", "title": "Fix login", "status": "needsYou", "thread": "thread-1", "talk": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        let request = json!({"kind": "agent", "status": "pending", "title": "Claude", "backend": "claude"});
+        let data = json!({"connectionRequest": request, "thread": {"id": "thread-1"}, "task": "i"});
+        let entry = json!({"id": "sign", "botId": "a", "seq": 1, "kind": "notice", "turn": 1, "data": data});
+        app.on_msg(Msg::Event(json!({"type": "entry", "entry": entry})));
+        let own = app.bots["a"].work[0].clone();
+        app.open_thread("a", &own);
+
+        app.on_key(KeyEvent::from(KeyCode::Char('C')));
+        let n = app.overlays.len();
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(a)) if a.backend == "claude"), "the agent's sign-in");
+        assert!(matches!(app.overlays.get(n - 2), Some(Overlay::Thread(_))), "over the thread");
     }
 }

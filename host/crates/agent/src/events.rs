@@ -8,7 +8,9 @@ use crate::acp::content_text;
 use serde_json::Value;
 
 mod claude;
+mod task;
 pub use claude::Subagent;
+pub use task::{Task, TaskChange, TaskEnd, TaskKind};
 
 /// One `session/update`: the session it is about and what it says.
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +55,8 @@ pub enum Event {
     ModeChanged { mode: Option<String> },
     /// The `/` commands the agent offers (`available_commands_update`).
     Commands(Vec<Command>),
+    /// Work the agent runs apart from its turn began, moved on or ended (`async_task_*`, Claude's adapter).
+    Task(Task),
     /// An update this crate doesn't know: as sent.
     Other(Value),
 }
@@ -85,6 +89,9 @@ impl Event {
             "available_commands_update" => Self::Commands(
                 u["availableCommands"].as_array().into_iter().flatten().filter_map(Command::parse).collect(),
             ),
+            kind if kind.starts_with("async_task_") => {
+                Task::parse(u).map_or_else(|| Self::Other(u.clone()), Self::Task)
+            }
             _ => Self::Other(u.clone()),
         }
     }

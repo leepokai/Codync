@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { join, resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, setPref, typeMessage } from './sandbox.ts'
+import { api, attach, openDetails, setPref, typeMessage } from './sandbox.ts'
 
 // A scripted agent that sets a 30-minute follow-up when its message carries FOLLOW_UP_HERE[note]
 // (host/tests/fixtures/routine_agent.py). Playwright loads specs as CommonJS here, so `__dirname` is defined.
@@ -25,7 +25,7 @@ test('a follow-up a bot sets is a line in its chat and a card above its routines
     await expect(transcript).toContainText('Routine completed successfully.')
 
     // It waits above the bot's routines on a card of its own, saying when it happens; ✕ drops it.
-    await page.getByRole('button', { name: `${name}, view details` }).click()
+    await openDetails(page, 'Details')
     const card = page.locator('.details-panel .follow-up-card', { hasText: 'Look at the build' })
     await expect(card).toContainText('Follow-up at ')
     await card.getByRole('button', { name: 'Cancel follow-up' }).click()

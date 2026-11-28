@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { SANDBOX_PREFIX } from '../src/shared/dev-sandbox.ts'
-import { api, attach, sandbox } from './sandbox.ts'
+import { api, attach, openDetails, sandbox } from './sandbox.ts'
 
 /** A port nothing listens on yet, below the range the system picks from. */
 const freePort = () => 20_000 + Math.floor(Math.random() * 10_000)
@@ -98,7 +98,7 @@ test("a log that can't be read says why, and a missing one reads as no output", 
   try {
     botId = await openBot(page, `Dev server log e2e ${Date.now()}`)
     const { id } = await start(page, botId, 'echo finished', 'docs')
-    await page.locator('.title-pill').click()
+    await openDetails(page, 'Details')
     const row = page.locator('.dev-server-row', { hasText: 'docs' })
     await expect(row).toContainText('Stopped')
 

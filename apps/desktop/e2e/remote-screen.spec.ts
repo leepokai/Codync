@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
-import { appPage, attach, openPage } from './sandbox.ts'
+import { appPage, attach, openPage, showView } from './sandbox.ts'
 
 // Another computer's screen in the desktop app (docs/features/remote-screen.md, "Desktop viewer"). The computer the app
 // runs on never offers its own. With CODYNC_E2E_SCREEN_COMPUTER naming another computer in the sandbox whose Remote
@@ -32,7 +32,7 @@ async function openComputerTab(page: import('@playwright/test').Page, computer: 
   await computer.locator('.bot-row').first().click()
   const details = page.locator('.details-panel')
   if (!(await details.isVisible())) await page.getByRole('button', { name: 'Conversation details' }).click()
-  await details.getByRole('tab', { name: 'Computer', exact: true }).click()
+  await showView(details, 'Computer')
   return details
 }
 
@@ -47,7 +47,7 @@ test("a bot on this computer has a Computer tab without a picture", async () => 
     const details = await openComputerTab(page, section)
     await expect(details.locator('.computer-tab-card')).toBeVisible()
     await expect(details.locator('.computer-tab-screen')).toHaveCount(0)
-    await details.getByRole('tab', { name: 'Details', exact: true }).click()
+    await showView(details, 'Details')
   } finally {
     await browser.close()
   }
@@ -93,7 +93,7 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     await showWindow(true)
     await expect(start).toBeVisible()
     await expect(picture.locator('video')).toBeHidden()
-    await details.getByRole('tab', { name: 'Details', exact: true }).click()
+    await showView(details, 'Details')
   } finally {
     await browser.close()
   }

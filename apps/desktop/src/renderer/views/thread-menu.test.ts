@@ -5,7 +5,7 @@ import type { WorkStatus, WorkTask } from '../../shared/work.ts'
 import { threadMenuItems, type ThreadMenuActions } from './thread-menu.ts'
 
 const task = (id: string, status: WorkStatus, change: Partial<WorkTask> = {}): WorkTask => ({
-  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, ...change,
+  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [], ...change,
 })
 const bot = (work: WorkTask[], change: Partial<Bot> = {}) => ({ id: 'b', work, maxThreads: 1, plain: false, ...change }) as Bot
 

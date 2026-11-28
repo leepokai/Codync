@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, sandbox, setPref, typeMessage } from './sandbox.ts'
+import { api, attach, openDetails, sandbox, setPref, typeMessage } from './sandbox.ts'
 
 // A scripted agent that answers "primary answered" and logs every request to primary.jsonl in its folder
 // (host/tests/fixtures/relay_agent.py). Playwright loads specs as CommonJS here, so `__dirname` is defined.
@@ -51,12 +51,7 @@ test("adding a project in Settings leaves the chat in the bot's own folder, in t
     await expect(page.locator('.bubble', { hasText: 'primary answered' })).toBeVisible({ timeout: 20_000 })
 
     // Settings › Workspace: the bot's own folder, read-only, and its projects.
-    const details = page.locator('.details-panel')
-    if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-    const chooser = details.locator('.panel-choice', { hasText: 'Settings' })
-    await expect(chooser.or(details.getByRole('tab', { name: 'Settings' }))).toBeVisible()
-    if (await chooser.isVisible()) await chooser.click()
-    else await details.getByRole('tab', { name: 'Settings' }).click()
+    const details = await openDetails(page, 'Settings')
     await expect(details.getByText("Bot's folder")).toBeVisible()
     await expect(details.getByText(own, { exact: true })).toBeVisible()
     await expect(details.getByText('Worktree per thread')).toHaveCount(0)
@@ -110,12 +105,7 @@ test('with projects in git repositories: Make default, the worktree mode, and a 
     })).bot.id
     await expect(row(page, name)).toContainText(` · ${basename(first)}`)
     await row(page, name).click()
-    const details = page.locator('.details-panel')
-    if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-    const chooser = details.locator('.panel-choice', { hasText: 'Settings' })
-    await expect(chooser.or(details.getByRole('tab', { name: 'Settings' }))).toBeVisible()
-    if (await chooser.isVisible()) await chooser.click()
-    else await details.getByRole('tab', { name: 'Settings' }).click()
+    const details = await openDetails(page, 'Settings')
 
     // Worktree mode: shown for a project in a git repository, Side by side until another is picked.
     await expect(details.getByText('Worktree mode')).toBeVisible()

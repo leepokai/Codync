@@ -462,6 +462,26 @@ pub(crate) mod tests {
         assert!(openai.chars().count() < gemini.chars().count(), "OpenAI's smaller context gets less");
     }
 
+    #[tokio::test]
+    async fn the_voice_does_not_hear_a_message_held_for_later() {
+        let hub = hub();
+        let cfg = bot("b-held-call", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).unwrap();
+        let lane = Lane::main(&cfg.id);
+        hub.store.insert_entry(&lane, EntryKind::User, 1, &json!({"text": "what we said today"})).unwrap();
+        hub.store
+            .insert_entry(
+                &lane,
+                EntryKind::User,
+                2,
+                &json!({"text": "the secret scheduled words", "status": "scheduled", "notBefore": 9_999_999_999_i64}),
+            )
+            .unwrap();
+        let prompt = instructions(&hub, &cfg, Some(Provider::Gemini), None, &[], false).await;
+        assert!(prompt.contains("what we said today"), "the conversation reaches the voice");
+        assert!(!prompt.contains("the secret scheduled words"), "a future message does not");
+    }
+
     #[test]
     fn earlier_calls_are_dated_on_this_computers_clock() {
         let hub = hub();

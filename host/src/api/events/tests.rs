@@ -82,6 +82,46 @@ async fn incremental_sync_replays_deletions_only_after_the_saved_cursor() {
 }
 
 #[tokio::test]
+async fn the_hello_lists_a_held_message_however_old_it_is_in_the_chat() {
+    let f = Fixture::new();
+    f.add_bot("b");
+    let lane = crate::store::Lane::main("b");
+    // Held before the chat filled up: a fresh client's window is the newest entries per bot, so this one
+    // is outside it — and the tray is the only place it can be seen, edited or taken back.
+    let held = f
+        .hub
+        .add_entry(
+            &lane,
+            crate::store::EntryKind::User,
+            0,
+            &json!({"text": "later", "status": "scheduled", "notBefore": 4_102_444_800_000i64}),
+        )
+        .unwrap();
+    for i in 0..CATCH_UP_PER_BOT {
+        f.hub.add_entry(&lane, crate::store::EntryKind::User, 0, &json!({"text": format!("after {i}")})).unwrap();
+    }
+    let events = f.catch_up(0).await;
+    assert!(
+        events[0]["held"].as_array().is_some_and(|rows| rows.iter().any(|e| e["id"] == held.id)),
+        "the held message is in the hello, whatever its place in the chat"
+    );
+    // It is not a transcript entry: `loadOlder` pages from the lowest `seq` it holds, so one far below the
+    // window would make paging skip everything in between.
+    assert!(
+        !events.iter().any(|e| e["type"] == "entry" && e["entry"]["id"] == held.id),
+        "and not among the window's entries"
+    );
+
+    // Taken back, it is no longer held: no client is told about it again.
+    f.hub.store.update_entry(&held.id, &json!({"text": "later", "status": "cancelled", "removed": true})).unwrap();
+    let events = f.catch_up(0).await;
+    assert!(
+        !events[0]["held"].as_array().is_some_and(|rows| rows.iter().any(|e| e["id"] == held.id)),
+        "a message taken back is not held any more"
+    );
+}
+
+#[tokio::test]
 async fn catch_up_brings_an_artifact_renamed_while_the_client_was_offline() {
     let f = Fixture::new();
     f.add_bot("b");

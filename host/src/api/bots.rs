@@ -462,6 +462,181 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.send_cmd(bot, cmd)?;
             json!({})
         }
+        // A message scheduled for later (`scheduleSend`): saved now, delivered by the sweep (`chat::schedule`)
+        // when its time comes. Files and voice-call sends are immediate-only through this entry point (a
+        // queued message carrying files can still be held for a time by `updateScheduled`, and delivers
+        // them then); groups send immediately; and a thread is written to through its bot and task, never
+        // by its own id — the sweep never visits one.
+        "scheduleSend" => {
+            let bot = str_arg(&b, "botId")?;
+            let nonce = str_arg(&b, "clientNonce")?;
+            // One message per nonce, as `send`: a retry with the same token finds its first save.
+            if !nonce.is_empty()
+                && let Some(e) = hub.store.find_by_nonce(bot, nonce)
+            {
+                return Ok(ControlFlow::Break(json!({"entry": e})));
+            }
+            let row = hub
+                .store
+                .bot(bot)?
+                .filter(|r| !r.deleted && !r.config.is_thread())
+                .ok_or_else(|| anyhow!("unknown bot"))?;
+            let text = str_arg(&b, "text")?.trim();
+            if text.is_empty() {
+                bail!("the message is empty");
+            }
+            if b["attachments"].as_array().is_some_and(|a| !a.is_empty()) {
+                bail!("scheduled messages can't carry files yet; send them now instead");
+            }
+            if b["call"].as_str().is_some() {
+                bail!("a call's messages send immediately; there is nothing to schedule");
+            }
+            let not_before = b["notBefore"].as_i64().ok_or_else(|| anyhow!("notBefore must be a time"))?;
+            let mut data = json!({"text": text, "clientNonce": nonce});
+            let pasted: Vec<&str> = b["pasted"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|p| !p.is_empty() && text.contains(p))
+                .collect();
+            if !pasted.is_empty() {
+                data["pasted"] = json!(pasted);
+            }
+            // `replyTo`: the validated quote of this chat, as `send` takes it — never a bare id.
+            if let Some(id) = b["replyTo"].as_str().filter(|id| !id.is_empty()) {
+                data["replyTo"] = crate::chat::replies::quote(&hub.store, bot, id, b["replyPart"].as_str())?;
+            }
+            json!({"entry": crate::chat::messages::save_scheduled(hub, &row.config, data, not_before)?})
+        }
+        // Edits a message that hasn't gone out (`updateScheduled`): one held for a later time takes a new
+        // text and/or time; one waiting in the live queue can be edited too, and a time holds it for then
+        // (it leaves the queue and fires at its time). Once it has gone out, neither applies.
+        "updateScheduled" => {
+            let bot = str_arg(&b, "botId")?;
+            // A thread is written to through its bot and task, never by its own id — the sweep never
+            // visits one, so a time held here would never come.
+            if hub.store.bot(bot)?.is_some_and(|r| r.config.is_thread()) {
+                bail!("a thread takes its messages through its bot and task, never by its own id");
+            }
+            let entry_id = str_arg(&b, "entryId")?;
+            let text = match b["text"].as_str() {
+                Some(text) if text.trim().is_empty() => bail!("the message is empty"),
+                text => text.map(str::trim),
+            };
+            let not_before = match b["notBefore"].as_i64() {
+                Some(at) if at <= crate::store::now_ms() + crate::chat::messages::SOONEST => {
+                    bail!("the scheduled time must be at least {} seconds out", crate::chat::messages::SOONEST / 1_000)
+                }
+                at => at,
+            };
+            if text.is_none() && not_before.is_none() {
+                bail!("nothing to change");
+            }
+            let mut e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str())
+                .ok_or_else(|| anyhow!("that message isn't waiting any more"))?;
+            // The sheet sends the rev it opened at. A newer edit in another window is refused
+            // rather than overwritten. A caller that omits expectedRev keeps the old behavior.
+            if b["expectedRev"].as_i64().is_some_and(|rev| rev != e.rev) {
+                bail!("that message changed underneath you; take another look");
+            }
+            match e.data["status"].as_str() {
+                // The live queue is the actor's: it moves the message, as `steer` and `unqueue` do. The
+                // entry it hands back follows in the store's events; a hold that finds the message already
+                // with the agent or off the queue changes nothing, and the store's next entry event replaces
+                // the caller's optimistic text.
+                Some("queued") => {
+                    hub.send_cmd(
+                        bot,
+                        Cmd::Hold { entry_id: entry_id.to_owned(), text: text.map(str::to_owned), not_before },
+                    )?;
+                    json!({})
+                }
+                Some("scheduled") => {
+                    if let Some(text) = text {
+                        crate::chat::messages::set_text(&mut e.data, text);
+                    }
+                    if let Some(at) = not_before {
+                        e.data["notBefore"] = at.into();
+                    }
+                    // One-way at the rev we read: a fire, a cancel — even an edit that kept it scheduled —
+                    // that landed first refuses this.
+                    let entry = hub
+                        .flip_scheduled(entry_id, None, &e.data, e.rev)?
+                        .ok_or_else(|| anyhow!("that message changed underneath you; take another look"))?;
+                    json!({"entry": entry})
+                }
+                _ => bail!("that message isn't waiting any more"),
+            }
+        }
+        // Takes a scheduled message back before it fires (`cancelScheduled`): never delivered, and its
+        // files leave the bot's folder, as `unqueue`'s removal does.
+        "cancelScheduled" => {
+            let bot = str_arg(&b, "botId")?;
+            let entry_id = str_arg(&b, "entryId")?;
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let mut e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            e.data["status"] = "cancelled".into();
+            e.data["removed"] = true.into();
+            // One-way at the rev we read: a fire that lands first wins and this refuses.
+            if hub.flip_scheduled(entry_id, None, &e.data, e.rev)?.is_none() {
+                bail!("that message changed underneath you; take another look");
+            }
+            // A held message can carry files (a queued one with files can be given a time): they leave
+            // with it rather than orphaning in the folder.
+            let ids: Vec<String> = e.data["attachments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|a| a["id"].as_str().map(str::to_owned))
+                .collect();
+            if !ids.is_empty() {
+                let root = crate::chat::uploads::root(&row.config);
+                let entry_id = entry_id.to_owned();
+                tokio::task::spawn_blocking(move || {
+                    for id in ids {
+                        if let Err(error) = crate::chat::uploads::remove(&root, &id) {
+                            tracing::warn!(entry = %entry_id, error = format!("{error:#}"), "couldn't delete a removed message's file");
+                        }
+                    }
+                });
+            }
+            hub.emit_bot(bot);
+            json!({})
+        }
+        // Delivers a scheduled message right now (`sendScheduledNow`): it takes its place in the ordinary queue.
+        "sendScheduledNow" => {
+            let bot = str_arg(&b, "botId")?;
+            let entry_id = str_arg(&b, "entryId")?;
+            let mut e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            // The sheet sends the rev it was opened at: a save made in another window since then is newer
+            // than this text, so the fire refuses rather than sending the older words over it.
+            if b["expectedRev"].as_i64().is_some_and(|rev| rev != e.rev) {
+                bail!("that message changed underneath you; take another look");
+            }
+            // The sheet's "Clear the time" sends the text the user just edited, not the saved draft.
+            if let Some(text) = b["text"].as_str() {
+                let text = text.trim();
+                if text.is_empty() {
+                    bail!("the message is empty");
+                }
+                crate::chat::messages::set_text(&mut e.data, text);
+            }
+            json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?
+                .ok_or_else(|| anyhow!("that message changed underneath you; take another look"))?})
+        }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
             json!({})

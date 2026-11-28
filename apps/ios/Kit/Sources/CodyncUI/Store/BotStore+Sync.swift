@@ -301,7 +301,17 @@ extension BotStore {
         if let i = list.firstIndex(where: { $0.id == e.id }) {
             // A late API response mustn't undo a newer SSE update.
             guard e.rev >= list[i].rev else { return }
-            list[i] = e
+            // A scheduled message takes a new seq when it fires. Replacing the row in place would leave
+            // the delivered text among older messages, away from the reply it just caused.
+            let moved = list[i].seq != e.seq
+            list.remove(at: i)
+            if !moved {
+                list.insert(e, at: i)
+            } else if e.seq > 0, let at = list.firstIndex(where: { $0.seq > e.seq }) {
+                list.insert(e, at: at)
+            } else {
+                list.append(e)
+            }
         } else {
             // Replace the optimistic copy of a message we sent.
             if e.kind == "user", let nonce = e.data.clientNonce, !nonce.isEmpty {

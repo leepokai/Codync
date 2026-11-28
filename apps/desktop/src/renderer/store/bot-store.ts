@@ -432,6 +432,82 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('unqueue', { botId: thread?.botId ?? entry.botId, taskId: thread?.taskId, entryId: entry.id }), true, () => show(entry))
   }
 
+  /** Schedules a message for later (`scheduleSend`): the tray shows it until the host's sweep delivers it. */
+  scheduleSend(text: string, botId: string, notBefore: number, { nonce = crypto.randomUUID(), replyTo = null }: { nonce?: string; replyTo?: ReplyQuote | null } = {}) {
+    const trimmed = text.trim()
+    if (!trimmed || this.retired) return
+    this.lastSentNonce = nonce
+    const data: Entry['data'] = { text: trimmed, status: 'scheduled', notBefore, clientNonce: nonce }
+    if (replyTo) data.replyTo = replyTo
+    this.upsert({
+      id: `local-${nonce}`, seq: Number.MAX_SAFE_INTEGER, botId, rev: 0, kind: 'user',
+      turn: 0, data, createdAt: Date.now(), updatedAt: 0,
+    })
+    this.changed()
+    void (async () => {
+      try {
+        const e = await this.withLink((c) => c.scheduleSend(botId, trimmed, notBefore, nonce, replyTo), true)
+        this.upsert(e)
+        this.changed()
+        noteActiveDay()
+      } catch (error) {
+        this.markLocal(nonce, botId, 'failed')
+      }
+    })()
+  }
+
+  /** Edits a message that hasn't gone out: one held for later takes a new text and/or time; one waiting in
+   * the live queue can be edited too, and a time holds it for then. */
+  updateScheduled(entry: Entry, patch: { text?: string; notBefore?: number }) {
+    const show = (e: Entry) => {
+      this.upsert(e)
+      this.changed()
+    }
+    // A waiting message given a time leaves the live queue: it shows as held right away.
+    const held = patch.notBefore !== undefined && entry.data.status === 'queued'
+    show({ ...entry, data: { ...entry.data, ...patch, ...(held ? { status: 'scheduled' } : {}) } })
+    this.perform(
+      async (c) => {
+        const e = await c.updateScheduled(entry.botId, entry.id, { ...patch, expectedRev: entry.rev })
+        if (e) {
+          this.upsert(e)
+          this.changed()
+        }
+      },
+      true,
+      // Only when nothing newer arrived: a refusal because the message moved (it fired, it was taken
+      // back) leaves the newer state standing, not this snapshot.
+      () => {
+        if (this.entries.get(entry.botId)?.find((x) => x.id === entry.id)?.rev === entry.rev) show(entry)
+      },
+    )
+  }
+
+  /** Takes a scheduled message back (`cancelScheduled`): never delivered. */
+  cancelScheduled(entry: Entry) {
+    const show = (e: Entry) => {
+      this.upsert(e)
+      this.changed()
+    }
+    // The removed row is hidden from the chat; its old copy in hello.held must leave at the same time.
+    this.forgetHeld(entry.id)
+    show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
+    this.perform((c) => c.cancelScheduled(entry.botId, entry.id), true, () => {
+      if (this.entries.get(entry.botId)?.find((x) => x.id === entry.id)?.rev === entry.rev) show(entry)
+    })
+  }
+
+  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would, with the text
+   * the user has just edited when that differs from the saved draft. Its revision goes with it, so a newer
+   * save from another window is not overwritten by this sheet's older words. */
+  sendScheduledNow(entry: Entry, text?: string) {
+    this.answer(entry, 'sendScheduledNow', async (c) => {
+      const e = await c.sendScheduledNow(entry.botId, entry.id, entry.rev, text?.trim())
+      this.upsert(e)
+      this.changed()
+    })
+  }
+
   /**
    * Writes to the thread of the bot's task (`send` with `taskId`): the message shows in the thread's transcript at
    * once, and the computer's own entry replaces it (queued while the thread's turn runs; the first one to an ended

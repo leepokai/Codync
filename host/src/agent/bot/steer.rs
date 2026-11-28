@@ -253,6 +253,55 @@ impl Actor {
         }
     }
 
+    /// `updateScheduled` on a message still waiting in the live queue: its text changes where it waits, or it
+    /// leaves the queue to fire at its time (`chat::schedule`). One already with the agent (`steer`) goes out
+    /// as asked: the store then says what became of it. A hold that finds nothing to do changes nothing and
+    /// only warns: the store's next entry event replaces the caller's optimistic text.
+    pub(super) fn hold(&mut self, entry_id: &str, text: Option<&str>, not_before: Option<i64>) {
+        if self.steers_in_flight.contains_key(entry_id) {
+            tracing::warn!(bot = %self.cfg.id, entry = entry_id, "a hold arrived for a message already with the agent");
+            return;
+        }
+        let Some(at) = self.queued_at(entry_id) else {
+            tracing::warn!(bot = %self.cfg.id, entry = entry_id, "a hold arrived for a message no longer queued");
+            return;
+        };
+        // The store row first: if the row can't be read or written, the message stays live-queued rather
+        // than falling out of both paths — a write that doesn't land (the row is gone, or the write
+        // errored) leaves the queue row exactly where it was.
+        if let Some(mut e) = self.hub.store.entry(entry_id) {
+            if let Some(t) = text {
+                crate::chat::messages::set_text(&mut e.data, t);
+            }
+            if let Some(at) = not_before {
+                e.data["status"] = json!("scheduled");
+                e.data["notBefore"] = json!(at);
+            }
+            match self.hub.set_entry(entry_id, &e.data) {
+                Some(saved) => {
+                    if not_before.is_some() {
+                        self.queue.remove(at);
+                    } else if text.is_some() {
+                        // The queue's copy is the prompt `Cmd::Send` built: its message id, the note it
+                        // answers, an expanded `/skill` and its files' paths. An edit rebuilds that from the
+                        // row that landed rather than replacing all of it with the sheet's bare text.
+                        let prompt = crate::chat::prompt::of_entry(&self.hub, &self.cfg, &saved);
+                        if let Some(Queued::User { text: waiting, .. }) = self.queue.get_mut(at) {
+                            prompt.clone_into(waiting);
+                        }
+                    }
+                    // The roster previews the chat's newest message.
+                    self.hub.emit_bot(&self.cfg.id);
+                }
+                None => {
+                    tracing::warn!(bot = %self.cfg.id, entry = entry_id, "the store write didn't land; the message stays live-queued");
+                }
+            }
+        } else {
+            tracing::warn!(bot = %self.cfg.id, entry = entry_id, "a hold found no store row; the message stays live-queued");
+        }
+    }
+
     /// Deletes the files of a message (its saved `data`) that never went out.
     fn delete_uploads(&self, data: &Value) {
         let ids: Vec<String> = data["attachments"]

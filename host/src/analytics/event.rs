@@ -39,6 +39,17 @@ pub enum Event {
     ComputerRenamed,
     BotDeleted,
     MessageSent,
+    /// The user held a message for a later time (`chat::schedule`).
+    MessageScheduled,
+    /// The user edited a message that hasn't gone out — its text and/or time (`updateScheduled`).
+    MessageScheduleEdited,
+    /// The user took a scheduled message back before it fired (`cancelScheduled`).
+    ScheduledMessageRemoved,
+    /// The user sent a scheduled message at once (`sendScheduledNow`).
+    ScheduledMessageSentNow,
+    /// A schedule was refused, or a due message could not be handed on (`chat::schedule`).
+    /// `stage` says which, `error` is a reason code; never the message.
+    MessageScheduleFailed,
     /// The user had a queued message handled now (`agent::bot::steer`).
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
@@ -280,6 +291,11 @@ impl Event {
             Self::ComputerRenamed => "computer_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
+            Self::MessageScheduled => "message_scheduled",
+            Self::MessageScheduleEdited => "message_schedule_edited",
+            Self::ScheduledMessageRemoved => "scheduled_message_removed",
+            Self::ScheduledMessageSentNow => "scheduled_message_sent_now",
+            Self::MessageScheduleFailed => "message_schedule_failed",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
             Self::CodexSessionFiled => "codex_session_filed",

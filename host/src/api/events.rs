@@ -84,6 +84,11 @@ pub fn events_stream(
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
         "workflows": true,
+        // A message can be scheduled for later (`scheduleSend`; the sweep delivers it).
+        "scheduleSend": true,
+        // Every message still held for later, in any chat: the client's tray shows them without loading
+        // each chat's whole transcript (a held message can sit far outside the newest-entries window).
+        "held": hub.store.scheduled_pending()?,
     });
     catch_up.insert(0, hello);
 

@@ -293,7 +293,7 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
-        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows }
+        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows, scheduleSend: event.scheduleSend ?? this.hello.scheduleSend, held: event.held ?? this.hello.held }
         if (event.workflows) void this.reloadWorkflowMirror()
         else this.workflows = []
         if (event.rev < this.rev) this.rev = 0
@@ -315,6 +315,9 @@ export class BotSync extends BotMirror {
         this.onRosterChanged?.()
         break
       case 'entry':
+        // A held message's `hello.held` copy follows the event: an edit (even one below the loaded window)
+        // replaces it, and one that fired or was cancelled leaves, so the tray cannot put a stale row back.
+        this.trackHeld(event.entry)
         // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
         if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
         this.bump(event.entry.rev)

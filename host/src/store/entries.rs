@@ -28,6 +28,10 @@ const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, up
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+/// Leaves out a message still held for a later time (`scheduleSend`): its text is the user's to see and edit in the
+/// scheduling tray, never an agent's to read before its time. The scheduler alone reads it through
+/// [`Store::scheduled_due`], and the client through `hello.held`/`history`.
+pub(super) const NOT_SCHEDULED: &str = "COALESCE(json_extract(data, '$.status'), '') != 'scheduled'";
 /// An approval or choice card still waiting on the user.
 const OPEN_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')
   OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')";
@@ -116,6 +120,27 @@ impl Store {
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
 
+    /// [`Self::update_entry_turn`] that only lands while the entry is still `scheduled` at the rev the caller
+    /// read: a scheduled message's transitions (fire, edit, cancel, send-now) lose the race to anything that
+    /// changed it first — a cancel, an edit, even another same-status write — and the caller learns that with
+    /// `None`, so a snapshot taken earlier can never overwrite what landed since. A fire also takes the newest
+    /// history position and timestamp; an edit or cancel keeps the position it had while it waited.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value, expect_rev: i64) -> Result<Option<Entry>> {
+        let c = self.db.locked();
+        let rev = next_rev(&c)?;
+        let changed = c.execute(
+            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn),
+                seq = CASE WHEN ?5 IS NOT NULL THEN (SELECT COALESCE(MAX(seq), 0) + 1 FROM entries) ELSE seq END,
+                created_at = CASE WHEN ?5 IS NOT NULL THEN ?4 ELSE created_at END
+             WHERE id = ?1 AND rev = ?6 AND json_extract(data, '$.status') = 'scheduled'",
+            params![id, rev, data.to_string(), now_ms(), turn, expect_rev],
+        )?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
+    }
+
     /// Updates `entries` (each stamped with the next rev), deletes the `delete` kv rows and saves the `set` ones in one
     /// transaction, so a crash keeps all of it or none; the entries as updated.
     pub fn update_entries_kv(
@@ -177,7 +202,8 @@ impl Store {
     pub fn call_entries(&self, bot_id: &str, call: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.call') = ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.call') = ?2
+               AND {NOT_REMOVED} AND {NOT_SCHEDULED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT ?3"
         ))?;
@@ -262,6 +288,48 @@ impl Store {
         Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// The user's scheduled messages in `bot_id`'s chat whose time has come, oldest fire time first
+    /// (`scheduleSend`; the sweep turns each into a queued send).
+    pub fn scheduled_due(&self, bot_id: &str, now_ms: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
+               AND json_extract(data, '$.status') = 'scheduled'
+               AND json_extract(data, '$.notBefore') IS NOT NULL
+               AND json_extract(data, '$.notBefore') <= ?2
+             ORDER BY json_extract(data, '$.notBefore'), seq"
+        ))?;
+        Ok(st.query_map(params![bot_id, now_ms], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Messages the scheduler moved into their delivery turn, but which no agent has started yet: a crash
+    /// between the durable flip and `hand_on` leaves these queued with `scheduledFired`. The scheduler hands
+    /// them on once at the next start, so a due message is neither lost nor sent twice. Delivery turn is the
+    /// queue's order before the restart, not the order in which the schedules happened to be created.
+    pub fn scheduled_dispatched(&self) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE kind = 'user'
+               AND json_extract(data, '$.status') = 'queued'
+               AND json_extract(data, '$.scheduledFired') = 1 AND {NOT_REMOVED}
+             ORDER BY turn, seq"
+        ))?;
+        Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Every message held for a later time, in any chat (`scheduleSend`), oldest first — due or not. A
+    /// client hears about all of these however far back they sit (`events_stream`): the tray is the only
+    /// place such a message can be seen, edited or taken back.
+    pub fn scheduled_pending(&self) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE kind = 'user'
+               AND json_extract(data, '$.status') = 'scheduled' AND {NOT_REMOVED}
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {
@@ -296,7 +364,7 @@ impl Store {
     // An FTS5 trigram table once a bot's search passes a second.
     pub fn search_messages(&self, bot_id: &str, terms: &[String], from: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
         let mut sql = format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq <= ?3 AND {NOT_REMOVED} AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq <= ?3 AND {NOT_REMOVED} AND {NOT_SCHEDULED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))"
         );
         for i in 0..terms.len() {
@@ -331,7 +399,7 @@ impl Store {
     pub fn conversation_since(&self, bot_id: &str, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND {NOT_SCHEDULED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)
                 OR (kind = 'notice' AND json_extract(data, '$.transcript') IS NOT NULL))
              ORDER BY seq LIMIT ?3"
@@ -353,7 +421,7 @@ impl Store {
     pub fn messages_after(&self, lane: &Lane, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND {NOT_SCHEDULED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT ?3"
         ))?;
@@ -432,7 +500,8 @@ impl Store {
             let c = self.db.locked();
             let mut st = c.prepare(&format!(
                 "SELECT id FROM entries WHERE {OPEN_CARD}
-                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
+                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued'
+                      AND COALESCE(json_extract(data, '$.scheduledFired'), 0) != 1)
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
                       AND json_extract(data, '$.status') IN ('queued', 'sent') AND NOT ({LOCAL_REQUEST}))"
             ))?;
@@ -531,6 +600,91 @@ mod tests {
         assert_eq!(ids(s.file_messages("b1", 10).unwrap()), kept, "the Library");
         assert_eq!(ids(s.history("b1", i64::MAX, 10).unwrap()), kept, "paging, handoffs and calls");
         assert_eq!(s.last_message("b1").unwrap().text, "ship it", "the roster");
+    }
+
+    #[test]
+    fn a_pending_scheduled_message_reaches_no_agent_reader() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let seen = s.insert_entry(&main, EntryKind::User, 1, &json!({"text": "ship now"})).unwrap();
+        let held = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                2,
+                &json!({"text": "the reveal is tomorrow", "status": "scheduled",
+                        "notBefore": now_ms() + 60_000, "call": "c1"}),
+            )
+            .unwrap();
+        let ids = |rows: Vec<Entry>| rows.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(s.messages_after(&main, 0, 10).unwrap()), std::slice::from_ref(&seen.id), "recaps and rooms");
+        assert_eq!(ids(s.conversation_since("b1", 0, 10).unwrap()), std::slice::from_ref(&seen.id), "dreaming");
+        assert!(s.search_messages("b1", &["reveal".to_owned()], None, 10).unwrap().is_empty(), "search_history");
+        assert!(s.call_entries("b1", "c1", 10).unwrap().is_empty(), "voice context");
+        let history = ids(s.history("b1", i64::MAX, 10).unwrap());
+        assert_eq!(history, [seen.id, held.id], "the scheduling UI still reads its pending row");
+    }
+
+    #[test]
+    fn firing_a_scheduled_message_moves_it_to_its_delivery_place_in_history() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let scheduled = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                1,
+                &json!({"text": "later", "status": "scheduled", "notBefore": now_ms() + 60_000}),
+            )
+            .unwrap();
+        let newer = s.insert_entry(&main, EntryKind::Agent, 2, &json!({"text": "newer work", "final": true})).unwrap();
+        s.backdate_entry(&scheduled.id, 1);
+        let mut edited = scheduled.data.clone();
+        edited["text"] = "edited while held".into();
+        let edited = s.flip_scheduled(&scheduled.id, None, &edited, scheduled.rev).unwrap().unwrap();
+        assert_eq!(edited.seq, scheduled.seq, "an edit does not move the waiting row");
+        assert_eq!(edited.created_at, 1, "an edit keeps its original timestamp");
+
+        let mut fired = edited.data.clone();
+        fired["status"] = "queued".into();
+        fired["scheduledFired"] = true.into();
+        let fired = s.flip_scheduled(&scheduled.id, Some(3), &fired, edited.rev).unwrap().unwrap();
+        assert!(fired.seq > newer.seq, "delivery is newer than work written after the schedule");
+        assert!(fired.created_at > 1, "the chat shows when it was delivered, not when it was scheduled");
+        let history = s.history("b1", i64::MAX, 10).unwrap();
+        assert_eq!(history.last().map(|e| e.id.as_str()), Some(scheduled.id.as_str()));
+        // seq stays the history cursor: the next insert must be strictly newer, never a reused number.
+        let after = s.insert_entry(&main, EntryKind::User, 4, &json!({"text": "typed after delivery"})).unwrap();
+        assert!(after.seq > fired.seq, "the next message is newer than the delivered schedule");
+        let mut seqs: Vec<i64> = s.history("b1", i64::MAX, 10).unwrap().into_iter().map(|e| e.seq).collect();
+        let n = seqs.len();
+        seqs.sort_unstable();
+        seqs.dedup();
+        assert_eq!(seqs.len(), n, "delivery does not reuse a seq");
+    }
+
+    #[test]
+    fn fired_schedules_recover_in_delivery_turn_order() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let created_first = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                8,
+                &json!({"text": "created first, fired second", "status": "queued", "scheduledFired": true}),
+            )
+            .unwrap();
+        let created_second = s
+            .insert_entry(
+                &main,
+                EntryKind::User,
+                3,
+                &json!({"text": "created second, fired first", "status": "queued", "scheduledFired": true}),
+            )
+            .unwrap();
+        let recovered = s.scheduled_dispatched().unwrap();
+        assert_eq!(recovered.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), [created_second.id, created_first.id]);
     }
 
     #[test]

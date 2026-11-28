@@ -110,12 +110,18 @@ impl App {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
-                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                    // The map is keyed by seq. A schedule keeps that key while it waits and takes a new one
+                    // when it fires; leaving the old key shows the scheduled bubble beside the delivered one.
+                    let already = self.entries.get(&bot).is_some_and(|m| m.values().any(|old| old.id == e.id));
+                    if !already && !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                         // A routine's run and a follow-up say in the chat that they began or were dropped.
                         if e.kind == Kind::Notice {
                             self.reload_details(&bot);
                         }
+                    }
+                    if let Some(map) = self.entries.get_mut(&bot) {
+                        map.retain(|seq, old| *seq == e.seq || old.id != e.id);
                     }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
@@ -453,6 +459,21 @@ mod tests {
     fn connect(app: &mut App, since: i64) {
         app.on_msg(Msg::Connected { since });
         app.on_event(&json!({"type": "hello"}));
+    }
+
+    #[test]
+    fn a_fired_schedule_drops_its_old_seq_key() {
+        let mut app = test_app();
+        let scheduled = json!({"type": "entry", "entry": {"botId": "a", "id": "later", "seq": 2, "turn": 1,
+            "kind": "user", "data": {"text": "later", "status": "scheduled"}}});
+        app.on_event(&scheduled);
+        app.on_event(&json!({"type": "entry", "entry": {"botId": "a", "id": "work", "seq": 3, "turn": 2,
+            "kind": "agent", "data": {"text": "meanwhile", "final": true}}}));
+        app.on_event(&json!({"type": "entry", "entry": {"botId": "a", "id": "later", "seq": 4, "turn": 3, "rev": 2,
+            "kind": "user", "data": {"text": "later", "status": "queued", "scheduledFired": true}}}));
+        let ids: Vec<&str> = app.lane("a").iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["work", "later"], "one row, at its delivery place");
+        assert_eq!(app.entries.get("a").map(std::collections::BTreeMap::len), Some(2), "the scheduled seq is gone");
     }
 
     #[test]

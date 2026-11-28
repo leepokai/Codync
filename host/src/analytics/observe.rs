@@ -155,6 +155,25 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
             Event::MessageSent
         }
+        // A message held for a later time; never the time or the text.
+        "scheduleSend" => {
+            p.insert("reply".into(), b["replyTo"].as_str().is_some_and(|t| !t.is_empty()).into());
+            Event::MessageScheduled
+        }
+        // Edit schedule on a message that hasn't gone out; `what` names the fields, never their values.
+        "updateScheduled" => {
+            let mut what: Vec<&str> = Vec::new();
+            if b["notBefore"].is_i64() {
+                what.push("time");
+            }
+            if b["text"].is_string() {
+                what.push("text");
+            }
+            p.insert("what".into(), what.into());
+            Event::MessageScheduleEdited
+        }
+        "cancelScheduled" => Event::ScheduledMessageRemoved,
+        "sendScheduledNow" => Event::ScheduledMessageSentNow,
         "stop" => Event::TurnStopped,
         "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
@@ -297,7 +316,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
 pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
     let (event, mut p) = observe(caller, method, b)?;
     match event {
-        Event::MessageSent => {
+        Event::MessageSent | Event::MessageScheduled => {
             let bot = b["botId"].as_str().unwrap_or_default();
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
             if !nonce.is_empty() && hub.store.find_by_nonce(bot, nonce).is_some() {
@@ -408,7 +427,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
-/// change and a message to a task's thread report their category and a credentials reset or a computer rename `other`, never the message; other
+/// change and a message to a task's thread report their category, a schedule reports `message_schedule_failed`
+/// (`stage`, `error`), and a credentials reset or a computer rename `other`, never the message; other
 /// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -457,8 +477,47 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("error".into(), category.into());
             Some((event, p))
         }
+        // The success events stay for the calls that land. A refusal is its own event, so a
+        // failure is not counted as a message that was scheduled.
+        Event::MessageScheduled
+        | Event::MessageScheduleEdited
+        | Event::ScheduledMessageRemoved
+        | Event::ScheduledMessageSentNow => {
+            let stage = match event {
+                Event::MessageScheduled => "schedule",
+                Event::MessageScheduleEdited => "edit",
+                Event::ScheduledMessageRemoved => "remove",
+                _ => "send_now",
+            };
+            p.insert("stage".into(), stage.into());
+            p.insert("error".into(), schedule_reason(error).into());
+            Some((Event::MessageScheduleFailed, p))
+        }
         _ => None,
     }
+}
+
+/// Why a schedule call failed, as a catalog code. Only the outer sentence is read, and it is
+/// never the value: a wrapped cause can carry a path or the message, and neither is a catalog code.
+fn schedule_reason(error: &anyhow::Error) -> &'static str {
+    const REASONS: &[(&str, &str)] = &[
+        ("the message is empty", "empty"),
+        ("can't carry files", "attachments"),
+        ("a call's messages send immediately", "call"),
+        ("notBefore must be a time", "time"),
+        ("seconds out", "too_soon"),
+        ("a group's messages send immediately", "group"),
+        ("thread takes its messages", "thread"),
+        ("unknown bot", "unknown"),
+        ("unknown message", "reply"),
+        ("isn't waiting any more", "gone"),
+        ("isn't scheduled any more", "gone"),
+        ("changed underneath", "conflict"),
+        ("nothing to change", "nothing"),
+        ("couldn't save the message", "save"),
+    ];
+    let text = error.to_string();
+    REASONS.iter().find(|(needle, _)| text.contains(needle)).map_or("other", |(_, code)| *code)
 }
 
 /// The bot settings a patch changes, by name (never their values), sorted.

@@ -53,6 +53,14 @@ pub enum Cmd {
     Unqueue {
         entry_id: String,
     },
+    /// The user edits a queued message of theirs while it waits, or holds it for a later time
+    /// (`updateScheduled`): with `not_before` it leaves the live queue to fire when its time comes
+    /// (`chat::schedule`); without it only the text changes.
+    Hold {
+        entry_id: String,
+        text: Option<String>,
+        not_before: Option<i64>,
+    },
     BotRequest(crate::chat::team::BotRequest),
     /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
     BotReply(crate::chat::team::BotReply),

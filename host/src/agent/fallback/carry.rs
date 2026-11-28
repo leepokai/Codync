@@ -41,6 +41,10 @@ pub fn said(entries: &[Entry]) -> Vec<Said> {
     entries
         .iter()
         .filter_map(|e| {
+            // A message still held for later is not something the user has said yet: no handoff repeats it.
+            if e.data["status"] == "scheduled" {
+                return None;
+            }
             let user = e.kind == EntryKind::User.as_str();
             let text = message_text(&e.data);
             e.is_message()
@@ -304,6 +308,18 @@ mod tests {
         assert!(!recap.contains("<ledger>") && !recap.contains("Not every earlier message"), "{recap}");
         assert!(catch_up(&said(&entries[5..]), None).is_none());
         assert!(catch_up(&all, None).is_some_and(|c| c.contains("User (2026-09-21): \"Fix the login tests\"")));
+    }
+
+    #[test]
+    fn a_message_held_for_later_is_not_something_the_user_has_said_yet() {
+        let entries = [
+            entry(1, EntryKind::User, json!({"text": "said today"})),
+            entry(2, EntryKind::User, json!({"text": "the secret scheduled words", "status": "scheduled"})),
+        ];
+        let all = said(&entries);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].text, "said today");
+        assert!(!catch_up(&all, None).unwrap().contains("secret"));
     }
 
     #[test]

@@ -1,0 +1,70 @@
+/* The scheduled rows in the pending tray, and the "Schedule send…" sheet. */
+
+.queued-scheduled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex: none;
+}
+
+.queued-fire-time {
+  color: var(--text-tertiary, var(--secondary));
+}
+
+/* The preview line is a control: a click unfolds the whole message, a second one folds it back. */
+.queued-preview {
+  cursor: pointer;
+}
+
+/* Editing a waiting message in place: the composer's field look, sized to the tray's row. */
+.queued-edit {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-m);
+  color: var(--text);
+  font: inherit;
+  min-height: 32px;
+  padding: 6px 10px;
+  width: 100%;
+}
+
+.schedule-sheet {
+  min-width: min(520px, 90vw);
+  gap: 10px;
+}
+
+.schedule-text,
+.schedule-time {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-m);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.schedule-text {
+  min-height: 72px;
+}
+
+.schedule-time {
+  resize: none;
+}
+
+.schedule-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.schedule-cancel,
+.schedule-confirm {
+  padding: 8px 16px;
+  border-radius: var(--radius-m);
+}
+
+.schedule-confirm:disabled {
+  opacity: 0.5;
+}

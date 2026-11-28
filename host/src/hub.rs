@@ -250,6 +250,7 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::workflows::start(self);
+        crate::chat::schedule::start(self);
         crate::analytics::start(self);
         Ok(())
     }
@@ -557,6 +558,18 @@ impl Hub {
                 None
             }
         }
+    }
+
+    /// Updates an entry that must still be `scheduled` at the rev the caller read (a fire, an edit, a cancel,
+    /// a send-now) and broadcasts it; `Ok(None)` means something else moved it first — including an edit that
+    /// kept it `scheduled` — and the caller reports that like any refusal.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value, expect_rev: i64) -> Result<Option<Entry>> {
+        let _g = self.emit_lock.locked();
+        let e = self.store.flip_scheduled(id, turn, data, expect_rev)?;
+        if let Some(e) = &e {
+            let _ = self.events.send(entry_event(e));
+        }
+        Ok(e)
     }
 
     /// Changes part of an entry and broadcasts it, reading and writing under the emission lock: an edit made

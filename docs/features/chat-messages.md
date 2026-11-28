@@ -102,6 +102,47 @@ A [thread](work.md)'s own transcript never enters the chat. Three things of it d
 
 The capsule above the composer isn't an entry: it is the bot's `work`.
 
+## Scheduled messages
+
+*Schedule send…* holds a typed message for a later time: the composer's clock button (a draft, no
+files, a 1:1 chat, the host online — an ordinary send still queues offline, the clock doesn't) opens a
+local-time picker, and the message waits until then. The time must be at least 30 seconds out; a
+nearer pick is refused — send the message now instead. A scheduled message carries the active reply
+quote, exactly as a send. There is no second
+queue and no second scheduler: a scheduled message is an ordinary user Entry whose `data.status` is
+`scheduled` with a `notBefore` epoch-ms UTC (`chat/messages::save_scheduled`); a sweep
+(`chat/schedule`, every 15 s) flips due entries to `queued` and hands them on through the ordinary
+`hand_on` path, so batching, ordering behind live sends, turn numbering and bot-state handling are
+the existing code's. The fire-time turn is allocated at fire (`max_turn + 1`), so chat order matches
+delivery order; a restart keeps scheduled entries while expiring queued ones (`expire_pending` only
+fails `queued`), and a host that was down delivers on its next start. Pause: a paused bot is never
+woken (the pause gate lands with its own change; the sweep will hold due messages while paused).
+
+The pending tray above the composer shows both kinds as one uniform thing: the live queue (while
+the bot works) then the scheduled by fire time, each row with the clock as its single time control —
+on a plain queued row it sets a time (the message leaves the live queue to fire then), on a
+scheduled one it edits it, or clears it back to an ordinary send. Every row expands to its full text
+on a click, copies its text, and edits its text in place (`updateScheduled` handles both kinds; a
+waiting one is moved by its actor, as `steer` and `unqueue` are). *Send now* and *Remove* stay:
+`sendScheduledNow` delivers through the ordinary queue, `cancelScheduled` never delivers. Hosts
+before the feature advertise no `scheduleSend` capability, so clients hide the affordances.
+
+A held message reaches the tray however far back its place in the chat is: the host's `hello` lists every
+entry still `scheduled` in any chat (`hello.held`), and the tray shows what the chat's own loaded window
+does not carry — the window holding the newest entries per bot, an older held message would otherwise be
+missing from the one place it can be seen, edited or taken back, while the sweep still delivered it. An
+entry the chat holds wins over the hello's copy, since an edit, a cancel or the fire itself lands there
+first, and a message taken back is no longer held.
+
+Analytics: `message_scheduled` (`scheduleSend`; `kind`, `agent`, `reply`),
+`message_schedule_edited` (`what`: `time`/`text`), `scheduled_message_removed`,
+`scheduled_message_sent_now`, and `message_schedule_failed` when one of those is refused
+or a due message cannot be handed on (`stage`, `error`; never the message). The delivery
+itself is the ordinary turn's `turn_finished`.
+
+Phones are unaffected by design: their code keys off exact statuses, so a scheduled entry renders
+as a plain bubble (no crash, no tray interference) and the affordance is desktop-only in v1.
+
 ## While it works
 
 The working line under the last message shows the bot's activity; composing a `send_message`

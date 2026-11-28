@@ -2,9 +2,9 @@ import { test, expect, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
 import { canSteer } from '../src/renderer/views/chat/queued-messages.ts'
-import { api, attach, steerBot, typeMessage } from './sandbox.ts'
+import { api, attach, echoBot, steerBot, typeMessage } from './sandbox.ts'
 
-type History = { entries: { kind: string; data: { text?: string; status?: string } }[] }
+type History = { entries: { id: string; seq: number; createdAt: number; kind: string; data: { text?: string; status?: string; notBefore?: number } }[] }
 
 /** Whether the turn answering `text` has started. */
 async function started(page: Page, botId: string, text: string): Promise<boolean> {
@@ -119,6 +119,108 @@ test('a message that joined a turn its agent then drops without a word goes out 
     await expect(queued).toHaveCount(0)
     const { entries } = await api<History>(page, 'history', { botId })
     expect(entries.filter((e) => e.kind === 'user' && e.data.text === 'second').map((e) => e.data.status)).toEqual(['sent'])
+  } finally {
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
+    await browser.close()
+  }
+})
+
+test('schedule edits preserve lines and IME composition, reject stale clear-time, and cancel without returning', async () => {
+  const { browser, page } = await attach()
+  const name = `Schedule edit e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'scheduleSend', {
+      botId, text: 'first\nsecond', notBefore: Date.now() + 120_000, clientNonce: 'schedule-edit-e2e',
+    })
+    const row = page.locator('.queued-row')
+    await expect(row).toHaveCount(1)
+    await expect(row).toContainText('first')
+    await expect(row.locator('.schedule-text, .schedule-time, .queued-edit')).toHaveCount(0)
+
+    // The expanded editor and the inline editor both keep a multiline message as multiline.
+    await row.getByRole('button', { name: 'Edit schedule' }).click()
+    const sheet = page.locator('.schedule-sheet')
+    await sheet.locator('.schedule-text').fill('edited\nin the sheet')
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect.poll(async () => {
+      const { entries } = await api<History>(page, 'history', { botId })
+      return entries[0]?.data.text
+    }).toBe('edited\nin the sheet')
+
+    await row.getByRole('button', { name: 'Edit', exact: true }).click()
+    const inline = row.locator('.queued-edit')
+    await expect(inline).toHaveValue('edited\nin the sheet')
+    await inline.fill('edited\ninline')
+    await inline.dispatchEvent('compositionstart')
+    await inline.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229, which: 229, isComposing: true, bubbles: true, cancelable: true })
+    // Enter selected an IME candidate: it neither committed nor closed the field.
+    await expect(inline).toBeVisible()
+    await expect(inline).toHaveValue('edited\ninline')
+    await inline.dispatchEvent('compositionend')
+    await inline.press('Enter')
+    await expect.poll(async () => {
+      const { entries } = await api<History>(page, 'history', { botId })
+      return entries[0]?.data.text
+    }).toBe('edited\ninline')
+
+    // A second window's save makes this sheet stale. Clear-time must not send its older words.
+    await row.getByRole('button', { name: 'Edit schedule' }).click()
+    await api(page, 'updateScheduled', { botId, entryId: (await api<History>(page, 'history', { botId })).entries[0]!.id, text: 'newer from another window' })
+    await sheet.getByRole('button', { name: 'Clear the time' }).click()
+    await expect.poll(async () => {
+      const { entries } = await api<History>(page, 'history', { botId })
+      return [entries[0]?.data.text, entries[0]?.data.status]
+    }).toEqual(['newer from another window', 'scheduled'])
+    await expect(row).toHaveCount(1)
+    const refusal = page.getByRole('alertdialog')
+    await expect(refusal).toContainText('changed underneath you')
+    await refusal.getByRole('button', { name: 'OK', exact: true }).click()
+
+    await row.getByRole('button', { name: 'Remove', exact: true }).click()
+    await expect(row).toHaveCount(0)
+    const { entries } = await api<History>(page, 'history', { botId })
+    expect(entries).toHaveLength(0)
+  } finally {
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
+    await browser.close()
+  }
+})
+
+test('a delivered schedule moves behind the chat written after it was scheduled', async () => {
+  const { browser, page } = await attach()
+  const name = `Schedule order e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await echoBot(page, name)
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'scheduleSend', {
+      botId, text: 'scheduled first, delivered last', notBefore: Date.now() + 120_000, clientNonce: 'schedule-order-e2e',
+    })
+    await api(page, 'send', { botId, text: 'written second, delivered second' })
+    await expect(page.locator('.transcript')).toContainText('written second, delivered second')
+    const row = page.locator('.queued-row')
+    await expect(row).toHaveCount(1)
+    await row.getByRole('button', { name: 'Send now', exact: true }).click()
+    await expect(row).toHaveCount(0)
+    await expect(page.locator('.transcript .message.user').last()).toContainText('scheduled first, delivered last')
+
+    const { entries } = await api<History>(page, 'history', { botId })
+    const scheduled = entries.find((e) => e.data.text === 'scheduled first, delivered last')!
+    const ordinary = entries.find((e) => e.data.text === 'written second, delivered second')!
+    expect(scheduled.seq).toBeGreaterThan(ordinary.seq)
+    expect(scheduled.createdAt).toBeGreaterThanOrEqual(ordinary.createdAt)
+    expect(entries.filter((e) => e.kind === 'user').at(-1)?.id).toBe(scheduled.id)
   } finally {
     if (botId) {
       await api(page, 'stop', { botId }).catch(() => {})

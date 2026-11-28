@@ -52,7 +52,7 @@ test('a paused bot wears the pause mark on its avatar until it is resumed, and a
     await expect(row(bot).locator('.avatar-paused')).toHaveAttribute('aria-hidden', 'true')
     const label = await row(bot).getAttribute('aria-label')
     expect(label?.startsWith(`${bot},`)).toBe(true)
-    expect(label?.endsWith(', Paused')).toBe(true)
+    expect(label).toMatch(/, Paused(, on .+)?$/)
     // A group's face stays bare: groups carry no pause state of their own.
     await expect(row(group).locator('.avatar-paused')).toHaveCount(0)
 

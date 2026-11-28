@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from '@shared/agent-models'
 import type { ApplyPlan, CatalogCheck, PlanRow } from './bots/model-manager-logic'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { agentNameOf, allKeys, applyPatch, applyTargets, catalogRequest, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, filterChecked, hiddenCheckedCount, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, planRows, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = '', loginProfile: string | null = null): RosterItem =>
@@ -176,6 +176,12 @@ test('needsCatalog reads a catalog for a named model and for settings on the def
   assert.equal(needsCatalog('claude', null, { effort: 'high' }), true)
   assert.equal(needsCatalog('claude', null, {}), false)
   assert.equal(needsCatalog('custom', 'opus', { effort: 'high' }), false)
+})
+
+test("the Apply catalog check asks for a new read, not the list the computer kept", () => {
+  // A kept list can be ten minutes old: it would refuse a model the agent now offers, or pass one it dropped.
+  assert.deepEqual(catalogRequest('claude', null), { backend: 'claude', refresh: true })
+  assert.deepEqual(catalogRequest('claude', 'p-1'), { backend: 'claude', loginProfile: 'p-1', refresh: true })
 })
 
 test('planRows refuses settings a computer does not list for that model', () => {

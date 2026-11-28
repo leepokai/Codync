@@ -18,7 +18,7 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
   // panel over them; dismiss the panel first, then close the sheets.
   for (let i = 0; i < 4 && (await page.locator('.model-manager').count()) > 0; i++) {
     await page.keyboard.press('Escape').catch(() => {})
-    await page.locator('.model-manager').first().locator('.model-manager-head').getByRole('button').click({ timeout: 4000 }).catch(() => {})
+    await page.locator('.model-manager').first().locator('.modal-header').getByRole('button', { name: 'Close' }).click({ timeout: 4000 }).catch(() => {})
     await page.waitForTimeout(400)
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)
@@ -40,6 +40,9 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await page.locator('button[title="Bot Manager"]').first().click()
       const sheet = page.locator('.model-manager')
       await expect(sheet).toBeVisible()
+      // The sheet's title row is the shared ModalHeader, so the dialog carries its name (Overlay.tsx sets
+      // `aria-labelledby` on the sheet; a hand-rolled header left the dialog unnamed to screen readers).
+      await expect(page.getByRole('dialog', { name: 'Bot Manager' })).toBeVisible()
       // The top section is the shared ModelPicker, not a copy: the same row trigger the editor shows.
       await expect(sheet.locator('.model-picker-field')).toBeVisible()
     })
@@ -118,7 +121,7 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
     })
 
     await test.step('the saves landed: each bot editor shows the chosen agent', async () => {
-      await sheet.locator('.model-manager-head').getByRole('button').click()
+      await sheet.locator('.modal-header').getByRole('button', { name: 'Close' }).click()
       await expect(sheet).toHaveCount(0)
       for (const name of [nameA, nameB]) {
         await page.locator('.roster-row', { hasText: name }).click()
@@ -148,7 +151,7 @@ test('the provider filter narrows the Bot Manager to one agent, and what it hide
   // Same close as the test above: an anchored panel can sit over a sheet a bare click cannot dismiss.
   for (let i = 0; i < 4 && (await page.locator('.model-manager').count()) > 0; i++) {
     await page.keyboard.press('Escape').catch(() => {})
-    await page.locator('.model-manager').first().locator('.model-manager-head').getByRole('button').click({ timeout: 4000 }).catch(() => {})
+    await page.locator('.model-manager').first().locator('.modal-header').getByRole('button', { name: 'Close' }).click({ timeout: 4000 }).catch(() => {})
     await page.waitForTimeout(400)
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)

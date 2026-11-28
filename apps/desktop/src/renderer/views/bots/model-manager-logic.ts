@@ -1,6 +1,7 @@
 import type { RosterItem } from '../../store/app-model'
 import { refKey } from '../../store/bot-ref.ts'
 import { trNow } from '../../lib/l10n.ts'
+import { agentModelsRequest } from './agent-models-query.ts'
 import type { AgentModels } from '@shared/agent-models'
 
 /** One agent, one model and its options, applied to every bot the user checked. */
@@ -42,6 +43,16 @@ export const needsCatalog = (backend: string, model: string | null, options: Rec
 
 /** What a computer's catalog check found: its catalog, a read failure, or nothing to check against. */
 export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error' } | { kind: 'none' }
+
+/**
+ * The catalog call an Apply makes before it writes: always a new read (`refresh`), never the list
+ * the computer kept. A kept list may be up to ten minutes old (the host answers a panel from it at
+ * once), so judging a save by it can refuse a model the agent now offers or pass one it dropped.
+ * Should the new read fail, the host keeps the old list for panels but this ask fails, and the row
+ * is refused as unverifiable (`planRows`) instead of being written against a stale one.
+ */
+export const catalogRequest = (backend: string, loginProfile: string | null) =>
+  agentModelsRequest(backend, loginProfile, true)
 
 /**
  * The login a row keeps when `backend` is applied: its own when the agent stays the same, or the

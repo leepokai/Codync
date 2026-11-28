@@ -3,10 +3,10 @@ import type { AgentModels } from '@shared/agent-models'
 import { isGroup } from '@shared/models'
 import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { AvatarWithStatus } from '../../components/Avatar'
-import { Button, DropdownMenu, IconButton, Switch } from '../../components/Controls'
+import { Button, DropdownMenu, Switch } from '../../components/Controls'
 import type { MenuItem } from '../../components/Menu'
 import { Icon } from '../../components/Icon'
-import { Sheet } from '../../components/Overlay'
+import { ModalHeader, Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
@@ -17,11 +17,10 @@ import { matchItems } from '../palette-items'
 import { botItems } from '../search-items'
 import { ModelPicker } from './ModelPicker'
 import { useAgentModels } from './agent-models'
-import { agentModelsRequest } from './agent-models-query.ts'
 import { pauseEcho } from '@shared/old-host'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { agentNameOf, allKeys, applyPatch, applyTargets, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { agentNameOf, allKeys, applyPatch, applyTargets, catalogRequest, clampSheetSize, computerBackends, countApplied, countedPause, countFailure, defaultSheetSize, loginNameOf, loginProfileFor, modelPathWords, needsCatalog, pausePatch, providerOptions, remainingTargets, resizeFrom, rowModelPath, runTally, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -63,19 +62,19 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
   }, [])
   return (
     <Sheet open onClose={onClose} width={size.width} height={size.height}>
-      <VStack gap={12} className="model-manager">
-        <HStack gap={8} className="model-manager-head">
-          <Text size="body" tone="text" className="model-manager-title">{tr('Bot Manager')}</Text>
-          <Spacer />
-          <IconButton title={tr('Close')} icon="xmark" size={28} onClick={onClose} />
-        </HStack>
-        {store ? (
-          <StoreContext.Provider value={store}>
-            <ManagerBody items={bots} />
-          </StoreContext.Provider>
-        ) : (
-          <Text size="caption" tone="secondary">{tr('No bots selected')}</Text>
-        )}
+      <VStack gap={0} className="model-manager">
+        {/* The shared title row, so the sheet's `aria-labelledby` finds its title and it sits where
+            every other sheet's does (Overlay.tsx: `ModalHeader` takes the id `Sheet` sets). */}
+        <ModalHeader title={tr('Bot Manager')} />
+        <VStack gap={12} className="model-manager-main">
+          {store ? (
+            <StoreContext.Provider value={store}>
+              <ManagerBody items={bots} />
+            </StoreContext.Provider>
+          ) : (
+            <Text size="caption" tone="secondary">{tr('No bots selected')}</Text>
+          )}
+        </VStack>
         {/* The drag handles render last: absolute positioning frees them from DOM order, so Tab
             reaches Close and every control before any resize handle. */}
         <SheetHandle kind="left" label={tr('Resize width')} size={size} onSize={setSize} />
@@ -319,7 +318,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
             .then(async (client): Promise<CatalogCheck> => {
               // The wait for a reconnect may outlast the run: re-check before anything is read.
               if (!alive.current || run.current !== myRun) return { kind: 'error' }
-              const catalog = await client.call<AgentModels>('agentModels', agentModelsRequest(backend, loginProfile), 300_000)
+              // A new read, not the list the computer kept: a kept list may be minutes old and would
+              // judge this save against models the agent no longer offers (or miss ones it added).
+              const catalog = await client.call<AgentModels>('agentModels', catalogRequest(backend, loginProfile), 300_000)
               return { kind: 'ok', catalog }
             })
             .catch((): CatalogCheck => ({ kind: 'error' }))

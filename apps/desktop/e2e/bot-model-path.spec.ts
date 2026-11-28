@@ -14,7 +14,7 @@ async function appPage() {
   await expect(page.locator('.sidebar')).toBeVisible({ timeout: 15_000 })
   for (let i = 0; i < 4 && (await page.locator('.model-manager').count()) > 0; i++) {
     await page.keyboard.press('Escape').catch(() => {})
-    await page.locator('.model-manager').first().locator('.model-manager-head').getByRole('button').click({ timeout: 4000 }).catch(() => {})
+    await page.locator('.model-manager').first().locator('.modal-header').getByRole('button', { name: 'Close' }).click({ timeout: 4000 }).catch(() => {})
     await page.waitForTimeout(400)
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)

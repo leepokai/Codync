@@ -1,17 +1,14 @@
 .model-manager {
   position: relative;
-  padding: 16px;
   height: 100%;
   overflow: hidden;
 }
 
-.model-manager-head {
-  align-items: center;
-}
-
-.model-manager-title {
-  font-size: 15px;
-  font-weight: 600;
+/* Below the shared title row, indented like every other sheet's content (`card-form-content`). */
+.model-manager-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 20px 20px;
 }
 
 .model-manager-body {

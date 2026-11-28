@@ -48,6 +48,7 @@ pub(crate) use fallback::{kept_step, owe_move};
 use inflight::Inflight;
 pub(crate) use inflight::resumable;
 pub(crate) use launch::{Background, launch_commands, select_model, start_agent, start_first, system_prompt};
+use queue::PauseNumbers;
 
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
@@ -93,9 +94,12 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    // The number this actor starts from: a save whose command it never saw is already reflected in `base`.
+    let pauses = PauseNumbers::at(hub.pause_generation());
     let actor = Actor {
         hub,
         base,
+        pauses,
         cfg,
         conn: None,
         session_id,
@@ -279,6 +283,9 @@ struct Actor {
     hub: Arc<Hub>,
     /// The bot as the user set it up.
     base: BotConfig,
+    /// The pause numbers this actor has obeyed (see [`PauseNumbers`]: a command carrying an older one arrives
+    /// late, after a newer pause or resume, and must not undo it).
+    pauses: PauseNumbers,
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,
     conn: Option<Conn>,

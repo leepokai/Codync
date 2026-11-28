@@ -7,6 +7,7 @@ use crate::store::BotConfig;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 impl Hub {
     /// Whether `id` (a bot, or one of its threads) is paused: it answers nothing and spends nothing until it is
@@ -97,7 +98,7 @@ impl Hub {
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg, paused_runs) = {
+        let (before, cfg, paused_runs, pause_generation) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -113,7 +114,15 @@ impl Hub {
             // resume saves under this same lock, so a run admitted after the resume can never be in this set.
             let paused_runs =
                 if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
-            (row.config, cfg, paused_runs)
+            // A pause change takes the next number here, under the lock: the command that carries it can arrive
+            // after a later save's, and this says which one a bot's actor should keep. A save that leaves the
+            // flag as it was carries the number already reached, which changes nothing.
+            let pause_generation = if row.config.paused == cfg.paused {
+                self.pause_generation.load(Ordering::SeqCst)
+            } else {
+                self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1
+            };
+            (row.config, cfg, paused_runs, pause_generation)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
@@ -138,7 +147,8 @@ impl Hub {
                 // owner's pause (`Hub::paused`) is told separately, so a running thread turn stops now too.
                 for thread in crate::chat::work::of(&self.store, &id) {
                     if self.has_actor(&thread.id)
-                        && let Err(error) = self.send_cmd(&thread.id, Cmd::Paused(cfg.paused))
+                        && let Err(error) =
+                            self.send_cmd(&thread.id, Cmd::Paused { paused: cfg.paused, pause_generation })
                     {
                         tracing::warn!(
                             thread = %thread.id, error = format!("{error:#}"),
@@ -147,7 +157,7 @@ impl Hub {
                     }
                 }
             }
-            self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+            self.send_cmd(&id, Cmd::Reconfigure { base: Box::new(cfg), pause_generation: Some(pause_generation) })?;
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);
@@ -195,5 +205,46 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::bot::Cmd;
+    use crate::chat::calls::context::tests::{bot, hub};
+
+    fn dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("codync-pause-generation-{name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The save's pause commands carry the number it took under the lock its flag was saved with, so a bot's actor
+    /// can drop the older of two saves whose commands arrive out of order (#582). A save that leaves the flag alone
+    /// carries the number already reached: there is nothing to order.
+    #[tokio::test]
+    async fn a_save_stamps_the_pause_number_its_commands_carry() {
+        let dir = dir("save");
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", &dir.to_string_lossy())).expect("saved");
+        let mut rx = hub.attach_bot_for_test("b1");
+        let reconfigured = |rx: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>| match rx.try_recv() {
+            Ok(Cmd::Reconfigure { base, pause_generation }) => (base.paused, pause_generation),
+            Ok(_) => panic!("a save that paused a bot said something else"),
+            Err(error) => panic!("a save that paused a bot said nothing: {error}"),
+        };
+
+        hub.update_bot(&json!({"id": "b1", "paused": true})).expect("paused");
+        assert_eq!(reconfigured(&mut rx), (true, Some(1)), "a pause change takes the next number");
+
+        hub.update_bot(&json!({"id": "b1", "paused": false})).expect("resumed");
+        assert_eq!(reconfigured(&mut rx), (false, Some(2)), "a resume after it takes the one after");
+
+        hub.update_bot(&json!({"id": "b1", "name": "Mika Two"})).expect("renamed");
+        assert_eq!(reconfigured(&mut rx), (false, Some(2)), "a save that leaves the pause alone carries 2");
+        assert_eq!(hub.pause_generation(), 2);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

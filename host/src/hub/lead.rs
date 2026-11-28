@@ -42,7 +42,9 @@ impl Hub {
             .into_iter()
             .map(|cfg| {
                 let bot = cfg.id.clone();
-                if let Err(error) = self.send_cmd(&bot, Cmd::Reconfigure(Box::new(cfg))) {
+                if let Err(error) =
+                    self.send_cmd(&bot, Cmd::Reconfigure { base: Box::new(cfg), pause_generation: None })
+                {
                     tracing::warn!(bot, error = format!("{error:#}"), "couldn't tell a bot its lead role changed");
                 }
                 bot

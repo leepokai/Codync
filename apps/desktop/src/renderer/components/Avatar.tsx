@@ -298,7 +298,7 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
  * (a registry id) puts the agent's logo in the bottom-left corner. */
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
   return (
-    <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
+    <div className="avatar-frame" style={{ width: size, height: size }}>
       <BotOrGroupAvatar bot={bot} members={members} size={size} />
       {agent ? (
         <span className="avatar-agent" style={{ width: size * 0.4, height: size * 0.4 }}>

@@ -2,17 +2,48 @@
 
 use super::sign_in::Held;
 use super::{
-    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, PAUSED_NOTICE, Queued, RESUME_PROMPT,
+    RoutineCompletion,
 };
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
-use crate::store::{Lane, now_ms};
+use crate::store::{EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
+use serde_json::json;
 use std::time::Instant;
 use tokio::sync::mpsc;
+
+/// The save numbers a bot's actor has obeyed. Every save takes the next one under the lock its config is saved
+/// with (`Hub::update_bot`), but the lock is released before the save's commands are sent: an older save can
+/// reach the actor after a newer one, and the older one's whole snapshot must not act.
+#[derive(Debug, Default)]
+pub(super) struct PauseNumbers(u64);
+
+impl PauseNumbers {
+    /// Starts at the number the host reached before this actor: a save it never saw is already in `base`.
+    pub(super) fn at(newest: u64) -> Self {
+        Self(newest)
+    }
+
+    /// Applies `generation`, answering whether it is the newest so far. An older one is dropped before it can
+    /// install an older snapshot, stop the turn a resume started, or start one a later pause has to stop; one
+    /// that is not older is recorded.
+    fn take(&mut self, generation: u64) -> bool {
+        if generation < self.0 {
+            return false;
+        }
+        self.0 = generation;
+        true
+    }
+
+    /// The newest number obeyed.
+    fn newest(&self) -> u64 {
+        self.0
+    }
+}
 
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
@@ -98,6 +129,7 @@ impl Actor {
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
+            Cmd::Paused { paused, pause_generation } => self.pause_changed(paused, pause_generation, done_tx).await,
             Cmd::SwitchBack => self.switch_back().await,
             Cmd::CallEnded { call } => {
                 if self.turn_call.as_ref() == Some(&call) {
@@ -105,10 +137,21 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(mut base) => {
+            Cmd::Reconfigure { mut base, pause_generation } => {
                 // A thread's folder is its own (`enter_worktree`): its bot's changes (`work::fallbacks_changed`) keep it.
                 if self.cfg.is_thread() {
                     base.cwd.clone_from(&self.base.cwd);
+                }
+                // Saving a bot releases the hub's lock before its commands are sent, so this one can arrive after
+                // a later save's: an older save's whole snapshot is dropped, not just its pause flag. Installing it
+                // would revert a newer name, instructions or model. `None` (a fallback or lead change) isn't a save
+                // and says nothing about the pause flag, so it keeps this actor's.
+                if let Some(generation) = pause_generation {
+                    if !self.pauses.take(generation) {
+                        return true;
+                    }
+                } else {
+                    base.paused = self.base.paused;
                 }
                 let old = std::mem::replace(&mut self.base, *base);
                 self.versions.ready(&self.hub, &self.base);
@@ -167,6 +210,13 @@ impl Actor {
                     self.restart_agent().await;
                 }
                 self.settle_chain(&old).await;
+                // A pause stops the running turn (nothing more is spent) and closes what waits on it; resuming
+                // lets what stayed queued go on and looks over the box again. The host cancelled the bot's
+                // routine runs under the lock its flag was saved with, so this never does.
+                if old.paused != self.base.paused {
+                    self.pause_changed(self.base.paused, pause_generation.unwrap_or(self.pauses.newest()), done_tx)
+                        .await;
+                }
             }
             Cmd::Shutdown => return false,
         }
@@ -271,6 +321,11 @@ impl Actor {
     pub(super) async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
+        }
+        // Paused: no turn of its starts, so nothing is spent. What waits on it hears so now (see `refuse_paused`).
+        if self.paused() {
+            self.refuse_paused();
+            return;
         }
         let main = Lane::main(&self.cfg.id);
         while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
@@ -499,6 +554,77 @@ impl Actor {
         }
     }
 
+    /// The owner's pause changed: a pause stops a thread's running turn too, not only the bot's own, and a resume
+    /// lets what was already waiting go on. The host's `update_bot` cancelled the bot's routine runs while it saved
+    /// the flag, so a late notification cannot cancel a run a resume already admitted.
+    async fn pause_changed(&mut self, paused: bool, pause_generation: u64, done_tx: &mpsc::UnboundedSender<Done>) {
+        // A notice from before a newer pause or resume is already out of date: it must not stop the turn that
+        // resume started, nor start one a later pause has to stop. Saving a bot releases the hub's lock before
+        // its commands are sent, so an older one can arrive after a newer one.
+        if !self.pauses.take(pause_generation) {
+            return;
+        }
+        if paused {
+            self.cancel_turn().await;
+            self.refuse_paused();
+        } else {
+            self.next_in_queue(done_tx).await;
+            if !self.cfg.is_thread() {
+                work::dispatch(&self.hub, &self.cfg.id);
+            }
+        }
+    }
+
+    /// Paused: what waits on this bot hears so now, and nothing of theirs is spent. The user's messages go out
+    /// cancelled with a notice (they don't wait to run on a later resume), a bot's request ends as not started,
+    /// replies go to their notices, and a room's turn is dropped with why. Host turns (a task's report, the
+    /// watchdog, a due follow-up) and compactions stay queued: they run when it is resumed. A due routine run is
+    /// cancelled instead (see below): its schedule continues from the next trigger after the resume.
+    fn refuse_paused(&mut self) {
+        let (kept, refused): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queue).into_iter().partition(|q| {
+            !matches!(q, Queued::User { .. } | Queued::BotRequest(_) | Queued::BotReply(_) | Queued::Group(_))
+        });
+        // A routine run that came due while it is paused is cancelled too (a pause stops its queued ones):
+        // its schedule continues from the next trigger after the resume. Only the runs still in this queue are
+        // named, so a late pause cannot cancel a run a resume already admitted.
+        let routine_runs: Vec<String> = kept
+            .iter()
+            .filter_map(|q| match q {
+                Queued::Routine(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        if !routine_runs.is_empty()
+            && let Err(error) = self.hub.routines.cancel_ids_for_pause(&self.hub.store, &routine_runs)
+        {
+            tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+        }
+        self.queue = kept.into_iter().collect();
+        let mut told = false;
+        for item in refused {
+            match item {
+                Queued::User { entry_id, .. } => {
+                    if let Some(mut e) = self.hub.store.entry(&entry_id) {
+                        e.data["status"] = "cancelled".into();
+                        self.hub.set_entry(&entry_id, &e.data);
+                    }
+                    told = true;
+                }
+                Queued::BotRequest(request) => {
+                    request.complete(Err(crate::chat::team::no_reply::not_started("this bot is paused")), false);
+                }
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
+                Queued::Group(turn) => {
+                    let _ = turn.reply.send(Err(anyhow!("this bot is paused")));
+                }
+                _ => unreachable!("only the queued kinds above are refused"),
+            }
+        }
+        if told {
+            self.add_between_turns(EntryKind::Notice, &json!({"text": PAUSED_NOTICE, "style": "info"}));
+        }
+    }
+
     pub(super) fn start_failed(&mut self, e: &anyhow::Error) {
         if self.turn.is_some() {
             self.report_turn(false, Some(e), "start_failed");
@@ -704,5 +830,27 @@ impl Actor {
             Inflight { started: now_ms(), follow_up }
         });
         Inflight::row(&self.cfg.id, turn)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Saving a bot releases the hub's lock before its `Reconfigure` and `Paused` go out, so the resume a user
+    /// asked for first can arrive after the pause they asked for last. The pause is the one that stands: the stale
+    /// resume is dropped before `next_in_queue` or `work::dispatch`, which would start a turn the pause has to stop.
+    #[test]
+    fn a_stale_resume_after_a_fresh_pause_does_not_run_the_queue() {
+        let mut pauses = PauseNumbers::at(3);
+        // The user pauses (a save at 4), then resumes (a save at 5) whose command is lost; then the pause's own
+        // resume from before it arrives, carrying 3.
+        assert!(pauses.take(4), "the pause");
+        assert!(!pauses.take(3), "an older resume arrived after the pause and must not dispatch the bot");
+        assert_eq!(pauses.newest(), 4, "and it does not lower the pause the save took");
+        // The same save's second command (`Paused` for a thread, after its `Reconfigure`) is not older: it applies.
+        assert!(pauses.take(4), "its own save's notice");
+        assert!(pauses.take(5), "a later resume is obeyed");
+        assert_eq!(pauses.newest(), 5);
     }
 }

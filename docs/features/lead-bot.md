@@ -21,11 +21,13 @@ initiative instead of waiting to be asked. Everything about it lives in the host
   picks one. A lead can't be hidden (`hub::validate`), so the bot the shortcuts call is always in the list.
   Everything else is set up as on any bot: name, avatar, agent and model, folder, connectors, skills, memory, routines.
 - **Placed like any bot.** The lead has no place of its own in the roster: the user drags, pins and moves it to a
-  section like any other bot (a host-made lead starts where any new bot does). Its row shows a gold `star.fill` badge
-  at the avatar’s bottom-right, with unread/approval badges at the top-right. The larger badge in details opens the
-  lead agent role explanation. TUI shows a gold `★` below the avatar; click it or press `I` on the lead to read the
-  same explanation, scroll with arrow keys, and close with `Esc`. Its menus have no Hide. Every other bot's menu has
-  **Make lead agent** (`star`; TUI: `*`), groups excepted.
+  section like any other bot (a host-made lead starts where any new bot does), and the desktop's **Freeze the lead bot
+  at the top** choice keeps it above every other bot on that device. The desktop marks it with a gold crown worn on the
+  avatar's top edge, its roster name bold. iPhone
+  keeps the gold `star.fill` badge at the avatar's bottom-right, with unread/approval badges beside it. TUI shows a
+  gold `★` below the avatar; click it or press `I` on the lead to read the role explanation, scroll with arrow keys,
+  and close with `Esc`. Its menus have no Hide. Every other bot's menu has **Make lead agent** (`star`; TUI: `*`),
+  groups excepted.
 
 ## Initiative
 

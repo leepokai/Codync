@@ -185,6 +185,20 @@ pub fn check_options<'a>(
     Ok(())
 }
 
+/// Checks that `model` is one `catalog` ([`models`]) lists, as a client's model picker offers it: a bot put on a
+/// model its agent doesn't have starts only to find it missing. A Cursor variant passes as its bare model, an
+/// agent that lists no models accepts any id, and the error names what it does list.
+pub fn check_model(catalog: &Value, model: &str) -> Result<()> {
+    let bare = cursor_variant(model).map_or(model, |(name, _)| name);
+    let models = catalog["models"].as_array().map_or(&[][..], Vec::as_slice);
+    if models.is_empty() || models.iter().any(|m| m["id"] == model || m["id"] == bare) {
+        return Ok(());
+    }
+    // The whole list, untruncated: a manager picking an id for another bot reads it straight from here.
+    let listed: Vec<&str> = models.iter().filter_map(|m| m["id"].as_str()).collect();
+    bail!("model {model} isn't in the agent's model list; it lists: {}", listed.join(", "))
+}
+
 fn parse_select_option(option: &Value) -> Option<Value> {
     if option["type"] != "select" {
         return None;
@@ -250,6 +264,21 @@ mod tests {
         assert!(check_options(&catalog, Some("gpt"), []).is_err(), "an unknown model");
         // A saved Cursor model carries its settings; the list has the bare one.
         assert!(check(Some("opus[effort=low,fast=true]"), "effort", "high").is_ok(), "a saved Cursor model");
+    }
+
+    #[test]
+    fn a_models_id_is_checked_against_the_catalog() {
+        let catalog = json!({"currentModelId": "opus", "models": [
+            {"id": "opus"}, {"id": "haiku"}, {"id": "sonnet"}, {"id": "small"}, {"id": "fast"},
+            {"id": "large"}, {"id": "wide"}, {"id": "deep"}, {"id": "thoughtful"}]});
+        let check = |model: &str| check_model(&catalog, model).map_err(|e| e.to_string());
+        assert!(check("haiku").is_ok(), "a listed model");
+        assert!(check("opus[effort=low]").is_ok(), "a Cursor variant passes as its bare model");
+        assert_eq!(
+            check("gpt").unwrap_err(),
+            "model gpt isn't in the agent's model list; it lists: opus, haiku, sonnet, small, fast, large, wide, deep, thoughtful"
+        );
+        assert!(check_model(&json!({}), "anything").is_ok(), "an agent that lists no models accepts any id");
     }
 
     #[test]

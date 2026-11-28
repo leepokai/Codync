@@ -59,6 +59,9 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var computer: Bool
     /// The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools). Nil from an older host.
     public var manageTeam: Bool?
+    /// Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed. Nil from
+    /// an older host, which would take the switch and ignore it.
+    public var paused: Bool?
     /// Other computers in the user's networks list this bot and may message it. Nil from an older host.
     public var offeredToNetwork: Bool?
     /// The user's cloud assistant lists this bot and may message it. Nil from an older host.
@@ -202,6 +205,7 @@ extension Bot {
         skills = try c.decodeIfPresent([String].self, forKey: .skills) ?? []
         computer = try c.decodeIfPresent(Bool.self, forKey: .computer) ?? false
         manageTeam = try c.decodeIfPresent(Bool.self, forKey: .manageTeam)
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused)
         offeredToNetwork = try c.decodeIfPresent(Bool.self, forKey: .offeredToNetwork)
         reachableByAssistants = try c.decodeIfPresent(Bool.self, forKey: .reachableByAssistants)
         createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)

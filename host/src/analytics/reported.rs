@@ -392,6 +392,10 @@ pub enum ListOption {
     Computer,
     Status,
     Activity,
+    /// The desktop sends this spelling. `rename_all = snake_case` would turn it into `freeze_lead`
+    /// and the report would keep `other`.
+    #[serde(rename = "freezeLead")]
+    FreezeLead,
     #[serde(other)]
     Other,
 }
@@ -642,6 +646,15 @@ mod tests {
 
         let newer = json!({"event": "screen_viewed", "app": "tui", "screen": "hologram"});
         assert_eq!(read_json(&newer), Some((Event::ScreenViewed, json!({"app": "tui", "screen": "other"}))));
+        let freeze = json!({"event": "list_layout_changed", "app": "desktop", "list": "bots", "option": "freezeLead", "on": true});
+        assert_eq!(
+            read_json(&freeze),
+            Some((
+                Event::ListLayoutChanged,
+                json!({"app": "desktop", "list": "bots", "option": "freezeLead", "on": true})
+            )),
+            "freezeLead is a catalog value, not other"
+        );
         let unknown_app = json!({"event": "window_opened", "app": "watch"});
         assert_eq!(read_json(&unknown_app), Some((Event::WindowOpened, json!({"app": "other"}))));
         let newer = json!({"event": "cloud_key_removed", "outcome": "expired", "provider": "fly"});

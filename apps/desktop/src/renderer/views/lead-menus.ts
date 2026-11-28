@@ -8,6 +8,19 @@ export function makeLeadItems(bot: Bot, store: BotStore): MenuItem[] {
   return [{ title: 'Make lead agent', icon: 'star', action: () => store.setLead(bot) }]
 }
 
+/** A bot row's Pause/Resume: none for a group, which has no agent to pause, and none while its computer runs a
+ *  host that ignores `paused`. A paused bot answers nothing and spends nothing until it is resumed. */
+export function pauseItems(bot: Bot, store: BotStore): MenuItem[] {
+  if (isGroup(bot) || !store.hasBotPause) return []
+  return [
+    {
+      title: bot.paused ? 'Resume bot' : 'Pause bot',
+      icon: bot.paused ? 'play' : 'pause',
+      action: () => store.setPaused(bot, !bot.paused),
+    },
+  ]
+}
+
 /** Whether a bot row offers Delete: an older host keeps its lead. */
 export function offersDelete(bot: Bot, store: BotStore): boolean {
   return !bot.lead || store.hasLeadChoice

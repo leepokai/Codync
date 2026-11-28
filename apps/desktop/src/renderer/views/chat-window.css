@@ -214,6 +214,9 @@
   padding: 9px 0;
   width: 100%;
 }
+.bot-row.paused {
+  opacity: 0.55;
+}
 .bot-row-text {
   flex: 1;
   min-width: 0;

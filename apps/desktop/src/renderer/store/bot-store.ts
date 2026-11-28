@@ -566,6 +566,11 @@ export class BotStore extends BotSync {
     this.patchBot(bot, { hidden })
   }
 
+  /** Paused: the bot answers nothing and spends nothing until it is resumed. */
+  setPaused(bot: Bot, paused: boolean) {
+    this.patchBot(bot, { paused })
+  }
+
   setFastMode(bot: Bot, fastMode: boolean) {
     this.patchBot(bot, { fastMode })
   }

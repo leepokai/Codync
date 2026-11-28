@@ -9,12 +9,14 @@ import { RosterLabel, RosterSection } from './RosterSection'
 
 interface Drag { name: string; order: string[]; at: Point; grab: Point; width: number }
 
-/** Sections move as blocks within one computer, including the unsectioned Bots group. */
-export function SectionRoster({ computerId, items, folded, order, save, toggle, onContext, row }: {
+/** Sections move as blocks within one computer, including the unsectioned Bots group. Frozen, the lead
+ * renders above this split (rosterLines does the same for keyboard order and drags). */
+export function SectionRoster({ computerId, items, folded, order, freezeLead = false, save, toggle, onContext, row }: {
   computerId: string
   items: RosterItem[]
   folded: string[]
   order: string[]
+  freezeLead?: boolean
   save: (names: string[]) => void
   toggle: (name: string) => void
   onContext: (name: string, x: number, y: number) => void
@@ -24,7 +26,7 @@ export function SectionRoster({ computerId, items, folded, order, save, toggle, 
   const current = useRef<Drag | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const ghost = useRef<HTMLDivElement>(null)
-  const groups = rosterGroups(items, folded, order)
+  const groups = rosterGroups(items, folded, order, freezeLead)
   const byName = new Map(groups.map((group) => [group.name, group]))
   const custom = groups.some((group) => group.name !== '')
   const names = groups.map((group) => group.name)
@@ -65,7 +67,8 @@ export function SectionRoster({ computerId, items, folded, order, save, toggle, 
     </RosterSection>
   }
   return <div ref={container} data-section-computer={computerId}>
-    {items.filter((item) => item.bot.pinned).map(row)}
+    {freezeLead ? items.filter((item) => item.bot.lead).map(row) : null}
+    {items.filter((item) => item.bot.pinned && !(freezeLead && item.bot.lead)).map(row)}
     {shown.map((name) => <SectionBlock key={name} name={name} lifted={drag?.name === name}>
       {name === '' && !custom ? null : label(name)}
       {name === '' ? <div className={`computer-roster-content ${drag ? 'collapsed' : ''}`} inert={drag !== null} aria-hidden={drag !== null}>

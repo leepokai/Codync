@@ -21,6 +21,7 @@ import type { RunDetail, WorkflowDetail, WorkflowStep, WorkflowSummary } from '.
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
+import { hostHasPause } from '../lib/host-pause'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -253,6 +254,11 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** The host pauses a bot (an older one ignores `paused`): the row's menu and this editor offer it only then. */
+  get hasBotPause() {
+    return this.hostVersion !== null && hostHasPause(this.hostVersion.version)
   }
 
   /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */

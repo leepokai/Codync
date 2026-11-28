@@ -257,6 +257,11 @@ struct BotSettingsForm: View {
             }
 
             CardSection("Activity", fold: "bot.activity") {
+                // Only from a host that has it (its bots say): an older one would take the switch and ignore it.
+                if model.bots.values.contains(where: { $0.paused != nil }) {
+                    SwitchRow("Paused", detail: "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.",
+                              isOn: Binding(get: { draft.paused ?? false }, set: { draft.paused = $0 }))
+                }
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {
@@ -271,7 +276,7 @@ struct BotSettingsForm: View {
                 }
                 // Only from a host that has it (its bots say).
                 if model.bots.values.contains(where: { $0.manageTeam != nil }) {
-                    SwitchRow("Manage the team", detail: "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
+                    SwitchRow("Manage the team", detail: "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.",
                               isOn: Binding(get: { draft.manageTeam ?? false }, set: { draft.manageTeam = $0 }))
                 }
                 // Each only where it applies: the computer is in a network, cloud assistants are on.

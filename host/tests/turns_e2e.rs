@@ -110,6 +110,71 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     assert_stop_ends_the_turn(&host, &bot).await;
 }
 
+/// Pausing a bot mid-turn: the running turn is stopped (nothing more is spent on it), a message sent
+/// while it is paused is cancelled with a notice instead of a turn, and resuming lets it work again.
+#[tokio::test]
+async fn pausing_a_bot_mid_turn_stops_it_and_resuming_lets_it_work_again() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Halted", "tests/fixtures/team_agent.py").await;
+    let folder = common::folder(&host.home, "Halted");
+
+    // A turn genuinely in flight: the agent holds the prompt and waits for `release`.
+    host.call("send", json!({"botId": bot, "text": "BLOCK"})).await;
+    let started = Instant::now();
+    while !std::fs::read_to_string(folder.join("prompts.jsonl")).is_ok_and(|p| p.contains("BLOCK")) {
+        assert!(started.elapsed() < Duration::from_secs(60), "the turn never started");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Paused mid-turn: the agent honors the cancel and the bot settles with nothing more spent.
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+    let deadline = Instant::now() + Duration::from_secs(40);
+    loop {
+        let sync = common::snapshot(&host.base, &host.token).await;
+        if common::bot(&sync, &bot)["status"] == "idle" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the paused turn never ended");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // A message while it is paused: cancelled with a notice, no turn, no spend.
+    host.call("send", json!({"botId": bot, "text": "held"})).await;
+    host.wait_for(&bot, Duration::from_secs(20), |e| {
+        e["kind"] == "notice" && e["data"]["text"] == "This bot is paused. Resume it to respond."
+    })
+    .await;
+    let held = host
+        .entries(&bot)
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "user" && e["data"]["text"] == "held")
+        .expect("the held message is kept, cancelled, not lost");
+    assert_eq!(held["data"]["status"], "cancelled");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap().lines().count(),
+        1,
+        "nothing was spent beyond the stopped turn"
+    );
+
+    // Resumed, it works again.
+    host.call("updateBot", json!({"id": bot, "paused": false})).await;
+    host.call("send", json!({"botId": bot, "text": "after"})).await;
+    host.wait_for(&bot, Duration::from_secs(20), |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(
+        std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap().lines().count(),
+        2,
+        "the resumed bot spent on the new message only: the stopped turn's prompt and this one, nothing else"
+    );
+    assert!(
+        std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap().lines().any(|p| p.contains("after")),
+        "the new message reached the agent"
+    );
+}
+
 /// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
 #[cfg(unix)]
 struct Escaped(PathBuf);

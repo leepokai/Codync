@@ -75,6 +75,8 @@ export const prefs = {
   /** How the Bots list and the Threads list are laid out: under their computer's heading, and by status. */
   botsByComputer: pref('botsByComputer', true),
   botsByStatus: pref('botsByStatus', false),
+  /** Keep the lead bot pinned at the very top of the Bots list on this device, ahead of the activity bumping. */
+  freezeLeadAtTop: pref('freezeLeadAtTop', false),
   /** How the Threads list groups what doesn't need the user: by folder (and routine), by bot, or not at all. */
   threadsGroup: pref<ThreadGrouping>('threadsGroup', 'folder'),
   /** How the Threads list orders the rows of each group, beside how it groups them. */

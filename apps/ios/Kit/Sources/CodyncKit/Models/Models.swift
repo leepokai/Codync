@@ -466,6 +466,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var skills: [String]?
     public var computer: Bool?
     public var manageTeam: Bool?
+    /// Whether the user (or a managing bot) paused it; nil from a host without the switch, so it isn't sent.
+    public var paused: Bool?
     /// Nil from a host without the switch, so it isn't sent.
     public var offeredToNetwork: Bool?
     public var reachableByAssistants: Bool?
@@ -525,6 +527,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         skills = bot.skills
         computer = bot.computer
         manageTeam = bot.manageTeam
+        paused = bot.paused
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
         compaction = bot.compaction
@@ -593,7 +596,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
         follow(\.command); follow(\.loginProfile); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.threadAgent); follow(\.threadFallbacks); follow(\.pinned); follow(\.hidden)
-        follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
+        follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam); follow(\.paused)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
         follow(\.compaction); follow(\.maxThreads); follow(\.threadWorktrees); follow(\.projects); follow(\.worktreeMode)
         follow(\.sharedFolders)

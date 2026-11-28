@@ -162,6 +162,14 @@ impl Routines {
         if self.stopping() {
             return Ok(None);
         }
+        // A pause names the runs it cancels while it saves the flag (`Hub::update_bot`); one that came due, or was
+        // asked for, after that snapshot is in no cancel set, so it is caught here, before anything is spent. It is
+        // often cancelled already (by that snapshot, or by the actor's `refuse_paused`): the caller releases the
+        // bot's place when this answers none, and a boxed run never held it, so this does not release it here.
+        if hub.paused(bot) {
+            self.cancel_ids_for_pause(&hub.store, &[id.to_owned()])?;
+            return Ok(None);
+        }
         let prepared = self.change(&hub.store, |s| {
             let Some(run) = s.runs.iter_mut().find(|r| r.id == id && r.bot_id == bot && r.status == Status::Pending) else { return Ok(None); };
             let Some(routine) = s.routines.iter().find(|r| r.id == run.routine_id && !r.deleted) else { cancel_run(run); return Ok(None); };
@@ -252,6 +260,33 @@ impl Routines {
             };
             for r in s.runs.iter_mut().filter(queued) {
                 cancel_run(r);
+            }
+            Ok(())
+        })
+    }
+
+    /// The runs of `bot` that are still going or still to go, for a caller that must name what it is about to cancel:
+    /// a pause captures them while it saves the flag, and cancels those ids afterwards.
+    pub fn active_ids(&self, bot: &str) -> Vec<String> {
+        self.state.locked().runs.iter().filter(|r| r.bot_id == bot && r.status.active()).map(|r| r.id.clone()).collect()
+    }
+
+    /// A pause is not the bot's Stop: it ends every run it names, including one working in its box and a webhook
+    /// delivery whose sender was already told the delivery was taken, and a run that came due while it is paused.
+    /// The routine's schedule keeps its next trigger, so a resume starts nothing from this pause.
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| ids.contains(&r.id) && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
             }
             Ok(())
         })
@@ -419,6 +454,13 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
             hub.routines.disable_bot(&hub.store, &run.bot_id)?;
             continue;
         };
+        // A run that came due while its bot is paused is cancelled here, not put in a box or a queue where a resume
+        // would start it: the pause cancelled the runs it named while it saved the flag, and this one came after
+        // that snapshot. Its routine's schedule has already moved to its next trigger.
+        if hub.paused(&run.bot_id) {
+            hub.routines.cancel_ids_for_pause(&hub.store, std::slice::from_ref(&run.id))?;
+            continue;
+        }
         // A task in the bot's box: it waits its turn there, and the chat stays free.
         // One with a folder of its own too: only a thread can work elsewhere than the bot's folder.
         if crate::chat::work::boxed(&bot.config) || hub.routines.has_folder(&run.routine_id) {
@@ -528,5 +570,91 @@ mod tests {
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
         assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
+    }
+
+    /// A pause is not Stop: it ends the runs it names, including one waiting in the box and a webhook delivery,
+    /// and a retry still waiting for its time (nothing of it runs after the resume). Nothing it doesn't name.
+    #[test]
+    fn a_pause_cancels_the_runs_it_names_and_leaves_the_rest() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let routines = Routines::default();
+        let routine = super::super::tests::routine();
+        let mut boxed = new_run(&routine, Value::Null, None);
+        boxed.boxed = true;
+        let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+        let mut retry = new_run(&routine, Value::Null, None);
+        retry.not_before = Some(now_ms() + 60_000);
+        let other = new_run(&routine, Value::Null, None);
+        let ids: Vec<String> = vec![boxed.id.clone(), delivery.id.clone(), retry.id.clone()];
+        routines
+            .change(&store, |s| {
+                s.runs.extend([boxed, delivery, retry, other.clone()]);
+                s.routines.push(routine);
+                Ok(())
+            })
+            .unwrap();
+        routines.cancel_ids_for_pause(&store, &ids).unwrap();
+        let state = routines.state.locked();
+        assert!(state.runs[..3].iter().all(|r| r.status == Status::Cancelled), "a pause ends all three");
+        assert_eq!(state.runs[2].not_before, None, "a retry waiting for later does not run after the resume");
+        assert!(state.runs[3].status == Status::Pending, "a run of another pause's set is untouched");
+    }
+
+    /// A pause cancels the runs it named while it saved its flag. A run that came due, or was asked for, after that
+    /// snapshot is in neither cancel set (the pause's, nor its actor's queue): admission is where it is caught,
+    /// before a turn is spent on a paused bot (#582).
+    #[test]
+    fn a_paused_bots_run_is_cancelled_at_admission() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let mut owner = crate::chat::calls::context::tests::bot("bot", "Check", "/tmp");
+        owner.paused = true;
+        hub.store.save_bot(&owner).expect("saved");
+        let routine = super::super::tests::routine();
+        let run = new_run(&routine, Value::Null, None);
+        let id = run.id.clone();
+        hub.routines
+            .change(&hub.store, |s| {
+                s.routines.push(routine);
+                s.runs.push(run);
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(hub.routines.begin(&hub, "bot", &id).expect("asked").is_none(), "a paused bot's run was admitted");
+
+        let state = hub.routines.state.locked();
+        assert!(
+            state.runs[0].status == Status::Cancelled,
+            "the run stayed active for a resume to start: {} run(s)",
+            state.runs.len()
+        );
+    }
+
+    /// A trigger that comes due while its bot is paused is cancelled in the pass that admits it: it is not put in a
+    /// box or a queue where the resume would start it, and the schedule moves past this pause.
+    #[test]
+    fn a_due_trigger_while_paused_is_cancelled_not_admitted() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let mut owner = crate::chat::calls::context::tests::bot("bot", "Check", "/tmp");
+        owner.paused = true;
+        hub.store.save_bot(&owner).expect("saved");
+        let routine = super::super::tests::routine();
+        hub.routines
+            .change(&hub.store, |s| {
+                s.routines.push(routine);
+                Ok(())
+            })
+            .unwrap();
+
+        tick(&hub).expect("a tick");
+
+        let state = hub.routines.state.locked();
+        assert_eq!(state.runs.len(), 1, "one run for the due trigger");
+        assert!(state.runs[0].status == Status::Cancelled, "a pause let its run through");
+        assert!(
+            state.routines[0].next_runs[0].is_some_and(|at| at > now_ms()),
+            "the schedule runs again from the next trigger after the pause: {:?}",
+            state.routines[0].next_runs
+        );
     }
 }

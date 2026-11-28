@@ -583,6 +583,10 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
+    // Paused: the target answers nothing and spends nothing, so the sender hears so instead of a turn starting.
+    if target.paused {
+        bail!("{} is paused", target.name);
+    }
     let hops = reserve(hub, &source.id, turn)?;
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.

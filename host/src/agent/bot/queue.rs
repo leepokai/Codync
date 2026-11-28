@@ -114,12 +114,16 @@ impl Actor {
                     base.cwd.clone_from(&self.base.cwd);
                 }
                 // Saving a bot releases the hub's lock before its commands are sent, so this one can arrive after
-                // a later save's: an older pause or resume must not undo the newer one. `None` (a fallback or lead
-                // change) says nothing about pausing and leaves the flag alone.
-                match pause_generation {
-                    Some(generation) if generation < self.pause_generation => base.paused = self.base.paused,
-                    Some(generation) => self.pause_generation = generation,
-                    None => base.paused = self.base.paused,
+                // a later save's: an older save's whole snapshot is dropped, not just its pause flag. Installing it
+                // would revert a newer name, instructions or model. `None` (a fallback or lead change) isn't a save
+                // and says nothing about the pause flag, so it keeps this actor's.
+                if let Some(generation) = pause_generation {
+                    if generation < self.pause_generation {
+                        return true;
+                    }
+                    self.pause_generation = generation;
+                } else {
+                    base.paused = self.base.paused;
                 }
                 let old = std::mem::replace(&mut self.base, *base);
                 self.versions.ready(&self.hub, &self.base);

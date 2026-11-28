@@ -263,6 +263,26 @@ async fn a_partial_update_preserves_and_a_validate_only_check_changes_nothing() 
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Every save takes its own number, even one that doesn't touch the pause flag, and hands back the pair it wrote:
+/// an older save whose command lands late must not revert a newer name or instructions in the actor (Greptile #587).
+#[tokio::test]
+async fn every_save_takes_its_own_number_and_hands_back_the_pair_it_wrote() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-saves-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let started = hub.pause_generation();
+    let (_, first_before, first_written) = hub.update_bot_returning(&json!({"id": "dev", "name": "First"})).unwrap();
+    let (_, second_before, second_written) =
+        hub.update_bot_returning(&json!({"id": "dev", "description": "Second."})).unwrap();
+    assert_eq!(first_before.name, "dev", "the first save replaced the saved name");
+    assert_eq!(first_written.name, "First", "and hands back what it wrote");
+    // The second save's before is the first save's write, so its audit is its own pair and not a later re-read.
+    assert_eq!(second_before.name, "First");
+    assert_eq!(second_written.description.as_str(), "Second.");
+    assert!(hub.pause_generation() > started + 1, "a save that changes no pause flag still takes its own number");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A dry run makes the checks a save makes, so it can't report a change valid that the host would refuse: the lead bot
 /// can't be hidden. It writes nothing either way.
 #[tokio::test]

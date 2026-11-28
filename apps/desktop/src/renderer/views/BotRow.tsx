@@ -20,7 +20,8 @@ export const BotRow = memo(function BotRow({ bot, store, usingComputer, members,
   const paused = bot.paused && !isGroup(bot)
   return (
     <HStack gap={10} className={`bot-row${paused ? ' paused' : ''}`}>
-      <AvatarWithStatus bot={bot} members={members} size={30} agent={agent ? store.agentRegistry(agent) : null} />
+      {/* The roster row's own label already names the pause (BotRoster), so its mark stays decorative. */}
+      <AvatarWithStatus bot={bot} members={members} size={30} agent={agent ? store.agentRegistry(agent) : null} announcePaused={false} />
       <VStack gap={2} className="bot-row-text">
         <HStack align="baseline" gap={4} shrink>
           {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}

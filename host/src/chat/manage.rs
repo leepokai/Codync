@@ -373,8 +373,10 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     // The card can wait minutes, and another change may land while it does: the save hands back the target as it
-    // was inside its own lock, so the audit records what this save replaced.
+    // was inside its own lock and as it wrote it, so the audit records that pair and not a re-read a later save
+    // would be attributed to.
     let mut before = target.clone();
+    let mut written = target.clone();
     let audited_fields = fields.clone();
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
@@ -382,8 +384,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         let mut patch = Value::Object(fields);
         patch["id"] = id.clone().into();
         let hub = hub.clone();
-        let (_, replaced) = tokio::task::spawn_blocking(move || hub.update_bot_returning(&patch)).await??;
+        let (_, replaced, saved) = tokio::task::spawn_blocking(move || hub.update_bot_returning(&patch)).await??;
         before = replaced;
+        written = saved;
     }
     let saved = save_routines(hub, &id, &routines);
     let routines_saved = saved.iter().filter(|r| r["error"].is_null()).count();
@@ -396,8 +399,11 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         // analytics event records actor, target and which fields, never the values. A validateOnly check
         // or a refusal never reaches this point. Routines count here too: a manager that changed nothing but
         // routines made a change, so it is audited like one.
-        if let Ok(after) = agent_bot(hub, &id) {
-            audit_change(hub, source, &before, &after, &audited_fields, routines_saved);
+        // A delete can still land between the save and here: the timeline entry needs the bot to exist.
+        if agent_bot(hub, &id).is_ok() {
+            // `written` is what this save wrote, not a re-read: an intervening save stays its own change, and
+            // the response below still reports the bot as it is now.
+            audit_change(hub, source, &before, &written, &audited_fields, routines_saved);
         }
     }
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))

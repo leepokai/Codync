@@ -96,15 +96,16 @@ impl Hub {
     }
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
-        self.update_bot_returning(patch).map(|(value, _)| value)
+        self.update_bot_returning(patch).map(|(value, _, _)| value)
     }
 
-    /// [`Hub::update_bot`], also returning the target as it was inside the save's own lock: a caller that audits
-    /// the change records what this save replaced, not a copy it read before an approval card waited.
-    pub fn update_bot_returning(&self, patch: &Value) -> Result<(Value, BotConfig)> {
+    /// [`Hub::update_bot`], also returning the target as it was inside the save's own lock, and as this save wrote
+    /// it: a caller that audits the change records that pair, not copies read before or after an approval card and a
+    /// later save.
+    pub fn update_bot_returning(&self, patch: &Value) -> Result<(Value, BotConfig, BotConfig)> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg, paused_runs, pause_generation) = {
+        let (before, written, cfg, paused_runs, pause_generation) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -121,14 +122,11 @@ impl Hub {
             // these afterwards cannot reach what the resume started (Greptile on this file, #587).
             let paused_runs =
                 if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
-            // A pause change takes the next number here, under the lock: the command that carries it can arrive
-            // after a later save's, and this says which one a bot's actor should keep.
-            let pause_generation = if row.config.paused == cfg.paused {
-                self.pause_generation.load(Ordering::SeqCst)
-            } else {
-                self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1
-            };
-            (row.config, cfg, paused_runs, pause_generation)
+            // Every save takes the next number here, under the lock, whether it changes the pause flag or not: a
+            // save's command can arrive after a later save's, and every field it carries (name, instructions,
+            // model), not just the pause flag, must not be reverted by the older one.
+            let pause_generation = self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1;
+            (row.config, cfg.clone(), cfg, paused_runs, pause_generation)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
@@ -172,7 +170,7 @@ impl Hub {
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);
-        Ok((self.bot_value(&id).unwrap_or(Value::Null), before))
+        Ok((self.bot_value(&id).unwrap_or(Value::Null), before, written))
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {

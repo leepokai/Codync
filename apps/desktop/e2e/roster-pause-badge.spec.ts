@@ -47,9 +47,8 @@ test('a paused bot wears the pause mark on its avatar until it is resumed, and a
     // The same minimal patch the roster's Pause bot menu sends (lead-menus → store.setPaused).
     await call(page, 'updateBot', { id: made[0], paused: true })
     await expect(row(bot).locator('.avatar-paused')).toBeVisible()
-    // Labelled, not hidden: a search row that shows only this mark still tells a reader it is paused, and the
-    // row's own label (which replaces its text for a screen reader) names Paused too.
-    await expect(row(bot).locator('.avatar-paused')).toHaveAttribute('aria-label', 'Paused')
+    // Announced once: the row's own label names Paused, so its avatar's mark stays decorative.
+    await expect(row(bot).locator('.avatar-paused')).toHaveAttribute('aria-hidden', 'true')
     await expect(row(bot)).toHaveAttribute('aria-label', new RegExp(`${bot}, Paused`))
     // A group's face stays bare: groups carry no pause state of their own.
     await expect(row(group).locator('.avatar-paused')).toHaveCount(0)

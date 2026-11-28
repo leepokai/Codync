@@ -85,11 +85,14 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
             crate::agent::bot::select_model(&acp, &res, &sid, cfg).await?;
         }
         // Unlocking the vault, starting the agent and opening its session take time, and a pause can land
-        // while they do: this prompt would spend for a paused bot, so look again right before it.
-        if hub.paused(&cfg.id) {
-            return Err(Paused.into());
-        }
-        let prompt = async { acp.session(&sid).prompt(json!([{"type": "text", "text": text}])).await?.response().await };
+        // while they do: this prompt would spend for a paused bot, so the check sits in the block that writes it,
+        // with no await between the two.
+        let prompt = async {
+            if hub.paused(&cfg.id) {
+                return Err(Paused.into());
+            }
+            acp.session(&sid).prompt(json!([{"type": "text", "text": text}])).await?.response().await
+        };
         tokio::pin!(prompt);
         let deadline = tokio::time::sleep(TIMEOUT);
         tokio::pin!(deadline);

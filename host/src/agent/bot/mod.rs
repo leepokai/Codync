@@ -281,8 +281,8 @@ struct Actor {
     hub: Arc<Hub>,
     /// The bot as the user set it up.
     base: BotConfig,
-    /// The pause number of the last `Reconfigure` or `Paused` this actor applied: a command carrying an older
-    /// one arrives late and must not undo a newer pause or resume.
+    /// The save number of the last `Reconfigure` or `Paused` this actor applied: a command carrying an older
+    /// one arrives late and is dropped whole, so it cannot undo a newer pause, resume, name or model.
     pause_generation: u64,
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,

@@ -231,6 +231,33 @@ fn a_helper_that_keeps_exiting_is_retried_less_often_and_reported_once_per_strea
 }
 
 #[cfg(target_os = "linux")]
+fn proc_stat_is_terminated(stat: &str) -> bool {
+    stat.rsplit_once(')')
+        .and_then(|(_, rest)| rest.trim_start().bytes().next())
+        .is_some_and(|state| matches!(state, b'Z' | b'X' | b'x'))
+}
+
+#[cfg(target_os = "linux")]
+fn is_terminated(pid: libc::pid_t) -> bool {
+    // SAFETY: signal 0 probes process existence without sending a signal.
+    if unsafe { libc::kill(pid, 0) } != 0 {
+        return true;
+    }
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return true;
+    };
+    proc_stat_is_terminated(&stat)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn zombie_proc_stat_is_treated_as_terminated() {
+    assert!(proc_stat_is_terminated("1234 (sleep) Z 1 1234 1234 0 -1 0 0 0"));
+    assert!(proc_stat_is_terminated("1234 (weird ) name) X 1 1234"));
+    assert!(!proc_stat_is_terminated("1234 (sleep) S 1 1234 1234 0 -1 0 0 0"));
+}
+
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn linux_helper_command_sets_parent_death_signal_and_exits_with_parent() {
     struct Cleanup {
@@ -295,9 +322,7 @@ async fn linux_helper_command_sets_parent_death_signal_and_exits_with_parent() {
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        // SAFETY: signal 0 probes process existence without sending a signal.
-        let alive = unsafe { libc::kill(child_pid, 0) } == 0;
-        if !alive {
+        if is_terminated(child_pid) {
             break;
         }
         assert!(tokio::time::Instant::now() < deadline, "child {child_pid} survived parent abort as an orphan");

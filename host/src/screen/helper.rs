@@ -164,14 +164,14 @@ fn helper_command(program: &std::path::Path) -> tokio::process::Command {
     cmd.kill_on_drop(true);
     let parent_pid = libc::pid_t::try_from(std::process::id()).unwrap_or(0);
     // SAFETY: `pre_exec` runs between `fork` and `exec` and only invokes async-signal-safe
-    // libc calls (`prctl`, `getppid`, `raise`) and `last_os_error` without locking or allocating.
+    // libc calls (`prctl`, `getppid`) and `last_os_error`/`from_raw_os_error` without locking or allocating.
     unsafe {
         cmd.pre_exec(move || {
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
             if parent_pid > 0 && libc::getppid() != parent_pid {
-                let _ = libc::raise(libc::SIGTERM);
+                return Err(std::io::Error::from_raw_os_error(libc::EPIPE));
             }
             Ok(())
         });

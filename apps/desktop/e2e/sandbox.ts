@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type Page } from '@playwright/test'
+import { chromium, expect, type Browser, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -177,7 +177,33 @@ export async function openPage(page: Page, name: 'Bots' | 'Threads' | 'Computers
 /** The page a rail entry other than Bots and Threads shows. */
 export const appPage = (page: Page) => page.locator('.app-page')
 
-/** Opens the agent's sheet from Extensions. */
+/** The side panel shown (a hidden one stays in the page, inert). */
+export const sidePanel = (page: Page) => page.locator('.side-panel:not([inert])').filter({ visible: true })
+
+/** Shows `view` (its name, in the app's language) in the first pane of the details panel `panel`: its tab when the
+ * pane has one, else picked from the pane's chooser, as a new panel opens on its chooser alone and the layout is shared
+ * by every bot (docs/design/ui-conventions.md). */
+export async function showView(panel: Locator, view: string) {
+  const pane = panel.locator('.panel-pane').first()
+  const tab = pane.getByRole('tab', { name: view, exact: true })
+  const choice = pane.locator('.panel-choice', { hasText: view })
+  await expect(pane.locator('.panel-tabs-row')).toBeAttached()
+  if (!(await tab.count())) {
+    if (!(await choice.isVisible())) await pane.locator('.panel-tabs-row + button').click()
+    await choice.click()
+  }
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+}
+
+/** Opens the details panel beside the chat shown, unless it is open already (the title toggles it), on `view`. */
+export async function openDetails(page: Page, view: string) {
+  const panel = page.locator('.details-panel')
+  if (!(await panel.isVisible())) await page.locator('.title-pill').click()
+  await showView(panel, view)
+  return panel
+}
+
 /** Extensions' Login profiles tab, at the agent's card. */
 export async function openLoginProfiles(page: Page, agent: { id: string }) {
   await openPage(page, 'Extensions')

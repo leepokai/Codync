@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach, setPref } from './sandbox.ts'
+import { api, attach, openDetails, setPref } from './sandbox.ts'
 
 test('in Italian a routine row, its editor, the preview and the run settings read translated', async () => {
   const { browser, page } = await attach()
@@ -15,7 +15,7 @@ test('in Italian a routine row, its editor, the preview and the run settings rea
     })
     await api(page, 'saveRoutine', { botId, name: 'Bot interval', instruction: 'Report once', triggers: [{ type: 'interval', seconds: 600 }], timeoutSeconds: 90 })
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.locator('.title-pill').click()
+    await openDetails(page, 'Dettagli')
 
     const daily = page.locator('.routines-card', { hasText: 'Daily check' })
     await expect(daily).toContainText('Ogni giorno alle 09:00 · Europe/Rome')

@@ -178,10 +178,17 @@ import kotlinx.coroutines.CancellationException
 }
 
 /**
- * Under the thread: the chat's composer writing to it ([talks]), with the agent it runs on and where it works; else, for a
- * routine's run or another bot's request, why it is read only, and Stop while it runs. [stop] asks first.
+ * Under the thread: what its agent runs in the background, then the chat's composer writing to it ([talks]), with the
+ * agent it runs on and where it works; else, for a routine's run or another bot's request, why it is read only, and Stop
+ * while it runs. [stop] asks first.
  */
 @Composable private fun ThreadFooter(bot: Bot, task: WorkTask, state: AppState, store: AppStore, talks: Boolean, queued: List<Entry>,
+    online: Boolean, stop: () -> Unit) = Column {
+    BackgroundCapsule(task)
+    ThreadBox(bot, task, state, store, talks, queued, online, stop)
+}
+
+@Composable private fun ThreadBox(bot: Bot, task: WorkTask, state: AppState, store: AppStore, talks: Boolean, queued: List<Entry>,
     online: Boolean, stop: () -> Unit) {
     val live = task.status.live
     val readOnly = readOnlyLine(task)
@@ -284,7 +291,7 @@ internal fun threadChatItems(entries: List<Entry>, chat: List<Entry>, threadId: 
 @Composable private fun WherePath(where: WhereLine, modifier: Modifier) {
     val path = where.path ?: return WhereLabel(where, modifier)
     val (copied, copy) = rememberCopyPath()
-    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = tr("Copy path")) { copy(path) }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else where.text)
+    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = tr("Copy path")) { copy(path) }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else whereText(where))
 }
 
 /** What the host told the thread first (the task's prompt), folded on top of its thread. */

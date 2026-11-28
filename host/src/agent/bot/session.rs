@@ -1,7 +1,7 @@
 //! The bot's ACP sessions: starting its agent, new/reopen, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
+use super::launch::{Background, claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
 use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work};
 use crate::agent::own_memory;
 use crate::analytics::Retired;
@@ -166,9 +166,12 @@ impl Actor {
         env.push((crate::mcp::BOT_ENV.into(), self.cfg.id.clone()));
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
-        let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
-            tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
-        })?;
+        let background = if self.cfg.is_thread() { Background::Reported } else { Background::Unreported };
+        let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget, background)
+            .await
+            .inspect_err(|e| {
+                tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
+            })?;
         self.hub.dev_servers.agent_started(&self.cfg, &conn.acp, &command[0]);
         Ok(conn)
     }
@@ -197,9 +200,8 @@ impl Actor {
         // its next new session gets the new tools.
         if std::mem::take(&mut self.restart_before_turn)
             && self.conn.as_ref().is_some_and(|c| c.sessions.reopen().is_some())
-            && let Some(c) = self.conn.take()
         {
-            c.acp.kill().await;
+            self.kill_agent().await;
         }
         let mut servers = self.mcp_servers()?;
         // pi gets its servers when it starts (`codync_agent::pi`), so they take pi's names before that.
@@ -293,10 +295,8 @@ impl Actor {
                             Err(error) => {
                                 // The agent now holds a session the host doesn't track, and `session/resume` refuses
                                 // one it holds. Stopped, it takes the session again on the next message.
-                                if reopen == acp::Reopen::Resume
-                                    && let Some(c) = self.conn.take()
-                                {
-                                    c.acp.kill().await;
+                                if reopen == acp::Reopen::Resume {
+                                    self.kill_agent().await;
                                 }
                                 return Err(error);
                             }
@@ -383,9 +383,7 @@ impl Actor {
         if let Ok(result) = answered {
             return result;
         }
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.kill_agent().await;
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
     }
@@ -403,9 +401,7 @@ impl Actor {
             tracing::warn!(bot = %self.cfg.id, "a session request was cut short; the agent can't resume, so it keeps running");
             return;
         }
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.kill_agent().await;
     }
 
     /// Drops the main ACP session so the next turn starts a fresh one.

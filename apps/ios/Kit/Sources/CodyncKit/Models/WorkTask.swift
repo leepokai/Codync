@@ -92,6 +92,32 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// A piece of work its thread's agent reports running in the background: a command, a workflow, a monitor.
+    public struct BackgroundTask: Codable, Hashable, Sendable, Identifiable {
+        public var id: String
+        /// What the agent calls it: a workflow's name, a command's description.
+        public var name: String
+        /// What it does now, when the agent says (a workflow's phase and agent).
+        public var activity: String?
+        public var startedAt: Int64
+
+        public init(id: String, name: String, activity: String? = nil, startedAt: Int64 = 0) {
+            self.id = id
+            self.name = name
+            self.activity = activity
+            self.startedAt = startedAt
+        }
+
+        /// Only one without an id is unreadable.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            activity = (try? c.decodeIfPresent(String.self, forKey: .activity)).flatMap { $0.isEmpty ? nil : $0 }
+            startedAt = (try? c.decodeIfPresent(Int64.self, forKey: .startedAt)) ?? 0
+        }
+    }
+
     public var id: String
     public var title: String
     public var status: Status
@@ -117,6 +143,8 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var talkFiles: Bool
     /// The folder its thread works in on the computer; nil before a thread took it, and from an older host.
     public var folder: String?
+    /// `folder` is the one Codync made for a thread without a bot, which reads "Own folder". False from an older host.
+    public var ownFolder: Bool
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); nil from an
     /// older host, where every live task takes one (`takesSeat`).
     public var seat: Bool?
@@ -124,6 +152,9 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var agent: String?
     /// The agent its thread runs on now, or ran on last (a backend id); nil before a thread took it, and from an older host.
     public var runsOn: String?
+    /// What its thread's agent runs in the background, oldest first: the task waits on it. Empty from an older host,
+    /// and for an agent that doesn't say.
+    public var background: [BackgroundTask]
 
     /// The agent its thread runs on, or will: its own, else the one it was started on, else `bot`'s (none for the box
     /// of threads without a bot).
@@ -134,7 +165,8 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil, runsOn: String? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, ownFolder: Bool = false, seat: Bool? = nil, agent: String? = nil, runsOn: String? = nil,
+                background: [BackgroundTask] = []) {
         self.id = id
         self.title = title
         self.status = status
@@ -151,9 +183,11 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.talk = talk
         self.talkFiles = talkFiles
         self.folder = folder
+        self.ownFolder = ownFolder
         self.seat = seat
         self.agent = agent
         self.runsOn = runsOn
+        self.background = background
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -177,9 +211,21 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         talk = (try? c.decodeIfPresent(Bool.self, forKey: .talk)) ?? false
         talkFiles = (try? c.decodeIfPresent(Bool.self, forKey: .talkFiles)) ?? false
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
+        ownFolder = (try? c.decodeIfPresent(Bool.self, forKey: .ownFolder)) ?? false
         seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
         agent = try? c.decodeIfPresent(String.self, forKey: .agent)
         runsOn = (try? c.decodeIfPresent(String.self, forKey: .runsOn)).flatMap { $0.isEmpty ? nil : $0 }
+        background = (try? c.decodeIfPresent([Lenient<BackgroundTask>].self, forKey: .background))?.compactMap(\.value) ?? []
+    }
+
+    /// The capsule over its thread's composer while its agent runs work in the background: what the one piece does,
+    /// or the names of several, since the oldest began. Nil while nothing runs there.
+    public var backgroundLabel: (text: String, since: Int64)? {
+        guard let first = background.first else { return nil }
+        let text = background.count == 1
+            ? [first.name, first.activity].compactMap(\.self).filter { !$0.isEmpty }.joined(separator: " · ")
+            : background.map(\.name).joined(separator: ", ")
+        return (text, first.startedAt)
     }
 
     /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
@@ -195,17 +241,18 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var givesWay: Bool { status.isLive && takesSeat && source == nil }
 }
 
+/// One item of a list that is left out when it doesn't read.
+struct Lenient<Value: Decodable>: Decodable {
+    var value: Value?
+    init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+}
+
 /// A bot's `work` as the host sent it, each task that doesn't read left out.
 struct WorkList: Decodable {
     var tasks: [WorkTask]
 
-    private struct Slot: Decodable {
-        var task: WorkTask?
-        init(from decoder: Decoder) throws { task = try? WorkTask(from: decoder) }
-    }
-
     init(from decoder: Decoder) throws {
-        tasks = try decoder.singleValueContainer().decode([Slot].self).compactMap(\.task)
+        tasks = try decoder.singleValueContainer().decode([Lenient<WorkTask>].self).compactMap(\.value)
     }
 }
 

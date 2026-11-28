@@ -115,8 +115,12 @@ What an agent sends arrives on the channel `Acp::spawn` returns, as `Incoming`:
 - **`Incoming::Update`**: a `session/update` as a typed `events::Event` with the session it is about: reply text,
   reasoning, tool calls and their changes (`ToolCall`, only what was sent is `Some`; with Claude's adapter also the
   subagent call that launched it, `parent`, and on a subagent's launch what it reported, `subagent`), the plan, context usage,
-  compactions, modes, config options and `/` commands. A kind this crate doesn't know yet is `Event::Other` with the
-  update as sent, so a newer adapter never breaks reading.
+  compactions, modes, config options and `/` commands. Work Claude runs apart from its turn (a command or workflow
+  in the background, a monitor, a turn it begins by itself) is `Event::Task`, for an app whose `initialize` adds
+  `acp::claude::background_tasks_meta()` to `clientCapabilities._meta` (`Capabilities::tasks` says the adapter took
+  it); in that form the adapter leaves out of later messages what it said of a tool call before (`_meta.claudeCode`
+  keys, a permission's kind and diff), and the reader puts it back. A kind this crate doesn't know yet is
+  `Event::Other` with the update as sent, so a newer adapter never breaks reading.
 - **`Incoming::Request`**: a request to the app, such as a permission (`Request::permission`, with the options it offers
   and `Permission::allow`). It is answered once (`respond`, `refuse`, `choose`); dropped unanswered, it answers by
   itself (a permission `cancelled`, a question `cancel`, anything else not supported), so an agent never waits on a

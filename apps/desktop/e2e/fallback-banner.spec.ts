@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, sandbox } from './sandbox.ts'
+import { api, attach, openDetails, sandbox } from './sandbox.ts'
 
 // A scripted agent that asks to sign in while `<name>.signedout` is in its folder (host/tests/fixtures/relay_agent.py).
 const relayAgent = resolve(__dirname, '../../../host/tests/fixtures/relay_agent.py')
@@ -38,8 +38,7 @@ test('the Agent card says the own agent is signed out while a fallback answers',
   try {
     botId = await signedOutBot(page, name)
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+    await openDetails(page, 'Settings')
     const banner = page.locator('.details-panel').getByText(/^Using Codex /)
     await expect(banner).toHaveText('Using Codex while Kimi Code is signed out')
     await expect(banner).not.toContainText('resets')
@@ -59,9 +58,7 @@ test('the fallback banner and rest line follow the app language', async () => {
     await page.evaluate(() => localStorage.setItem('appLanguage', JSON.stringify('zh-Hant')))
     await page.reload()
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}，檢視詳情` }).click()
-    const panel = page.locator('.details-panel')
-    await panel.getByRole('tab', { name: '設定' }).click()
+    const panel = await openDetails(page, '設定')
     await expect(panel.locator('.fallback-switch-back').locator('..')).toContainText('正在使用 Codex，Kimi Code 已登出')
     await panel.locator('.model-picker-field').first().click()
     await expect(page.locator('.model-picker').getByText(/^休息到 /)).toBeVisible()

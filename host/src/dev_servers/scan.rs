@@ -1,7 +1,7 @@
 //! After a host restart, what was running starts again; from then on, what listens is read and clients told.
 
 use super::run::launch;
-use super::{DevServers, KV_PREFIX, Live, Saved, Status, detected, forget, platform, ports, save};
+use super::{Agent, DevServers, KV_PREFIX, Live, Saved, Status, detected, forget, platform, ports, save};
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::store::now_ms;
@@ -86,16 +86,26 @@ impl DevServers {
     pub(super) fn agents_running(&self) -> Vec<detected::RunningAgent> {
         let mut agents = self.agents.locked();
         agents.retain(|_, agent| agent.acp.strong_count() > 0);
-        agents
-            .values()
-            .filter_map(|agent| {
-                Some(detected::RunningAgent {
-                    bot: agent.bot.clone(),
-                    acp: agent.acp.upgrade()?,
-                    programs: agent.programs.clone(),
-                })
-            })
-            .collect()
+        agents.values().filter_map(Agent::running).collect()
+    }
+
+    /// Whether the agent of `id` (a bot or a thread) runs a server it left listening through its own shell, read now.
+    pub async fn agent_serves(&self, id: &str) -> bool {
+        let agent = self.agents.locked().get(id).and_then(Agent::running);
+        match agent {
+            Some(agent) => detected::serves(&agent).await,
+            None => false,
+        }
+    }
+}
+
+impl Agent {
+    fn running(&self) -> Option<detected::RunningAgent> {
+        Some(detected::RunningAgent {
+            bot: self.bot.clone(),
+            acp: self.acp.upgrade()?,
+            programs: self.programs.clone(),
+        })
     }
 }
 

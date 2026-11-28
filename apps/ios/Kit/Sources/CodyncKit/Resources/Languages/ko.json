@@ -901,6 +901,7 @@
   "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.": "Amp (curl -fsSL https://ampcode.com/install.sh | bash)을 설치하고 `amp login`을 실행하세요.",
   "Install Kilo CLI (npm install -g @kilocode/cli) and run `kilo auth login`.": "Kilo CLI (npm install -g @kilocode/cli)을 설치하고 `kilo auth login`을 실행하세요.",
   "Install Cline CLI (npm install -g cline) and run `cline auth`.": "Cline CLI (npm install -g cline)을 설치하고 `cline auth`을 실행하세요.",
+  "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.": "Doubao CLI (npm install -g @bytedance/doubao-cli)을 설치하고 `doubao login`을 실행하세요.",
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Auggie (npm install -g @augmentcode/auggie)을 설치하고 `auggie login`을 실행하세요.",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash)을 설치하고 `vibe --setup`을 실행하세요.",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash)을 설치하고 `kiro-cli login`을 실행하세요.",

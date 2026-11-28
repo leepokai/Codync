@@ -108,3 +108,4 @@ Only what's been looked at, as of 2026-11-06. None of these were run against a l
 | Cline, Devin | Plan numbers only through their HTTP APIs. |
 | CodeBuddy Code, WorkBuddy, Cortex Code | Nothing found outside their websites. Their bundles weren't searched in full. |
 | Qwen Code, Poolside, Pi, DeepSeek Harness, goose | Session tokens only, or bring-your-own-key with no plan. |
+| Doubao | No usage command in `doubao --help`. Plan numbers weren't searched beyond that. |

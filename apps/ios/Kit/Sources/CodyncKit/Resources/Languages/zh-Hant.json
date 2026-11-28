@@ -901,6 +901,7 @@
   "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.": "安裝 Amp（curl -fsSL https://ampcode.com/install.sh | bash），然後執行 `amp login`。",
   "Install Kilo CLI (npm install -g @kilocode/cli) and run `kilo auth login`.": "安裝 Kilo CLI（npm install -g @kilocode/cli），然後執行 `kilo auth login`。",
   "Install Cline CLI (npm install -g cline) and run `cline auth`.": "安裝 Cline CLI（npm install -g cline），然後執行 `cline auth`。",
+  "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.": "安裝豆包 CLI（npm install -g @bytedance/doubao-cli），然後執行 `doubao login`。",
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "安裝 Auggie（npm install -g @augmentcode/auggie），然後執行 `auggie login`。",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "安裝 Mistral Vibe（curl -LsSf https://mistral.ai/vibe/install.sh | bash），然後執行 `vibe --setup`。",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "安裝 Kiro CLI（curl -fsSL https://cli.kiro.dev/install | bash），然後執行 `kiro-cli login`。",

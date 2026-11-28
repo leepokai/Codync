@@ -901,6 +901,7 @@
   "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.": "Amp をインストールし (curl -fsSL https://ampcode.com/install.sh | bash)、`amp login` を実行します。",
   "Install Kilo CLI (npm install -g @kilocode/cli) and run `kilo auth login`.": "Kilo CLI をインストールし (npm install -g @kilocode/cli)、`kilo auth login` を実行します。",
   "Install Cline CLI (npm install -g cline) and run `cline auth`.": "Cline CLI (npm install -g cline) をインストールし、`cline auth` を実行します。",
+  "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.": "Doubao CLI（npm install -g @bytedance/doubao-cli）をインストールし、`doubao login` を実行します。",
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Auggie をインストールし (npm install -g @augmentcode/auggie)、`auggie login` を実行します。",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) をインストールし、`vibe --setup` を実行します。",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) をインストールし、`kiro-cli login` を実行します。",

@@ -901,6 +901,7 @@
   "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.": "Instala Amp (curl -fsSL https://ampcode.com/install.sh | bash) y ejecuta `amp login`.",
   "Install Kilo CLI (npm install -g @kilocode/cli) and run `kilo auth login`.": "Instala Kilo CLI (npm install -g @kilocode/cli) y ejecuta `kilo auth login`.",
   "Install Cline CLI (npm install -g cline) and run `cline auth`.": "Instala Cline CLI (npm install -g cline) y ejecuta `cline auth`.",
+  "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.": "Instala Doubao CLI (npm install -g @bytedance/doubao-cli) y ejecuta `doubao login`.",
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Instala Auggie (npm install -g @augmentcode/auggie) y ejecuta `auggie login`.",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Instala Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) y ejecuta `vibe --setup`.",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Instala Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) y ejecuta `kiro-cli login`.",

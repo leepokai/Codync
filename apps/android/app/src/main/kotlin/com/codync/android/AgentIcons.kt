@@ -18,6 +18,7 @@ import androidx.annotation.DrawableRes
     "deepagents" -> R.drawable.agent_deepagents
     "devin" -> R.drawable.agent_devin
     "dimcode" -> R.drawable.agent_dimcode
+    "doubao" -> R.drawable.agent_doubao
     "dsh" -> R.drawable.agent_dsh
     "factory-droid" -> R.drawable.agent_factory_droid
     "gemini" -> R.drawable.agent_gemini

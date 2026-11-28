@@ -81,6 +81,16 @@ impl Install {
     }
 }
 
+/// Whether this computer can run harness `id`. Doubao CLI ships for Apple silicon, 64-bit Windows and 64-bit Linux.
+fn platform_offers(id: &str) -> bool {
+    id != "doubao"
+        || cfg!(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "windows", target_arch = "x86_64"),
+            all(target_os = "linux", target_arch = "x86_64"),
+        ))
+}
+
 pub fn harness(id: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.id == id)
 }
@@ -107,7 +117,7 @@ pub fn list() -> Vec<Value> {
     let registry = registry::agents();
     let mut out: Vec<Value> = HARNESSES
         .iter()
-        .filter(|h| workbuddy::offered(h.id))
+        .filter(|h| workbuddy::offered(h.id) && platform_offers(h.id))
         .map(|h| {
             let path = installed_cli(h);
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));

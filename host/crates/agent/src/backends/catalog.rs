@@ -8,6 +8,8 @@ pub const OUTDATED: &[(&str, &str)] = &[
     // DeepSeek Harness 0.1.0 has only its `web` and `headless` profiles (no upstream issue: later releases
     // have `acp`; docs/upstream-agents/deepseek-harness.md).
     ("dsh", "profile acp does not exist"),
+    // Doubao CLI before 2.38 has no `acp` subcommand (docs/upstream-agents/doubao.md).
+    ("doubao", "未知命令或选项"),
 ];
 
 pub const HARNESSES: &[Harness] = &[
@@ -401,5 +403,18 @@ pub const HARNESSES: &[Harness] = &[
         }),
         login: Some("{bin} login"),
         signed_in: None,
+    },
+    Harness {
+        id: "doubao",
+        name: "Doubao",
+        bins: &["doubao"],
+        // `acp serve` is ACP v1 on stdio, added in 2.38. `--acp` is the same server.
+        // Listed only where that CLI ships (`platform_offers`).
+        local: Some("{bin} acp serve"),
+        registry: None,
+        setup: "Install Doubao CLI (npm install -g @bytedance/doubao-cli) and run `doubao login`.",
+        install: Some(Install::Npm("@bytedance/doubao-cli")),
+        login: Some("{bin} login"),
+        signed_in: Some(SignInCheck { args: "auth status", ok: exit_ok }),
     },
 ];

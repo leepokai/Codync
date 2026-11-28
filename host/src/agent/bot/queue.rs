@@ -553,9 +553,25 @@ impl Actor {
             // wins the actor's `select!` this batch starts for a bot whose row is gone. `user_message_started` would
             // put back the hop-limit entry the delete just dropped: one entry per create/delete cycle in a long-lived
             // host. The row is the authority.
-            if self.hub.store.bot(&self.cfg.id).ok().flatten().is_none_or(|row| row.deleted) {
-                tracing::debug!(bot = %self.cfg.id, messages = batch.len(), "dropped queued messages for a deleted bot");
-                continue;
+            //
+            // Only a row that is known to be gone drops the batch. A read that failed is not a delete: dropping a live
+            // bot's queued message because the store errored once would lose it, so the batch runs instead.
+            match self.hub.store.bot(&self.cfg.id) {
+                Ok(Some(row)) if !row.deleted => {}
+                Ok(_) => {
+                    // Dropped with no trace, asymmetric with `stop` (queue.rs:222), which marks the same entries
+                    // `cancelled` so their reader sees why they never ran.
+                    tracing::debug!(bot = %self.cfg.id, messages = batch.len(), "dropped queued messages for a deleted bot");
+                    continue;
+                }
+                // The debug event is this host's only counter: it has no metrics subsystem, so these fields are what
+                // one would need (`error` included).
+                Err(error) => tracing::debug!(
+                    bot = %self.cfg.id,
+                    messages = batch.len(),
+                    error = format!("{error:#}"),
+                    "couldn't read the bot row; the queued batch runs"
+                ),
             }
             // A handoff waiting in the chat starts a new conversation with this message, as does one already taken
             // for a turn that couldn't start.

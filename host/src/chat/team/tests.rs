@@ -781,6 +781,34 @@ async fn a_message_queued_behind_the_turn_of_a_bot_deleted_meanwhile_starts_no_t
     f.shutdown().await;
 }
 
+/// #537, the other half of the batch start's row check: a read that failed is not a delete. Dropping the batch there
+/// would lose a live bot's message over one transient store error, so the batch runs and the error is only logged.
+///
+/// The error is real: the `bots` table is renamed away for the moment the batch start reads it, which is exactly what a
+/// failing read looks like to `store.bot`, then put back so the turn that must run can finish.
+#[tokio::test]
+async fn a_failed_row_read_lets_the_queued_batch_run() {
+    let f = Fixture::new();
+    f.send_to("b", "BLOCK work").await;
+    f.until(|| f.prompts_of("b").len() == 1).await;
+    // Queued behind the running turn, as a message accepted while the bot was live is.
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "second"}));
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "second".into() }).unwrap();
+    let (reply, taken) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = taken.await.unwrap();
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    db.execute_batch("ALTER TABLE bots RENAME TO bots_away;").unwrap();
+    std::fs::write(f.dir.join("b").join("release"), "go").unwrap();
+    f.until(|| f.prompts_of("b").len() == 2).await;
+    db.execute_batch("ALTER TABLE bots_away RENAME TO bots;").unwrap();
+    drop(db);
+    f.until(|| f.idle("b")).await;
+    assert_eq!(f.prompts_of("b").len(), 2, "a read error does not drop the batch");
+    f.shutdown().await;
+}
+
 /// A refusal already produced can reach the host after the bot is deleted. It must not put the bot back into the
 /// hop-limit map: `open_lift` reads a missing actor as generation 0, so an unguarded refusal re-creates the entry the
 /// delete just removed, for the life of the process. Nothing is delivered and the sender gets the plain limit error.

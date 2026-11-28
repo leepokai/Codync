@@ -31,13 +31,26 @@ internal suspend fun AppStore.loadThread(botId: String, threadId: String) {
     }
 }
 
-/** One more thread chat shows [threadId] (the same thread can show under its bot's details over it). */
-internal fun AppStore.watchThread(threadId: String) { threadViews.merge(threadId, 1, Int::plus) }
+/**
+ * One more thread chat shows [threadId] (the same thread can show under its bot's details over it). Its [botId]'s chat
+ * stays resident while the thread is open, so a card the thread put there (an approval past the preview) is reachable.
+ */
+internal fun AppStore.watchThread(botId: String, threadId: String) {
+    if (threadViews.watch(botId, threadId)) contextScope.launch { refresh() }
+}
 
-/** A thread chat of [threadId] closed: its transcript is let go once none shows it. */
-internal fun AppStore.closeThread(threadId: String) {
-    if (threadViews.compute(threadId) { _, shown -> ((shown ?: 1) - 1).takeIf { it > 0 } } != null) return
+/**
+ * A thread chat of [threadId] closed. Its owner stays held while another view or another of its threads is open; its
+ * transcript is let go only when this thread's last view closes.
+ */
+internal fun AppStore.closeThread(botId: String, threadId: String) {
+    if (!threadViews.close(botId, threadId)) return
+    // The last thread and view are gone, and its chat is not the open one: its extra rows go back to the preview with
+    // the paging stop that described them. Otherwise reopening the thread would trust a Complete/MemoryFull marker
+    // while the older rows it needs are no longer loaded.
+    if (botId !in residents.full(state.value.selectedBot)) reclaimChat(botId)
     mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+    contextScope.launch { refresh() }
 }
 
 internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.update { state ->

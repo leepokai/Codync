@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
@@ -67,6 +68,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+
+/** Set by the open chat. A stub tap reads that one SQLite row. Null everywhere else. */
+internal val LocalShowStoredMessage = staticCompositionLocalOf<((Entry) -> Unit)?> { null }
+
 /** One row of a conversation, as iOS `ChatItem` builds them. */
 internal sealed interface ChatItem {
     val id: String
@@ -120,7 +125,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
 
 /** The text find searches (iOS `ChatView.findable`): each message's own words, not separators, notices or exchanges. */
 internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
-    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to it.entry.text } }
+    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to (it.entry.storedStubSentence() ?: it.entry.text) } }
 
 /** A chat's time separator: Today 3:27 AM. */
 @Composable internal fun TimeSeparator(at: Long) {
@@ -194,14 +199,19 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.attachments
+    val shown = entry.stubLabel()
     val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
+    val showStored = LocalShowStoredMessage.current
+    val bubbleClick: () -> Unit = {
+        if (entry.isStoredStub) showStored?.invoke(entry) else focus.clearFocus()
+    }
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
-        if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
-                menu.textItems(textCopyItem(context, entry.text))
-            }) { UserText(entry.text, quote, openQuote) }
+        if (shown.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
+            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { SelectionContainer { UserText(shown, quote) } }) {
+                menu.textItems(textCopyItem(context, shown))
+            }) { UserText(shown, quote, openQuote) }
         SendStatusLine(entry.status)
     }
 }
@@ -240,16 +250,21 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
 @Composable internal fun PlainMessageRow(entry: Entry, state: AppState, store: AppStore) {
     val context = LocalContext.current
     val user = entry.kind == "user"
-    val menu = { listOf(textCopyItem(context, entry.text)) }
+    val shown = entry.stubLabel()
+    val menu = { listOf(textCopyItem(context, shown)) }
+    val showStored = LocalShowStoredMessage.current
+    val openStub: (() -> Unit)? = if (!entry.isStoredStub) null else {
+        { showStored?.let { it(entry) } }
+    }
     Column(Modifier.fillMaxWidth().padding(start = if (user) 56.dp else 0.dp, end = if (user) 0.dp else 40.dp),
         horizontalAlignment = if (user) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (user) {
             val attachments = entry.attachments
             if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, MessageMenu.copyOnly, state, store)
-            if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
+            if (shown.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu, onClick = openStub)) { UserText(shown) }
             SendStatusLine(entry.status)
         } else Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(preview = { AgentText(entry.text, selectable = true) }, items = menu)) { AgentText(entry.text, selectable = false) }
+            .contextActions(preview = { AgentText(shown, selectable = true) }, items = menu, onClick = openStub)) { AgentText(shown, selectable = false) }
     }
 }
 
@@ -293,7 +308,12 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
     val artifact = entry.artifact
     val voiceNote = entry.voiceNote
     val menu = MessageMenu.of(entry, store, reply, openTrace, selectText)
-    val textMenu = { menu.textItems(textCopyItem(context, entry.text)) }
+    val shown = entry.stubLabel()
+    val textMenu = { menu.textItems(textCopyItem(context, shown)) }
+    val showStored = LocalShowStoredMessage.current
+    val bubbleClick: () -> Unit = {
+        if (entry.isStoredStub) showStored?.invoke(entry) else focus.clearFocus()
+    }
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // The message the bot answers (`reply_to`), above its bubble.
         entry.replyTo?.let { quote -> QuoteLine(quote.text, Modifier.padding(horizontal = 16.dp), open = openQuote?.let { open -> { open(quote.id) } }) }
@@ -309,18 +329,18 @@ internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.js
             // Its Download follows Copy, as on desktop and iPhone.
             val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
             Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-                .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
-                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) },
-                    items = { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) })) {
-                VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false)
+                .contextActions(reactions = menu.reactions, onClick = bubbleClick,
+                    preview = { VoiceNoteMessage(shown, voiceNote, player, download, save, selectable = true) },
+                    items = { menu.textItems(textCopyItem(context, shown), listOf(downloadItem)) })) {
+                VoiceNoteMessage(shown, voiceNote, player, download, save, selectable = false)
             }
         }
         // Each card holds its own menu: a picture's copies the picture.
         else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, menu, state, store)
-        } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
-            AgentText(entry.text, selectable = false)
+        } else if (shown.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+            .contextActions(reactions = menu.reactions, onClick = bubbleClick, preview = { AgentText(shown, selectable = true) }, items = textMenu)) {
+            AgentText(shown, selectable = false)
         }
         WorkThreadLine(entry, Modifier.padding(start = 4.dp))
     }

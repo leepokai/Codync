@@ -72,20 +72,27 @@ internal val Entry.isFromThread: Boolean
 internal val Entry.takesOwnWords: Boolean
     get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
 
+/**
+ * A stub never draws Allow or Deny. [MirrorDatabase.answerable] replaces the stub with the full row
+ * once that row has been read and fits; only that row carries `command`, `detail` and `diffs`.
+ * A pending status and options kept in the head are not the request, and a row that could not be
+ * read stays the warning card. Nothing here copies a field off a tail.
+ */
+internal fun canAnswerStub(entry: Entry): Boolean {
+    if (!entry.isStoredStub || entry.approvalReadFailed) return false
+    return false
+}
+
 /** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
  *  numbered rows, in one tone. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
+    // Allow and Deny wait until the full row replaces this stub. Until then, the placeholder.
+    if (entry.isStoredStub && !canAnswerStub(entry)) return StoredApproval(entry, hostName)
     val d = entry.data
     val pending = d.text("status") == "pending"
     var expanded by remember { mutableStateOf(false) }
     var chosen by remember { mutableStateOf<String?>(null) }
-    val headline = when (d.text("toolKind")) {
-        "execute" -> "Wants to run a command"
-        "edit", "delete", "move" -> "Wants to change files"
-        "fetch" -> "Wants to access the web"
-        "read", "search" -> "Wants to read files"
-        else -> "Wants to use a tool"
-    }
+    val headline = approvalHeadline(d.text("toolKind"))
     val diffs = (d["diffs"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
     val hasDetail = !d.text("command").isNullOrEmpty() || !d.text("detail").isNullOrEmpty() || diffs.isNotEmpty()
     Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(vertical = 16.dp, horizontal = 8.dp),
@@ -126,7 +133,7 @@ internal val Entry.takesOwnWords: Boolean
                 .sortedBy { rank[it.text("kind")] ?: 9 }
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for ((index, option) in options.withIndex()) {
-                    val id = option.text("optionId") ?: continue
+                    val id = option.text("optionId")?.takeIf(String::isNotBlank) ?: continue
                     val kind = option.text("kind").orEmpty()
                     val waiting = answering && chosen != null
                     val (source, pressed) = rememberPress()
@@ -149,6 +156,43 @@ internal val Entry.takesOwnWords: Boolean
             }
         } else Text(outcome(d), Modifier.padding(horizontal = 8.dp), style = Type.caption.medium, color = Palette.secondary)
     }
+}
+
+/**
+ * An approval the window could not keep whole: its row is gone from this phone, so its answers aren't here. It says
+ * that instead of claiming the request expired, which the card would otherwise read from the missing status.
+ */
+@Composable private fun StoredApproval(entry: Entry, hostName: String) {
+    Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent)
+        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(tr(approvalHeadline(entry.data.text("toolKind"))), style = Type.headline, color = Palette.text)
+        Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", ""), style = Type.caption, color = Palette.tertiary)
+        if (entry.approvalReadFailed) {
+            Text(tr("This approval couldn't be read on this phone. Check the computer to answer it."),
+                style = Type.subheadline, color = Palette.danger)
+        } else {
+            Text(entry.stubLabel(), style = Type.subheadline, color = Palette.secondary)
+        }
+    }
+}
+
+/**
+ * The sentence a stub shows. The stored text is an id; the count sits beside it. A row that is not
+ * that id keeps its own text, which is the message and is not translated.
+ */
+@Composable internal fun Entry.stubLabel(): String {
+    val sentence = storedStubSentence() ?: return text
+    val count = (data["storedChars"] as? JsonPrimitive)?.contentOrNull ?: return text
+    return tr(STORED_STUB_CAPTION).replace("{count}", count)
+}
+
+/** What an approval asks for, in Codync's words. */
+internal fun approvalHeadline(kind: String?): String = when (kind) {
+    "execute" -> "Wants to run a command"
+    "edit", "delete", "move" -> "Wants to change files"
+    "fetch" -> "Wants to access the web"
+    "read", "search" -> "Wants to read files"
+    else -> "Wants to use a tool"
 }
 
 /** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */

@@ -3,6 +3,7 @@ package com.codync.android
 import android.app.Application
 import com.codync.android.core.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.*
@@ -75,21 +76,29 @@ class AppStore internal constructor(
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
-    /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
+    /** The open chat loads deeply. Recently opened chats are remembered only so their previews come first. Not saved. */
     internal val residents = ResidentBots()
     /** How many thread chats show each thread now: its transcript is let go as the last one closes. */
-    internal val threadViews = ConcurrentHashMap<String, Int>()
+    internal val threadViews = ThreadViews(residents)
     /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
     internal val windows = ConcurrentHashMap<String, Int>()
+    /** Each chat's paging owner: changed when its last view releases it, so an older page cannot write into a new visit. */
+    internal val historyEpochs = ConcurrentHashMap<String, Long>()
     /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */
     internal val floors = ConcurrentHashMap<String, Long>()
+    /** Identifies one card request separately from its equal `(bot, task)` value: an old page may not clear a later visit's. */
+    internal val cardRequestEpoch = AtomicLong()
     /** Residency applied by the last snapshot, so a history page can skip a repeat read when this chat's window is already loaded. */
     @Volatile internal var published: Residency? = null
     /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */
     private val refreshes = Mutex()
 
     /** How much of each chat the next snapshot loads. Never every row: the phone's heap is fixed. */
-    internal fun residency(): Residency = Residency(residents.full(state.value.selectedBot), windows = windows.toMap())
+    internal fun residency(): Residency = Residency(
+        residents.full(state.value.selectedBot),
+        windows = windows.toMap(),
+        previewPriority = residents.previewPriority(),
+    )
 
     /** Opens the mirror and the drafts this phone keeps for the computer; nothing connects yet. */
     internal suspend fun open() {
@@ -140,7 +149,7 @@ class AppStore internal constructor(
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
-        published = null; windows.clear(); floors.clear()
+        published = null; windows.clear(); historyEpochs.clear(); floors.clear()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
@@ -181,6 +190,9 @@ class AppStore internal constructor(
 
     private suspend fun publishSnapshot() {
         val mirror = database ?: return
+        // A chat a thread holds is unselected but still reads and pages its window; keep its widened width until release.
+        val selected = state.value.selectedBot
+        windows.keys.retainAll(residents.full(selected))
         val wanted = residency()
         val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
         // Updated in place, never emptied, so a page loading meanwhile doesn't read a chat as having no oldest row.

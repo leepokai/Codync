@@ -1,5 +1,6 @@
 package com.codync.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -119,6 +123,16 @@ private fun compactCount(n: Long): String {
 
 /** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
 @Composable internal fun TraceRow(entry: Entry, unfolded: Boolean) {
+    if (entry.isStoredStub) {
+        val showStored = LocalShowStoredMessage.current
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val showFull = tr("Show full message")
+            Text(entry.stubLabel(), style = Type.subheadline, color = Palette.text)
+            Text(showFull, Modifier.clickable(role = Role.Button) { showStored?.invoke(entry) }
+                .semantics { contentDescription = showFull }, style = Type.subheadline, color = Palette.accent)
+        }
+        return
+    }
     val d = entry.data
     var expanded by rememberSaveable { mutableStateOf(unfolded) }
     when (entry.kind) {

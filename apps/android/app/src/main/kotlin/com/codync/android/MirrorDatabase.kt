@@ -11,23 +11,35 @@ import com.codync.android.core.MirrorSnapshot
 import com.codync.android.core.PendingSend
 import com.codync.android.core.SendStatus
 import com.codync.android.core.WireJson
+import com.codync.android.core.threadNamed
 import java.io.File
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
+/**
+ * A stored row's front as far as one bounded read takes it ([MirrorDatabase.storedSlice]), and whether that front is
+ * the whole row. A sheet shows a slice that is short of its row with [STORED_CUT_MARK]; one that is not short of it is
+ * the whole payload, and failing to read it is a failure rather than a cut.
+ */
+internal class StoredSlice(val payload: String, val complete: Boolean)
+
 /** All entity writes, send reconciliation and the event cursor commit together. */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
-    SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, 3) {
+    SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, SCHEMA_VERSION) {
     companion object {
+        private const val SCHEMA_VERSION = 6
         /** Hidden rows read per chat row before a resident window stops. Keeps a tool-heavy chat bounded. */
         private const val RAW_PER_SHOWN = 10
         /** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
-        private const val RESIDENT_BYTES = 6_000_000L
-        private const val RESIDENT_BYTES_MAX = 24_000_000L
-        private const val BYTES_PER_SHOWN = 20_000L
+        private const val RESIDENT_BYTES = 160_000L
+        private const val RESIDENT_BYTES_MAX = 480_000L
+        private const val BYTES_PER_SHOWN = 2_000L
         /** Characters of stored payload a chat that isn't open may hold as its preview. */
-        private const val PREVIEW_BYTES = 150_000L
+        private const val PREVIEW_BYTES = 8_000L
+
+        /** The first column of a row's [STUB_FLAG_KEYS], right after its length, payload, tail, route and route trust. */
+        private const val FLAG_COLUMN = 5
 
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
@@ -47,15 +59,21 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         createConversation(db)
         db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
     }
-    /** The conversation is a cache of the computer's: an older schema's is dropped and fetched again; unsent messages stay. */
+    /**
+     * The conversation is a cache of the computer's, read only by the schema that wrote it: from any older version it
+     * is dropped and the reconnect fetches it again. Bots, unsent messages and the other meta stay; the cursor starts
+     * over at 0, which is the same path a cache written before version 3 already took.
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // A cache that lost its meta table must still open: the cursor restart below is the only row written here.
+        db.execSQL("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
         db.execSQL("DROP TABLE IF EXISTS entries")
         db.execSQL("DROP TABLE IF EXISTS history")
         createConversation(db)
         setMeta(db, "rev", "0")
     }
     private fun createConversation(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL, thread_id TEXT)")
         db.execSQL("CREATE INDEX entries_chat ON entries(bot_id, seq)")
         db.execSQL("CREATE INDEX entries_nonce ON entries(bot_id, nonce)")
         db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
@@ -118,6 +136,24 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     /** Whether [botId]'s chat already holds the sent message with id [nonce], even outside the rows in memory. */
     @Synchronized internal fun hasNonce(botId: String, nonce: String): Boolean = readableDatabase.rawQuery(
         "SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(botId, nonce)).use { it.moveToFirst() }
+
+    /** One row's original payload. The snapshot does not decode this when the row is over [PER_MESSAGE_CHARS]. */
+    @Synchronized internal fun storedPayload(botId: String, id: String): String? = readableDatabase.rawQuery(
+        "SELECT payload FROM entries WHERE bot_id=? AND id=? LIMIT 1", arrayOf(botId, id)).use {
+        if (it.moveToFirst()) it.getString(0) else null
+    }
+
+    /**
+     * One row's payload as far as the sheet that opens it reads: at most [PER_MESSAGE_CHARS] characters of it, however
+     * long the stored row is, so a message bigger than one cursor window still opens. [StoredSlice.complete] says
+     * whether that is the row itself; a slice short of it is closed by the caller (`closedPayloadSlice`). Null when the
+     * row is gone. A caller that needs the whole row, such as an approval's answers, reads [storedPayload] instead.
+     */
+    @Synchronized internal fun storedSlice(botId: String, id: String): StoredSlice? = readableDatabase.rawQuery(
+        "SELECT length(payload), substr(payload, 1, $PER_MESSAGE_CHARS) FROM entries WHERE bot_id=? AND id=? LIMIT 1",
+        arrayOf(botId, id)).use {
+        if (it.moveToFirst()) StoredSlice(it.getString(1).orEmpty(), it.getLong(0) <= PER_MESSAGE_CHARS) else null
+    }
 
     /**
      * Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not
@@ -252,6 +288,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             put("id", entry.id); put("bot_id", entry.botId)
             put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
             put("nonce", entry.clientNonce?.takeIf { entry.kind == "user" })
+            // The row's route is kept beside its payload, so reading a fragment of a large row never loses it.
+            put("thread_id", entry.routingThreadId())
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the conversation update." }
         entry.clientNonce?.takeIf { entry.kind == "user" && it.isNotEmpty() }?.let { db.delete("pending", "nonce=?", arrayOf(it)) }
     }
@@ -290,25 +328,124 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     private fun pending(db: SQLiteDatabase, order: String = "") =
         rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
 
-    /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows. */
-    private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> = botIds(db).flatMap { bot ->
-        if (bot in residency.full) residentEntries(db, bot, residency.limit(bot)) else previewEntries(db, bot, residency.preview)
-    }.sortedBy { it.seq }
+    /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows, while the shared preview budget has room. */
+    private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> {
+        val resident = mutableListOf<Entry>()
+        val chats = botIds(db)
+        for (bot in chats) if (bot in residency.full) resident += residentEntries(db, bot, residency.limit(bot))
+        val previewed = previewOrder(residency.previewPriority, chats.filter { it !in residency.full }).let { order ->
+            previewsWithin(order, AGGREGATE_PREVIEW_BYTES) { bot -> previewEntries(db, bot, residency.preview) }
+        }
+        return (resident + previewed).sortedBy { it.seq }
+    }
 
     /** A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table; the budget grows with the window, up to a fixed ceiling. */
     private fun residentEntries(db: SQLiteDatabase, bot: String, target: Int): List<Entry> {
         val budget = (target * BYTES_PER_SHOWN).coerceIn(RESIDENT_BYTES, RESIDENT_BYTES_MAX)
-        return newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { newestWindow(it, target, budget) }
+        return answerable(db, newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { windowRows(it, target, budget) }, budget).map { it.entry }
     }
 
     /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large. */
-    private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<Entry> =
-        newestPayloads(db, bot, limit.toLong()) { newestWindow(it, limit, PREVIEW_BYTES) }
+    private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<KeptRow> =
+        answerable(db, newestPayloads(db, bot, limit.toLong()) { windowRows(it, limit, PREVIEW_BYTES) }, PREVIEW_BYTES)
 
-    /** [bot]'s newest [limit] stored payloads, newest first, read while the cursor is open. */
-    private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<String>) -> T): T =
-        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit", arrayOf(bot)).use { cursor ->
-            read(generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null })
+    /**
+     * [rows] with each approval the computer still waits on read whole, when that row fits in [budget] together with
+     * every retained row. An answered or expired card stays the stub [windowRows] already counted. One row at a time,
+     * newest first, so the card on screen gets the room. An approval whose row is gone stays a stub; one whose stored
+     * row cannot be read says so on its card instead of failing silently.
+     */
+    private fun answerable(db: SQLiteDatabase, rows: List<KeptRow>, budget: Long): List<KeptRow> {
+        val kept = rows.toMutableList()
+        var spent = kept.sumOf { it.cost.toLong() }
+        for (index in kept.indices.reversed()) {
+            val row = kept[index]
+            if (!row.entry.isApprovalStub) continue
+            // Routing metadata the schema could not trust (too long, or a NUL that hides its real length) keeps the stub:
+            // the row is not brought back as an answerable card under a route nothing proved.
+            if (row.routingAmbiguous) continue
+            // A status the stub already has is enough. Only a card that can still be answered is worth its whole row.
+            // No status means the head never finished one, so the row is read and kept only when it is still pending.
+            if (row.entry.status != null && row.entry.status != "pending") continue
+            // Reading the whole value can fail before decoding (a cursor window too small for the row): that row must not
+            // abort the snapshot and hide every other chat either.
+            val payload = try {
+                storedPayload(row.entry.botId, row.entry.id)
+            } catch (error: Exception) {
+                android.util.Log.e("Codync", "Couldn't load stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                reportReadFailure(row.entry.id, ApprovalReadFailure.Load)
+                kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+                continue
+            } ?: continue
+            val decoded = try {
+                WireJson.decodeFromString<Entry>(payload)
+            } catch (error: Exception) {
+                android.util.Log.e("Codync", "Couldn't read stored approval ${row.entry.id} in ${row.entry.botId}", error)
+                reportReadFailure(row.entry.id, ApprovalReadFailure.Decode)
+                kept[index] = KeptRow(row.entry.withApprovalReadFailure(), row.cost, row.routingThread)
+                continue
+            }
+            ReadFailureReports.clear(row.entry.id)
+            // WireJson takes the last of two duplicate keys, so it can name a thread the strict walk rejected. A row whose
+            // decoded route disagrees stays the read-only stub the window built: no answers under an unproven thread, and
+            // it appears in the owner chat only. The checked route is what a decoded row keeps everywhere else.
+            val named = decoded.threadNamed()
+            if (named.routingThreadId() != row.routingThread) continue
+            if (named.status != "pending") continue
+            val next = spent - row.cost + payload.length
+            if (next > budget) continue
+            spent = next
+            kept[index] = KeptRow(named.withCheckedThread(row.routingThread), payload.length, row.routingThread)
+        }
+        return kept
+    }
+
+    /** One approval-read event per row per failure. [answerable] forgets the row when the payload decodes. */
+    private fun reportReadFailure(rowId: String, reason: ApprovalReadFailure) {
+        if (ReadFailureReports.once(rowId, reason.wire)) Analytics.capture(AnalyticsEvent.ApprovalReadFailed(reason))
+    }
+
+    /**
+     * [bot]'s newest [limit] stored payloads, newest first, read while the cursor is open.
+     * A payload longer than [PER_MESSAGE_CHARS] comes back as its first [PAYLOAD_HEAD_CHARS] and last [PAYLOAD_TAIL_CHARS],
+     * with its full length. Its route comes from the column stored beside it, never from its text, and the boolean
+     * control fields a stub keeps are projected from wherever the row holds them ([STUB_FLAG_KEYS]).
+     */
+    private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<StoredRow>) -> T): T =
+        db.rawQuery(
+            "SELECT length(payload), " +
+                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN payload ELSE substr(payload, 1, $PAYLOAD_HEAD_CHARS) END, " +
+                "CASE WHEN length(payload) <= $PER_MESSAGE_CHARS THEN NULL ELSE substr(payload, -$PAYLOAD_TAIL_CHARS) END, " +
+                // A routing id is small text, and a slice of a huge value would still fill the cursor window: the
+                // projection is bounded whatever the row holds. SQLite's length() counts characters before a NUL, so
+                // the byte copy is what proves there is none.
+                "CASE WHEN thread_id IS NOT NULL AND length(thread_id) <= $MAX_ROUTING_ID_CHARS " +
+                "AND instr(CAST(thread_id AS BLOB), x'00') = 0 THEN substr(thread_id, 1, $MAX_ROUTING_ID_CHARS) ELSE NULL END, " +
+                // Metadata this mirror cannot trust: no route, and the card keeps the stub instead of offering answers.
+                "CASE WHEN thread_id IS NOT NULL AND (length(thread_id) > $MAX_ROUTING_ID_CHARS " +
+                "OR instr(CAST(thread_id AS BLOB), x'00') > 0) THEN 1 ELSE 0 END, " +
+                // A stub's kind sits after the body, where a large replyTo or files member written after it leaves it in
+                // the unread middle. Each flag is read from where the row holds it, in a bounded slice of it; a row that
+                // does not hold the name at all gives a slice that is not the flag, so it adds none.
+                STUB_FLAG_KEYS.joinToString(", ") { key ->
+                    "substr(payload, max(instr(payload, '\"$key\"'), 1), $FLAG_FRAGMENT_CHARS)"
+                } +
+                " FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
+            arrayOf(bot),
+        ).use { cursor ->
+            read(generateSequence {
+                if (!cursor.moveToNext()) return@generateSequence null
+                val chars = cursor.getLong(0)
+                val head = cursor.getString(1).orEmpty()
+                val tail = if (chars > PER_MESSAGE_CHARS) cursor.getString(2).orEmpty() else null
+                val ambiguous = cursor.getInt(4) != 0
+                val stored = cursor.getString(3)?.takeIf { it.isNotBlank() && '\u0000' !in it && it.length <= MAX_ROUTING_ID_CHARS }
+                val flags = STUB_FLAG_KEYS.indices.mapNotNull { index ->
+                    cursor.getString(FLAG_COLUMN + index)?.let(::stubFlag)
+                }.toMap()
+                // Every row is written with its route beside it, so a missing one is the row's answer, not a gap to fill.
+                StoredRow(head, chars, tail, if (ambiguous) null else stored, ambiguous, flags)
+            })
         }
 
     private fun botIds(db: SQLiteDatabase): List<String> = db.rawQuery("SELECT DISTINCT bot_id FROM entries", null).use { cursor ->

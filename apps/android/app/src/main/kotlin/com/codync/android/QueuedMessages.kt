@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,16 +28,38 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
+import java.io.IOException
 
 /** While the bot works (anywhere: a room, a routine), the user's waiting messages show above the composer instead of in
  *  the chat (iOS `queue(working:)`), oldest first. A bot that isn't working starts them at once. */
 internal fun queuedMessages(chat: List<Entry>, working: Boolean): List<Entry> =
     if (working) chat.filter(Entry::isQueued).sortedBy(Entry::seq) else emptyList()
+
+/**
+ * A queued stored stub opens the same sheet a transcript placeholder opens ([LocalShowStoredMessage]).
+ * A short queued message already shows its text, and a stub with no row to read does not offer an open.
+ */
+internal fun Entry.opensQueuedStoredMessage(): Boolean =
+    isQueued && isStoredStub && id.isNotBlank() && botId.isNotBlank()
+
+/**
+ * The text that open yields, from the stored row's [payload] via the sheet's own read ([storedTextOfPayload]).
+ * Null when the row must not open, or the payload is missing, unreadable, or blank: the row then stays the line it is.
+ */
+internal fun queuedStoredText(entry: Entry, payload: String?): String? {
+    if (!entry.opensQueuedStoredMessage() || payload == null) return null
+    return try {
+        storedTextOfPayload(payload, entry.id, complete = true)
+    } catch (_: IOException) {
+        null
+    }
+}
 
 /** The first host version that takes a queued message now (`steer`) or back (`unqueue`). */
 private const val STEER_HOST = "2.39.0"
@@ -83,9 +106,15 @@ internal val AppState.supportsQueueActions: Boolean
         // Its files show as a symbol, and by name when it has no words.
         if (files.isNotEmpty()) Symbol(if (files.all { it.isImage }) "photo" else "doc", size = 13.dp, tint = Palette.secondary,
             modifier = Modifier.padding(end = 4.dp))
-        val text = entry.replyQuote.text.ifEmpty { files.joinToString(", ") { it.name } }
-        Text(messagePreview(text), Modifier.weight(1f).padding(vertical = if (actions) 0.dp else 9.dp),
-            style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val quoted = entry.replyQuote.text
+        val text = (if (entry.isStoredStub && quoted == STORED_STUB_ID) entry.stubLabel() else quoted).ifEmpty { files.joinToString(", ") { it.name } }
+        // The placeholder line opens the stored sheet. Send now and Remove stay their own buttons.
+        val openStored = LocalShowStoredMessage.current?.takeIf { entry.opensQueuedStoredMessage() }
+        val preview = Modifier.weight(1f).padding(vertical = if (actions) 0.dp else 9.dp)
+        val line = openStored?.let { open ->
+            preview.clickable(role = Role.Button, onClickLabel = tr("Show full message")) { open(entry) }
+        } ?: preview
+        Text(messagePreview(text), line, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (actions) {
             IconButton("Send now", "arrow.turn.down.right", enabled = !steering, action = steer)
             IconButton("Remove", "trash", enabled = !steering, action = remove)

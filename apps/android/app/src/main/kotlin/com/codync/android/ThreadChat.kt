@@ -103,9 +103,9 @@ import kotlinx.coroutines.CancellationException
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't complete the action." }
     }
-    DisposableEffect(threadId) {
-        threadId?.let(store::watchThread)
-        onDispose { threadId?.let(store::closeThread) }
+    DisposableEffect(bot.id, threadId) {
+        threadId?.let { store.watchThread(bot.id, it) }
+        onDispose { threadId?.let { store.closeThread(bot.id, it) } }
     }
     // What it put in the bot's chat, and the card it waits on, maybe further back than the rows loaded.
     val needsYou = task.status == WorkStatus.NeedsYou
@@ -129,6 +129,8 @@ import kotlinx.coroutines.CancellationException
     val talks = task.talk && threadId != null
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
+    // A thread's chat shows the bot's own rows too (what it put there), so a stored stub opens here as it does there.
+    StoredMessages(store) {
     // Over the Threads tab it fills the screen and the chat scrolls under the status bar; in the bot's details, its sheet.
     val top = if (inDetails) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // As the bot's chat: the header's glass buttons float over the rows, which blur away under it and over the composer.
@@ -175,6 +177,7 @@ import kotlinx.coroutines.CancellationException
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
+    }
 }
 
 /**
@@ -214,10 +217,10 @@ import kotlinx.coroutines.CancellationException
     val entry = item.entry
     val own = entry.botId != bot.id
     when {
-        own && entry.id == toldId -> Told(entry.text)
+        own && entry.id == toldId -> Told(entry.stubLabel())
         // What the host told it later (a new brief) reads as a quote, not as something the user typed.
         own && entry.isToldToThread -> SelectionContainer {
-            Text("“${entry.text}”", Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp), style = Type.subheadline, color = Palette.secondary)
+            Text("“${entry.stubLabel()}”", Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp), style = Type.subheadline, color = Palette.secondary)
         }
         own && (entry.kind == "user" || entry.kind == "agent") -> Box(Modifier.padding(top = if (item.groupStart) 12.dp else 4.dp)) {
             PlainMessageRow(entry, state, store)

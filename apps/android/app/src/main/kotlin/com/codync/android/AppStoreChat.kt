@@ -16,10 +16,14 @@ fun AppStore.openBot(id: String?) {
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
     if (id != null) residents.touch(id)
-    // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.
-    if (leaving) state.value.selectedBot?.let { left ->
-        windows.remove(left)
-        mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
+    // The chat left gives its extra rows back, so it pages its earlier ones again if opened later — unless a thread
+    // still holds it, in which case its window has to stay until that thread closes.
+    if (leaving) {
+        val stillHeld = residents.full(id)
+        state.value.selectedBot?.takeIf { it !in stillHeld }?.let(::reclaimChat)
+        // A request belongs to the visit that opened the chat. Reopening the same bot and task makes an equal pair,
+        // so its generation is what tells an older paging action not to clear it.
+        if (state.value.cardRequest != null) cardRequestEpoch.incrementAndGet()
     }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
         detailsRequest = it.detailsRequest.takeUnless { leaving }, cardRequest = it.cardRequest.takeUnless { leaving }) }
@@ -27,7 +31,98 @@ fun AppStore.openBot(id: String?) {
     // The open chat swaps its preview for its window.
     if (leaving) contextScope.launch { refresh() }
 }
+
+/**
+ * [botId]'s window went back to its preview: it has no open chat and no thread holding it. Its paging state goes with
+ * it, so reopening the chat starts from the newest rows again instead of trusting a Complete/MemoryFull stop that no
+ * longer describes the rows this app holds.
+ */
+internal fun AppStore.reclaimChat(botId: String) {
+    // Change the owner before dropping its rows: a page loaded for this visit must not write a stop back afterward.
+    historyEpochs.compute(botId) { _, epoch -> (epoch ?: 0L) + 1L }
+    windows.remove(botId)
+    mutableState.update { it.copy(historyEnd = it.historyEnd - botId) }
+}
+
+/** [botId]'s paging owner now. A page carries it so a later visit can tell that page is stale. */
+private fun AppStore.historyEpoch(botId: String): Long = historyEpochs[botId] ?: 0L
+
+private fun AppStore.ownsHistory(botId: String, epoch: Long): Boolean = historyEpoch(botId) == epoch
+
+/** Commits [end] for [botId] only if the visit that loaded the page still owns it. */
+private suspend fun AppStore.commitHistoryEnd(botId: String, epoch: Long, end: HistoryEnd) {
+    runBeforeHistoryCommit(botId)
+    if (!ownsHistory(botId, epoch)) return
+    mutableState.update { it.copy(historyEnd = it.historyEnd + (botId to end)) }
+}
+
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
+
+/**
+ * The text of one stored row, for the sheet its stub opens. Call off the main thread. Does not change the
+ * resident snapshot. Throws when the row is gone or can't be read, so the tap says so instead of doing nothing.
+ * Reads only the row's first [PER_MESSAGE_CHARS] characters (`storedSlice`), so opening a message larger than the
+ * sheet shows costs that bound, not the whole row. A caller that needs the whole row asks for it with [whole], which
+ * reads the row itself (`storedPayload`, the read approvals use); the sheet does not.
+ */
+internal fun AppStore.storedMessageText(entry: Entry, whole: Boolean = false): String {
+    val slice = try {
+        if (whole) database?.storedPayload(entry.botId, entry.id)?.let { StoredSlice(it, complete = true) }
+        else database?.storedSlice(entry.botId, entry.id)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        reportStoredReadFailure(entry.id, StoredReadFailure.Open)
+        throw IOException("Couldn't open the stored message.", error)
+    } ?: run {
+        reportStoredReadFailure(entry.id, StoredReadFailure.Missing)
+        throw IOException("That message is no longer on this phone.")
+    }
+    return storedTextOfPayload(slice.payload, entry.id, slice.complete)
+}
+
+/**
+ * The text a stored row's payload shows in that sheet. A [payload] the read cut short is closed at its last whole field
+ * ([closedPayloadSlice]) and ends with [STORED_CUT_MARK], so a message longer than the sheet reads says so instead of
+ * passing its front off as the whole row. Only a cut payload is read that way: one that is the whole row and does not
+ * decode is reported as unreadable, not as a truncation of itself. Throws when the payload cannot be read or has no
+ * text, the same failures [AppStore.storedMessageText] reports.
+ */
+internal fun storedTextOfPayload(payload: String, rowId: String, complete: Boolean): String {
+    val text = try {
+        storedDisplayOf(payload, complete)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        reportStoredReadFailure(rowId, StoredReadFailure.Unreadable)
+        throw IOException("Couldn't read the stored message.", error)
+    }
+    if (text.isBlank()) {
+        reportStoredReadFailure(rowId, StoredReadFailure.Blank)
+        throw IOException("That message has no text on this phone.")
+    }
+    ReadFailureReports.clear(rowId)
+    return text
+}
+
+/** [payload]'s display text, or the part of it a bounded read kept. A whole row that does not decode is a failure. */
+private fun storedDisplayOf(payload: String, complete: Boolean): String = try {
+    WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
+} catch (error: CancellationException) {
+    throw error
+} catch (error: Exception) {
+    if (complete) throw error
+    val kept = WireJson.decodeFromString<Entry>(closedPayloadSlice(payload)).threadNamed().storedDisplayText()
+    if (kept.isBlank()) kept else kept + STORED_CUT_MARK
+}
+
+/** Ends the sheet's text when the stored row is longer than the part of it the sheet reads. */
+internal const val STORED_CUT_MARK = "…"
+
+/** One event per row per failure. A later successful read of [rowId] allows a new one. */
+private fun reportStoredReadFailure(rowId: String, reason: StoredReadFailure) {
+    if (ReadFailureReports.once(rowId, reason.wire)) Analytics.capture(AnalyticsEvent.StoredMessageReadFailed(reason))
+}
 
 /**
  * Starts a call in [botId]'s open chat once this computer is connected (iOS `requestVoiceCall`); the chat takes it
@@ -58,12 +153,14 @@ internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
 /** Opens [botId]'s chat at the card its [task] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
 internal fun AppStore.openCard(botId: String, task: WorkTask) {
     openBot(botId)
+    cardRequestEpoch.incrementAndGet()
     mutableState.update { it.copy(cardRequest = botId to task) }
 }
 
 /** Once. */
 internal fun AppStore.takeCardRequest(botId: String): Boolean {
     if (state.value.cardRequest?.first != botId) return false
+    cardRequestEpoch.incrementAndGet()
     mutableState.update { it.copy(cardRequest = null) }
     return true
 }
@@ -74,11 +171,16 @@ internal fun AppStore.takeCardRequest(botId: String): Boolean {
  * chat stays where it was.
  */
 internal fun AppStore.pageToCard(botId: String, task: WorkTask) = action(historyKey(botId)) {
+    val owner = historyEpoch(botId)
+    val request = cardRequestEpoch.get()
     val found = { pendingCard(state.value.entries.filter { it.botId == botId }, task) != null }
     try {
-        pageUntil(found, more = { state.value.selectedBot == botId && botId !in state.value.historyEnd }) { pageHistory(botId) }
+        pageUntil(found, more = { ownsHistory(botId, owner) && state.value.selectedBot == botId && botId !in state.value.historyEnd }) {
+            pageHistory(botId, owner)
+        }
     } finally {
-        if (!found() && state.value.cardRequest == (botId to task)) takeCardRequest(botId)
+        // Equal card requests exist across visits; only the generation that started this page may clear one.
+        if (!found() && cardRequestEpoch.get() == request && state.value.cardRequest == (botId to task)) takeCardRequest(botId)
     }
 }
 
@@ -88,11 +190,14 @@ internal fun AppStore.pageToCard(botId: String, task: WorkTask) = action(history
  * `card(for:in:)`).
  */
 internal fun AppStore.holdChat(botId: String, task: WorkTask?) = action(historyKey(botId)) {
+    val owner = historyEpoch(botId)
     residents.touch(botId)
     refresh()
     if (task == null) return@action
     val found = { pendingCard(state.value.entries.filter { it.botId == botId }, task) != null }
-    pageUntil(found, more = { botId !in state.value.historyEnd }) { pageHistory(botId) }
+    pageUntil(found, more = { ownsHistory(botId, owner) && botId !in state.value.historyEnd }) {
+        pageHistory(botId, owner)
+    }
 }
 
 /** How many older pages opening a task's card loads to find it, like the iPhone. */
@@ -156,41 +261,46 @@ internal suspend fun AppStore.callEntries(botId: String, call: String): List<Ent
 /** Pages the open chat's earlier rows. [failed] hears when that page didn't load (its error shows as usual). */
 fun AppStore.loadHistory(failed: () -> Unit = {}) {
     val id = state.value.selectedBot ?: return
+    val owner = historyEpoch(id)
     val started = action(historyKey(id)) {
-        try { pageHistory(id) }
+        try { pageHistory(id, owner) }
         catch (error: CancellationException) { throw error }
         catch (error: Exception) { failed(); throw error }
     }
     if (!started) failed()
 }
 
-private suspend fun AppStore.pageHistory(id: String) {
+private suspend fun AppStore.pageHistory(id: String, owner: Long) {
     // beforeSeq is the open window's oldest row, not the preview from before this chat was resident. When that
     // read already reached further back, stop; the screen asks again only while its earlier row is still showing.
     val last = published
     if (last == null || id !in last.full || last.limit(id) != residency().limit(id)) {
         val loadedFrom = floors[id]
         refresh()
-        if (floors[id] != loadedFrom) return
+        if (floors[id] != loadedFrom || !ownsHistory(id, owner)) return
     }
     // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
     val before = floors[id] ?: Long.MAX_VALUE
     // Older rows the phone already stored come from SQLite before the computer is asked for a page of them.
-    if (!withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) } && !fetchHistoryPage(id, before)) return
+    val stored = withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) }
+    if (!ownsHistory(id, owner)) return
+    if (!stored && !fetchHistoryPage(id, before, owner)) return
+    if (!ownsHistory(id, owner)) return
     // The older rows are on the phone now. The window grows over them whatever they hold, so a page of only tool or
-    // thought rows moves the chat too.
-    // ponytail: a thread's chat held outside it ([holdChat]) keeps its widened window until the store resets; drop it as the thread closes if memory shows.
+    // thought rows moves the chat too. A chat held only by a thread keeps this window until that last view closes
+    // ([closeThread] reclaims the window and its paging stop then).
     windows[id] = residency().widened(id)
     refresh()
+    if (!ownsHistory(id, owner)) return
     // The window grew and the same rows came back: this chat's memory budget is spent.
-    if (floors[id] == before) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
+    if (floors[id] == before) commitHistoryEnd(id, owner, HistoryEnd.MemoryFull)
 }
 
 /** Stores the computer's page of [id]'s rows older than [before]. Whether it held any. */
-private suspend fun AppStore.fetchHistoryPage(id: String, before: Long): Boolean {
+private suspend fun AppStore.fetchHistoryPage(id: String, before: Long, owner: Long): Boolean {
     val mirror = requireNotNull(database)
     if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
-        mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+        commitHistoryEnd(id, owner, HistoryEnd.Complete)
         return false
     }
     val response = ready().call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
@@ -200,7 +310,7 @@ private suspend fun AppStore.fetchHistoryPage(id: String, before: Long): Boolean
         if (entries.size < 100) mirror.finishHistory(id)
     }
     // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
-    if (entries.size < 100 && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+    if (entries.size < 100 && state.value.selectedBot == id) commitHistoryEnd(id, owner, HistoryEnd.Complete)
     return entries.isNotEmpty()
 }
 

@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,10 +31,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -42,6 +45,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,7 +65,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * One endless conversation with a bot or a group, as iOS `ChatView`: only deliberate messages
@@ -73,6 +82,7 @@ import kotlinx.coroutines.delay
 }
 
 @Composable private fun ChatView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
+    StoredMessages(store) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     // The bot's details sheet and the page it opens on.
@@ -200,6 +210,81 @@ import kotlinx.coroutines.delay
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
+    }
+}
+
+/**
+ * The stored-message reader both the chat and a thread's own chat give their rows ([LocalShowStoredMessage]): a tap
+ * reads that one row and opens it in a sheet. One read at a time, so a second tap takes over from the first and a slow
+ * row cannot land after a newer one; a row that cannot be read says why instead of doing nothing.
+ */
+@Composable internal fun StoredMessages(store: AppStore, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf<String?>(null) }
+    var read by remember { mutableStateOf<Job?>(null) }
+    val open: (Entry) -> Unit = { entry ->
+        read?.cancel()
+        text = null
+        read = scope.launch {
+            try {
+                text = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                store.showError(error)
+            }
+        }
+    }
+    CompositionLocalProvider(LocalShowStoredMessage provides open) {
+        content()
+        CodyncSheet(text != null, { text = null }) { StoredMessageSheet(text.orEmpty()) }
+    }
+}
+
+/** One stored payload, opened from a stub. The string leaves memory when the sheet closes. */
+@Composable private fun StoredMessageSheet(text: String) {
+    // A very large message is laid out a few thousand characters at a time, not as one block.
+    val ranges = remember(text) { text.storedChunkRanges() }
+    Column {
+        ModalHeader("Stored message")
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            items(ranges) { range -> SelectionContainer { Text(text.substring(range), style = Type.body, color = Palette.text) } }
+        }
+    }
+}
+
+/** Characters of one stored message the sheet lays out together. */
+internal const val STORED_CHUNK_CHARS = 4_000
+
+/**
+ * The ranges of [this] the sheet lays out one at a time: pieces of about [size] characters, each ending at a line break
+ * where one comes in its second half. Only the piece on screen is copied out of the message.
+ */
+internal fun String.storedChunkRanges(size: Int = STORED_CHUNK_CHARS): List<IntRange> {
+    require(size > 0) { "A chunk needs a size." }
+    if (length <= size) return listOf(0 until length)
+    val ranges = mutableListOf<IntRange>()
+    var start = 0
+    while (start < length) {
+        if (length - start <= size) {
+            ranges += start until length
+            break
+        }
+        var end = start + size
+        // Search only this piece's second half. Searching the whole string each time rescans every earlier line
+        // on one huge line and makes the whole message quadratic.
+        val lowestBreak = start + size / 2
+        var lineBreak = -1
+        var i = end - 1
+        while (i >= lowestBreak) {
+            if (this[i] == '\n') { lineBreak = i; break }
+            i--
+        }
+        if (lineBreak >= lowestBreak) end = lineBreak + 1
+        ranges += start until end
+        start = end
+    }
+    return ranges
 }
 
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
@@ -279,7 +364,9 @@ import kotlinx.coroutines.delay
 }
 
 /** [bot]'s chat. What voice calls carried shows in each call's conversation instead. */
-private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id && it.isChat }.hidingCalls()
+private fun AppState.chatEntries(bot: Bot) = entries.filter {
+    it.botId == bot.id && (it.isChat || (it.isStoredStub && it.kind == "agent"))
+}.hidingCalls()
 
 /** [bot]'s rows. A call's message that failed to send stays here, to be sent again; messages waiting behind the bot's
  *  work show above the composer instead. */

@@ -423,14 +423,15 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           </DropdownMenu>
         ) : null}
       </HStack>
-      <HStack gap={8} className="model-manager-tools">
+      <HStack gap={8} className="model-manager-tools" wrap>
         <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>
         <Button onClick={() => void setPausedAll(true)} disabled={!canApply}>{tr('Pause checked')}</Button>
         <Button onClick={() => void setPausedAll(false)} disabled={!canApply}>{tr('Resume checked')}</Button>
-        <Spacer />
-        {targets.totalChecked === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : <Text size="caption" tone="secondary">{tr('Selected: {n}').replace('{n}', () => String(targets.totalChecked))}</Text>}
-        <Button onClick={apply} disabled={!canApply}>{tr('Apply')}</Button>
+        <HStack gap={8} className="model-manager-tools-end" justify="flex-end">
+          {targets.totalChecked === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : <Text size="caption" tone="secondary">{tr('Selected: {n}').replace('{n}', () => String(targets.totalChecked))}</Text>}
+          <Button onClick={apply} disabled={!canApply}>{tr('Apply')}</Button>
+        </HStack>
       </HStack>
       {targets.hiddenCount > 0 ? (
         <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (no action touches them)').replace('{n}', () => String(targets.hiddenCount))}</Text>

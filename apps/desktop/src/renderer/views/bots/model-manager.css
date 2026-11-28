@@ -24,6 +24,13 @@
   flex: 0 0 auto;
 }
 
+/* At the sheet's narrowest width the action buttons wrap onto another line; the count and
+   Apply stay together at the right, on the first line when they fit and on the new one when
+   they don't, so Apply is never clipped by the sheet's overflow. */
+.model-manager-tools-end {
+  margin-left: auto;
+}
+
 .model-manager-list {
   flex: 1 1 auto;
   min-height: 120px;

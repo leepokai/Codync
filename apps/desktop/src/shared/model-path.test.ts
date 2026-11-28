@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { hoverTip, modelPath } from './model-path.ts'
+import { hoverTip, loginNameOf, modelPath } from './model-path.ts'
 
 test('a bot with an agent and a model is named agent->model', () => {
   assert.equal(modelPath({ backend: 'codex', model: 'gpt-5.3-codex' }, 'Codex'), 'Codex->gpt-5.3-codex')
@@ -26,17 +26,43 @@ test('a model name is trimmed', () => {
 })
 
 test('a row the host has not narrowed yet names nothing rather than guessing', () => {
-  // The manager builds its rows from a host snapshot, where a custom command's backend is still
-  // an object and a model can still arrive as anything: no path, never `[object Object]->5`.
+  // A row can arrive from a host snapshot, where a custom command's backend is still an object and
+  // a model can still arrive as anything: no path, never `[object Object]->5`.
   assert.equal(modelPath({ backend: { command: 'my-bot' }, model: 'x' }, 'OpenCode'), null)
   assert.equal(modelPath({ backend: 'opencode', model: 5 }, 'OpenCode'), null)
   assert.equal(modelPath({ backend: 'opencode' }, 'OpenCode'), null)
 })
 
-test('the Model Manager row cases name the same string, so the two rows can never drift', () => {
-  // These are the manager's own row cases, moved here with its `rowModelPath` (MM sync rule: one
-  // implementation, never a copy). If this test ever fails, one of the two rows has drifted.
+test('a login profile the bot picks sits between its agent and its model', () => {
+  assert.equal(
+    modelPath({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work'),
+    'OpenCode->Work->opendesign/deepseek-v4.1-flash-eco',
+  )
+  // The computer's own login has no name to add, so blank and absent read the same.
+  assert.equal(modelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', '  '), 'OpenCode->opendesign/hy4-preview')
+  assert.equal(modelPath({ backend: 'opencode', model: 'opendesign/hy4-preview' }, 'OpenCode', null), 'OpenCode->opendesign/hy4-preview')
+  // A login name is trimmed like the agent's.
+  assert.equal(modelPath({ backend: 'opencode', model: 'some/model' }, 'OpenCode', '  Work  '), 'OpenCode->Work->some/model')
+})
+
+test('loginNameOf names the profile the computer named, and nothing for the default or an unnamed one', () => {
+  const backends = [{ id: 'opencode', loginProfiles: [{ id: 'w', name: 'Work' }, { id: '7b3f', name: null }] }]
+  assert.equal(loginNameOf(backends, 'opencode', 'w'), 'Work')
+  // An unnamed profile's id is a uuid: it would read as noise, so it is left out.
+  assert.equal(loginNameOf(backends, 'opencode', '7b3f'), null)
+  // null (and absent) is the computer's own login, which has no name to add.
+  assert.equal(loginNameOf(backends, 'opencode', null), null)
+  assert.equal(loginNameOf(backends, 'opencode', ''), null)
+  // An agent hello doesn't know, or one with no login profiles: nothing.
+  assert.equal(loginNameOf(backends, 'mystery', 'w'), null)
+  assert.equal(loginNameOf([{ id: 'grok' }], 'grok', 'w'), null)
+})
+
+test('the Model Manager row cases are pinned here, login included', () => {
+  // Copied from the manager's own `rowModelPath` cases: the roster must print what the manager
+  // prints, so when the manager changes a case this one changes with it.
   assert.equal(modelPath({ backend: 'opencode', model: 'open-design/deepseek 4.1 flash' }, 'OpenCode'), 'OpenCode->open-design/deepseek 4.1 flash')
+  assert.equal(modelPath({ backend: 'opencode', model: 'opendesign/deepseek-v4.1-flash-eco' }, 'OpenCode', 'Work'), 'OpenCode->Work->opendesign/deepseek-v4.1-flash-eco')
   assert.equal(modelPath({ backend: 'mystery', model: 'some/model' }, null), 'mystery->some/model')
   assert.equal(modelPath({ backend: 'mystery', model: 'some/model' }, undefined), 'mystery->some/model')
   assert.equal(modelPath({ backend: 'opencode', model: ' some/model ' }, 'OpenCode'), 'OpenCode->some/model')

@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { runningAgent } from '@shared/fallbacks'
-import { hoverTip, modelPath } from '@shared/model-path'
+import { hoverTip, loginNameOf, modelPath } from '@shared/model-path'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
@@ -202,10 +202,13 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     // and the agent and model a bot runs, which otherwise take a right-click and the editor.
     const heading = many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name
     // While a fallback answers, the row's logo already follows `runningAgent`; the tip must too,
-    // or it names the agent and model that are resting rather than the ones doing the work.
+    // or it names the agent and model that are resting rather than the ones doing the work. The
+    // login is the step's as well, so a bot answering on another profile names that profile.
+    const step = item.bot.agentStep
     const backend = runningAgent(item.bot)
-    const model = item.bot.agentStep ? item.bot.agentStep.model : item.bot.model
-    const path = modelPath({ backend, model }, item.store.backendName(backend))
+    const model = step ? step.model : item.bot.model
+    const login = loginNameOf(item.store.hello?.backends ?? [], backend, step ? step.loginProfile : item.bot.loginProfile)
+    const path = modelPath({ backend, model }, item.store.backendName(backend), login)
     return (
       <RosterRow
         key={key}

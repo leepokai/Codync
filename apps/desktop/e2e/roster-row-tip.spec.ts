@@ -54,6 +54,36 @@ test('the roster row tip names the bot, then the agent and model it runs', async
   }
 })
 
+test('a row on a named login profile names it between the agent and the model', async () => {
+  const { browser, page } = await attach()
+  const run = Date.now()
+  const name = `Tip Login ${run}`
+  let botId: string | undefined
+  let profileId: string | undefined
+  try {
+    await openRoster(page)
+
+    // The manager reads a login profile's name from this computer's hello; the roster must read the
+    // same one. An API key profile needs no sign-in, so this names one without running an agent.
+    const added = await api<{ loginProfile: { id: string } }>(page, 'addLoginProfile', { backend: 'codex', kind: 'apiKey' })
+    profileId = added.loginProfile.id
+    await api(page, 'renameLoginProfile', { backend: 'codex', loginProfile: profileId, name: 'Work' })
+    const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'codex', model: 'gpt-5.3-codex', loginProfile: profileId,
+    })
+    botId = bot.id
+    // The API calls don't touch the renderer's hello; a reload reads the new profile's name there.
+    await page.reload()
+    await openRoster(page)
+
+    await expect(row(page, name)).toHaveAttribute('title', new RegExp(`^${heading(name)}\\nCodex->Work->gpt-5\\.3-codex$`))
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    if (profileId) await api(page, 'removeLoginProfile', { loginProfile: profileId }).catch(() => {})
+    await browser.close()
+  }
+})
+
 test('a fallback row tip names the agent and model answering now', async () => {
   const { browser, page } = await attach()
   const run = Date.now()

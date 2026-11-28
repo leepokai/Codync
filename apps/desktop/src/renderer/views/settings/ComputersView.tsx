@@ -1,12 +1,13 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, ChoicePicker, IconButton, Reveal, Switch, ValueRow } from '../../components/Controls'
+import { Button, CardSection, ChoicePicker, IconButton, Reveal, Spinner, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { limitCloudName, offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
+import { accountComputerAction } from '../../lib/account-computer-action'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
@@ -19,7 +20,7 @@ import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ResetSection } from './ResetSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { leavingRemovesText, withJoinRemoves } from '../../lib/account-copy'
+import { leavingRemovesText, spacedCode, withJoinRemoves } from '../../lib/account-copy'
 import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { CodyncCloudSection } from './CodyncCloudSection'
@@ -50,8 +51,9 @@ export function ComputersView() {
   // A computer this app reaches (an SSH one) can name what goes; any other gets the general warning.
   const removingNames = useLeaveRemoves(managed.find((store) => store.computer.id === removing?.computerId) ?? null, removing !== null)
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
-  // Account computers this app isn't using (iOS `accountOnly`): the ones it uses have their own card or section.
-  const others = cloud.computers.filter((c) => !app.store(c.computerId))
+  // Account computers this app doesn't manage (iOS `accountOnly`): this one and the SSH ones have their own card or
+  // section; one reached through the relay stays here, with Open.
+  const others = cloud.computers.filter((c) => !app.store(c.computerId)?.isLoopback)
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
@@ -340,15 +342,39 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
 }
 
 /**
- * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
- * offline one can be removed: a computer that was reset or given away never comes back under that identity. A
- * cloud computer says where it runs, sleeping isn't offline, and it is deleted in its own section instead.
+ * An account computer this app reaches through the relay once it's approved there (Open), asks for access to
+ * (with the code the computer shows), or uses under an earlier identity (`olderCopy`). An offline one can be
+ * removed: a computer that was reset or given away never comes back under that identity. A cloud computer says
+ * where it runs, asks for access by itself, sleeping isn't offline, and it is deleted in its own section instead.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const app = useApp()
+  const dismiss = useDismiss()
+  const access = useModel(app.accountComputers)
+  const asking = access.asking.get(computer.computerId)
+  // Its bots arrive after it attaches: Open waits for them.
+  const store = useModel(app.store(computer.computerId))
   const status = accountComputerStatus(computer, olderCopy)
+  const action = accountComputerAction(computer, olderCopy, store, asking !== undefined)
+  const open = () => {
+    app.select({ computerId: computer.computerId, botId: store!.roster[0]!.id })
+    dismiss()
+  }
+  // The row is often last on the page: keep it in view while its reveal unfolds.
+  const card = useRef<HTMLDivElement>(null)
+  const isAsking = asking !== undefined
+  useEffect(() => {
+    const el = card.current
+    if (!isAsking || !el) return
+    const observer = new ResizeObserver(() => {
+      void el.scrollIntoView({ block: 'nearest' })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [isAsking])
   return (
-    <div className="settings-card settings-appear">
+    <div ref={card} className="settings-card settings-appear settings-access">
       <div className="settings-row">
         <span className={olderCopy ? 'settings-off' : undefined}>
           <ComputerBadge computer={{ id: computer.computerId, name: computer.name, signKey: computer.signKey, urls: [], device: computer.device ?? null }} size={22} />
@@ -359,9 +385,22 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
+        {action === 'open' || action === 'opening' ? <Button disabled={action === 'opening'} onClick={open}>{tr('Open')}</Button>
+          : action === 'cancel' ? <Button onClick={() => access.cancel(computer.computerId)}>{tr('Cancel request')}</Button>
+          : action === 'ask' ? <Button onClick={() => void access.ask(computer)}>{tr('Ask for access')}</Button>
+          : null}
         {/* A cloud computer goes with Delete cloud computer, in its own section. */}
         {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
+      {/* At its final height from the first frame: the spinner holds the code's line until the code arrives. */}
+      <Reveal show={isAsking}>
+        <div className="settings-stack settings-access-code">
+          <Text as="div" size={28} weight="semibold" mono tone="text" className="selectable" aria-label={asking?.code ? `Code ${asking.code.split('').join(' ')}` : undefined}>
+            {asking?.code ? spacedCode(asking.code) : <Spinner />}
+          </Text>
+          <Text size="caption" tone="secondary">{tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")}</Text>
+        </div>
+      </Reveal>
     </div>
   )
 }

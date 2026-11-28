@@ -19,6 +19,7 @@ class FakeRelay implements Socket {
   closedWith: number | null = null
   codec: FrameCodec | null = null
   private listeners = new Map<string, Listener[]>()
+  private deadline: ReturnType<typeof setTimeout> | undefined
 
   addEventListener(type: string, listener: Listener) {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
@@ -27,7 +28,10 @@ class FakeRelay implements Socket {
     // As the real WebSocket does.
     if (this.readyState === WebSocket.CONNECTING) throw new Error('InvalidStateError: still connecting')
     const wire = JSON.parse(text) as Record<string, unknown>
-    if (wire.t === 'hello') return this.welcome(wire as { dk: string; ek: string; n: string })
+    if (wire.t === 'hello') {
+      clearTimeout(this.deadline)
+      return this.welcome(wire as { dk: string; ek: string; n: string })
+    }
     this.sent.push(wire.t === 'f' && this.codec ? (this.codec.open(wire as { c: number; d: string }) as Record<string, unknown>) : wire)
   }
   close(code = 1000) {
@@ -41,6 +45,12 @@ class FakeRelay implements Socket {
   }
   push(message: unknown) {
     this.emit('message', { data: JSON.stringify(message) })
+  }
+  /** The computer (re)joins and, as the host does, closes the link unless `hello` arrives within 10 s. */
+  join() {
+    clearTimeout(this.deadline)
+    this.deadline = setTimeout(() => this.close(1000), 10_000)
+    this.push({ t: 'presence', online: true })
   }
   /** An inner message from the computer. */
   answer(inner: unknown) {
@@ -198,6 +208,52 @@ test('a socket that goes quiet or fails is closed and dialed again', async () =>
     assert.equal(relays[1]!.closedWith, 4000)
     ch.close()
     await assert.rejects(answer)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("a computer that rejoins while the relay's window is full gets its handshake at once, then the calls that never left", async () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  try {
+    const { ch, relays } = channel()
+    const calls = Array.from({ length: 250 }, () => ch.call('hello', {}, 600_000).catch(() => 'dropped'))
+    const relay = relays[0]!
+    relay.join()
+    assert.equal(relay.sent.length, 191)
+    mock.timers.tick(500)
+    relay.join()
+    // Within the computer's 10 s deadline, though the calls still wait out the window.
+    assert.equal(ch.state, 'ready')
+    mock.timers.tick(10_500)
+    assert.equal(relay.closedWith, null)
+    const resent = relay.sent.slice(191)
+    assert.equal(resent.length, 59)
+    for (const call of resent) relay.answer({ id: call.id, ok: 'answered' })
+    const ends = await Promise.all(calls)
+    assert.equal(ends.filter((end) => end === 'dropped').length, 191)
+    assert.equal(ends.filter((end) => end === 'answered').length, 59)
+    ch.close()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("a call that times out while it waits on the relay's window never reaches the computer", async () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  try {
+    const { ch, relays } = channel()
+    const earlier = Array.from({ length: 199 }, () => ch.call('hello', {}, 600_000).catch(() => {}))
+    const relay = relays[0]!
+    relay.push({ t: 'presence', online: true })
+    const late = ch.call('setBot', {}, 5_000)
+    mock.timers.tick(5_000)
+    await assert.rejects(late, { status: 0 })
+    mock.timers.tick(6_000)
+    assert.equal(relay.sent.length, 199)
+    assert.ok(relay.sent.every((message) => message.m === 'hello'))
+    ch.close()
+    await Promise.all(earlier)
   } finally {
     mock.timers.reset()
   }

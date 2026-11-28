@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { b64url, deviceHello, FrameCodec, openFrame, privateKey, rawPublic, sasCommit, sealFrame, unb64url } from './crypto.ts'
+import { b64url, deviceHello, FrameCodec, openFrame, privateKey, rawPublic, sasCode, sasCommit, sealFrame, unb64url } from './crypto.ts'
 
 const vectors = JSON.parse(readFileSync(new URL('../../../../../docs/reference/fixtures/remote-relay-vectors.json', import.meta.url), 'utf8'))
 const { keys, handshake: hs, frames, sas } = vectors
@@ -50,6 +50,7 @@ test('a long message goes in 256 KiB chunks and comes back whole', () => {
   assert.deepEqual(opened[2], long)
 })
 
-test('the access request commit matches the protocol vectors', () => {
+test('the access request commit and code match the protocol vectors', () => {
   assert.equal(b64url(sasCommit(device.pub, unb64url(sas.deviceNonce))), sas.commit)
+  assert.equal(sasCode(unb64url(keys.hostSignPub), device.pub, unb64url(sas.deviceNonce), unb64url(sas.hostNonce)), sas.code)
 })

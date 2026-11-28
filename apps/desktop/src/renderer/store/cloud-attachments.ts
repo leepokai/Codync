@@ -1,20 +1,24 @@
 import { useEffect } from 'react'
 import type { Computer } from '@shared/models'
 import { ChannelTransport } from '../client/host-client'
+import { relayComputers } from '../lib/relay-plan'
 import { account } from './account'
 import type { AppModel } from './app-model'
 import { BotStore } from './bot-store'
 import type { CloudComputer } from './cloud'
 
 /**
- * The account's Codync Cloud computer, used from this app like the iPhone does: asked for access once per launch
- * (it approves this account's devices by itself), then attached as a store over the relay's encrypted channel,
- * and detached when it leaves the account. Its channel stays open only while someone looks at the window, so the
- * computer can sleep. Call once, from ChatWindow.
+ * The account's other computers, used from this app like the iPhone does: each one approved for this device is
+ * attached as a store over the relay's encrypted channel (its bots join the sidebar) and detached when it leaves
+ * the account or turns this device away. A Codync Cloud computer is asked for access once per launch (it approves
+ * this account's devices by itself); any other is asked from Settings (`AccountComputers`). Channels stay open only
+ * while someone looks at the window, so a cloud computer can sleep. Call once, from ChatWindow.
  */
 export function useCloudAttachments(app: AppModel) {
   useEffect(() => {
     const attached = new Map<string, BotStore>()
+    // Each attached store's own changes: its connection reaches neither `app` nor `app.cloud`.
+    const watches = new Map<string, () => void>()
     const asked = new Set<string>()
     let attended = false
     let offline = new Set<string>()
@@ -22,7 +26,7 @@ export function useCloudAttachments(app: AppModel) {
     const ask = (c: CloudComputer) => {
       if (asked.has(c.computerId)) return
       asked.add(c.computerId)
-      void window.codync.cloud.requestAccess(c.computerId).then((res) => {
+      void window.codync.cloud.requestAccess(c).then((res) => {
         if (!res.ok) console.warn('Codync Cloud access:', res.error.message ?? res.error.code)
         void app.cloud.refresh(true)
       })
@@ -45,15 +49,22 @@ export function useCloudAttachments(app: AppModel) {
       if (!attended) store.pause()
       app.attach(computer, store)
       attached.set(c.computerId, store)
+      watches.get(c.computerId)?.()
+      watches.set(c.computerId, store.subscribe(noteConnections))
+    }
+
+    // Gone offline: the account's list says whether it's asleep (it wakes when this app connects) or off. Turned
+    // away (its grant went): the list no longer has it as granted, so its store goes and Settings offers to ask again.
+    const noteConnections = () => {
+      const now = new Set([...attached].filter(([, s]) => s.connection.kind === 'computerOffline' || s.connection.kind === 'unauthorized').map(([id]) => id))
+      if ([...now].some((id) => !offline.has(id))) void app.cloud.refresh(true)
+      offline = now
     }
 
     const sync = () => {
-      const live = new Map<string, CloudComputer>()
-      for (const c of app.cloud.computers) {
-        if (!c.cloud) continue
-        if (c.access === 'granted') live.set(c.computerId, c)
-        else if (c.access === 'none') ask(c)
-      }
+      for (const c of app.cloud.computers) if (c.cloud && c.access === 'none') ask(c)
+      const owned = (id: string) => !app.store(id) || app.store(id) === attached.get(id)
+      const live = new Map(relayComputers(app.cloud.computers, app.local?.computer.id ?? null, owned).map((c) => [c.computerId, c]))
       for (const [id, c] of live) {
         const store = attached.get(id)
         if (store && store.computer.signKey === c.signKey && app.store(id) === store) store.setCloudHosting(c.cloud ?? null)
@@ -62,12 +73,11 @@ export function useCloudAttachments(app: AppModel) {
       for (const [id, store] of attached) {
         if (live.has(id)) continue
         attached.delete(id)
+        watches.get(id)?.()
+        watches.delete(id)
         if (app.store(id) === store) app.detach(id)
       }
-      // Gone offline: the account's list says whether it's asleep (it wakes when this app connects) or off.
-      const now = new Set([...attached].filter(([, s]) => s.connection.kind === 'computerOffline').map(([id]) => id))
-      if ([...now].some((id) => !offline.has(id))) void app.cloud.refresh(true)
-      offline = now
+      noteConnections()
     }
 
     const setAttended = (on: boolean) => {
@@ -89,6 +99,7 @@ export function useCloudAttachments(app: AppModel) {
       offCloud()
       offApp()
       offAttended()
+      for (const off of watches.values()) off()
       for (const [id, store] of attached) if (app.store(id) === store) app.detach(id)
     }
   }, [app])

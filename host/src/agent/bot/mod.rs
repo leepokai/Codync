@@ -89,6 +89,14 @@ pub(crate) fn startup_pair(hub: &Hub, cfg: &BotConfig) -> (bool, Vec<String>) {
     (was_paused, runs)
 }
 
+/// The pause pair of a thread that starts now: its owner's flag at this instant, and no runs. A thread has no runs of
+/// its own, so the transition that keeps a bot's flag and ids one read buys nothing here; a caller that already holds
+/// the work box's lock must not take it, and `update_bot` holds the transition before that box.
+pub(crate) fn startup_flag(hub: &Hub, cfg: &BotConfig) -> (bool, Vec<String>) {
+    let was_paused = hub.paused(cfg.owner()) || hub.pause.blocked(cfg.owner());
+    (was_paused, Vec::new())
+}
+
 /// `startup` is `(was_paused, active run ids)` from [`startup_pair`], already captured by the caller.
 /// This does not take the pause transition. The scheduler holds that mutex across the admission that
 /// reaches here, and `std::sync::Mutex` is not reentrant.

@@ -360,21 +360,6 @@ fn begin(
 ) {
     // Copied before the lock, which every bot's box shares: a copy again is harmless.
     let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
-    // A thread that starts here takes its pause pair, read under the transition. Read it before the box's lock:
-    // `update_bot` holds that transition and then takes the box (`work::paused`), so taking the box here and then
-    // the transition through `spawn_bot` would deadlock the two. A caller that already holds the transition passes
-    // its pair in.
-    let startup = match startup {
-        Some(startup) => Some(startup),
-        None if first && thread.is_thread() => {
-            let pair = {
-                let _transition = hub.pause.transition();
-                crate::agent::bot::startup_pair(hub, thread)
-            };
-            Some(pair)
-        }
-        None => None,
-    };
     let posted = {
         let _g = hub.work.boxes.locked();
         if tasks::of_thread(&tasks::load(&hub.store, bot), &thread.id).is_none_or(|on| on.id != task.id) {
@@ -389,6 +374,16 @@ fn begin(
                     tracing::error!(thread = %thread.id, "refusing to start a bot with a thread's startup pair");
                     return;
                 }
+                // Read here, under the box's lock, at the instant the actor starts: read any earlier (before the
+                // lock), a resume landing in between left the new thread marked as paused, and its first task
+                // ended as cut off by a restart that never happened. A thread has no runs of its own, so this is
+                // the flag alone and takes no pause transition: `update_bot` holds that transition and then takes
+                // this box (`work::paused`), and taking them the other way round here would deadlock the two.
+                None if thread.is_thread() => {
+                    hub.spawn_bot_with(thread.clone(), crate::agent::bot::startup_flag(hub, thread));
+                }
+                // Not a thread: no plan starts one (`thread_bot`). Its runs would have to be read under the pause
+                // transition, which the holder of this box must not take after it.
                 None => hub.spawn_bot(thread.clone()),
             }
             sources::watch(hub, bot, &thread.id, task);
@@ -630,6 +625,39 @@ mod tests {
         let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..cfg };
         begin(&hub, "b1", &thread, &planned, true, None);
         assert!(!hub.has_actor("thread-1"), "it never starts");
+    }
+
+    /// A new thread reads its pause flag under the box's lock, at the instant its actor starts, and so takes no pause
+    /// transition: a pause or a resume that holds it (as `update_bot` does, before it takes the box) is neither waited
+    /// on nor deadlocked against this box.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_thread_starts_while_a_pause_transition_is_held() {
+        let hub = hub();
+        let cfg = bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let planned = tasks::load(&hub.store, "b1").remove(0);
+        let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..cfg };
+        let (taken, is_held) = std::sync::mpsc::channel();
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let holder = hub.clone();
+        let holding = std::thread::spawn(move || {
+            let _transition = holder.pause.transition();
+            taken.send(()).unwrap();
+            wait.recv().unwrap();
+        });
+        is_held.recv().expect("the transition was taken");
+        let starting = {
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || begin(&hub, "b1", &thread, &planned, true, None))
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(5), starting)
+            .await
+            .expect("it waited for the pause transition while holding the box")
+            .expect("it ran");
+        release.send(()).expect("the transition was released");
+        holding.join().expect("the holder ended");
+        assert!(hub.has_actor("thread-1"), "it did not start");
     }
 
     #[test]

@@ -320,6 +320,11 @@ fn within_batch(entries: &[Entry]) -> &[Entry] {
 /// may rephrase or translate: the call's transcript holds what the user said). A call's line gives its transcript,
 /// line by line: the user's lines are their own words, the voice's are context.
 fn messages(e: &Entry) -> Vec<Message> {
+    // `/side` questions and their answers are read-only asides (`chat::side`): they are never learned as the
+    // user's words, and they never reach the bot's own session.
+    if e.data["side"] == true {
+        return Vec::new();
+    }
     let clip = |text: &str| codync_agent::acp::truncate(text, MESSAGE_CHARS);
     let said: Vec<(bool, Vec<String>)> = if e.kind == EntryKind::Notice.as_str() {
         e.data["transcript"]
@@ -393,6 +398,8 @@ mod tests {
         let spoken = entry(EntryKind::User, json!({"text": "swims on Sundays", "call": "c"}));
         assert!(messages(&spoken).iter().all(|m| m.from_user));
         assert!(messages(&entry(EntryKind::User, json!({"text": "x", "from": "host"}))).is_empty());
+        assert!(messages(&entry(EntryKind::User, json!({"text": "/side what's done?", "side": true}))).is_empty());
+        assert!(messages(&entry(EntryKind::Notice, json!({"text": "It's green", "side": true}))).is_empty());
     }
 
     #[test]

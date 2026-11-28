@@ -272,7 +272,9 @@ fn members(hub: &Hub, group: &BotConfig) -> Vec<BotConfig> {
 
 /// The lane's messages since the user last wrote there, that message included.
 fn since_last_user_message(hub: &Hub, lane: &Lane) -> Result<Vec<Entry>> {
-    let recent = hub.store.messages_after(lane, 0, HISTORY_LINES)?;
+    let mut recent = hub.store.messages_after(lane, 0, HISTORY_LINES)?;
+    // `/side` is refused in a group (`chat::messages`): its question is not something the room answers.
+    recent.retain(|e| e.data["side"] != true);
     let start = recent.iter().rposition(|e| e.kind == EntryKind::User.as_str()).unwrap_or(0);
     Ok(recent[start..].to_vec())
 }
@@ -407,6 +409,9 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
     let mut lines: Vec<String> = vec![];
     let header = format!("[Group chat: \"{}\" - with {peer_names}]", group.name);
     for e in hub.store.messages_after(lane, seen, HISTORY_LINES)? {
+        if e.data["side"] == true {
+            continue;
+        }
         lines.push(line(hub, group, &e, me));
     }
     out.push(header);

@@ -19,26 +19,26 @@ test('a leading slash opens the list until the name ends', () => {
 
 test('built-in commands come first, then only the bot\'s own skills, by name or title', () => {
   const bot = normalizeBot({ id: 'b', skills: ['pdf', 'code-review'], fastModeSupport: 'offered' })
-  assert.deepEqual(slashCommands(bot, '', installed).map((c) => c.name), ['fast', 'pdf', 'code-review'])
+  assert.deepEqual(slashCommands(bot, '', installed).map((c) => c.name), ['fast', 'side', 'pdf', 'code-review'])
   assert.deepEqual(slashCommands(bot, 'review', installed).map((c) => c.name), ['code-review'])
   assert.deepEqual(slashCommands(bot, 'new', installed), [], 'a new session is in the bot\'s menu')
   assert.deepEqual(slashCommands(normalizeBot({ id: 'b', skills: ['pdf'] }), 'xl', installed), [])
-  assert.deepEqual(slashCommands(normalizeBot({ id: 'b' }), '', []).map((c) => c.name), ['fast'], 'offered until the agent says otherwise')
-  assert.deepEqual(slashCommands(normalizeBot({ id: 'b', fastModeSupport: 'unsupported' }), '', []), [], 'no Fast mode on offer')
+  assert.deepEqual(slashCommands(normalizeBot({ id: 'b' }), '', []).map((c) => c.name), ['fast', 'side'], 'offered until the agent says otherwise')
+  assert.deepEqual(slashCommands(normalizeBot({ id: 'b', fastModeSupport: 'unsupported' }), '', []).map((c) => c.name), ['side'], 'no Fast mode on offer')
 })
 
 test('a bot\'s agent commands follow its skills, matched by name, and fill in like a skill', () => {
   const agentCommands = [{ name: 'review', description: 'Review the changes' }, { name: 'compact', description: '', hint: 'what to keep' }]
   const bot = normalizeBot({ id: 'b', backend: 'claude', skills: ['pdf'], fastModeSupport: 'unsupported', agentCommands })
   const listed = slashCommands(bot, '', installed)
-  assert.deepEqual(listed.map((c) => c.name), ['pdf', 'review', 'compact'])
-  assert.deepEqual(listed[1].action, { kind: 'agent', agent: 'claude' })
-  assert.equal(listed[2].detail, 'what to keep', 'the hint stands in for a missing description')
+  assert.deepEqual(listed.map((c) => c.name), ['side', 'pdf', 'review', 'compact'])
+  assert.deepEqual(listed[2].action, { kind: 'agent', agent: 'claude' })
+  assert.equal(listed[3].detail, 'what to keep', 'the hint stands in for a missing description')
   assert.deepEqual(slashCommands(bot, 'rev', installed).map((c) => c.name), ['review'])
   const onFallback = normalizeBot({ ...bot, agentStep: { step: 1, agent: 'codex', model: null, since: 0, reason: null } })
   assert.deepEqual(slashCommands(onFallback, 'rev', installed)[0].action, { kind: 'agent', agent: 'codex' }, 'the agent answering now')
-  assert.equal(returnRuns(listed[1], '/rev'), true)
-  assert.equal(returnRuns(listed[1], '/review'), false, 'typed out, Return sends it')
+  assert.equal(returnRuns(listed[2], '/rev'), true)
+  assert.equal(returnRuns(listed[2], '/review'), false, 'typed out, Return sends it')
   const group = normalizeBot({ id: 'g', kind: 'group', members: ['b'], agentCommands })
   assert.deepEqual(slashCommands(group, '', installed, [bot]).map((c) => c.name), ['pdf'], 'a group has no agent of its own')
 })
@@ -73,8 +73,20 @@ test('sending just a built-in command runs it; anything else is a message', () =
 
 test('Return runs the highlighted command, but sends a skill already typed out', () => {
   const bot = normalizeBot({ id: 'b', skills: ['pdf'], fastModeSupport: 'offered' })
-  const [fast, pdf] = slashCommands(bot, '', installed)
-  assert.equal(returnRuns(fast!, '/'), true)
-  assert.equal(returnRuns(pdf!, '/pd'), true)
-  assert.equal(returnRuns(pdf!, '/pdf'), false)
+  const commands = slashCommands(bot, '', installed)
+  const fast = commands.find((c) => c.name === 'fast')!
+  const pdf = commands.find((c) => c.name === 'pdf')!
+  assert.equal(returnRuns(fast, '/'), true)
+  assert.equal(returnRuns(pdf, '/pd'), true)
+  assert.equal(returnRuns(pdf, '/pdf'), false)
+})
+
+test('side question is listed in a bot chat, not in a group, and fills the draft', () => {
+  const bot = normalizeBot({ id: 'b', fastModeSupport: 'offered' })
+  const own = slashCommands(bot, 'side', installed)
+  assert.equal(own.find((c) => c.name === 'side')?.action.kind, 'side')
+  assert.equal(returnRuns(own.find((c) => c.name === 'side')!, '/side'), true, 'a bare /side fills in the question')
+  const group = normalizeBot({ id: 'g', kind: 'group', members: ['b'] })
+  assert.equal(slashCommands(group, 'side', installed).find((c) => c.name === 'side'), undefined)
+  assert.equal(builtInCommand(bot, '/side')?.action.kind, 'side')
 })

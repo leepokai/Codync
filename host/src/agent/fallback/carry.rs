@@ -43,7 +43,8 @@ pub fn said(entries: &[Entry]) -> Vec<Said> {
         .filter_map(|e| {
             let user = e.kind == EntryKind::User.as_str();
             let text = message_text(&e.data);
-            e.is_message()
+            // A `/side` question and its answer are read-only asides (`chat::side`): another agent never reads them.
+            (e.data["side"] != true && e.is_message())
                 .then(|| Said { user, date: crate::chat::memory::ymd(e.created_at), text })
                 .filter(|s| !s.text.trim().is_empty())
         })
@@ -285,6 +286,11 @@ mod tests {
         ];
         let all = said(&entries);
         assert_eq!(all.len(), 3, "user messages and replies only");
+        let aside = [
+            entry(6, EntryKind::User, json!({"text": "/side what is left?", "side": true})),
+            entry(7, EntryKind::Notice, json!({"text": "Two tests", "side": true})),
+        ];
+        assert!(said(&aside).is_empty(), "a side question is never carried into another agent's session");
         assert!(!all[1].user);
         assert_eq!(all[2].text, "log.txt");
         assert_eq!(said(&entries[4..]).len(), 1);

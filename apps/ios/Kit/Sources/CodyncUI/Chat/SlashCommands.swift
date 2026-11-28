@@ -3,7 +3,7 @@ import CodyncKit
 /// A command in the composer's `/` list.
 struct SlashCommand: Identifiable, Equatable {
     /// `agent`: one of the agent's own commands, with the agent that lists it (its logo marks the row).
-    enum Action: Hashable { case fast, skill(String), agent(name: String, agent: String) }
+    enum Action: Hashable { case fast, side, skill(String), agent(name: String, agent: String) }
 
     /// What follows the `/`.
     let name: String
@@ -74,8 +74,14 @@ enum SlashCommands {
             guard bot.fastModeShown else { return [] }
             fast = (bot.fastModeDetail, bot.fastModeState)
         }
-        return [SlashCommand(name: "fast", icon: "bolt", title: "Fast mode", detail: fast.detail,
-                             warning: fast.state == .refused, action: .fast)]
+        let fastCommand = SlashCommand(name: "fast", icon: "bolt", title: "Fast mode", detail: fast.detail,
+                                       warning: fast.state == .refused, action: .fast)
+        guard !bot.isGroup else { return [fastCommand] }
+        // A host command: one read-only question from the chat so far; a group has no single chat to ask about.
+        let side = SlashCommand(name: "side", icon: "questionmark.circle", title: "Side question",
+                                detail: "Ask one question about the chat so far, without tools or a new turn (Claude Code bots)",
+                                warning: false, action: .side)
+        return [fastCommand, side]
     }
 }
 

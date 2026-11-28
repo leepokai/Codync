@@ -18,8 +18,12 @@ pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, data: Value) -> Result<Entry> {
 /// [`post`]'s first half, `data` saved as the user's newest message in `cfg`'s chat: for a caller to whom a message
 /// that was never saved differs from one that was saved and not taken.
 pub fn save(hub: &Hub, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
+    // `/side` is answered by a throwaway agent, not a turn of the bot's own: it isn't queued behind one.
+    if data["text"].as_str().and_then(crate::chat::side::parse).is_some() {
+        data["side"] = true.into();
+    }
     // A group has no agent of its own to queue behind: its message is simply sent.
-    data["status"] = (if cfg.is_group() { "sent" } else { "queued" }).into();
+    data["status"] = (if cfg.is_group() || data["side"] == true { "sent" } else { "queued" }).into();
     let turn = hub.store.max_turn(&cfg.id) + 1;
     let e = hub
         .add_entry(&Lane::main(&cfg.id), EntryKind::User, turn, &data)
@@ -34,6 +38,17 @@ pub fn save(hub: &Hub, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
 /// [`post`]'s second half: the saved message `e` goes to the bot's agent, or to a group's members.
 pub fn hand_on(hub: &Arc<Hub>, cfg: &BotConfig, e: &Entry) -> Result<()> {
     let lane = Lane::main(&cfg.id);
+    // `/side <question>`: answered off to the side, never as a turn the bot's queue has to run.
+    if let Some(question) = e.data["text"].as_str().and_then(crate::chat::side::parse) {
+        if cfg.is_group() {
+            crate::chat::side::not_in_a_group(hub, cfg);
+        } else if question.is_empty() {
+            crate::chat::side::asked_nothing(hub, cfg);
+        } else {
+            crate::chat::side::start(hub, cfg, question);
+        }
+        return Ok(());
+    }
     if cfg.is_group() {
         // Each member reads it in its room prompt (`chat::group`).
         crate::chat::group::start(hub, cfg, lane);

@@ -13,6 +13,8 @@ use super::{After, App, Bot, Editor};
 pub enum SlashAction {
     Fast,
     DevServers,
+    /// A read-only question answered from the chat so far (`chat::side`), filled in as `/side `.
+    Side,
     Skill,
     /// One of the agent's own commands; `title` names the agent.
     Agent,
@@ -31,10 +33,12 @@ impl SlashCommand {
     /// The row's text after `/name`.
     pub fn about(&self) -> String {
         match self.action {
-            SlashAction::Skill | SlashAction::Agent if self.detail.is_empty() => self.title.clone(),
+            SlashAction::Skill | SlashAction::Agent | SlashAction::Side if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
             SlashAction::Agent => format!("{} · {}", self.title, self.detail.replace('\n', " ")),
-            SlashAction::Fast | SlashAction::DevServers => format!("{} · {}", self.title, self.detail),
+            SlashAction::Fast | SlashAction::DevServers | SlashAction::Side => {
+                format!("{} · {}", self.title, self.detail)
+            }
         }
     }
 }
@@ -71,7 +75,13 @@ impl App {
             detail: bot.dev_servers.iter().map(|server| server.name.as_str()).collect::<Vec<_>>().join(", "),
             action: SlashAction::DevServers,
         });
-        fast.into_iter().chain(servers).collect()
+        let side = self.bot().filter(|bot| !bot.group).map(|_| SlashCommand {
+            name: "side".into(),
+            title: "Side question".into(),
+            detail: "One read-only question about the chat so far (Claude Code bots)".into(),
+            action: SlashAction::Side,
+        });
+        fast.into_iter().chain(servers).chain(side).collect()
     }
 
     /// Built-in commands, then the skills the bot (or any member of a group) has on, whose name
@@ -168,7 +178,7 @@ impl App {
                 self.open_dev_servers();
                 String::new()
             }
-            SlashAction::Skill | SlashAction::Agent => format!("/{} ", command.name),
+            SlashAction::Skill | SlashAction::Agent | SlashAction::Side => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
             self.drafts.insert(key, Editor::with(&fill));
@@ -225,14 +235,14 @@ mod tests {
         let mut app =
             app_with(&json!({"id": "b", "name": "Bot", "skills": ["pdf", "docx"], "fastModeSupport": "offered"}));
         app.drafts.insert("b".into(), super::Editor::with("/"));
-        assert_eq!(names(&app), ["fast", "pdf", "docx"], "only skills the bot has on");
+        assert_eq!(names(&app), ["fast", "side", "pdf", "docx"], "only skills the bot has on");
         app.drafts.insert("b".into(), super::Editor::with("/new"));
         assert!(names(&app).is_empty(), "a new session is in the ^k menu");
         app.bots.get_mut("b").expect("the bot").fast_support = "unknown".into();
         app.drafts.insert("b".into(), super::Editor::with("/"));
-        assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");
+        assert_eq!(names(&app), ["fast", "side", "pdf", "docx"], "offered until the agent says otherwise");
         app.bots.get_mut("b").expect("the bot").fast_support = "unsupported".into();
-        assert_eq!(names(&app), ["pdf", "docx"], "no Fast mode on offer");
+        assert_eq!(names(&app), ["side", "pdf", "docx"], "no Fast mode on offer");
     }
 
     #[tokio::test]
@@ -240,7 +250,7 @@ mod tests {
         let mut app = app_with(&json!({"id": "b", "name": "Bot", "skills": ["pdf"], "fastModeSupport": "offered"}));
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert!(app.slash_key(key(KeyCode::Up)), "up wraps to the last row");
-        assert_eq!(app.slash_selected(2), 1);
+        assert_eq!(app.slash_selected(3), 2);
         assert!(app.slash_key(key(KeyCode::Enter)), "Return on a skill fills it in");
         assert_eq!(app.draft().text, "/pdf ");
         assert!(names(&app).is_empty(), "the list closes once the name is done");
@@ -259,8 +269,8 @@ mod tests {
             &json!({"id": "b", "name": "Bot", "backend": "custom", "skills": ["pdf"], "fastModeSupport": "unsupported", "agentCommands": commands}),
         );
         app.drafts.insert("b".into(), super::Editor::with("/"));
-        assert_eq!(names(&app), ["pdf", "review", "compact", "plan"]);
-        let about: Vec<String> = app.slash_commands().iter().skip(1).map(super::SlashCommand::about).collect();
+        assert_eq!(names(&app), ["side", "pdf", "review", "compact", "plan"]);
+        let about: Vec<String> = app.slash_commands().iter().skip(2).map(super::SlashCommand::about).collect();
         assert_eq!(about, ["custom · Review the changes", "custom", "custom · what to plan"], "marked with the agent");
         app.drafts.insert("b".into(), super::Editor::with("/cust"));
         assert!(names(&app).is_empty(), "the agent's name isn't a command's");
@@ -326,6 +336,10 @@ mod tests {
         let mut app = app_with(&json!({"id": "b", "name": "Bot", "fastModeSupport": "offered"}));
         assert!(!app.built_in_command("/fast please"), "only the bare command");
         assert!(!app.built_in_command("/new"), "reaches the agent as typed");
+        app.drafts.insert("b".into(), super::Editor::with("/si"));
+        assert!(app.slash_commands().iter().any(|c| c.name == "side"), "a side question is listed");
+        assert!(app.built_in_command("/side"), "a bare /side fills in the question");
+        assert_eq!(app.draft().text, "/side ");
         assert!(app.built_in_command("/fast"));
         app.bots.get_mut("b").expect("the bot").fast_support = "unsupported".into();
         assert!(!app.built_in_command("/fast"), "without Fast mode it reaches the agent");

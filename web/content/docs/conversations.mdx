@@ -221,6 +221,7 @@ Type `/` at the start of a message to see the bot's commands:
 
 - `/fast`: turns [Fast mode](/docs/agents#models-and-options) on or off, when the bot's agent offers it.
 - `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
+- `/side <question>`: answers one question about the work so far, off to the side, while the bot may still be busy with your last message. It reads the recent messages as a snapshot and asks a separate agent of the bot's own harness — its own session, no tools, nothing kept: the answer appears as a note in the chat and the bot's own session and memory never see it. Only a bot on Claude Code can run this way, since only there can the agent be started without tools; a bot on another agent says so. Not in a group: ask the bot you mean directly. Its entry in the `/` list fills in `/side `; add your question and send it.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 - The agent's own commands (Claude Code's, Codex's, OpenCode's and so on), under the agent's name and marked with its logo, come last, apart from Codync's own commands and skills (under **Codync**), with the agent's description of each. In the terminal UI each of them names the agent. Picking one fills in `/<command>`; add anything it needs and send it. The list follows the agent the bot runs on now, and shows up once that agent has started for the bot. A group chat doesn't list them.
 

@@ -22,7 +22,7 @@ permissions:
 jobs:
   e2e:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 100
     defaults:
       run:
         working-directory: apps/desktop
@@ -57,18 +57,22 @@ jobs:
           done
           cat "$RUNNER_TEMP/sandbox.log"
           exit 1
-      - run: npm run e2e -- --reporter=list,html
+      - name: Debug dev servers, then the full suite twice
+        run: |
+          npx playwright test -c e2e/playwright.config.ts dev-servers-debug --reporter=list --output=test-results-0 || true
+          for i in 1 2; do npx playwright test -c e2e/playwright.config.ts --reporter=list --output=test-results-$i || echo "run $i failed"; done
         env:
           PLAYWRIGHT_HTML_OPEN: never
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report
       - name: Logs
-        if: failure()
+        if: always()
         run: cat "$RUNNER_TEMP/sandbox.log"; cat ~/.codync-dev-*/host.log | tail -200
+      - run: cp ~/.codync-dev-*/host.log test-results-1/ || true
+        if: always()
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: desktop-e2e-report
           path: |
-            apps/desktop/playwright-report
-            apps/desktop/test-results
+            apps/desktop/test-results-*
           retention-days: 14

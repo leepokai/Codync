@@ -155,7 +155,15 @@ pub fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
         {
             flush(&mut run, &mut out, style(bold, italic));
             let code: String = chars[i + 1..i + 1 + len].iter().collect();
-            out.push(Span::styled(code, t.code));
+            // A code span inside **bold** or *italic* keeps the run's weight, as the apps' <code> inherits it.
+            let mut code_style = t.code;
+            if bold {
+                code_style = code_style.add_modifier(Modifier::BOLD);
+            }
+            if italic {
+                code_style = code_style.add_modifier(Modifier::ITALIC);
+            }
+            out.push(Span::styled(code, code_style));
             i += len + 2;
             continue;
         }
@@ -292,6 +300,16 @@ mod tests {
         let s = inline("run `cargo` **now**", Style::default());
         let parts: Vec<&str> = s.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(parts, ["run ", "cargo", " ", "now"]);
+    }
+
+    #[test]
+    fn bold_runs_across_an_inline_code_span() {
+        let s = inline("**run `cargo` now**", Style::default());
+        let parts: Vec<&str> = s.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(parts, ["run ", "cargo", " now"], "no marker is left behind");
+        assert!(s[0].style.add_modifier.contains(Modifier::BOLD), "the text before the span is bold");
+        assert!(s[1].style.add_modifier.contains(Modifier::BOLD), "the code span keeps the bold run");
+        assert!(s[2].style.add_modifier.contains(Modifier::BOLD), "the text after the span is bold");
     }
 
     #[test]

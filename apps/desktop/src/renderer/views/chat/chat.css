@@ -218,7 +218,8 @@
 }
 .message.user {
   align-items: flex-end;
-  padding-left: 56px;
+  /* Keep short right-aligned bubbles off the window edge; actions still occupy the 88 pt left gutter. */
+  padding-right: 56px;
 }
 .message.agent {
   align-items: flex-start;

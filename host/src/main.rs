@@ -28,6 +28,7 @@ mod routines;
 mod screen;
 mod send_cli;
 mod service;
+pub mod sidecar;
 mod store;
 mod tui;
 mod update;

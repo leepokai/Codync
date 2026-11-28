@@ -1,14 +1,16 @@
 //! Automatic bot names, as in Grok Bot: a bot created without a name is called
 //! [`PLACEHOLDER`] until its first few conversations show what it's for. Then
-//! a one-shot agent of the bot's harness (see `oneshot`) is asked for a short
-//! name, at the end of a turn. The user renaming it, or asking the bot to rename itself
-//! (`profile`), ends this. The description stays the user's: it holds standing instructions.
+//! a fast optional decision sidecar (or a one-shot agent of the bot's harness,
+//! see `oneshot`) is asked for a short name, at the end of a turn. The user
+//! renaming it, or asking the bot to rename itself (`profile`), ends this.
+//! The description stays the user's: it holds standing instructions.
 
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::Future;
 use std::sync::Arc;
 
 /// A finished user ↔ bot exchange.
@@ -46,8 +48,12 @@ pub async fn observe(hub: &Arc<Hub>, bot_id: &str, turn: Turn) -> Result<()> {
     if turns.len() < NAME_AFTER {
         return Ok(());
     }
-    let raw = crate::chat::oneshot::one_shot(hub, &cfg, SYSTEM_PROMPT, &user_prompt(&turns)).await?;
-    let Some(name) = parse(&raw) else {
+    let prompt = user_prompt(&turns);
+    let Some(name) = resolve_name(crate::sidecar::decision_call_for_store(&hub.store, SYSTEM_PROMPT, &prompt), || {
+        crate::chat::oneshot::one_shot(hub, &cfg, SYSTEM_PROMPT, &prompt)
+    })
+    .await?
+    else {
         tracing::info!(bot = %bot_id, "purpose not clear yet; naming later");
         return Ok(());
     };
@@ -61,6 +67,21 @@ pub async fn observe(hub: &Arc<Hub>, bot_id: &str, turn: Turn) -> Result<()> {
     hub.store.kv_set(&key(bot_id), "[]")?;
     tracing::info!(bot = %bot_id, "named from its conversations");
     Ok(())
+}
+
+async fn resolve_name<S, F, Fut>(sidecar: S, oneshot_fallback: F) -> Result<Option<String>>
+where
+    S: Future<Output = Option<String>>,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
+    if let Some(raw) = sidecar.await
+        && let Some(name) = parse(&raw)
+    {
+        return Ok(Some(name));
+    }
+    let raw = oneshot_fallback().await?;
+    Ok(parse(&raw))
 }
 
 const SYSTEM_PROMPT: &str = "\
@@ -92,7 +113,13 @@ fn parse(raw: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::net::TcpListener;
 
     #[test]
     fn names_are_parsed() {
@@ -106,5 +133,72 @@ mod tests {
         assert_eq!(parse("name: NONE"), None);
         assert_eq!(parse("name: "), None);
         assert_eq!(parse(&format!("name: {}", "x".repeat(41))), None);
+    }
+
+    #[tokio::test]
+    async fn unconfigured_sidecar_falls_back_to_oneshot_with_zero_network_calls() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let targets = crate::sidecar::config::load_targets_with(Some(&store), |_| None);
+        assert_eq!(targets, Vec::new());
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_flag = called.clone();
+        let out = resolve_name(async { None }, || async move {
+            called_flag.store(true, Ordering::SeqCst);
+            Ok("name: Fallback Bot".to_owned())
+        })
+        .await
+        .unwrap();
+        assert!(called.load(Ordering::SeqCst));
+        assert_eq!(out.as_deref(), Some("Fallback Bot"));
+    }
+
+    #[tokio::test]
+    async fn sidecar_success_names_bot_without_invoking_oneshot() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async { Json(json!({"choices": [{"message": {"content": "name: 「記帳助手」"}}]})) }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store
+            .kv_set(
+                crate::sidecar::config::STORE_TARGETS_KEY,
+                &json!([{"url": format!("http://{addr}/v1"), "model": "fast"}]).to_string(),
+            )
+            .unwrap();
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_flag = called.clone();
+        let out = resolve_name(
+            crate::sidecar::decision_call_for_store(&store, SYSTEM_PROMPT, "User: log lunch"),
+            || async move {
+                called_flag.store(true, Ordering::SeqCst);
+                Ok("name: Slow Fallback".to_owned())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!called.load(Ordering::SeqCst), "oneshot must be skipped when sidecar succeeds");
+        assert_eq!(out.as_deref(), Some("記帳助手"));
+    }
+
+    #[tokio::test]
+    async fn sidecar_failure_or_unparseable_output_falls_back_to_oneshot() {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_flag = called.clone();
+        let out = resolve_name(async { Some("NONE".to_owned()) }, || async move {
+            called_flag.store(true, Ordering::SeqCst);
+            Ok("name: Reliable Bot".to_owned())
+        })
+        .await
+        .unwrap();
+        assert!(called.load(Ordering::SeqCst));
+        assert_eq!(out.as_deref(), Some("Reliable Bot"));
     }
 }

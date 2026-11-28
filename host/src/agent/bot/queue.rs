@@ -16,9 +16,9 @@ use serde_json::json;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-/// The pause numbers a bot's actor has obeyed. Saving a bot takes the next one under the lock its flag is saved
-/// with (`Hub::update_bot`), but the lock is released before the save's commands are sent: an older pause or resume
-/// can reach the actor after a newer one, and the older one must not act.
+/// The save numbers a bot's actor has obeyed. Every save takes the next one under the lock its config is saved
+/// with (`Hub::update_bot`), but the lock is released before the save's commands are sent: an older save can
+/// reach the actor after a newer one, and the older one's whole snapshot must not act.
 #[derive(Debug, Default)]
 pub(super) struct PauseNumbers(u64);
 
@@ -29,7 +29,8 @@ impl PauseNumbers {
     }
 
     /// Applies `generation`, answering whether it is the newest so far. An older one is dropped before it can
-    /// stop the turn a resume started, or start one a later pause has to stop; one that is not older is recorded.
+    /// install an older snapshot, stop the turn a resume started, or start one a later pause has to stop; one
+    /// that is not older is recorded.
     fn take(&mut self, generation: u64) -> bool {
         if generation < self.0 {
             return false;
@@ -142,9 +143,14 @@ impl Actor {
                     base.cwd.clone_from(&self.base.cwd);
                 }
                 // Saving a bot releases the hub's lock before its commands are sent, so this one can arrive after
-                // a later save's: an older pause or resume must not undo the newer one. `None` (a fallback or lead
-                // change) says nothing about pausing and leaves the flag to the pause commands.
-                if !pause_generation.is_some_and(|generation| self.pauses.take(generation)) {
+                // a later save's: an older save's whole snapshot is dropped, not just its pause flag. Installing it
+                // would revert a newer name, instructions or model. `None` (a fallback or lead change) isn't a save
+                // and says nothing about the pause flag, so it keeps this actor's.
+                if let Some(generation) = pause_generation {
+                    if !self.pauses.take(generation) {
+                        return true;
+                    }
+                } else {
                     base.paused = self.base.paused;
                 }
                 let old = std::mem::replace(&mut self.base, *base);

@@ -125,14 +125,10 @@ impl Hub {
                     );
                 }
             }
-            // A pause change takes the next number here, under the lock: the command that carries it can arrive
-            // after a later save's, and this says which one a bot's actor should keep. A save that leaves the
-            // flag as it was carries the number already reached, which changes nothing.
-            let pause_generation = if row.config.paused == cfg.paused {
-                self.pause_generation.load(Ordering::SeqCst)
-            } else {
-                self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1
-            };
+            // Every save takes the next number here, under the lock, whether it changes the pause flag or not: a
+            // save's command can arrive after a later save's, and every field it carries (name, instructions,
+            // model), not just the pause flag, must not be reverted by the older one.
+            let pause_generation = self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1;
             (row.config, cfg, pause_generation)
         };
         projects::changed(self, &before.projects, &cfg.projects);
@@ -226,11 +222,11 @@ mod tests {
         dir
     }
 
-    /// The save's pause commands carry the number it took under the lock its flag was saved with, so a bot's actor
-    /// can drop the older of two saves whose commands arrive out of order (#582). A save that leaves the flag alone
-    /// carries the number already reached: there is nothing to order.
+    /// Every save takes the number its commands carry under the lock its config was saved with, so a bot's actor
+    /// can drop the older of two saves whose commands arrive out of order (#582): not only the pause flag, but every
+    /// field the older snapshot carries.
     #[tokio::test]
-    async fn a_save_stamps_the_pause_number_its_commands_carry() {
+    async fn a_save_stamps_the_number_its_commands_carry() {
         let dir = dir("save");
         let hub = hub();
         hub.store.save_bot(&bot("b1", "Mika", &dir.to_string_lossy())).expect("saved");
@@ -248,8 +244,8 @@ mod tests {
         assert_eq!(reconfigured(&mut rx), (false, Some(2)), "a resume after it takes the one after");
 
         hub.update_bot(&json!({"id": "b1", "name": "Mika Two"})).expect("renamed");
-        assert_eq!(reconfigured(&mut rx), (false, Some(2)), "a save that leaves the pause alone carries 2");
-        assert_eq!(hub.pause_generation(), 2);
+        assert_eq!(reconfigured(&mut rx), (false, Some(3)), "every save takes its own number, pause or not");
+        assert_eq!(hub.pause_generation(), 3);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

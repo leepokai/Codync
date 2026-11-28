@@ -283,8 +283,8 @@ struct Actor {
     hub: Arc<Hub>,
     /// The bot as the user set it up.
     base: BotConfig,
-    /// The pause numbers this actor has obeyed (see [`PauseNumbers`]: a command carrying an older one arrives
-    /// late, after a newer pause or resume, and must not undo it).
+    /// The save numbers this actor has obeyed (see [`PauseNumbers`]: a command carrying an older one arrives
+    /// late, after a newer save, and its whole snapshot must not be installed).
     pauses: PauseNumbers,
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,

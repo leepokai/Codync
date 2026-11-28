@@ -142,9 +142,9 @@ pub struct Hub {
     runtime: Mutex<HashMap<String, Runtime>>,
     /// Bot → the status its Live Activities last heard (`outside_changed`).
     outside: Mutex<HashMap<String, BotStatus>>,
-    /// One number per change of a bot's pause flag, taken under `emit_lock`. Saving a bot releases the lock before
-    /// its `Reconfigure` and `Paused` commands are sent, so an older pause or resume can reach an actor after a
-    /// newer one: the command carries its number and the actor leaves the flag to the newer one.
+    /// One number per save of a bot, taken under `emit_lock`. Saving a bot releases the lock before its
+    /// `Reconfigure` and `Paused` commands are sent, so an older save can reach an actor after a newer one; it
+    /// carries its number and an actor drops the older snapshot, pause flag and all.
     pause_generation: AtomicU64,
     pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
@@ -289,8 +289,8 @@ impl Hub {
         self.bots.locked().contains_key(bot_id)
     }
 
-    /// The pause number this host has reached: a `Reconfigure` or `Paused` command carries the one its save took,
-    /// so a bot's actor can tell an older pause or resume from a newer one.
+    /// The save number this host has reached: a `Reconfigure` or `Paused` command carries the one its save took,
+    /// so a bot's actor can tell an older save from a newer one.
     pub fn pause_generation(&self) -> u64 {
         self.pause_generation.load(Ordering::SeqCst)
     }

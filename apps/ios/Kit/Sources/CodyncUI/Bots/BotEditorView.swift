@@ -257,6 +257,11 @@ struct BotSettingsForm: View {
             }
 
             CardSection("Activity", fold: "bot.activity") {
+                // Only from a host that has it (its bots say): an older one would take the switch and ignore it.
+                if model.bots.values.contains(where: { $0.paused != nil }) {
+                    SwitchRow("Paused", detail: "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.",
+                              isOn: Binding(get: { draft.paused ?? false }, set: { draft.paused = $0 }))
+                }
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {

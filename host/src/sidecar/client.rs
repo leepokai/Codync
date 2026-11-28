@@ -1,6 +1,7 @@
 //! Native HTTP client and ordered failover orchestration for decision sidecar calls.
 
-use super::breaker::Breaker;
+use super::DecisionCallReport;
+use super::breaker::{Admission, Breaker, Ticket};
 use super::config::SidecarTarget;
 use serde_json::{Value, json};
 use std::sync::LazyLock;
@@ -26,9 +27,39 @@ pub(crate) fn global_breaker() -> &'static Breaker {
     &BREAKER
 }
 
-pub(crate) async fn decision_call(targets: &[SidecarTarget], system: &str, prompt: &str) -> Option<String> {
+struct ProbeGuard<'a> {
+    breaker: &'a Breaker,
+    key: &'a str,
+    ticket: Ticket,
+    armed: bool,
+}
+
+impl<'a> ProbeGuard<'a> {
+    fn new(breaker: &'a Breaker, key: &'a str, ticket: Ticket) -> Self {
+        Self { breaker, key, ticket, armed: ticket.is_probe }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProbeGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.breaker.abort_probe(self.key, self.ticket);
+        }
+    }
+}
+
+enum TargetOutcome {
+    Hit(String),
+    Miss(&'static str),
+}
+
+pub(crate) async fn decision_call(targets: &[SidecarTarget], system: &str, prompt: &str) -> DecisionCallReport {
     if targets.is_empty() {
-        return None;
+        return DecisionCallReport { content: None, targets: 0, attempted: 0, outcome: "unconfigured", ms: 0 };
     }
     decision_call_with(shared_client(), global_breaker(), targets, system, prompt, PER_REQUEST_TIMEOUT, TOTAL_BUDGET)
         .await
@@ -42,114 +73,191 @@ pub(crate) async fn decision_call_with(
     prompt: &str,
     per_request_timeout: Duration,
     total_budget: Duration,
-) -> Option<String> {
+) -> DecisionCallReport {
+    let started = Instant::now();
     if targets.is_empty() {
-        return None;
+        return DecisionCallReport { content: None, targets: 0, attempted: 0, outcome: "unconfigured", ms: 0 };
     }
 
-    let started = Instant::now();
+    let mut attempted = 0usize;
+    let mut last_reason = "cooling_down";
     for (index, target) in targets.iter().enumerate() {
         let remaining = total_budget.saturating_sub(started.elapsed());
         if remaining.is_zero() {
             tracing::warn!(index, targets = targets.len(), "decision sidecar total budget exhausted");
+            last_reason = "budget_exhausted";
             break;
         }
-
         let bkey = target.breaker_key();
         let label = target.redacted_label();
-        if let Some(reason) = breaker.is_cooling_down(&bkey) {
-            tracing::debug!(target = %label, index, reason, "skipping cooling decision sidecar target");
-            continue;
-        }
-
+        let ticket = match breaker.try_acquire(&bkey) {
+            Admission::Admit(ticket) => ticket,
+            Admission::Skip { reason } => {
+                tracing::debug!(target = %label, index, reason, "skipping cooling decision sidecar target");
+                last_reason = reason;
+                continue;
+            }
+        };
+        attempted += 1;
         let req_timeout = per_request_timeout.min(remaining);
-        let endpoint = target.endpoint_url();
-        let payload = json!({
-            "model": target.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 128
-        });
-
-        let mut req = client.post(&endpoint).timeout(req_timeout).json(&payload);
-        if let Some(key) = target.api_key.as_deref().filter(|k| !k.is_empty()) {
-            req = req.bearer_auth(key);
-        }
-
-        let response = match tokio::time::timeout(req_timeout, req.send()).await {
-            Ok(Ok(resp)) => resp,
-            Ok(Err(error)) => {
-                let kind = if error.is_timeout() { "timeout" } else { "transport" };
-                let cooled = breaker.record_transient_failure(&bkey, kind);
-                tracing::warn!(target = %label, index, reason = kind, cooled, "decision sidecar request error");
-                continue;
+        match try_target(client, breaker, target, &bkey, &label, index, ticket, system, prompt, req_timeout).await {
+            TargetOutcome::Hit(content) => {
+                return DecisionCallReport {
+                    content: Some(content),
+                    targets: targets.len(),
+                    attempted,
+                    outcome: "hit",
+                    ms: elapsed_ms(started),
+                };
             }
-            Err(_) => {
-                let cooled = breaker.record_transient_failure(&bkey, "timeout");
-                tracing::warn!(target = %label, index, reason = "timeout", cooled, "decision sidecar request timed out");
-                continue;
-            }
-        };
-
-        let status = response.status();
-        if status.is_success() {
-            let body_left = total_budget.saturating_sub(started.elapsed()).min(req_timeout);
-            let parsed = tokio::time::timeout(body_left, response.json::<Value>()).await;
-            match parsed {
-                Ok(Ok(json)) => {
-                    if let Some(content) = extract_content(&json) {
-                        breaker.record_success(&bkey);
-                        return Some(content);
-                    }
-                    let cooled = breaker.record_transient_failure(&bkey, "empty_response");
-                    tracing::warn!(target = %label, index, cooled, "decision sidecar returned empty choices");
-                }
-                Ok(Err(_)) => {
-                    let cooled = breaker.record_transient_failure(&bkey, "invalid_json");
-                    tracing::warn!(target = %label, index, cooled, "decision sidecar returned invalid JSON");
-                }
-                Err(_) => {
-                    let cooled = breaker.record_transient_failure(&bkey, "timeout");
-                    tracing::warn!(target = %label, index, cooled, "decision sidecar body timed out");
-                }
-            }
-            continue;
+            TargetOutcome::Miss(reason) => last_reason = reason,
         }
-
-        if status == reqwest::StatusCode::PAYMENT_REQUIRED {
-            breaker.record_payment_required(&bkey);
-            tracing::warn!(
-                target = %label,
-                index,
-                status = 402,
-                "decision sidecar target returned 402; entering 30m cooldown"
-            );
-            continue;
-        }
-
-        let reason = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            "http_429"
-        } else if status.is_server_error() {
-            "http_5xx"
-        } else {
-            "http_4xx"
-        };
-        let cooled = breaker.record_transient_failure(&bkey, reason);
-        tracing::warn!(
-            target = %label,
-            index,
-            status = status.as_u16(),
-            reason,
-            cooled,
-            "decision sidecar target returned non-success status"
-        );
     }
 
     tracing::warn!(targets = targets.len(), "all decision sidecar targets failed or cooling; failing open");
-    None
+    DecisionCallReport {
+        content: None,
+        targets: targets.len(),
+        attempted,
+        outcome: last_reason,
+        ms: elapsed_ms(started),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn try_target(
+    client: &reqwest::Client,
+    breaker: &Breaker,
+    target: &SidecarTarget,
+    bkey: &str,
+    label: &str,
+    index: usize,
+    ticket: Ticket,
+    system: &str,
+    prompt: &str,
+    req_timeout: Duration,
+) -> TargetOutcome {
+    let mut guard = ProbeGuard::new(breaker, bkey, ticket);
+    let started = Instant::now();
+    let response = match send_chat_completion(client, target, system, prompt, req_timeout).await {
+        Ok(resp) => resp,
+        Err(reason) => {
+            let cooled = breaker.record_transient_failure(bkey, ticket, reason);
+            guard.disarm();
+            tracing::warn!(target = %label, index, reason, cooled, "decision sidecar request error");
+            return TargetOutcome::Miss(reason);
+        }
+    };
+    let body_budget = req_timeout.saturating_sub(started.elapsed());
+    let outcome = handle_response(breaker, bkey, label, index, ticket, response, body_budget).await;
+    guard.disarm();
+    outcome
+}
+
+async fn send_chat_completion(
+    client: &reqwest::Client,
+    target: &SidecarTarget,
+    system: &str,
+    prompt: &str,
+    req_timeout: Duration,
+) -> Result<reqwest::Response, &'static str> {
+    let endpoint = target.endpoint_url();
+    let payload = json!({
+        "model": target.model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "max_tokens": 128
+    });
+    let mut req = client.post(&endpoint).timeout(req_timeout).json(&payload);
+    if let Some(key) = target.api_key.as_deref().filter(|k| !k.is_empty()) {
+        req = req.bearer_auth(key);
+    }
+    match tokio::time::timeout(req_timeout, req.send()).await {
+        Ok(Ok(resp)) => Ok(resp),
+        Ok(Err(error)) => Err(if error.is_timeout() { "timeout" } else { "transport" }),
+        Err(_) => Err("timeout"),
+    }
+}
+
+async fn handle_response(
+    breaker: &Breaker,
+    bkey: &str,
+    label: &str,
+    index: usize,
+    ticket: Ticket,
+    response: reqwest::Response,
+    body_budget: Duration,
+) -> TargetOutcome {
+    let status = response.status();
+    if status.is_success() {
+        return handle_success_body(breaker, bkey, label, index, ticket, response, body_budget).await;
+    }
+    if status == reqwest::StatusCode::PAYMENT_REQUIRED {
+        breaker.record_payment_required(bkey, ticket);
+        tracing::warn!(target = %label, index, status = 402, "decision sidecar returned 402; entering 30m cooldown");
+        return TargetOutcome::Miss("http_402");
+    }
+    let reason = classify_non_success_status(status);
+    let cooled = breaker.record_transient_failure(bkey, ticket, reason);
+    tracing::warn!(
+        target = %label,
+        index,
+        status = status.as_u16(),
+        reason,
+        cooled,
+        "decision sidecar returned non-success status"
+    );
+    TargetOutcome::Miss(reason)
+}
+
+async fn handle_success_body(
+    breaker: &Breaker,
+    bkey: &str,
+    label: &str,
+    index: usize,
+    ticket: Ticket,
+    response: reqwest::Response,
+    body_budget: Duration,
+) -> TargetOutcome {
+    let parsed = tokio::time::timeout(body_budget, response.json::<Value>()).await;
+    match parsed {
+        Ok(Ok(json)) => {
+            if let Some(content) = extract_content(&json) {
+                breaker.record_success(bkey, ticket);
+                return TargetOutcome::Hit(content);
+            }
+            let cooled = breaker.record_transient_failure(bkey, ticket, "empty_response");
+            tracing::warn!(target = %label, index, cooled, "decision sidecar returned empty choices");
+            TargetOutcome::Miss("empty_response")
+        }
+        Ok(Err(_)) => {
+            let cooled = breaker.record_transient_failure(bkey, ticket, "invalid_json");
+            tracing::warn!(target = %label, index, cooled, "decision sidecar returned invalid JSON");
+            TargetOutcome::Miss("invalid_json")
+        }
+        Err(_) => {
+            let cooled = breaker.record_transient_failure(bkey, ticket, "timeout");
+            tracing::warn!(target = %label, index, cooled, "decision sidecar body timed out");
+            TargetOutcome::Miss("timeout")
+        }
+    }
+}
+
+fn classify_non_success_status(status: reqwest::StatusCode) -> &'static str {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        "http_429"
+    } else if status.is_server_error() {
+        "http_5xx"
+    } else {
+        "http_4xx"
+    }
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 fn extract_content(json: &Value) -> Option<String> {
@@ -230,7 +338,8 @@ mod tests {
         let out =
             decision_call_with(&client, &breaker, &[], "sys", "usr", Duration::from_secs(1), Duration::from_secs(2))
                 .await;
-        assert_eq!(out, None);
+        assert_eq!(out.content, None);
+        assert_eq!(out.outcome, "unconfigured");
     }
 
     #[tokio::test]
@@ -249,7 +358,8 @@ mod tests {
             Duration::from_secs(5),
         )
         .await;
-        assert_eq!(out.as_deref(), Some("name: Release Captain"));
+        assert_eq!(out.content.as_deref(), Some("name: Release Captain"));
+        assert_eq!(out.outcome, "hit");
         assert_eq!(mock.hits.load(Ordering::SeqCst), 1);
         assert_eq!(mock.seen_auth.lock().unwrap().as_slice(), &[Some("Bearer tok-123".to_owned())]);
     }
@@ -277,7 +387,7 @@ mod tests {
             Duration::from_secs(5),
         )
         .await;
-        assert_eq!(first.as_deref(), Some("name: 記帳助手"));
+        assert_eq!(first.content.as_deref(), Some("name: 記帳助手"));
         assert_eq!(primary.hits.load(Ordering::SeqCst), 1);
         assert_eq!(backup.hits.load(Ordering::SeqCst), 1);
 
@@ -292,7 +402,7 @@ mod tests {
             Duration::from_secs(5),
         )
         .await;
-        assert_eq!(second.as_deref(), Some("name: 記帳助手"));
+        assert_eq!(second.content.as_deref(), Some("name: 記帳助手"));
         assert_eq!(primary.hits.load(Ordering::SeqCst), 1, "402 target must not be hit again during cooldown");
         assert_eq!(backup.hits.load(Ordering::SeqCst), 2);
     }
@@ -306,7 +416,6 @@ mod tests {
         let (slow_url, slow) = spawn_mock(StatusCode::OK, ok_body("name: Too Late"), Duration::from_millis(300)).await;
         let client = reqwest::Client::new();
 
-        // 5xx x3 -> cools down on 3rd failure, 4th call makes zero requests.
         let breaker_500 = Breaker::default();
         let t_500 = vec![SidecarTarget { url: bad_url, model: "m".into(), api_key: None }];
         for _ in 0..4 {
@@ -320,13 +429,13 @@ mod tests {
                     Duration::from_secs(1),
                     Duration::from_secs(2)
                 )
-                .await,
+                .await
+                .content,
                 None
             );
         }
         assert_eq!(bad.hits.load(Ordering::SeqCst), 3, "4th call must skip cooled 500 target");
 
-        // 429 x3 -> cools down on 3rd failure, 4th call makes zero requests.
         let breaker_429 = Breaker::default();
         let t_429 = vec![SidecarTarget { url: rate_url, model: "m".into(), api_key: None }];
         for _ in 0..4 {
@@ -340,13 +449,13 @@ mod tests {
                     Duration::from_secs(1),
                     Duration::from_secs(2)
                 )
-                .await,
+                .await
+                .content,
                 None
             );
         }
         assert_eq!(rate.hits.load(Ordering::SeqCst), 3, "4th call must skip cooled 429 target");
 
-        // Timeout x3 -> cools down on 3rd failure, 4th call makes zero requests.
         let breaker_to = Breaker::default();
         let t_to = vec![SidecarTarget { url: slow_url, model: "m".into(), api_key: None }];
         for _ in 0..4 {
@@ -360,7 +469,8 @@ mod tests {
                     Duration::from_millis(50),
                     Duration::from_millis(200)
                 )
-                .await,
+                .await
+                .content,
                 None
             );
         }
@@ -370,7 +480,6 @@ mod tests {
     #[tokio::test]
     async fn all_targets_unavailable_fails_open_with_none() {
         let (u1, m1) = spawn_mock(StatusCode::BAD_GATEWAY, json!({"error": "bad gateway"}), Duration::ZERO).await;
-        // Closed port -> immediate connection refused transport error.
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let closed_addr = listener.local_addr().unwrap();
         drop(listener);
@@ -390,7 +499,44 @@ mod tests {
             Duration::from_secs(2),
         )
         .await;
-        assert_eq!(out, None);
+        assert_eq!(out.content, None);
         assert_eq!(m1.hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn expired_cooldown_permits_only_one_concurrent_probe() {
+        let (url, mock) = spawn_mock(StatusCode::OK, ok_body("name: Recovered"), Duration::from_millis(120)).await;
+        let target = SidecarTarget { url, model: "m".into(), api_key: None };
+        let bkey = target.breaker_key();
+        let breaker = Arc::new(Breaker::default());
+        let past = Instant::now().checked_sub(super::super::breaker::COOLDOWN_PAYMENT_REQUIRED).unwrap();
+        let Admission::Admit(t) = breaker.try_acquire_at(&bkey, past) else { unreachable!() };
+        breaker.record_payment_required_at(&bkey, past, t);
+
+        let client = reqwest::Client::new();
+        let targets = vec![target];
+        let (r1, r2) = tokio::join!(
+            decision_call_with(
+                &client,
+                &breaker,
+                &targets,
+                "sys",
+                "usr",
+                Duration::from_secs(1),
+                Duration::from_secs(2)
+            ),
+            decision_call_with(
+                &client,
+                &breaker,
+                &targets,
+                "sys",
+                "usr",
+                Duration::from_secs(1),
+                Duration::from_secs(2)
+            ),
+        );
+        assert_eq!(mock.hits.load(Ordering::SeqCst), 1, "only one caller may probe half-open target");
+        let hits = [r1.content.is_some(), r2.content.is_some()].into_iter().filter(|ok| *ok).count();
+        assert_eq!(hits, 1);
     }
 }

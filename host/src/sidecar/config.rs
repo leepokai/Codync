@@ -3,6 +3,8 @@
 
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
+use std::fmt::Write as _;
 
 pub const ENV_TARGETS: &str = "CODYNC_DECISION_SIDECAR_TARGETS";
 pub const ENV_URL: &str = "CODYNC_DECISION_SIDECAR_URL";
@@ -31,9 +33,20 @@ impl SidecarTarget {
         if has_base_path { format!("{base}/chat/completions") } else { format!("{base}/v1/chat/completions") }
     }
 
-    /// Stable in-memory key for circuit breaking; never includes `api_key`.
+    /// Stable in-memory key for circuit breaking, distinguishing API-key variants via a
+    /// non-reversible SHA-256 fingerprint without ever exposing raw credentials.
     pub fn breaker_key(&self) -> String {
-        format!("{}#{}", self.endpoint_url(), self.model)
+        let key_fp = match self.api_key.as_deref().filter(|k| !k.is_empty()) {
+            Some(key) => {
+                let hash = Sha256::digest(key.as_bytes());
+                hash[..8].iter().fold(String::with_capacity(16), |mut s, b| {
+                    let _ = write!(s, "{b:02x}");
+                    s
+                })
+            }
+            None => "none".to_owned(),
+        };
+        format!("{}#{}#{key_fp}", self.endpoint_url(), self.model)
     }
 
     /// Safe target identifier for logs; never includes `api_key`.
@@ -194,5 +207,24 @@ mod tests {
         let targets = load_targets_with(None, |k| env.get(k).map(|v| (*v).to_owned()));
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].endpoint_url(), "https://ok.example.com/api/v1/chat/completions");
+    }
+
+    #[test]
+    fn breaker_key_distinguishes_api_key_variants_without_leaking_secrets() {
+        let primary = SidecarTarget {
+            url: "https://api.example.com/v1".into(),
+            model: "fast".into(),
+            api_key: Some("secret-key-primary".into()),
+        };
+        let backup = SidecarTarget {
+            url: "https://api.example.com/v1".into(),
+            model: "fast".into(),
+            api_key: Some("secret-key-backup".into()),
+        };
+        let keyless = SidecarTarget { url: "https://api.example.com/v1".into(), model: "fast".into(), api_key: None };
+        assert_ne!(primary.breaker_key(), backup.breaker_key());
+        assert_ne!(primary.breaker_key(), keyless.breaker_key());
+        assert!(!primary.breaker_key().contains("secret-key"));
+        assert!(!backup.breaker_key().contains("secret-key"));
     }
 }

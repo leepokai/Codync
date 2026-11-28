@@ -98,7 +98,7 @@ impl Hub {
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg, paused_runs, pause_generation) = {
+        let (before, cfg, pause_generation) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut cfg = patch::patched(&row.config, patch)?;
@@ -110,10 +110,21 @@ impl Hub {
             self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
-            // A pause takes the runs it will cancel while it still holds the lock the flag was saved under: a
-            // resume saves under this same lock, so a run admitted after the resume can never be in this set.
-            let paused_runs =
-                if row.config.paused || !cfg.paused { Vec::new() } else { self.routines.active_ids(&cfg.id) };
+            // A pause takes the runs it cancels while it still holds the lock the flag was saved under, and ends them
+            // here, in this same lock: a resume saves under this lock too, so it can neither be saved between the
+            // snapshot and the cancellation, nor capture a run the resume admitted. A pause reaches every worker, not
+            // only the bot's own actor: an active routine run (boxed or delivered by a webhook) is cancelled now.
+            if !row.config.paused && cfg.paused {
+                let runs = self.routines.active_ids(&cfg.id);
+                if !runs.is_empty()
+                    && let Err(error) = self.routines.cancel_ids_for_pause(&self.store, &runs)
+                {
+                    tracing::error!(
+                        bot = %id, error = format!("{error:#}"),
+                        "couldn't cancel a paused bot's routine runs"
+                    );
+                }
+            }
             // A pause change takes the next number here, under the lock: the command that carries it can arrive
             // after a later save's, and this says which one a bot's actor should keep. A save that leaves the
             // flag as it was carries the number already reached, which changes nothing.
@@ -122,15 +133,10 @@ impl Hub {
             } else {
                 self.pause_generation.fetch_add(1, Ordering::SeqCst) + 1
             };
-            (row.config, cfg, paused_runs, pause_generation)
+            (row.config, cfg, pause_generation)
         };
         projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
-        if !paused_runs.is_empty()
-            && let Err(error) = self.routines.cancel_ids_for_pause(&self.store, &paused_runs)
-        {
-            tracing::error!(bot = %id, error = format!("{error:#}"), "couldn't cancel a paused bot's routine runs");
-        }
         if !cfg.is_group() {
             let pause_changed = before.paused != cfg.paused;
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {

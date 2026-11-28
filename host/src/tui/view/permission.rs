@@ -12,9 +12,17 @@ use super::time::clock;
 use super::transcript::Built;
 use crate::chat::decision::{Answers, Status};
 
-/// An answer's label: Codync's own words for the usual kinds, in the app's language; an agent's own option keeps
-/// its name, as on the other apps.
-fn option_label(name: &str, kind: &str) -> String {
+fn has_duplicate_kind(opts: &[(String, String, String)], kind: &str) -> bool {
+    opts.iter().filter(|(_, _, k)| k == kind).count() > 1
+}
+
+/// An answer's label: Codync's own words when each kind appears once, or the agent's own option name when multiple
+/// options share a kind so their scopes stay distinguishable.
+fn option_label(name: &str, kind: &str, duplicate_kind: bool) -> String {
+    let trimmed = name.trim();
+    if duplicate_kind && !trimmed.is_empty() {
+        return trimmed.to_owned();
+    }
     let label = match kind {
         "allow_once" => "Allow once",
         "allow_always" => "Always allow",
@@ -25,8 +33,12 @@ fn option_label(name: &str, kind: &str) -> String {
     tr(label).into_owned()
 }
 
-/// What a decided card says was answered, in the outcome words the other apps use; an agent's own option keeps its name.
-fn outcome_label(name: &str, kind: &str) -> String {
+/// What a decided card says was answered; keeps the agent's own option name when multiple options share the chosen kind.
+fn outcome_label(name: &str, kind: &str, duplicate_kind: bool) -> String {
+    let trimmed = name.trim();
+    if duplicate_kind && !trimmed.is_empty() {
+        return trimmed.to_owned();
+    }
     let label = match kind {
         "allow_once" => "Allowed once",
         "allow_always" => "Always allowed",
@@ -238,7 +250,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         let style = if answering.is_some_and(|a| a != id) { t.dim.patch(t.btn) } else { t.text.patch(t.btn) };
         let content = [
             Span::styled(key, style.add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{} ", option_label(name, kind)), style),
+            Span::styled(format!("{} ", option_label(name, kind, has_duplicate_kind(&opts, kind))), style),
         ];
         for line in md::wrap(&content, inner, &[], &[]) {
             let li = out.lines.len();
@@ -254,12 +266,15 @@ pub(super) fn decided_line(out: &mut Built, e: &Entry) {
     let t = theme();
     let title = e.data["title"].as_str().unwrap_or("Use a tool");
     let sel = e.data["selected"].as_str();
-    let chosen = sel.and_then(|s| e.options().into_iter().find(|o| o.0 == s));
+    let opts = e.options();
+    let chosen = sel.and_then(|s| opts.iter().find(|o| o.0 == s));
     let (g, gs, what) = match (e.data["status"].as_str(), chosen) {
         (Some("answered"), Some((_, name, kind))) if kind.starts_with("allow") => {
-            ("✓", t.green, outcome_label(&name, &kind))
+            ("✓", t.green, outcome_label(name, kind, has_duplicate_kind(&opts, kind)))
         }
-        (Some("answered"), Some((_, name, kind))) => ("×", t.red, outcome_label(&name, &kind)),
+        (Some("answered"), Some((_, name, kind))) => {
+            ("×", t.red, outcome_label(name, kind, has_duplicate_kind(&opts, kind)))
+        }
         (Some("expired"), _) => ("·", t.dim, tr("Expired — the agent moved on").into_owned()),
         _ => ("·", t.dim, tr("Cancelled").into_owned()),
     };
@@ -331,9 +346,43 @@ mod tests {
 
     #[test]
     fn labels_keep_an_agents_own_option_name() {
-        assert_eq!(option_label("Custom", "other"), "Custom");
-        assert_eq!(outcome_label("Custom", "other"), "Custom");
-        assert_eq!(option_label("x", "reject_once"), tr("Deny"));
-        assert_eq!(outcome_label("x", "reject_once"), tr("Denied"));
+        assert_eq!(option_label("Custom", "other", false), "Custom");
+        assert_eq!(outcome_label("Custom", "other", false), "Custom");
+        assert_eq!(option_label("x", "reject_once", false), tr("Deny"));
+        assert_eq!(outcome_label("x", "reject_once", false), tr("Denied"));
+        assert_eq!(option_label("Allow for this session", "allow_always", true), "Allow for this session");
+        assert_eq!(outcome_label("Allow for this session", "allow_always", true), "Allow for this session");
+        assert_eq!(option_label("   ", "allow_always", true), tr("Always allow"));
+    }
+
+    #[tokio::test]
+    async fn duplicate_allow_always_options_keep_distinct_agent_names() {
+        use serde_json::json;
+        let app = crate::tui::app::test_app();
+        let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
+        let options = json!([
+            {"optionId": "once", "name": "Allow", "kind": "allow_once"},
+            {"optionId": "session", "name": "Allow for this session", "kind": "allow_always"},
+            {"optionId": "always", "name": "Allow for all sessions", "kind": "allow_always"},
+            {"optionId": "deny", "name": "Reject", "kind": "reject_once"}
+        ]);
+        let pending = json!({"id": "p", "botId": "a", "seq": 1, "kind": "permission",
+            "data": {"status": "pending", "title": "mcp.chat.send_message", "options": options}});
+        let (_, e) = Entry::parse(&pending).expect("an entry parses");
+        let mut out = Built::default();
+        permission_card(&mut out, &app, &e, &bot, 80);
+        let text = out.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("Allow for this session"), "{text}");
+        assert!(text.contains("Allow for all sessions"), "{text}");
+        assert!(text.contains(&*tr("Allow once")), "{text}");
+        assert!(text.contains(&*tr("Deny")), "{text}");
+
+        let answered = json!({"id": "p", "botId": "a", "seq": 1, "kind": "permission",
+            "data": {"status": "answered", "selected": "session", "title": "mcp.chat.send_message", "options": options}});
+        let (_, decided_entry) = Entry::parse(&answered).expect("an entry parses");
+        let mut decided = Built::default();
+        decided_line(&mut decided, &decided_entry);
+        let decided_text = decided.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+        assert!(decided_text.contains("Allow for this session"), "{decided_text}");
     }
 }

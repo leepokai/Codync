@@ -128,13 +128,19 @@ struct PermissionCard: View {
         return (d.options ?? []).sorted { (rank[$0.kind] ?? 9) < (rank[$1.kind] ?? 9) }
     }
 
-    private func label(_ o: PermissionOption) -> String {
+    private static func hasDuplicateKind(_ kind: String, in options: [PermissionOption]) -> Bool {
+        options.filter { $0.kind == kind }.count > 1
+    }
+
+    static func optionLabel(_ o: PermissionOption, in options: [PermissionOption]) -> String {
+        let name = o.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hasDuplicateKind(o.kind, in: options), !name.isEmpty { return name }
         switch o.kind {
-        case "allow_once": L10n.tr("Allow once")
-        case "allow_always": L10n.tr("Always allow")
-        case "reject_once": L10n.tr("Deny")
-        case "reject_always": L10n.tr("Never")
-        default: o.name
+        case "allow_once": return L10n.tr("Allow once")
+        case "allow_always": return L10n.tr("Always allow")
+        case "reject_once": return L10n.tr("Deny")
+        case "reject_always": return L10n.tr("Never")
+        default: return o.name
         }
     }
 
@@ -147,7 +153,7 @@ struct PermissionCard: View {
                         RowNumber {
                             if answering == o.optionId { Spinner(size: 12) } else { Text(verbatim: "\(i + 1)") }
                         }
-                        Text(label(o)).font(.body).foregroundStyle(Palette.text)
+                        Text(Self.optionLabel(o, in: options)).font(.body).foregroundStyle(Palette.text)
                         Spacer(minLength: 0)
                     }
                     .decisionRow()
@@ -163,7 +169,12 @@ struct PermissionCard: View {
     static func outcome(_ d: EntryData) -> String {
         switch d.status {
         case "answered":
-            let chosen = d.options?.first { $0.optionId == d.selected }
+            let options = d.options ?? []
+            let chosen = options.first { $0.optionId == d.selected }
+            if let chosen {
+                let name = chosen.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if hasDuplicateKind(chosen.kind, in: options), !name.isEmpty { return name }
+            }
             return switch chosen?.kind {
             case "allow_once": L10n.tr("Allowed once")
             case "allow_always": L10n.tr("Always allowed")

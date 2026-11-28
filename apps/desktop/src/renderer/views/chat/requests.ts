@@ -1,4 +1,64 @@
-import type { Entry } from '@shared/models'
+import type { Entry, PermissionOption } from '@shared/models'
+
+const hasDuplicateKind = (kind: string, options?: PermissionOption[]) =>
+  (options?.filter((o) => o.kind === kind).length ?? 0) > 1
+
+const trimmedName = (name?: string | null) => (typeof name === 'string' ? name.trim() : '')
+
+/**
+ * Label for a permission option: Codync's own words when each kind appears once, or the agent's own option name when
+ * multiple options share a kind (e.g. Codex MCP sending two `allow_always` scopes).
+ */
+export function permissionOptionLabel(o: PermissionOption, options: PermissionOption[] | undefined, tr: (s: string) => string): string {
+  const name = trimmedName(o.name)
+  if (hasDuplicateKind(o.kind, options) && name) return name
+  switch (o.kind) {
+    case 'allow_once':
+      return tr('Allow once')
+    case 'allow_always':
+      return tr('Always allow')
+    case 'reject_once':
+      return tr('Deny')
+    case 'reject_always':
+      return tr('Never')
+    default:
+      return typeof o.name === 'string' ? o.name : ''
+  }
+}
+
+/** Label for a settled permission card; keeps the agent's own name when multiple options share the chosen kind. */
+export function permissionOutcomeLabel(
+  status: string | undefined,
+  selected: string | undefined,
+  options: PermissionOption[] | undefined,
+  tr: (s: string) => string,
+): string {
+  switch (status) {
+    case 'answered': {
+      const chosen = options?.find((o) => o.optionId === selected)
+      const chosenName = trimmedName(chosen?.name)
+      if (chosen && hasDuplicateKind(chosen.kind, options) && chosenName) {
+        return chosenName
+      }
+      switch (chosen?.kind) {
+        case 'allow_once':
+          return tr('Allowed once')
+        case 'allow_always':
+          return tr('Always allowed')
+        case 'reject_once':
+          return tr('Denied')
+        case 'reject_always':
+          return tr('Never allowed')
+        default:
+          return (typeof chosen?.name === 'string' ? chosen.name : null) ?? tr('Answered')
+      }
+    }
+    case 'cancelled':
+      return tr('Cancelled')
+    default:
+      return tr('Expired')
+  }
+}
 
 /**
  * How a request reads in a line: an MCP tool's call ("memory-read_memory: read_memory") as its tool's name in words
@@ -14,7 +74,13 @@ export function requestName(title: string): { name: string; source: string | nul
 /** What an answered (or cancelled, or expired) approval ended in; null while it waits or for any other entry. */
 export function settledAs(e: Entry): string | null {
   if (e.kind !== 'permission' || !e.data.status || e.data.status === 'pending') return null
-  return `${e.data.status}:${e.data.options?.find((o) => o.optionId === e.data.selected)?.kind ?? ''}`
+  const options = e.data.options
+  const chosen = options?.find((o) => o.optionId === e.data.selected)
+  const chosenName = trimmedName(chosen?.name)
+  if (chosen && hasDuplicateKind(chosen.kind, options) && chosenName) {
+    return `${e.data.status}:${chosen.kind}:${chosenName}`
+  }
+  return `${e.data.status}:${chosen?.kind ?? ''}`
 }
 
 /**

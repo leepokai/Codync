@@ -127,7 +127,6 @@ internal val Entry.takesOwnWords: Boolean
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for ((index, option) in options.withIndex()) {
                     val id = option.text("optionId") ?: continue
-                    val kind = option.text("kind").orEmpty()
                     val waiting = answering && chosen != null
                     val (source, pressed) = rememberPress()
                     Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedRectangle(12.dp))
@@ -140,10 +139,7 @@ internal val Entry.takesOwnWords: Boolean
                             if (answering && chosen == id) Spinner(12.dp)
                             else Text("${index + 1}", style = Type.caption.semibold.copy(fontFeatureSettings = "tnum"), color = Palette.secondary)
                         }
-                        Text(when (kind) {
-                            "allow_once" -> tr("Allow once"); "allow_always" -> tr("Always allow"); "reject_once" -> tr("Deny"); "reject_always" -> tr("Never")
-                            else -> option.text("name").orEmpty()
-                        }, Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        Text(permissionOptionLabel(option, options, translator()), Modifier.weight(1f), style = Type.body, color = Palette.text)
                     }
                 }
             }
@@ -151,18 +147,37 @@ internal val Entry.takesOwnWords: Boolean
     }
 }
 
-/** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */
-@Composable private fun outcome(d: JsonObject): String = when (d.text("status")) {
+private fun hasDuplicateKind(kind: String, options: List<JsonObject>): Boolean =
+    options.count { it.text("kind").orEmpty() == kind } > 1
+
+internal fun permissionOptionLabel(option: JsonObject, options: List<JsonObject>, translate: (String) -> String): String {
+    val kind = option.text("kind").orEmpty()
+    val name = option.text("name").orEmpty().trim()
+    if (hasDuplicateKind(kind, options) && name.isNotEmpty()) return name
+    return when (kind) {
+        "allow_once" -> translate("Allow once"); "allow_always" -> translate("Always allow"); "reject_once" -> translate("Deny"); "reject_always" -> translate("Never")
+        else -> option.text("name").orEmpty()
+    }
+}
+
+internal fun permissionOutcomeLabel(d: JsonObject, translate: (String) -> String): String = when (d.text("status")) {
     "answered" -> {
-        val chosen = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == d.text("selected") }
-        when (chosen?.text("kind")) {
-            "allow_once" -> tr("Allowed once"); "allow_always" -> tr("Always allowed"); "reject_once" -> tr("Denied"); "reject_always" -> tr("Never allowed")
-            else -> chosen?.text("name") ?: tr("Answered")
+        val options = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        val chosen = options.firstOrNull { it.text("optionId") == d.text("selected") }
+        val kind = chosen?.text("kind").orEmpty()
+        val name = chosen?.text("name").orEmpty().trim()
+        if (chosen != null && hasDuplicateKind(kind, options) && name.isNotEmpty()) name
+        else when (chosen?.text("kind")) {
+            "allow_once" -> translate("Allowed once"); "allow_always" -> translate("Always allowed"); "reject_once" -> translate("Denied"); "reject_always" -> translate("Never allowed")
+            else -> chosen?.text("name") ?: translate("Answered")
         }
     }
-    "cancelled" -> tr("Cancelled")
-    else -> tr("Expired — the agent moved on")
+    "cancelled" -> translate("Cancelled")
+    else -> translate("Expired — the agent moved on")
 }
+
+/** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */
+@Composable private fun outcome(d: JsonObject): String = permissionOutcomeLabel(d, translator())
 
 /** One file's change: its name and line counts over the colored patch. */
 @Composable internal fun DiffView(diff: JsonObject) {

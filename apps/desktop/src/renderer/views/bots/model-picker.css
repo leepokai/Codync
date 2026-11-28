@@ -2,6 +2,9 @@
    of speed and permissions. Columns part on hairlines; the rail and the footer take a quiet fill. */
 .model-picker {
   width: 380px;
+  max-height: var(--anchored-room);
+  display: flex;
+  flex-direction: column;
   padding: 0 !important;
   overflow: hidden;
 }
@@ -26,10 +29,12 @@
   gap: 8px;
   padding: 4px 12px 12px;
 }
-/* As tall as what it lists, up to a fixed height: a short list leaves no empty column. */
+/* As tall as what it lists, up to a fixed height: a short list leaves no empty column. In a short window the columns
+   give up height to the footer (the rail and the list scroll), so the panel stays inside it. */
 .model-picker-columns {
   display: flex;
-  max-height: min(400px, calc(100vh - 140px));
+  min-height: 0;
+  max-height: 400px;
 }
 .model-picker-rail {
   flex: none;
@@ -245,6 +250,7 @@
   background: var(--field);
 }
 .model-picker-footer {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;

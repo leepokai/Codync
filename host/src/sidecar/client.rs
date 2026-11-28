@@ -1,8 +1,8 @@
 //! Native HTTP client and ordered failover orchestration for decision sidecar calls.
 
-use super::DecisionCallReport;
 use super::breaker::{Admission, Breaker, Ticket};
 use super::config::SidecarTarget;
+use super::{DecisionCallOutcome, DecisionCallReport};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -54,12 +54,18 @@ impl Drop for ProbeGuard<'_> {
 
 enum TargetOutcome {
     Hit(String),
-    Miss(&'static str),
+    Miss(DecisionCallOutcome),
 }
 
 pub(crate) async fn decision_call(targets: &[SidecarTarget], system: &str, prompt: &str) -> DecisionCallReport {
     if targets.is_empty() {
-        return DecisionCallReport { content: None, targets: 0, attempted: 0, outcome: "unconfigured", ms: 0 };
+        return DecisionCallReport {
+            content: None,
+            targets: 0,
+            attempted: 0,
+            outcome: DecisionCallOutcome::Unconfigured,
+            ms: 0,
+        };
     }
     decision_call_with(shared_client(), global_breaker(), targets, system, prompt, PER_REQUEST_TIMEOUT, TOTAL_BUDGET)
         .await
@@ -76,16 +82,22 @@ pub(crate) async fn decision_call_with(
 ) -> DecisionCallReport {
     let started = Instant::now();
     if targets.is_empty() {
-        return DecisionCallReport { content: None, targets: 0, attempted: 0, outcome: "unconfigured", ms: 0 };
+        return DecisionCallReport {
+            content: None,
+            targets: 0,
+            attempted: 0,
+            outcome: DecisionCallOutcome::Unconfigured,
+            ms: 0,
+        };
     }
 
     let mut attempted = 0usize;
-    let mut last_reason = "cooling_down";
+    let mut last_reason = DecisionCallOutcome::CoolingDown;
     for (index, target) in targets.iter().enumerate() {
         let remaining = total_budget.saturating_sub(started.elapsed());
         if remaining.is_zero() {
             tracing::warn!(index, targets = targets.len(), "decision sidecar total budget exhausted");
-            last_reason = "budget_exhausted";
+            last_reason = DecisionCallOutcome::BudgetExhausted;
             break;
         }
         let bkey = target.breaker_key();
@@ -93,7 +105,7 @@ pub(crate) async fn decision_call_with(
         let ticket = match breaker.try_acquire(&bkey) {
             Admission::Admit(ticket) => ticket,
             Admission::Skip { reason } => {
-                tracing::debug!(target = %label, index, reason, "skipping cooling decision sidecar target");
+                tracing::debug!(target = %label, index, reason = reason.as_str(), "skipping cooling decision sidecar target");
                 last_reason = reason;
                 continue;
             }
@@ -106,7 +118,7 @@ pub(crate) async fn decision_call_with(
                     content: Some(content),
                     targets: targets.len(),
                     attempted,
-                    outcome: "hit",
+                    outcome: DecisionCallOutcome::Hit,
                     ms: elapsed_ms(started),
                 };
             }
@@ -144,7 +156,7 @@ async fn try_target(
         Err(reason) => {
             let cooled = breaker.record_transient_failure(bkey, ticket, reason);
             guard.disarm();
-            tracing::warn!(target = %label, index, reason, cooled, "decision sidecar request error");
+            tracing::warn!(target = %label, index, reason = reason.as_str(), cooled, "decision sidecar request error");
             return TargetOutcome::Miss(reason);
         }
     };
@@ -160,7 +172,7 @@ async fn send_chat_completion(
     system: &str,
     prompt: &str,
     req_timeout: Duration,
-) -> Result<reqwest::Response, &'static str> {
+) -> Result<reqwest::Response, DecisionCallOutcome> {
     let endpoint = target.endpoint_url();
     let payload = json!({
         "model": target.model,
@@ -177,8 +189,10 @@ async fn send_chat_completion(
     }
     match tokio::time::timeout(req_timeout, req.send()).await {
         Ok(Ok(resp)) => Ok(resp),
-        Ok(Err(error)) => Err(if error.is_timeout() { "timeout" } else { "transport" }),
-        Err(_) => Err("timeout"),
+        Ok(Err(error)) => {
+            Err(if error.is_timeout() { DecisionCallOutcome::Timeout } else { DecisionCallOutcome::Transport })
+        }
+        Err(_) => Err(DecisionCallOutcome::Timeout),
     }
 }
 
@@ -198,7 +212,7 @@ async fn handle_response(
     if status == reqwest::StatusCode::PAYMENT_REQUIRED {
         breaker.record_payment_required(bkey, ticket);
         tracing::warn!(target = %label, index, status = 402, "decision sidecar returned 402; entering 30m cooldown");
-        return TargetOutcome::Miss("http_402");
+        return TargetOutcome::Miss(DecisionCallOutcome::Http402);
     }
     let reason = classify_non_success_status(status);
     let cooled = breaker.record_transient_failure(bkey, ticket, reason);
@@ -206,7 +220,7 @@ async fn handle_response(
         target = %label,
         index,
         status = status.as_u16(),
-        reason,
+        reason = reason.as_str(),
         cooled,
         "decision sidecar returned non-success status"
     );
@@ -229,30 +243,30 @@ async fn handle_success_body(
                 breaker.record_success(bkey, ticket);
                 return TargetOutcome::Hit(content);
             }
-            let cooled = breaker.record_transient_failure(bkey, ticket, "empty_response");
+            let cooled = breaker.record_transient_failure(bkey, ticket, DecisionCallOutcome::EmptyResponse);
             tracing::warn!(target = %label, index, cooled, "decision sidecar returned empty choices");
-            TargetOutcome::Miss("empty_response")
+            TargetOutcome::Miss(DecisionCallOutcome::EmptyResponse)
         }
         Ok(Err(_)) => {
-            let cooled = breaker.record_transient_failure(bkey, ticket, "invalid_json");
+            let cooled = breaker.record_transient_failure(bkey, ticket, DecisionCallOutcome::InvalidJson);
             tracing::warn!(target = %label, index, cooled, "decision sidecar returned invalid JSON");
-            TargetOutcome::Miss("invalid_json")
+            TargetOutcome::Miss(DecisionCallOutcome::InvalidJson)
         }
         Err(_) => {
-            let cooled = breaker.record_transient_failure(bkey, ticket, "timeout");
+            let cooled = breaker.record_transient_failure(bkey, ticket, DecisionCallOutcome::Timeout);
             tracing::warn!(target = %label, index, cooled, "decision sidecar body timed out");
-            TargetOutcome::Miss("timeout")
+            TargetOutcome::Miss(DecisionCallOutcome::Timeout)
         }
     }
 }
 
-fn classify_non_success_status(status: reqwest::StatusCode) -> &'static str {
+fn classify_non_success_status(status: reqwest::StatusCode) -> DecisionCallOutcome {
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        "http_429"
+        DecisionCallOutcome::Http429
     } else if status.is_server_error() {
-        "http_5xx"
+        DecisionCallOutcome::Http5xx
     } else {
-        "http_4xx"
+        DecisionCallOutcome::Http4xx
     }
 }
 
@@ -339,7 +353,7 @@ mod tests {
             decision_call_with(&client, &breaker, &[], "sys", "usr", Duration::from_secs(1), Duration::from_secs(2))
                 .await;
         assert_eq!(out.content, None);
-        assert_eq!(out.outcome, "unconfigured");
+        assert_eq!(out.outcome, DecisionCallOutcome::Unconfigured);
     }
 
     #[tokio::test]
@@ -359,7 +373,7 @@ mod tests {
         )
         .await;
         assert_eq!(out.content.as_deref(), Some("name: Release Captain"));
-        assert_eq!(out.outcome, "hit");
+        assert_eq!(out.outcome, DecisionCallOutcome::Hit);
         assert_eq!(mock.hits.load(Ordering::SeqCst), 1);
         assert_eq!(mock.seen_auth.lock().unwrap().as_slice(), &[Some("Bearer tok-123".to_owned())]);
     }

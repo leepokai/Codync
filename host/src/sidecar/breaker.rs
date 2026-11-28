@@ -1,6 +1,7 @@
 //! Pure in-memory circuit breaker and cooldown tracking per decision sidecar target.
 //! Never persists state to disk; resets cleanly on host restart.
 
+use super::DecisionCallOutcome;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,7 +23,7 @@ pub(crate) struct Ticket {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Admission {
     Admit(Ticket),
-    Skip { reason: &'static str },
+    Skip { reason: DecisionCallOutcome },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -30,7 +31,7 @@ struct TargetState {
     epoch: u64,
     consecutive_failures: u32,
     cooldown_until: Option<Instant>,
-    reason: Option<&'static str>,
+    reason: Option<DecisionCallOutcome>,
     probe_in_flight: bool,
 }
 
@@ -62,8 +63,10 @@ impl Breaker {
             return Admission::Admit(Ticket { epoch: 0, is_probe: false });
         };
         match state.cooldown_until {
-            Some(until) if now < until => Admission::Skip { reason: state.reason.unwrap_or("cooling_down") },
-            Some(_) if state.probe_in_flight => Admission::Skip { reason: "probe_in_flight" },
+            Some(until) if now < until => {
+                Admission::Skip { reason: state.reason.unwrap_or(DecisionCallOutcome::CoolingDown) }
+            }
+            Some(_) if state.probe_in_flight => Admission::Skip { reason: DecisionCallOutcome::ProbeInFlight },
             Some(_) => {
                 state.probe_in_flight = true;
                 state.epoch = self.alloc_epoch();
@@ -112,22 +115,23 @@ impl Breaker {
         let mut guard = self.states.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = guard.entry(key.to_owned()).or_default();
         if state.epoch != ticket.epoch {
-            let upgrade_transient =
-                !ticket.is_probe && state.cooldown_until.is_some() && state.reason != Some("http_402");
+            let upgrade_transient = !ticket.is_probe
+                && state.cooldown_until.is_some()
+                && state.reason != Some(DecisionCallOutcome::Http402);
             if !upgrade_transient {
                 return;
             }
         }
         state.consecutive_failures = FAILURE_THRESHOLD;
         state.cooldown_until = Some(now + COOLDOWN_PAYMENT_REQUIRED);
-        state.reason = Some("http_402");
+        state.reason = Some(DecisionCallOutcome::Http402);
         state.probe_in_flight = false;
         state.epoch = self.alloc_epoch();
     }
 
     /// Increments the consecutive transient failure counter and enters cooldown once
     /// [`FAILURE_THRESHOLD`] is reached. Returns `true` when cooldown becomes active.
-    pub(crate) fn record_transient_failure(&self, key: &str, ticket: Ticket, reason: &'static str) -> bool {
+    pub(crate) fn record_transient_failure(&self, key: &str, ticket: Ticket, reason: DecisionCallOutcome) -> bool {
         self.record_transient_failure_at(key, Instant::now(), ticket, reason)
     }
 
@@ -136,7 +140,7 @@ impl Breaker {
         key: &str,
         now: Instant,
         ticket: Ticket,
-        reason: &'static str,
+        reason: DecisionCallOutcome,
     ) -> bool {
         let mut guard = self.states.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = guard.entry(key.to_owned()).or_default();
@@ -168,10 +172,13 @@ mod tests {
         let Admission::Admit(ticket) = breaker.try_acquire_at("t1", t0) else { unreachable!() };
 
         breaker.record_payment_required_at("t1", t0, ticket);
-        assert_eq!(breaker.try_acquire_at("t1", t0 + Duration::from_secs(60)), Admission::Skip { reason: "http_402" });
+        assert_eq!(
+            breaker.try_acquire_at("t1", t0 + Duration::from_secs(60)),
+            Admission::Skip { reason: DecisionCallOutcome::Http402 }
+        );
         assert_eq!(
             breaker.try_acquire_at("t1", (t0 + COOLDOWN_PAYMENT_REQUIRED).checked_sub(Duration::from_secs(1)).unwrap()),
-            Admission::Skip { reason: "http_402" }
+            Admission::Skip { reason: DecisionCallOutcome::Http402 }
         );
         // Once cooldown expires, one probe attempt is admitted and concurrent callers wait.
         let Admission::Admit(probe) = breaker.try_acquire_at("t1", t0 + COOLDOWN_PAYMENT_REQUIRED) else {
@@ -180,7 +187,7 @@ mod tests {
         assert!(probe.is_probe);
         assert_eq!(
             breaker.try_acquire_at("t1", t0 + COOLDOWN_PAYMENT_REQUIRED),
-            Admission::Skip { reason: "probe_in_flight" }
+            Admission::Skip { reason: DecisionCallOutcome::ProbeInFlight }
         );
 
         // Success clears failure history so a single future transient fault won't immediately cool down.
@@ -189,29 +196,37 @@ mod tests {
             unreachable!()
         };
         assert!(!next.is_probe);
-        assert!(!breaker.record_transient_failure_at("t1", t0 + COOLDOWN_PAYMENT_REQUIRED, next, "http_500"));
+        assert!(!breaker.record_transient_failure_at(
+            "t1",
+            t0 + COOLDOWN_PAYMENT_REQUIRED,
+            next,
+            DecisionCallOutcome::Http5xx
+        ));
     }
 
     #[test]
     fn three_consecutive_transient_failures_cool_down_and_failed_probe_reopens() {
         let breaker = Breaker::default();
         let t0 = Instant::now();
-        for reason in ["http_500", "http_429"] {
+        for reason in [DecisionCallOutcome::Http5xx, DecisionCallOutcome::Http429] {
             let Admission::Admit(t) = breaker.try_acquire_at("t2", t0) else { unreachable!() };
             assert!(!breaker.record_transient_failure_at("t2", t0, t, reason));
         }
         let Admission::Admit(t3) = breaker.try_acquire_at("t2", t0) else { unreachable!() };
-        assert!(breaker.record_transient_failure_at("t2", t0, t3, "timeout"));
-        assert_eq!(breaker.try_acquire_at("t2", t0 + Duration::from_secs(30)), Admission::Skip { reason: "timeout" });
+        assert!(breaker.record_transient_failure_at("t2", t0, t3, DecisionCallOutcome::Timeout));
+        assert_eq!(
+            breaker.try_acquire_at("t2", t0 + Duration::from_secs(30)),
+            Admission::Skip { reason: DecisionCallOutcome::Timeout }
+        );
 
         let after_expiry = t0 + COOLDOWN_TRANSIENT;
         let Admission::Admit(probe) = breaker.try_acquire_at("t2", after_expiry) else { unreachable!() };
         assert!(probe.is_probe);
         // Failed probe immediately re-enters cooldown.
-        assert!(breaker.record_transient_failure_at("t2", after_expiry, probe, "http_503"));
+        assert!(breaker.record_transient_failure_at("t2", after_expiry, probe, DecisionCallOutcome::Http5xx));
         assert_eq!(
             breaker.try_acquire_at("t2", after_expiry + Duration::from_secs(1)),
-            Admission::Skip { reason: "http_503" }
+            Admission::Skip { reason: DecisionCallOutcome::Http5xx }
         );
     }
 
@@ -224,18 +239,23 @@ mod tests {
 
         breaker.record_payment_required_at("t3", t0, fast_402);
         // Late 500 or late 200 from slow_req must not downgrade or clear the 30-minute 402 cooldown.
-        assert!(!breaker.record_transient_failure_at("t3", t0 + Duration::from_secs(1), slow_req, "http_500"));
+        assert!(!breaker.record_transient_failure_at(
+            "t3",
+            t0 + Duration::from_secs(1),
+            slow_req,
+            DecisionCallOutcome::Http5xx
+        ));
         breaker.record_success("t3", slow_req);
         assert_eq!(
             breaker.try_acquire_at("t3", t0 + COOLDOWN_TRANSIENT + Duration::from_secs(1)),
-            Admission::Skip { reason: "http_402" }
+            Admission::Skip { reason: DecisionCallOutcome::Http402 }
         );
 
         // Probe succeeds; any pre-cooldown stale reply still cannot poison the recovered state.
         let t_exp = t0 + COOLDOWN_PAYMENT_REQUIRED;
         let Admission::Admit(probe) = breaker.try_acquire_at("t3", t_exp) else { unreachable!() };
         breaker.record_success("t3", probe);
-        assert!(!breaker.record_transient_failure_at("t3", t_exp, slow_req, "http_500"));
+        assert!(!breaker.record_transient_failure_at("t3", t_exp, slow_req, DecisionCallOutcome::Http5xx));
         assert!(matches!(breaker.try_acquire_at("t3", t_exp), Admission::Admit(t) if !t.is_probe));
     }
 
@@ -248,7 +268,7 @@ mod tests {
 
         let t_exp = t0 + COOLDOWN_PAYMENT_REQUIRED;
         let Admission::Admit(probe) = breaker.try_acquire_at("t4", t_exp) else { unreachable!() };
-        assert_eq!(breaker.try_acquire_at("t4", t_exp), Admission::Skip { reason: "probe_in_flight" });
+        assert_eq!(breaker.try_acquire_at("t4", t_exp), Admission::Skip { reason: DecisionCallOutcome::ProbeInFlight });
 
         breaker.abort_probe("t4", probe);
         assert!(matches!(breaker.try_acquire_at("t4", t_exp), Admission::Admit(p) if p.is_probe));

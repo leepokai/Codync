@@ -7,7 +7,7 @@
 
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
-use crate::sidecar::DecisionCallReport;
+use crate::sidecar::{DecisionCallOutcome, DecisionCallReport};
 use crate::store::Store;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -106,13 +106,19 @@ where
             if let Some(hub) = hub
                 && report.targets > 0
             {
-                capture_sidecar_called(hub, "hit", report.ms, report.targets, report.attempted);
+                capture_sidecar_called(
+                    hub,
+                    DecisionCallOutcome::Hit.as_str(),
+                    report.ms,
+                    report.targets,
+                    report.attempted,
+                );
             }
             return Ok(Some(name));
         }
         "unparseable"
     } else {
-        report.outcome
+        report.outcome.as_str()
     };
 
     if let Some(hub) = hub
@@ -291,7 +297,7 @@ mod tests {
                     content: Some("name: Fast Bot".to_owned()),
                     targets: 1,
                     attempted: 1,
-                    outcome: "hit",
+                    outcome: DecisionCallOutcome::Hit,
                     ms: 12,
                 }
             },
@@ -303,7 +309,15 @@ mod tests {
 
         let fallback = resolve_name_with_telemetry(
             Some(&hub),
-            async { DecisionCallReport { content: None, targets: 2, attempted: 2, outcome: "http_402", ms: 25 } },
+            async {
+                DecisionCallReport {
+                    content: None,
+                    targets: 2,
+                    attempted: 2,
+                    outcome: DecisionCallOutcome::Http402,
+                    ms: 25,
+                }
+            },
             || async { Ok("name: Backup Bot".to_owned()) },
         )
         .await

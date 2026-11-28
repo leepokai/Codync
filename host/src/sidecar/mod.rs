@@ -10,13 +10,52 @@ pub use config::SidecarTarget;
 
 use crate::store::Store;
 
+/// Non-sensitive outcome category for a decision sidecar call or target skip/failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DecisionCallOutcome {
+    Unconfigured,
+    Hit,
+    CoolingDown,
+    ProbeInFlight,
+    BudgetExhausted,
+    Http402,
+    Http429,
+    Http5xx,
+    Http4xx,
+    Timeout,
+    Transport,
+    EmptyResponse,
+    InvalidJson,
+}
+
+impl DecisionCallOutcome {
+    /// Non-sensitive wire/telemetry string for logs and `PostHog` properties.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unconfigured => "unconfigured",
+            Self::Hit => "hit",
+            Self::CoolingDown => "cooling_down",
+            Self::ProbeInFlight => "probe_in_flight",
+            Self::BudgetExhausted => "budget_exhausted",
+            Self::Http402 => "http_402",
+            Self::Http429 => "http_429",
+            Self::Http5xx => "http_5xx",
+            Self::Http4xx => "http_4xx",
+            Self::Timeout => "timeout",
+            Self::Transport => "transport",
+            Self::EmptyResponse => "empty_response",
+            Self::InvalidJson => "invalid_json",
+        }
+    }
+}
+
 /// Non-sensitive telemetry summary of a decision sidecar call.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecisionCallReport {
     pub content: Option<String>,
     pub targets: usize,
     pub attempted: usize,
-    pub outcome: &'static str,
+    pub outcome: DecisionCallOutcome,
     pub ms: u64,
 }
 

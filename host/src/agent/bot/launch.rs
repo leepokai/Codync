@@ -369,4 +369,91 @@ mod tests {
         assert_eq!(options["extraArgs"]["thinking-display"], "summarized");
         assert!(options.get("thinking").is_none(), "whether Claude thinks stays Claude Code's");
     }
+
+    #[tokio::test]
+    async fn antigravity_selects_claude_model_into_session_config() {
+        crate::agent::init_runtime();
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/agent/tests/fixtures/model_options_agent.py");
+        let log = std::env::temp_dir().join(format!("codync-model-req-{}.jsonl", uuid::Uuid::new_v4()));
+        let env = [("ACP_REQUEST_LOG".to_owned(), log.to_string_lossy().into_owned())];
+        let command = codync_agent::shell::python(&fixture);
+        let (acp, _inbox) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &env).unwrap();
+        let session = json!({
+            "sessionId": "s-agy",
+            "configOptions": [
+                {
+                    "id": "model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "gemini-4-hydrogen",
+                    "options": [
+                        {"value": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen"},
+                        {"value": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Thinking)"},
+                        {"value": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)"},
+                        {"value": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"}
+                    ]
+                }
+            ]
+        });
+        assert_eq!(
+            model_choice(&session, "claude-opus-4-6-thinking", &BTreeMap::new()),
+            ("claude-opus-4-6-thinking", vec![])
+        );
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "b-agy",
+            "name": "Agy",
+            "backend": "antigravity",
+            "cwd": "/work/app",
+            "model": "claude-sonnet-4-6"
+        }))
+        .unwrap();
+        let updated = select_model(&acp, &session, "s-agy", &cfg).await.unwrap();
+        acp.kill().await;
+        let recorded: Vec<Value> =
+            std::fs::read_to_string(&log).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0]["method"], "session/set_config_option");
+        assert_eq!(recorded[0]["params"]["sessionId"], "s-agy");
+        assert_eq!(recorded[0]["params"]["configId"], "model");
+        assert_eq!(recorded[0]["params"]["value"], "claude-sonnet-4-6");
+        assert_eq!(updated["configOptions"][0]["currentValue"], "medium");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn antigravity_falls_back_to_registry_without_spoofing_client_info() {
+        crate::agent::init_runtime();
+        let dir = std::env::temp_dir().join(format!("codync-agy-fallback-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("client.txt");
+        let script = r#"
+import json, os, sys
+line = sys.stdin.readline()
+msg = json.loads(line)
+with open(os.environ["CLIENT_LOG"], "w") as f:
+    f.write(msg["params"]["clientInfo"]["name"])
+print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"agentInfo": {"name": "Antigravity ACP Server", "version": "1.5.2"}}}), flush=True)
+"#;
+        let broken = Candidate::Ready(Cmd {
+            program: r#"python3 -c "import sys; sys.stderr.write('unknown command acp\\n'); sys.exit(1)""#.to_owned(),
+            args: String::new(),
+        });
+        let fallback = Candidate::Ready(Cmd {
+            program: format!("python3 -c {}", codync_agent::shell::quote(script)),
+            args: String::new(),
+        });
+        let env = vec![("CLIENT_LOG".to_owned(), log.to_string_lossy().into_owned())];
+        let conn = start_first(vec![broken, fallback], &env, |candidate, env, _| async move {
+            let Candidate::Ready(cmd) = candidate else { unreachable!() };
+            start_agent("antigravity", &cmd.acp(), "/tmp", &env, Duration::from_secs(10), Background::Unreported).await
+        })
+        .await
+        .unwrap();
+        conn.acp.kill().await;
+        let seen = std::fs::read_to_string(&log).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(seen, "codync", "clientInfo.name must stay codync");
+    }
 }

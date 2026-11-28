@@ -189,4 +189,19 @@ mod tests {
         assert!(methods("kilo", &init, PROGRAM).is_empty());
         assert_eq!(methods("opencode", &init, PROGRAM).len(), 1);
     }
+
+    #[test]
+    fn antigravity_terminal_login_runs_through_acp_subcommand() {
+        let init = json!({"authMethods": [
+            {"id": "oauth-personal", "name": "Log in with Google"},
+            {"id": "terminal-login", "name": "Log in from the terminal", "type": "terminal", "args": ["--login"]}
+        ]});
+        let program = "/usr/local/bin/agy acp --app-data-dir antigravity-acp --gemini-dir /tmp/slot";
+        let found = methods("antigravity", &init, program);
+        assert!(matches!(&found[0].kind, MethodKind::Agent));
+        assert!(
+            matches!(&found[1].kind, MethodKind::Terminal { command } if command == &format!("{program} --login")),
+            "{found:?}"
+        );
+    }
 }

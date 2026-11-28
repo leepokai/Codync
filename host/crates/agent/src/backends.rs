@@ -274,8 +274,35 @@ fn local_candidate(id: &str) -> Option<registry::Cmd> {
     let h = harness(id)?;
     let template = h.local?;
     let path = installed_cli(h)?;
-    let args = template.strip_prefix("{bin}").unwrap_or(template).trim().to_owned();
-    Some(registry::Cmd { program: shell::quote(&path.to_string_lossy()), args })
+    let bin = shell::quote(&path.to_string_lossy());
+    let rest = template.strip_prefix("{bin}").unwrap_or(template).trim();
+    if h.id == "antigravity" {
+        // `agy acp --app-data-dir antigravity-acp` is the ACP server entrypoint (`--login` is its flag,
+        // not `agy`'s); `--stdio` is the ACP stdio transport flag.
+        let (subcmd, args) = rest.strip_suffix("--stdio").map_or((rest, ""), |prefix| (prefix.trim_end(), "--stdio"));
+        return Some(registry::Cmd { program: format!("{bin} {subcmd}"), args: args.to_owned() });
+    }
+    Some(registry::Cmd { program: bin, args: rest.to_owned() })
+}
+
+/// Adjusts a resolved launch `cmd` for `backend`'s `env` when the local CLI takes a directory flag instead
+/// of reading an environment variable. Local `agy acp` ignores `GEMINI_HOME`, so login profiles pass
+/// `--gemini-dir` on the command; the registry `antigravity-acp` build reads `GEMINI_HOME` itself and
+/// rejects unknown flags.
+pub fn prepare_launch_command(backend: &str, cmd: &mut registry::Cmd, env: &[(String, String)]) {
+    use std::fmt::Write as _;
+
+    if harness_of(backend).is_none_or(|h| h.id != "antigravity") {
+        return;
+    }
+    let full = cmd.acp();
+    if !full.contains("--app-data-dir") || full.contains("--gemini-dir") || full.contains("--gemini_dir") {
+        return;
+    }
+    let Some(home) = env.iter().find(|(k, v)| k == "GEMINI_HOME" && !v.is_empty()).map(|(_, v)| v) else {
+        return;
+    };
+    let _ = write!(cmd.program, " --gemini-dir {}", shell::quote(home));
 }
 
 #[cfg(test)]

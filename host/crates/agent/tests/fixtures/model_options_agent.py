@@ -1,9 +1,14 @@
 """Discovery fixture: two usable models and an advertised but unavailable model."""
 import json
+import os
 import sys
 model = "first"
+log_path = os.environ.get("ACP_REQUEST_LOG")
 for line in sys.stdin:
     msg = json.loads(line)
+    if log_path:
+        with open(log_path, "a") as f:
+            f.write(json.dumps(msg) + "\n")
     if "id" not in msg:
         continue
     requested = msg.get("params", {}).get("value")

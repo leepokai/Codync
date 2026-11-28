@@ -115,7 +115,7 @@ const AGENTS: [Agent; 7] = [
     Agent {
         id: "antigravity",
         folders: &[("GEMINI_HOME", "")],
-        fixed: &[("AGY_ACP_FORCE_FILE_STORAGE", "1")],
+        fixed: &[("AGY_ACP_FORCE_FILE_STORAGE", "1"), ("AGY_CLI_FORCE_FILE_TOKEN_STORAGE", "1")],
         home: ".gemini",
         mirror: "",
         shared: Shared::Antigravity,
@@ -234,6 +234,7 @@ mod tests {
         assert_eq!(opencode[1], ("XDG_STATE_HOME".into(), slot.join("state").to_string_lossy().into_owned()));
         assert_eq!(opencode[2], ("OPENCODE_AUTH_CONTENT".into(), String::new()), "an inline login is cleared");
         assert!(env("antigravity").contains(&("AGY_ACP_FORCE_FILE_STORAGE".into(), "1".into())));
+        assert!(env("antigravity").contains(&("AGY_CLI_FORCE_FILE_TOKEN_STORAGE".into(), "1".into())));
         assert_eq!(env("pi")[0].0, "PI_CODING_AGENT_DIR");
         assert!(env("gemini").contains(&("GEMINI_FORCE_ENCRYPTED_FILE_STORAGE".into(), "false".into())));
         assert!(agent("cursor").is_none());

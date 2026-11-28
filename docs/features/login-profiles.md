@@ -42,7 +42,7 @@ documentation gives for several accounts.
 | Codex | `CODEX_HOME` | its CLI | `auth.json` in the slot | A new slot reads as signed out beside a signed-in computer login (macOS, 0.167.0) |
 | OpenCode | `XDG_DATA_HOME`, `XDG_STATE_HOME`; `OPENCODE_AUTH_CONTENT` cleared | its CLI | `opencode/auth.json` in the data folder (its database in 2.x) | The same (macOS, 1.19.5) |
 | Pi | `PI_CODING_AGENT_DIR` | its CLI (`/login`) | `auth.json` in the slot | The slot lists only what its own logins offer (macOS) |
-| Google Antigravity | `GEMINI_HOME`, `AGY_ACP_FORCE_FILE_STORAGE=1` | its ACP server (`authenticate`: a browser on the computer) | `antigravity-acp/acp_token.json` in the slot; without the second variable, the Keychain | The server answers "Authentication required" on a new slot beside a signed-in own login (macOS, server 1.5.0); no second Google account signed in yet |
+| Google Antigravity | `GEMINI_HOME` (registry), `--gemini-dir` (local `agy acp`), `AGY_ACP_FORCE_FILE_STORAGE=1`, `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=1` | its ACP server (`authenticate`: a browser on the computer) | `antigravity-acp/acp_token.json` in the slot; without the file-storage variables, the Keychain | The server answers "Authentication required" on a new slot beside a signed-in own login (macOS, server 1.5.0); no second Google account signed in yet |
 | Devin | `XDG_DATA_HOME`, `XDG_STATE_HOME` | its CLI | `devin/credentials.toml` in the data folder | Not run: the CLI isn't installed here |
 | Gemini CLI | `GEMINI_CLI_HOME`; `GEMINI_FORCE_ENCRYPTED_FILE_STORAGE=false` | its CLI | `.gemini/oauth_creds.json` under the slot | Read from its source (0.66.0), not run |
 

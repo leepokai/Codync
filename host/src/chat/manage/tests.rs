@@ -184,6 +184,22 @@ fn a_model_change_is_checked_with_the_settings_it_keeps() {
     );
     assert!(saved(json!({"model": "sonnet", "modelOptions": {}})).is_some_and(|o| o.is_empty()), "an empty map clears");
     assert_eq!(saved(json!({"name": "b"})), None, "a change that touches no model checks no settings");
+    // A custom command answers its own model list, so it has no saved settings to check against one that doesn't
+    // exist: a model change is its to answer, and so is a change that gives the bot a command.
+    let custom: BotConfig = serde_json::from_value(json!({"id": "b", "name": "b", "backend": "custom",
+        "command": "my-agent --serve", "model": "anything", "modelOptions": {"effort": "high"}}))
+    .unwrap();
+    let custom_saved = |fields: Value| options_after(fields.as_object().unwrap(), &custom);
+    assert_eq!(custom_saved(json!({"model": "other"})), None, "a custom command's model is taken as it comes");
+    assert_eq!(
+        saved(json!({"model": "other", "command": "my-agent --serve"})),
+        None,
+        "a change that gives the bot a command makes it one"
+    );
+    assert!(
+        custom_saved(json!({"model": "other", "modelOptions": {"effort": "low"}})).is_some(),
+        "what it sends stands"
+    );
 }
 
 /// A manager pauses and resumes a bot; `list_team` says where each bot stands.

@@ -116,7 +116,10 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
             </div>
           </>
         ) : bot ? (
-          <>
+          // The bot's own header, above its panes as a group's is above its members: its face carries the lead's
+          // crown, which opens the role explanation (the roster's crown only marks the row).
+          <div className="details-bot">
+            <Identity bot={bot} />
             <div className="details-panes">
               {layout.map((pane, at) => {
                 const task = tabTask(pane.shown)
@@ -148,7 +151,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
                 )
               })}
             </div>
-          </>
+          </div>
         ) : null}
       </div>
     </div>
@@ -161,7 +164,7 @@ function Identity({ bot }: { bot: Bot }) {
   const group = isGroup(bot)
   return (
     <div className="details-identity">
-      {group ? <GroupAvatar members={store.members(bot)} size={48} /> : <div className="avatar-frame"><BotAvatar bot={bot} size={48} />{bot.lead ? <LeadAgentBadge size={24} /> : null}</div>}
+      {group ? <GroupAvatar members={store.members(bot)} size={48} /> : <div className="avatar-frame"><BotAvatar bot={bot} size={48} />{bot.lead ? <LeadAgentBadge size={24} interactive /> : null}</div>}
       <span className="details-name">{bot.name}</span>
       <span className="details-subtitle">
         {group ? (

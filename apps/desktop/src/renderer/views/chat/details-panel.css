@@ -23,6 +23,20 @@
   z-index: 2;
 }
 
+/* The bot's panel: its identity at the top, then one pane or two sharing what it leaves. (A group has no panes:
+   its avatar centered on top, then its bots.) */
+.details-bot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.details-bot > .details-panes {
+  position: static;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 /* One pane, or two sharing the height. */
 .details-panes {
   position: absolute;

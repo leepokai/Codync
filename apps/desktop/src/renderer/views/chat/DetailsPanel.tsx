@@ -116,7 +116,10 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
             </div>
           </>
         ) : bot ? (
-          <>
+          // The bot's own header, above its panes as a group's is above its members: its face carries the lead's
+          // crown, which opens the role explanation (the roster's crown only marks the row).
+          <div className="details-bot">
+            <Identity bot={bot} />
             <div className="details-panes">
               {layout.map((pane, at) => {
                 const task = tabTask(pane.shown)
@@ -148,7 +151,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
                 )
               })}
             </div>
-          </>
+          </div>
         ) : null}
       </div>
     </div>

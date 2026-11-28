@@ -2357,6 +2357,29 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     assert!(done["worktree"].is_null());
 }
 
+/// A pause is not only the next admission: it reaches a thread already at work. The held thread's turn is
+/// cancelled, so a task stops waiting on a session nothing will answer. Before, the pause reached the bot's own
+/// actor and each thread kept its turn: this test's thread was still `working` with its hold never released.
+#[tokio::test]
+async fn a_pause_stops_a_threads_running_turn() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Held|HOLD:held").await;
+    let held = task(&host, &bot, "Held", "working").await;
+    let held_id = id(&held).to_owned();
+
+    host.call("updateBot", json!({"id": bot, "paused": true})).await;
+
+    // `release-hold` is never written: nothing but the pause can end this turn.
+    let ended = wait("the held task to leave working", async || {
+        let items = work(&host, &bot).await;
+        items.into_iter().find(|i| i["id"] == held_id.as_str() && i["status"] != "working")
+    })
+    .await;
+    assert_eq!(ended["status"], "stopped", "the pause stops the work as Stop does, without a report: {ended}");
+    assert!(ended["result"].is_null(), "a stopped turn reported: {ended}");
+}
+
 /// What a thread's `ask_chat` calls got back, oldest first.
 fn chat_asked(host: &Host, bot: &str) -> Vec<Value> {
     let results = host.log(bot, "ask_chat.jsonl").into_iter();

@@ -3,6 +3,7 @@ import { isGroup, type Bot } from '@shared/models'
 import { outsideStatus } from '@shared/work'
 import { dotGrid, dotRadius } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
+import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
 import './avatar.css'
 import { AgentIcon, agentTint } from './AgentIcon'
@@ -295,17 +296,36 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 }
 
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
- * (a registry id) puts the agent's logo in the bottom-left corner. */
-export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
+ * (a registry id) puts the agent's logo in the bottom-left corner. `announcePaused` is for a caller whose own
+ * label already says Paused (the roster row): it keeps the mark from being announced a second time. */
+export function AvatarWithStatus({ bot, members = [], size = 44, agent = null, announcePaused = true }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null; announcePaused?: boolean }) {
+  const tr = useTr()
+  // The crown's width is named once: the mark's clearance math and the badge itself must stay
+  // in sync for the 2px gap to hold. A paused bot's mark takes the top-right gap the lead's
+  // crown leaves; a gap too small for a readable mark skips it — the row still fades and
+  // its subtitle still says Paused.
+  const crownSize = Math.max(12, size * 0.34)
+  const crown = bot.lead ? crownSize : 0
+  const pausedMark = Math.min(Math.max(9, size * 0.3), size - (size / 2 + crown / 2) - 2)
+  // Labelled where the face is all a reader gets (the search palette); hidden where the row's own label
+  // already names the pause (the roster), so it is not announced twice.
+  const mark = announcePaused ? { role: 'img' as const, 'aria-label': tr('Paused') } : { 'aria-hidden': true as const }
   return (
-    <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
+    <div className="avatar-frame" style={{ width: size, height: size }}>
       <BotOrGroupAvatar bot={bot} members={members} size={size} />
       {agent ? (
         <span className="avatar-agent" style={{ width: size * 0.4, height: size * 0.4 }}>
           <AgentIcon registry={agent} size={size * 0.28} color={agentTint(agent)} />
         </span>
       ) : null}
-      {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
+      {bot.lead ? <LeadAgentBadge size={crownSize} /> : null}
+      {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet
+          row doesn't — this mark says paused wherever the bot's face shows. */}
+      {bot.paused && !isGroup(bot) && pausedMark >= 8 ? (
+        <span className="avatar-paused" {...mark}>
+          <Icon name="pause.circle" size={pausedMark} weight="medium" color="var(--secondary)" scaled={false} />
+        </span>
+      ) : null}
       {outsideStatus(bot) === 'needsInput' ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />

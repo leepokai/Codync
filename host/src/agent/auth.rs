@@ -35,14 +35,14 @@ mod models;
 mod proxied;
 pub use agent::authenticate;
 use agent::start;
-pub(crate) use agent::{Started, authenticate_account, start_with};
+pub(crate) use agent::{Started, authenticate_account, start_with, start_with_command};
 pub use codync_agent::acp::auth::{Method, MethodKind};
 use codync_agent::acp::auth::{methods, reported_login};
 pub use model_cache::{
     Wanted as ModelListWanted, forget as forget_model_list, shared_models, signed_in as model_list_signed_in,
     warm as warm_models,
 };
-pub use models::{InFlight, models};
+pub use models::{InFlight, models, models_with_command};
 
 /// What the last check found for one backend.
 #[derive(Clone, Debug, Default, Serialize)]

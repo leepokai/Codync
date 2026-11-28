@@ -99,6 +99,11 @@ pub fn spawn_dreamer(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Dre
                 event = rx.recv() => match event {
                     None => break,
                     Some(DreamEvent::Turn(turn)) => {
+                        // Naming spends too: while the bot is paused the turn is dropped, so its
+                        // naming call never happens; the observation is lost, not deferred.
+                        if hub.paused(&bot_id) {
+                            continue;
+                        }
                         if let Err(e) = naming::observe(&hub, &bot_id, turn).await {
                             tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "naming the bot failed");
                         }
@@ -198,6 +203,10 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     let Some(cfg) = hub.store.bot(bot_id)?.filter(|b| !b.deleted).map(|b| b.config) else {
         return Ok(Ran::Done { more: false });
     };
+    // Paused: dreaming spends, so it waits (as `Later`) until the bot is resumed.
+    if hub.paused(bot_id) {
+        return Ok(Ran::Later);
+    }
     // Dreaming never spends the user's last headroom.
     if crate::usage::near_limit(hub, &cfg) {
         return Ok(Ran::Later);
@@ -223,7 +232,20 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     tokio::task::spawn_blocking(move || super::files::scan(&h, &c)).await?;
     let snapshot = hub.store.memory_read(|c| dream::snapshot(c, bot_id, shared, &today))?;
     let (system, material) = dream::prompt(&snapshot, &messages);
-    let raw = oneshot::one_shot(hub, &cfg, &system, &material).await?;
+    #[cfg(test)]
+    gate::wait().await;
+    // Pause can land while this bot waited on the shared lock or the file scan. Dreaming spends,
+    // so look again before the prompt.
+    if hub.paused(bot_id) {
+        return Ok(Ran::Later);
+    }
+    let raw = match oneshot::one_shot(hub, &cfg, &system, &material).await {
+        Ok(raw) => raw,
+        // A pause landed while the agent or its session was set up: nothing was spent, and the run waits for a
+        // resume rather than counting a failure.
+        Err(error) if error.downcast_ref::<oneshot::Paused>().is_some() => return Ok(Ran::Later),
+        Err(error) => return Err(error),
+    };
     let plan = dream::parse(&raw).ok_or_else(|| anyhow!("dreaming answered without a plan"))?;
     let (kept, mut rejected) = dream::audit(&snapshot, &messages, plan);
     let (edits, dropped) = hub.store.memory_read(|c| dream::edits(c, &snapshot, &kept, &messages))?;
@@ -357,10 +379,53 @@ fn typed(data: &serde_json::Value) -> Vec<String> {
     codync_mem::evidence::typed(data["text"].as_str().unwrap_or_default(), &pasted)
 }
 
+/// An interleaving point for the pause tests, after the wait a dream can sit in for minutes.
+///
+/// Compiled out of a normal build. A test arms the point and gets the handshake: [`wait`] reports that dreaming has
+/// arrived and blocks until the test releases it, so the order a test proves is established rather than hoped for
+/// (a sleep only makes it likely dreaming got past its earlier pause check, which is the very check that would make
+/// the test pass without the fix). An unarmed point returns at once, so every other test walks straight through.
+#[cfg(test)]
+pub(super) mod gate {
+    use std::sync::{Mutex, OnceLock};
+    use tokio::sync::oneshot;
+
+    struct Point {
+        arrived: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    }
+
+    static POINT: OnceLock<Mutex<Option<Point>>> = OnceLock::new();
+
+    fn point() -> &'static Mutex<Option<Point>> {
+        POINT.get_or_init(|| Mutex::new(None))
+    }
+
+    /// Arms the point. The next [`wait`] reports on `arrived` and blocks until `release` is dropped or sent on.
+    pub(crate) fn arm() -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let (arrived, arrived_rx) = oneshot::channel();
+        let (release_tx, release) = oneshot::channel();
+        *point().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Point { arrived, release });
+        (arrived_rx, release_tx)
+    }
+
+    pub(crate) async fn wait() {
+        let (arrived, release) = {
+            let mut held = point().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            match held.take() {
+                Some(point) => (point.arrived, point.release),
+                None => return,
+            }
+        };
+        let _ = arrived.send(());
+        let _ = release.await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{dated, messages};
-    use crate::store::{Entry, EntryKind};
+    use crate::store::{Entry, EntryKind, Store};
     use serde_json::json;
 
     fn entry(kind: EntryKind, data: serde_json::Value) -> Entry {
@@ -402,5 +467,61 @@ mod tests {
         assert!(dated("Dentist on Oct 21"));
         assert!(!dated("Prompt is too long: Provided 10,389 tokens"));
         assert!(!dated("Has 2 cats"));
+    }
+
+    /// A pause can land while dreaming waits on the shared lock and the file scan: its pause check ran before both.
+    /// Dreaming spends when it goes on, so the check is repeated after them, at the one point the test can hold still.
+    #[tokio::test]
+    async fn a_pause_that_lands_while_dreaming_waits_spends_nothing() {
+        let dir = std::env::temp_dir().join(format!("codync-dream-pause-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let cfg: crate::store::BotConfig = serde_json::from_value(json!({
+            "id": "bot", "name": "B", "backend": "custom", "cwd": dir,
+            // A run that is not stopped reaches `one_shot`, which must fail: that failure is the proof it was spent.
+            "command": "codync-nonexistent-dream-test-agent", "permission": "auto"
+        }))
+        .expect("a bot");
+        store.save_bot(&cfg).expect("saved");
+        let hub = std::sync::Arc::new(crate::hub::Hub::new(
+            store,
+            "dream-test".into(),
+            crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+            "test".into(),
+            0,
+        ));
+        // Something worth dreaming about, so a run that is not stopped does not stop at `worth`.
+        hub.store
+            .insert_entry(
+                &crate::store::Lane::main("bot"),
+                EntryKind::User,
+                1,
+                &json!({"text": "I moved to Lisbon and started a new job there"}),
+            )
+            .expect("a message");
+
+        let (arrived, release) = super::gate::arm();
+        let task = tokio::spawn({
+            let hub = hub.clone();
+            async move { super::run(&hub, "bot").await }
+        });
+        arrived.await.expect("dreaming reached the wait point after its first pause check");
+
+        // The pause lands here: after dreaming's own check, and after the wait that can last minutes. Saved the way
+        // the flag is saved (this test has no actor of its own to reconfigure), which is all the recheck reads.
+        let mut paused = hub.store.bot("bot").expect("read").expect("the bot").config;
+        paused.paused = true;
+        hub.store.save_bot(&paused).expect("paused");
+        assert!(hub.paused("bot"), "the pause is what the run will read");
+        drop(release);
+
+        let ran = task.await.expect("the dreaming task");
+        let detail = match &ran {
+            Ok(_) => "it finished instead of waiting".to_owned(),
+            Err(error) => format!("{error:#}"),
+        };
+        assert!(matches!(ran, Ok(super::Ran::Later)), "dreaming went on to spend after the pause: {detail}");
+        // Windows keeps the store's handles: a leftover folder under the temp dir is not a failure of this test.
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

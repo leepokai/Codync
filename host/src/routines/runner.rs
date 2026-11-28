@@ -244,14 +244,60 @@ impl Routines {
     /// The bot's Stop: cancels the runs queued behind its turn. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it); so does a run in the box, which the box's own Stop
     /// stops, and a webhook delivery, which its sender was already told was taken.
-    pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
+    pub fn cancel_for_stop(&self, store: &Store, bot: &str) -> Result<()> {
+        let now = now_ms();
+        let ids: Vec<String> = self
+            .state
+            .locked()
+            .runs
+            .iter()
+            .filter(|r| {
+                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
+            })
+            .map(|r| r.id.clone())
+            .collect();
+        self.cancel_queued(store, &ids)
+    }
+
+    /// The same Stop over the runs named: a caller holds the ids it means (a pause's captured set, a queue's own)
+    /// and nothing else is touched, so a cancellation that arrives late cannot reach work started after it.
+    pub fn cancel_queued(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
         let now = now_ms();
         self.change(store, |s| {
-            let queued = |r: &&mut Run| {
-                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
-            };
-            for r in s.runs.iter_mut().filter(queued) {
-                cancel_run(r);
+            for r in s.runs.iter_mut().filter(|r| ids.contains(&r.id)) {
+                if !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none() {
+                    cancel_run(r);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// The runs of `bot` that are still active, for a caller that must name what it is about to cancel (a pause
+    /// captures them while it saves the flag, then cancels those ids outside its transition).
+    pub fn active_ids(&self, bot: &str) -> Vec<String> {
+        self.state.locked().runs.iter().filter(|r| r.bot_id == bot && r.status.active()).map(|r| r.id.clone()).collect()
+    }
+
+    /// A pause is not the bot's Stop: it ends the runs it names, including a run working in a box thread and a
+    /// webhook delivery whose sender was already acknowledged, and a run that came due while it is paused. The
+    /// routine's schedule keeps its next trigger, so resuming starts nothing from this pause.
+    pub fn cancel_ids_for_pause(&self, store: &Store, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.change(store, |s| {
+            for run in s.runs.iter_mut().filter(|r| ids.contains(&r.id) && r.status.active()) {
+                let running = run.status != Status::Pending;
+                cancel_run(run);
+                run.not_before = None;
+                run.retry_at = None;
+                if running {
+                    run.detail = Some("the bot is paused".into());
+                }
             }
             Ok(())
         })
@@ -524,7 +570,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        routines.cancel_queued(&store, "bot").unwrap();
+        routines.cancel_for_stop(&store, "bot").unwrap();
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
         assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");

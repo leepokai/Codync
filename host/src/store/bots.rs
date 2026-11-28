@@ -248,6 +248,7 @@ mod tests {
             hidden: false,
             plain: false,
             workflow: None,
+            paused: false,
             section: None,
             notify: None,
             projects: vec![],

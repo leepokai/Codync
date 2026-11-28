@@ -11,6 +11,7 @@ import { canOpenWorkflows } from './workflows/pins'
 
 /** The bots, by name, description or last message; a group's subtitle lists its members. */
 export function botItems(roster: RosterItem[], open: (ref: BotRef) => void): PaletteItem[] {
+  // A paused bot's avatar carries a labelled mark (AvatarWithStatus), so a reader hears Paused here too.
   return roster.map((item) => {
     const members = isGroup(item.bot) ? item.store.members(item.bot) : []
     const names = members.map((m) => m.name).join(', ')

@@ -46,7 +46,7 @@ pub use commands::listed as agent_commands;
 pub use compaction::{context_window, offers_threshold};
 pub(crate) use fallback::{kept_step, owe_move};
 use inflight::Inflight;
-pub(crate) use inflight::resumable;
+pub(crate) use inflight::{clear as clear_inflight, resumable};
 pub(crate) use launch::{Background, launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::chat::context::{Identity, Snapshot};
@@ -93,9 +93,11 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
     let mut versions = crate::agent::versions::Saves::default();
     versions.ready(&hub, &base);
+    let pause_generation = hub.pause_generation();
     let actor = Actor {
         hub,
         base,
+        pause_generation,
         cfg,
         conn: None,
         session_id,
@@ -279,6 +281,9 @@ struct Actor {
     hub: Arc<Hub>,
     /// The bot as the user set it up.
     base: BotConfig,
+    /// The save number of the last `Reconfigure` or `Paused` this actor applied: a command carrying an older
+    /// one arrives late and is dropped whole, so it cannot undo a newer pause, resume, name or model.
+    pause_generation: u64,
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,
     conn: Option<Conn>,
@@ -456,7 +461,28 @@ impl Actor {
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         self.done_tx = Some(done_tx.clone());
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
-        if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
+        if self.paused() {
+            // Paused while the host was down: nothing resumes (that would spend). The run that was going says
+            // interrupted, its queued runs are cancelled as a pause while running does, and what waits goes on
+            // when it is resumed.
+            self.set_inflight(false);
+            if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
+                let ran = crate::routines::Ran { timed_out: false, thread: None };
+                if let Err(error) = self.hub.routines.complete(
+                    &self.hub,
+                    &run.id,
+                    crate::routines::Status::Interrupted,
+                    Some("the bot is paused".into()),
+                    None,
+                    &ran,
+                ) {
+                    tracing::error!(error = format!("{error:#}"), run = run.id, "couldn't record the paused run");
+                }
+            }
+            if let Err(error) = self.hub.routines.cancel_for_stop(&self.hub.store, &self.cfg.id) {
+                tracing::error!(error = format!("{error:#}"), "couldn't cancel a paused bot's queued routines");
+            }
+        } else if let Some(run) = self.hub.routines.recovery(&self.cfg.id) {
             self.active_routine = Some(run.id.clone());
             self.routine_deadline = Some(Instant::now() + self.hub.routines.timeout(&run.id));
             self.resume_interrupted(Lane::main(&self.cfg.id), &done_tx).await;
@@ -527,6 +553,14 @@ impl Actor {
         }
     }
 
+    /// The bot (or, for a thread, its bot) is paused: no turn of its starts, so nothing is spent.
+    fn paused(&self) -> bool {
+        match self.cfg.thread_of.as_deref() {
+            Some(owner) => self.hub.paused(owner),
+            None => self.cfg.paused,
+        }
+    }
+
     /// Adds an entry to the current lane, signed by this bot (a group shows who said it).
     fn add(&self, kind: EntryKind, turn: i64, mut data: Value) -> Option<Entry> {
         data["author"] = self.cfg.id.clone().into();
@@ -558,6 +592,9 @@ impl Actor {
 
 /// Told to a bot whose turn the previous host process cut off (Grok Bot's upgrade resume).
 const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-turn. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
+
+/// Shown in a paused bot's chat when a message of the user's reaches it: nothing runs until it is resumed.
+const PAUSED_NOTICE: &str = "This bot is paused. Resume it to respond.";
 
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);

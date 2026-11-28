@@ -34,6 +34,9 @@ pub enum Event {
     QuoteOpened,
     BotCreated,
     BotUpdated,
+    /// A manager changed another bot's setup through `update_bot` (the audit trail: actor, target, the fields
+    /// that moved and how the change was approved). Never for a validateOnly check or a refusal.
+    BotConfigChanged,
     BotsReordered,
     SectionRenamed,
     ComputerRenamed,
@@ -275,6 +278,7 @@ impl Event {
             Self::QuoteOpened => "quote_opened",
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
+            Self::BotConfigChanged => "bot_config_changed",
             Self::BotsReordered => "bots_reordered",
             Self::SectionRenamed => "section_renamed",
             Self::ComputerRenamed => "computer_renamed",

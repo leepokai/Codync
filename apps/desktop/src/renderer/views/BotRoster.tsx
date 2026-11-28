@@ -2,12 +2,13 @@ import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { runningAgent } from '@shared/fallbacks'
 import { isGroup, type Bot } from '@shared/models'
-import { moveInOrder } from '../lib/computer-roster'
+import { moveInOrder, movePreservingFrozenLead } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
 import { prefs, usePref } from '../lib/prefs'
 import { sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
+import { useTr } from '../lib/use-language'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import type { useComputerRoster } from '../store/computer-roster'
@@ -50,6 +51,8 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
   openWorkflows: (computerId: string, workflowId?: string) => void
 }) {
   const app = useApp()
+  const tr = useTr()
+  const frozen = roster.freezeLead
   const selected = app.selection
   const [agentLogos] = usePref(prefs.agentLogos)
   const [hovered, setHovered] = useState<string | null>(null)
@@ -153,9 +156,11 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const row = under?.closest<HTMLElement>('[data-roster-row]')
     const item = row && itemsByKey.current.get(row.dataset.rosterRow!)
     if (!current || !row || !item || current.item.ref.computerId !== item.ref.computerId) return
-    // A row still sliding out of the way would be hit again where it was.
-    if (item.bot.id === current.item.bot.id || !sameRosterGroup(item.bot, current.item.bot) || row.getAnimations().length) return
-    setBotDrag({ ...current, ids: moveInOrder(current.ids, current.item.bot.id, item.bot.id) })
+    // A row still sliding out of the way would be hit again where it was; frozen, the lead keeps the top.
+    if (item.bot.id === current.item.bot.id || !sameRosterGroup(item.bot, current.item.bot, frozen) || row.getAnimations().length) return
+    // Frozen, the lead keeps its slot: a move across it never rewrites the lead's host position.
+    const leadId = frozen ? current.item.store.roster.find((b) => b.lead)?.id : undefined
+    setBotDrag({ ...current, ids: movePreservingFrozenLead(current.ids, current.item.bot.id, item.bot.id, leadId) })
   }
 
   const endDrag = () => {
@@ -176,7 +181,6 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     for (const animation of row?.getAnimations() ?? []) animation.finish()
     settleInto(row)
   }
-
   // The copy settles into the held element's new slot (when it's in view), then the element shows
   // again. Measured where it ends up, so callers finish its slide first.
   const settleInto = (element: HTMLElement | null) => {
@@ -197,11 +201,13 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const many = roster.sections.length > 1
     const agent = logoAgent(item, agentLogos)
     const name = agent ? `${item.bot.name}, ${item.store.backendName(agent)}` : item.bot.name
+    // The row's own text says Paused, but a button's label replaces it for a screen reader: say it here too.
+    const spoken = item.bot.paused && !isGroup(item.bot) ? `${name}, ${tr('Paused')}` : name
     return (
       <RosterRow
         key={key}
         hovered={hovered === key || held}
-        label={many ? `${name}, on ${item.store.hostName}` : name}
+        label={many ? `${spoken}, on ${item.store.hostName}` : spoken}
         title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
         dragKey={key}
@@ -210,7 +216,7 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
         onClick={() => app.select(item.ref)}
         onContext={(x, y) => onContext(item.bot, item.store, x, y)}
         lifted={held && lift !== null}
-        drag={pointerDrag({ start: (from) => liftRow(item, siblings, from), over: dragOver, drop, cancel: endDrag })}
+        drag={frozen && item.bot.lead ? undefined : pointerDrag({ start: (from) => liftRow(item, siblings, from), over: dragOver, drop, cancel: endDrag })}
       >
         <RosterBotRow item={item} agent={agent} />
       </RosterRow>
@@ -223,7 +229,7 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const notice = store.mismatch ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
     const pins = canOpenWorkflows(store) ? <WorkflowPins store={store} onOpen={(id) => openWorkflows(computer.id, id)} /> : null
     const rows = <SectionRoster computerId={computer.id} items={ordered(computer.id, items)}
-      folded={roster.folded} order={roster.sectionOrders[computer.id] ?? []}
+      folded={roster.folded} order={roster.sectionOrders[computer.id] ?? []} freezeLead={roster.freezeLead}
       save={(names) => roster.orderSections(computer.id, names)} toggle={roster.toggleFold}
       onContext={(name, x, y) => onSectionContext(name, store, x, y)} row={(item) => row(item, items)} />
     if (!roster.grouped) return <div key={computer.id}>{pins}{notice}{rows}</div>

@@ -175,3 +175,38 @@ async fn a_routine_run_cannot_add_task_to_the_bots_box() {
     assert_eq!(add().await.unwrap_err().to_string(), refusal);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Greptile's interleaving on a pause (#587): the pause saves `paused: true`, then the bot resumes and admits a run
+/// before the older pause's cancellation lands. Only what the pause captured may be cancelled; the run the resume
+/// started is not in that set.
+#[test]
+fn a_pause_that_lands_after_a_resume_does_not_cancel_the_resumed_run() {
+    let (store, routines) = seeded();
+    routines
+        .change(&store, |s| {
+            s.runs.push(new_run(&routine(), Value::Null, None));
+            Ok(())
+        })
+        .unwrap();
+    // What the pause captures while it saves the flag.
+    let captured: Vec<String> =
+        routines.state.locked().runs.iter().filter(|r| r.status.active()).map(|r| r.id.clone()).collect();
+    // The resume commits, and its run is admitted, before the older pause's cancellation arrives.
+    let resumed = new_run(&routine(), Value::Null, None);
+    let resumed_id = resumed.id.clone();
+    routines
+        .change(&store, |s| {
+            s.runs.push(resumed);
+            Ok(())
+        })
+        .unwrap();
+    routines.cancel_ids_for_pause(&store, &captured).unwrap();
+
+    let runs = routines.state.locked();
+    assert!(
+        runs.runs.iter().any(|r| r.id == resumed_id && r.status.active()),
+        "the run the resume started was cancelled by the older pause; {} of {} runs are still active",
+        runs.runs.iter().filter(|r| r.status.active()).count(),
+        runs.runs.len()
+    );
+}

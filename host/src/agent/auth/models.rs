@@ -1,6 +1,6 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
-use super::{Started, probe_dir, start_with};
+use super::{Started, probe_dir, start_with_command};
 use crate::LockExt;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
@@ -44,9 +44,29 @@ impl InFlight {
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    models_with(store, backend, login_profile, None).await
+}
+
+/// [`models`] for a bot that runs a custom `command`: the command itself answers the list, as it does for its
+/// session. Not kept for the backend: another command's list isn't this one's.
+pub async fn models_with_command(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+    command: &str,
+) -> Result<Value> {
+    models_with(store, backend, login_profile, Some(command)).await
+}
+
+async fn models_with(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+    command: Option<&str>,
+) -> Result<Value> {
     let login_profile = login_profile.filter(|s| !s.is_empty());
     let running = crate::agent::login_profiles::hold(store, backend, login_profile)?;
-    let Started { acp, mut inbox, .. } = start_with(store, backend, login_profile, &[]).await?;
+    let Started { acp, mut inbox, .. } = start_with_command(store, backend, login_profile, &[], command).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);

@@ -14,6 +14,19 @@ use std::time::Duration;
 const TIMEOUT: Duration = Duration::from_mins(3);
 const DELETE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The job stopped because its bot was paused before the prompt: it spent nothing, and the caller's own pause
+/// check (dreaming's) could not see a pause that landed while the agent or its session was being set up.
+#[derive(Debug)]
+pub struct Paused;
+
+impl std::fmt::Display for Paused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the bot is paused")
+    }
+}
+
+impl std::error::Error for Paused {}
+
 /// Runs one prompt on a throwaway agent of the bot's harness and returns its reply.
 /// Claude gets a real system prompt, no tools, no settings and no saved session; an agent with ACP
 /// `systemPrompt` gets the instructions there, other harnesses inline. None of them may remember the job: an agent
@@ -71,7 +84,15 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         if conn.adapter() != Adapter::Claude {
             crate::agent::bot::select_model(&acp, &res, &sid, cfg).await?;
         }
-        let prompt = async { acp.session(&sid).prompt(json!([{"type": "text", "text": text}])).await?.response().await };
+        // Unlocking the vault, starting the agent and opening its session take time, and a pause can land
+        // while they do: this prompt would spend for a paused bot, so the check sits in the block that writes it,
+        // with no await between the two.
+        let prompt = async {
+            if hub.paused(&cfg.id) {
+                return Err(Paused.into());
+            }
+            acp.session(&sid).prompt(json!([{"type": "text", "text": text}])).await?.response().await
+        };
         tokio::pin!(prompt);
         let deadline = tokio::time::sleep(TIMEOUT);
         tokio::pin!(deadline);

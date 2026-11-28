@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.semantics
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
         CardSection("Activity", fold = "bot.activity") {
+            pausedRow(state, draft, change)
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -238,8 +239,18 @@ private fun computerUseDetail(screen: ScreenState): String = when {
 private fun CardRows.manageTeamRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
     if (state.bots.none { it.manageTeam != null }) return
     row {
-        SwitchRow("Manage the team", "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
+        SwitchRow("Manage the team", "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.",
             draft.manageTeam, { change(draft.copy(manageTeam = it)) })
+    }
+}
+
+// Pausing it: answers nothing, spends nothing. Only from a host whose bots carry the field — an older one would take
+// the switch and ignore it, which is worse than not offering it.
+private fun CardRows.pausedRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
+    if (state.bots.none { it.paused != null }) return
+    row {
+        SwitchRow("Paused", "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.",
+            draft.paused ?: false, { change(draft.copy(paused = it)) })
     }
 }
 

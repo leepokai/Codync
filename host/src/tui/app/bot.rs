@@ -49,6 +49,8 @@ pub struct Bot {
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
     pub hidden: bool,
+    /// Paused: it answers nothing and spends nothing until it is resumed.
+    pub paused: bool,
     /// Its roster section; `None` for none (the host trims and checks the name).
     pub section: Option<String>,
     pub notify: bool,
@@ -260,6 +262,7 @@ impl Bot {
             lead: v["lead"] == true,
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
+            paused: v["paused"].as_bool().unwrap_or(false),
             section: v["section"].as_str().map(str::to_owned),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),

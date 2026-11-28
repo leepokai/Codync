@@ -247,7 +247,7 @@ pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     }
     for thread in threads.into_iter().filter(|thread| hub.has_actor(&thread.id)) {
         let id = thread.id.clone();
-        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure(Box::new(thread))) {
+        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure { base: Box::new(thread), pause_generation: None }) {
             tracing::warn!(thread = %id, error = format!("{error:#}"), "couldn't give a thread its bot's fallbacks");
         }
     }
@@ -636,27 +636,39 @@ pub fn restore(hub: &Arc<Hub>) {
 }
 
 /// `bot`'s box at host start: its threads resume the turns the last process cut off, a task whose thread can't ends,
-/// and the reports that never arrived are sent again.
+/// and the reports that never arrived are sent again. A paused bot resumes nothing (that would spend): a thread
+/// left `working` with no turn would hold its seat until the process stopped again.
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
     age(hub, bot);
-    let (resumed, failed, undelivered, recheck) = tasks::change(hub, bot, |tasks| {
+    // Read once: the flag is the saved config, and this pass is the only one that runs at start.
+    let paused = hub.paused(bot);
+    let (resumed, failed, undelivered, recheck, drop_resume) = tasks::change(hub, bot, |tasks| {
         let recheck = worktree::recheck(tasks);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         tasks.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
         // A thread's actor resumes the turn the last process cut off; when it won't, nothing of the thread runs.
+        // Paused: that resume would spend, so the thread is cut off instead (its own work waits again once).
         let (resumed, cut_off): (Vec<String>, Vec<String>) = tasks
             .iter()
             .filter(|i| i.status == Status::Working)
             .filter_map(|i| i.thread.clone())
-            .partition(|thread| crate::agent::bot::resumable(&hub.store, thread));
+            .partition(|thread| !paused && crate::agent::bot::resumable(&hub.store, thread));
+        let drop_resume: Vec<String> = if paused {
+            cut_off.iter().filter(|thread| crate::agent::bot::resumable(&hub.store, thread)).cloned().collect()
+        } else {
+            Vec::new()
+        };
         // The reports that never arrived, before this start's own are added.
         let undelivered: Vec<Task> = tasks.iter().filter(|i| i.report.is_some()).cloned().collect();
         let failed: Vec<Over> = cut_off
             .iter()
             .filter_map(|thread| end_claimed(tasks, thread, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
             .collect();
-        Ok((resumed, failed, undelivered, recheck))
+        Ok((resumed, failed, undelivered, recheck, drop_resume))
     })?;
+    for thread in &drop_resume {
+        crate::agent::bot::clear_inflight(&hub.store, thread);
+    }
     for (task, kept) in recheck {
         let owner = bot.to_owned();
         worktree::settle_then(hub, bot, &task, kept, move |hub| dispatch(hub, &owner));
@@ -814,6 +826,48 @@ mod tests {
         let failed = end(&mut tasks, "t2", Outcome::Failed(Failure::Restart, CUT_OFF.into())).expect("ended");
         assert_eq!((failed.status, failed.failure), (Status::Failed, Some(Failure::Restart)));
         assert_eq!(failed.result.as_deref(), Some(CUT_OFF));
+    }
+
+    #[tokio::test]
+    async fn a_paused_bots_cut_off_thread_does_not_stay_at_work() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        let mut owner = bot("b1", "Mika", "/tmp");
+        owner.paused = true;
+        hub.store.save_bot(&owner).expect("saved");
+        for id in ["thread-1", "thread-2"] {
+            let mut thread = bot(id, "Thread", "/tmp");
+            thread.thread_of = Some("b1".into());
+            hub.store.save_bot(&thread).expect("saved");
+            hub.store.kv_set(&format!("turn.inflight.{id}"), &now_ms().to_string()).expect("marked");
+        }
+        let mut routine = working("run", "thread-2");
+        routine.source = Source::Routine { id: "r".into(), run: "run-1".into() };
+        let tasks = vec![working("own", "thread-1"), routine];
+        hub.store
+            .kv_set(&format!("{}b1", tasks::PREFIX), &serde_json::to_string(&tasks).expect("a box"))
+            .expect("saved");
+
+        pick_up(&hub, "b1").expect("picked up");
+
+        let tasks = tasks::load(&hub.store, "b1");
+        let own = tasks.iter().find(|task| task.id == "own").expect("own work");
+        assert_eq!(
+            (own.status, own.thread.as_deref(), own.restarted),
+            (Status::Waiting, None, true),
+            "own work stayed at work: {own:?}"
+        );
+        let run = tasks.iter().find(|task| task.id == "run").expect("the routine");
+        assert_eq!(
+            (run.status, run.failure),
+            (Status::Failed, Some(Failure::Restart)),
+            "a routine stayed at work: {run:?}"
+        );
+        assert!(!hub.has_actor("thread-1") && !hub.has_actor("thread-2"), "a paused restart started a thread");
+        for id in ["thread-1", "thread-2"] {
+            let mark = hub.store.kv_get(&format!("turn.inflight.{id}")).unwrap_or_default();
+            assert!(mark.is_empty(), "thread {id} would resume and spend: {mark}");
+        }
     }
 
     #[test]

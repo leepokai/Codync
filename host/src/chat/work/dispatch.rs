@@ -216,6 +216,10 @@ pub fn dispatch(hub: &Arc<Hub>, bot: &str) {
 /// [`dispatch`], from the end of `over`'s turn (the bot's own, or one of its threads').
 pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
     let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|r| !r.deleted).map(|r| r.config) else { return };
+    // Paused: the box starts nothing (nothing is spent); resuming looks over it again.
+    if hub.paused(bot) {
+        return;
+    }
     let plan = match tasks::change(hub, bot, |tasks| plan(hub, &cfg, tasks, over)) {
         Ok(plan) => plan,
         Err(error) => {

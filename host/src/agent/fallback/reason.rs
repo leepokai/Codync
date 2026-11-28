@@ -148,4 +148,15 @@ mod tests {
         assert_eq!(of(&rpc(-32602, "Invalid params", None)), None);
         assert_eq!(of(&anyhow::anyhow!("no session")), None);
     }
+
+    #[test]
+    fn a_quota_in_a_streamed_refusal_rests_the_agent_like_any_usage_limit() {
+        use codync_agent::acp::refusal::{PromptText, prompt_result};
+
+        let mut text = PromptText::default();
+        text.push("Usage Limit Reached");
+        text.push("\nYou have reached your current quota for this period. Your limit will reset in 1 minute.");
+        let error = prompt_result(&serde_json::json!({"stopReason": "refusal"}), &text).expect("an RpcError");
+        assert_eq!(of(&error), Some(Reason::UsageLimit), "it goes through the same cooldown as Claude's limit");
+    }
 }

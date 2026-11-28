@@ -55,7 +55,7 @@ use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
-use codync_agent::acp::{self, Acp, Capabilities, Incoming};
+use codync_agent::acp::{self, Acp, Capabilities, Incoming, refusal::PromptText};
 use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -154,6 +154,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         cancel_deadline: None,
         exit_tail: None,
         agent_error: None,
+        turn_text_seen: PromptText::default(),
         restart_before_turn: false,
         restart_after_turn: false,
         fast_support,
@@ -388,6 +389,8 @@ struct Actor {
     exit_tail: Option<String>,
     /// The error the agent said its turn ended in while answering it as a success (pi, `codync_agent::pi::turn_result`).
     agent_error: Option<String>,
+    /// Text the agent streamed this turn, so a refusal that quotes a quota can be told from a real one.
+    turn_text_seen: PromptText,
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
     restart_before_turn: bool,
@@ -416,6 +419,8 @@ impl Actor {
     /// The running turn is over, with every steer answered (`turn_ended`): it finishes or goes on with the next agent.
     async fn on_turn_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
         // Updates sent before the prompt response are already queued; apply them first.
+        // Verified with the refusal check below: a quota notice that arrives in that same instant
+        // is in `turn_text_seen` before `prompt_result` reads it (`chat::oneshot` does the same).
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
             match inc {
                 // No agent ends a turn it waits on: a request queued here is for work after it.
@@ -428,6 +433,9 @@ impl Actor {
             self.held_done = Some(done);
             return;
         }
+        // A refusal that streamed a quota notice is the fallback chain's usage-limit error, not a decline.
+        let text = std::mem::take(&mut self.turn_text_seen);
+        let done = done.and_then(|result| acp::refusal::prompt_result(&result, &text).map_or(Ok(result), Err));
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await

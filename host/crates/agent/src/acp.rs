@@ -23,6 +23,7 @@ pub mod claude;
 pub mod codebuddy;
 mod exit;
 pub mod models;
+pub mod refusal;
 mod request;
 mod session;
 pub use capabilities::{Adapter, Capabilities, Reopen};

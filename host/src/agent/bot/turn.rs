@@ -12,7 +12,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
-use codync_agent::acp::{self, Incoming, StopReason};
+use codync_agent::acp::{self, Incoming, StopReason, refusal::PromptText};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -369,6 +369,7 @@ impl Actor {
         self.unheard.clear();
         self.files.summary = None;
         self.files.cancel();
+        self.turn_text_seen = PromptText::default();
     }
 
     /// The running turn ended with `done`; `left`: what a thread's turn left running in the background

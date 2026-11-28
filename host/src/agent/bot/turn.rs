@@ -258,7 +258,7 @@ impl Actor {
             analytics::agent_command_sent(&self.hub, &self.cfg.backend);
         } else if !hidden {
             // So does a recap: a command goes without it, and it waits in `relay.recap` for the next message.
-            self.carry_in();
+            self.carry_in().await?;
         }
         // What the user wrote to a thread says so, after the work itself where the session doesn't hold it.
         let text = &if written.is_empty() || agent_command || self.cfg.plain {

@@ -12,3 +12,7 @@ https://github.com/leepokai/Codync/blob/main/TRADEMARK.md and
 https://codync.dev/terms.
 
 Codync 2.11.0 and earlier were released under the MIT License.
+
+The Context Manifest design was informed by oh-my-hermes
+(https://github.com/rlaope/oh-my-hermes), Copyright (c) 2026
+oh-my-hermes contributors, under the MIT License.

@@ -89,7 +89,8 @@ Every bug fix leaves a way to see in PostHog whether the bug still happens in th
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to
   events (`analytics::observe_call`), so every client is covered once; a resent message (same
   `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
-  agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_carried` (what the agent taking over
+  agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_ledger_built` (whether its Context
+  Manifest was gathered and how many items it could not include), `handoff_carried` (what the agent taking over
   was told first, by size; `kind: move` after the user moved the bot to another folder), `agent_switched_by_user` (the user moved a bot with a conversation to another agent or
   login profile: the agent, `loginProfile` when on one) and `agent_retired` (an agent stopped between
   turns to give back its processes, or because it dropped Codync's MCP servers, and why), the phone channel

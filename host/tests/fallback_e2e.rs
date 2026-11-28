@@ -40,6 +40,166 @@ async fn bot_value(host: &Host, bot: &str) -> Value {
     snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap()
 }
 
+/// Real host: a fresh session's handoff carries the mechanical Context Manifest and respects a new-session boundary.
+#[tokio::test]
+async fn a_fresh_handoff_carries_the_context_manifest_and_names_budget_omissions() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"Ledger", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    std::fs::write(folder.join("ledger-files.json"), r#"["old-secret.txt"]"#).unwrap();
+    host.reply(&bot, "Never change old/private.txt").await;
+    host.call("newSession", json!({"botId":bot})).await;
+    std::fs::write(folder.join("ledger-files.json"), r#"["current.txt"]"#).unwrap();
+    host.reply(&bot, "Only work in new/current.txt").await;
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    std::fs::write(folder.join("primary.noload"), "").unwrap();
+    host.call("switchBack", json!({"botId":bot})).await;
+    host.reply(&bot, "Continue").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Only work in new/current.txt"), "{prompt}");
+    assert!(
+        prompt.contains(
+            "current.txt (created; 5 B; sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ),
+        "{prompt}"
+    );
+    assert!(prompt.contains("synthetic-test") && prompt.contains("exit 3"), "{prompt}");
+    assert!(
+        !prompt.contains("old/private.txt") && !prompt.contains("old-secret.txt"),
+        "reset scopes the manifest: {prompt}"
+    );
+}
+
+#[tokio::test]
+async fn a_bounded_handoff_names_each_item_it_could_not_expand() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"Budget", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // The primary agent reports a known 100k-token window; carry::room gives the handoff 60_000 bytes.
+    std::fs::write(folder.join("primary.window"), "").unwrap();
+    host.reply(&bot, "Report your window").await;
+    let paths: Vec<_> = (0..24).map(|i| format!("file_{i}_{}.txt", "x".repeat(90))).collect();
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&paths).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, &format!("Never lose these constraints {}", "a".repeat(12_000))).await;
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    std::fs::write(folder.join("primary.noload"), "").unwrap();
+    host.call("switchBack", json!({"botId":bot})).await;
+    host.reply(&bot, "Continue").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    let from = prompt.find("<handoff>").unwrap();
+    let end = prompt[from..].find("</handoff>").unwrap() + from + "</handoff>".len();
+    let handoff = &prompt[from..end];
+    assert!(handoff.len() <= 60_000, "{} bytes", handoff.len());
+    assert!(handoff.contains("collection limit") && handoff.contains("[truncated;"), "{handoff}");
+    assert!(handoff.contains("context budget") || handoff.contains("labels not expanded"), "{handoff}");
+    assert!(handoff.contains("created") && handoff.contains("5 B"), "{handoff}");
+    assert!(
+        handoff.contains("Omitted due to budget/collection limit") && handoff.contains("search_history"),
+        "every unexpanded item must be disclosed: {handoff}"
+    );
+    let disclosure = handoff.split("Omitted due to budget/collection limit:").nth(1).unwrap_or("");
+    for index in 0..24 {
+        let prefix = format!("file_{index}_");
+        let expanded = handoff.contains(&format!("File this turn: {prefix}"));
+        let omitted = disclosure.lines().find(|line| line.contains(&prefix));
+        assert!(expanded || omitted.is_some(), "file {index} must be expanded or itemized: {handoff}");
+        if let Some(label) = omitted {
+            assert!(
+                label.contains(" B") && (label.contains("collection limit") || label.contains("context budget")),
+                "an omitted file must name its size and reason: {label}"
+            );
+        }
+    }
+    let skipped: usize = handoff
+        .split("Omitted: ")
+        .nth(1)
+        .and_then(|text| text.split(" items").next())
+        .and_then(|text| text.parse().ok())
+        .unwrap_or_default();
+    let labels = disclosure.lines().filter(|line| line.contains(" B") || line.contains("unknown bytes")).count();
+    assert_eq!(labels, skipped, "every unexpanded item needs its own label: {handoff}");
+}
+
+/// The agent a turn switches to hears the manifest in its very first message, and every item the manifest could not
+/// expand carries its own label there.
+#[tokio::test]
+async fn a_switch_hands_the_manifest_over_in_the_new_agents_first_message() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"SwitchManifest", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // More files than a manifest expands, each one created by the agent the turn starts on.
+    let paths: Vec<_> = (0..24).map(|i| format!("note_{i:02}_{}.txt", "y".repeat(30))).collect();
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&paths).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Never run the suite twice").await;
+    let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+
+    // The switched-to agent's first message is the handed-over turn itself.
+    let log = host.log(&bot, "standin.jsonl");
+    let prompts: Vec<_> = log.iter().filter(|r| r["method"] == "session/prompt").collect();
+    assert_eq!(prompts.len(), 1, "one prompt, its first: {log:#?}");
+    let prompt = prompts[0]["params"]["prompt"][0]["text"].as_str().unwrap();
+    assert!(prompt.contains("<ledger>\nGathered by rule"), "the first message carries the manifest: {prompt}");
+    assert!(prompt.contains("a.txt (created;"), "{prompt}");
+
+    // Every file is either expanded or named by its own label, with its size and the reason it stayed out.
+    let disclosure = prompt
+        .split("Omitted due to budget/collection limit:")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the manifest names what it could not expand: {prompt}"));
+    let disclosure = disclosure.split("</ledger>").next().unwrap_or(disclosure);
+    let labels: Vec<&str> = disclosure.lines().filter(|line| !line.trim().is_empty()).collect();
+    for index in 0..24 {
+        let prefix = format!("note_{index:02}_");
+        let expanded = prompt.contains(&format!("File this turn: {prefix}"));
+        let labeled = labels.iter().find(|label| label.contains(&prefix));
+        assert!(expanded || labeled.is_some(), "file {index} must be expanded or itemized: {prompt}");
+        if let Some(label) = labeled {
+            assert!(
+                label.contains(" B; ") && label.contains("collection limit"),
+                "an unexpanded file names its size and why: {label}"
+            );
+        }
+    }
+    let skipped: usize = prompt
+        .split("Omitted: ")
+        .nth(1)
+        .and_then(|text| text.split(" items").next())
+        .and_then(|text| text.parse().ok())
+        .unwrap_or_default();
+    assert_eq!(labels.len(), skipped, "every unexpanded item needs its own label: {prompt}");
+}
+
 #[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;
@@ -694,6 +854,26 @@ async fn a_new_session_after_a_move_to_its_own_folder_carries_nothing() {
     host.reply(&bot, "Fresh start").await;
     let prompt = last_prompt(&host, &bot, "primary");
     assert!(!prompt.contains("<handoff>") && !prompt.contains("Fix the login tests"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_move_to_its_own_folder_carries_the_context_manifest_past_a_restart() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    let home_ws = host.workspace(&bot);
+    std::fs::write(home_ws.join("ledger-files.json"), serde_json::to_vec(&["moved_from_home.txt"]).unwrap()).unwrap();
+    host.reply(&bot, "Never run the suite twice").await;
+
+    moved_home(&mut host, &bot).await;
+    host.reply(&bot, "Continue in own folder").await;
+
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("in another working folder"), "{prompt}");
+    assert!(!prompt.contains("another agent"), "{prompt}");
+    assert!(prompt.contains("<ledger>\nGathered by rule"), "move carries the context manifest: {prompt}");
+    assert!(prompt.contains("Never run the suite twice"), "move preserves user constraints: {prompt}");
+    assert!(prompt.contains("synthetic-test") && prompt.contains("exit 3"), "{prompt}");
+    assert!(prompt.contains("moved_from_home.txt"), "{prompt}");
 }
 
 async fn relay_bot(host: &Host) -> String {

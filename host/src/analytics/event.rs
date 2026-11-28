@@ -53,6 +53,8 @@ pub enum Event {
     /// The user moved a bot with a conversation to another login: its next message carries a recap
     /// (`agent::bot::fallback::handoff`).
     AgentSwitchedByUser,
+    /// The host gathered or timed out on the mechanical context manifest (`agent::fallback::carry::ledger`).
+    HandoffLedgerBuilt,
     /// An agent taking over a bot's chat was told what came before (`agent::fallback::carry`).
     HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
@@ -288,6 +290,7 @@ impl Event {
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
             Self::AgentSwitchedByUser => "agent_switched_by_user",
+            Self::HandoffLedgerBuilt => "handoff_ledger_built",
             Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
             Self::OwnFolderVersioned => "own_folder_versioned",

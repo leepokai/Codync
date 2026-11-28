@@ -62,11 +62,13 @@ fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = sh
  * The text of one stored row, for the sheet its stub opens. Call off the main thread. Does not change the
  * resident snapshot. Throws when the row is gone or can't be read, so the tap says so instead of doing nothing.
  * Reads only the row's first [PER_MESSAGE_CHARS] characters (`storedSlice`), so opening a message larger than the
- * sheet shows costs that bound, not the whole row.
+ * sheet shows costs that bound, not the whole row. A caller that needs the whole row asks for it with [whole], which
+ * reads the row itself (`storedPayload`, the read approvals use); the sheet does not.
  */
-internal fun AppStore.storedMessageText(entry: Entry): String {
-    val payload = try {
-        database?.storedSlice(entry.botId, entry.id)
+internal fun AppStore.storedMessageText(entry: Entry, whole: Boolean = false): String {
+    val slice = try {
+        if (whole) database?.storedPayload(entry.botId, entry.id)?.let { StoredSlice(it, complete = true) }
+        else database?.storedSlice(entry.botId, entry.id)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -76,18 +78,19 @@ internal fun AppStore.storedMessageText(entry: Entry): String {
         reportStoredReadFailure(entry.id, StoredReadFailure.Missing)
         throw IOException("That message is no longer on this phone.")
     }
-    return storedTextOfPayload(payload, entry.id)
+    return storedTextOfPayload(slice.payload, entry.id, slice.complete)
 }
 
 /**
  * The text a stored row's payload shows in that sheet. A [payload] the read cut short is closed at its last whole field
  * ([closedPayloadSlice]) and ends with [STORED_CUT_MARK], so a message longer than the sheet reads says so instead of
- * passing its front off as the whole row. Throws when the payload cannot be read or has no text, the same failures
- * [AppStore.storedMessageText] reports.
+ * passing its front off as the whole row. Only a cut payload is read that way: one that is the whole row and does not
+ * decode is reported as unreadable, not as a truncation of itself. Throws when the payload cannot be read or has no
+ * text, the same failures [AppStore.storedMessageText] reports.
  */
-internal fun storedTextOfPayload(payload: String, rowId: String): String {
+internal fun storedTextOfPayload(payload: String, rowId: String, complete: Boolean): String {
     val text = try {
-        storedDisplayOf(payload)
+        storedDisplayOf(payload, complete)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -102,12 +105,13 @@ internal fun storedTextOfPayload(payload: String, rowId: String): String {
     return text
 }
 
-/** [payload]'s display text, or the part of it a bounded read kept. */
-private fun storedDisplayOf(payload: String): String = try {
+/** [payload]'s display text, or the part of it a bounded read kept. A whole row that does not decode is a failure. */
+private fun storedDisplayOf(payload: String, complete: Boolean): String = try {
     WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
 } catch (error: CancellationException) {
     throw error
 } catch (error: Exception) {
+    if (complete) throw error
     val kept = WireJson.decodeFromString<Entry>(closedPayloadSlice(payload)).threadNamed().storedDisplayText()
     if (kept.isBlank()) kept else kept + STORED_CUT_MARK
 }

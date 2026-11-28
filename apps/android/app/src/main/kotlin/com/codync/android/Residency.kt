@@ -66,7 +66,9 @@ data class Residency(
  * One stored payload. [text] is the whole row, or only its first [PAYLOAD_HEAD_CHARS] when [chars] exceeds
  * [PER_MESSAGE_CHARS]; [tail] is that row's last [PAYLOAD_TAIL_CHARS] then, else null. [routingThread] is the
  * `data.thread.id` stored beside the row by the schema that wrote it: a row's route is read, never recovered from
- * its text, so a body that mentions a thread cannot move it.
+ * its text, so a body that mentions a thread cannot move it. [controlFlags] are the boolean fields a stub keeps,
+ * read from where the row holds them (see [STUB_FLAG_KEYS]): a member written after them can push them past the head
+ * and the tail alike, so they do not come from either.
  */
 internal class StoredRow(
     val text: String,
@@ -75,6 +77,7 @@ internal class StoredRow(
     val routingThread: String? = null,
     /** The stored route could not be trusted (over the id bound, or holding an embedded NUL): no route and no actions. */
     val routingAmbiguous: Boolean = false,
+    val controlFlags: Map<String, Boolean> = emptyMap(),
 )
 
 /** A row the window kept, and the characters it counted toward the budget. [routingThread] is the route the structural
@@ -94,8 +97,9 @@ internal class KeptRow(
 internal fun newestWindow(newestFirst: Sequence<String>, target: Int, budget: Long): List<Entry> =
     windowRows(newestFirst.map { payload ->
         val chars = payload.length.toLong()
-        if (chars > PER_MESSAGE_CHARS) StoredRow(payload.take(PAYLOAD_HEAD_CHARS), chars, payload.takeLast(PAYLOAD_TAIL_CHARS))
-        else StoredRow(payload, chars)
+        if (chars > PER_MESSAGE_CHARS) {
+            StoredRow(payload.take(PAYLOAD_HEAD_CHARS), chars, payload.takeLast(PAYLOAD_TAIL_CHARS), controlFlags = controlFlagsOf(payload))
+        } else StoredRow(payload, chars)
     }, target, budget).map { it.entry }
 
 /**
@@ -116,14 +120,16 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
             val read = try {
                 WireJson.decodeFromString<Entry>(row.text).threadNamed()
             } catch (_: Exception) {
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, offerAnswers = false)
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread,
+                    offerAnswers = false, controlFlags = row.controlFlags)
                     ?.threadNamed() ?: continue
             }
             // The decoder accepts duplicate object keys and other routing evidence beside the stored route. An approval
             // whose decoded route disagrees keeps a non-actionable stub in the owner chat instead of offering answers
             // under a thread the row does not name; every other row follows the route stored with it.
             val entry = if (read.isApproval && read.routingThreadId() != row.routingThread) {
-                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread, offerAnswers = false)
+                boundedEntry(row.text, row.text.takeLast(PAYLOAD_TAIL_CHARS), row.chars, row.routingThread,
+                    offerAnswers = false, controlFlags = row.controlFlags)
                     ?.threadNamed() ?: continue
             } else read.withCheckedThread(row.routingThread)
             decoded += KeptRow(entry, row.chars.toInt(), entry.routingThreadId())
@@ -139,6 +145,7 @@ internal fun windowRows(newestFirst: Sequence<StoredRow>, target: Int, budget: L
             row.chars,
             row.routingThread,
             offerAnswers = !row.routingAmbiguous,
+            controlFlags = row.controlFlags,
         )?.threadNamed() ?: continue
         val cost = retainedStubChars(entry)
         if (decoded.isNotEmpty() && bytes + cost > budget) break
@@ -201,6 +208,7 @@ internal fun previewsWithin(order: List<String>, budget: Long, read: (String) ->
 /**
  * [head] is at most [PAYLOAD_HEAD_CHARS] of a payload, [tail] its last [PAYLOAD_TAIL_CHARS] where its times sit, and
  * [storedThread] the routing metadata kept beside the row. [fullLength] is the stored row, which is not copied.
+ * [controlFlags] are the boolean control fields read from the row itself, wherever it holds them.
  */
 private fun boundedEntry(
     head: String,
@@ -209,6 +217,7 @@ private fun boundedEntry(
     storedThread: String? = null,
     /** False when the route is unproven: the stub must not carry answers. */
     offerAnswers: Boolean = true,
+    controlFlags: Map<String, Boolean> = emptyMap(),
 ): Entry? {
     val fields = headFields(head)
     val seq = fields["seq"]?.toLongOrNull() ?: return null
@@ -220,7 +229,7 @@ private fun boundedEntry(
         rev = fields["rev"]?.toLongOrNull() ?: 0L,
         kind = fields["kind"].orEmpty(),
         turn = fields["turn"]?.toLongOrNull() ?: 0L,
-        data = stubData(head, tail, fullLength, storedThread, offerAnswers),
+        data = stubData(head, tail, fullLength, storedThread, offerAnswers, controlFlags),
         createdAt = times["createdAt"] ?: 0L,
         updatedAt = times["updatedAt"] ?: 0L,
     )
@@ -231,11 +240,48 @@ private fun boundedEntry(
  * `status` and `options` say whether a queued row can still be sent. They do not make an approval
  * answerable: Allow and Deny wait until the full row is read. `final` and `bookkeeping` say what kind of row
  * it is: [Entry.isChat] shows a reply only when it is final, and [Entry.isWorkingStep] counts a tool only when it
- * is not the bot's bookkeeping.
+ * is not the bot's bookkeeping. They are read from the whole row, not only from the head or the tail, so a large
+ * member written after them cannot drop them ([STUB_FLAG_KEYS]).
  */
 private val STUB_KEPT_KEYS = setOf(
     "status", "options", "selected", "clientNonce", "removed", "toolKind", "title", "final", "bookkeeping",
 )
+
+/**
+ * The boolean control fields a stub keeps, and the only ones it reads from the whole row ([StoredRow.controlFlags]).
+ * They are written after the body, so a large `replyTo` or `files` member after them leaves them in the unread middle:
+ * neither the head nor the tail holds them. [stubFlag] reads one from where the row keeps it.
+ */
+internal val STUB_FLAG_KEYS = listOf("final", "bookkeeping")
+
+/** The value of a boolean field a stub keeps, read from [text] starting at its name: `"final":true`. Null when the
+ *  text does not start with one of these names, or its value is not a whole boolean. */
+internal fun stubFlag(text: String): Pair<String, Boolean>? {
+    val name = STUB_FLAG_KEYS.firstOrNull { text.startsWith("\"$it\"") } ?: return null
+    var i = name.length + 2
+    while (i < text.length && text[i].isWhitespace()) i++
+    if (i >= text.length || text[i] != ':') return null
+    i++
+    while (i < text.length && text[i].isWhitespace()) i++
+    val value = when {
+        text.startsWith("true", i) -> true
+        text.startsWith("false", i) -> false
+        else -> return null
+    }
+    return name to value
+}
+
+/**
+ * The [STUB_FLAG_KEYS] a whole [payload] holds, wherever it holds them. A name only appears outside a string in a
+ * JSON payload (a body that mentions one has its quotes escaped), so the first mention is the field's.
+ */
+internal fun controlFlagsOf(payload: String): Map<String, Boolean> = STUB_FLAG_KEYS.mapNotNull { key ->
+    val at = payload.indexOf("\"$key\"")
+    if (at < 0) null else stubFlag(payload.substring(at, minOf(payload.length, at + FLAG_FRAGMENT_CHARS)))
+}.toMap()
+
+/** Characters of a payload a control field's name and value use, read from where the row holds it. */
+internal const val FLAG_FRAGMENT_CHARS = 32
 
 /** The fields that offer an answer. They stay off a stub whose route was not proven. */
 private val ANSWER_KEYS = setOf("options", "selected")
@@ -271,8 +317,10 @@ private fun retainedThreadIdChars(data: JsonObject): Int {
 /**
  * The stub's `data`: the large text becomes [storedStubText]. Control fields that fit whole in [head] stay, and a
  * field that sits after the body is taken from [tail] when the head never finished it. A name is not. A cut-off value is left out.
+ * [controlFlags] are the boolean fields read from the whole row, which stay whatever the row writes after them.
  */
-private fun stubData(head: String, tail: String, fullLength: Long, thread: String?, offerAnswers: Boolean): JsonObject {
+private fun stubData(head: String, tail: String, fullLength: Long, thread: String?, offerAnswers: Boolean,
+    controlFlags: Map<String, Boolean>): JsonObject {
     val fromHead = if (offerAnswers) STUB_KEPT_KEYS else STUB_KEPT_KEYS - ANSWER_KEYS
     // Answers sit with the card's fields. A value that only finishes in the tail is not copied: an unproven route's
     // options often land there, and offering them would answer under a thread nothing checked.
@@ -280,6 +328,7 @@ private fun stubData(head: String, tail: String, fullLength: Long, thread: Strin
     val kept = LinkedHashMap<String, JsonElement>()
     for ((key, value) in completeDataFields(head)) if (key in fromHead) kept[key] = value
     for ((key, value) in trailingDataFields(tail)) if (key in fromTail && key !in kept) kept[key] = value
+    for ((key, flag) in controlFlags) if (key in STUB_KEPT_KEYS) kept[key] = JsonPrimitive(flag)
     return buildJsonObject {
         for ((key, value) in kept) put(key, value)
         put("text", storedStubText(fullLength))
@@ -551,8 +600,10 @@ private const val JSON_SEPARATOR = 3
 /**
  * [payload], the front of a stored row that a bounded read cut off, closed so that it parses: the fields it holds whole
  * are kept, a string the cut falls inside keeps the part that arrived, and the objects and arrays still open are shut.
- * A cut inside a name, a number or a literal drops what was being read, so what is left is always whole fields. This is
- * what lets a sheet read a bounded slice of a row that is longer than [PER_MESSAGE_CHARS] instead of the whole row.
+ * A cut inside a name, a number or a literal drops what was being read, and a cut inside an escape sequence keeps the
+ * string only as far as its last whole escape (`\u00` cannot be closed into a string). So what is left is always whole
+ * fields. This is what lets a sheet read a bounded slice of a row that is longer than [PER_MESSAGE_CHARS] instead of
+ * the whole row.
  */
 internal fun closedPayloadSlice(payload: String): String {
     val open = StringBuilder()
@@ -560,24 +611,39 @@ internal fun closedPayloadSlice(payload: String): String {
     var inString = false
     var name = false
     var bare = false
-    var escaped = false
+    // Where a string the cut falls inside safely ends: the whole of it, or the last character before a cut escape.
+    var stringEnd = payload.length
+    // Where the string's last whole escape starts, so a high surrogate that lost its pair is not left behind.
+    var escapeStart = -1
     // The longest front of [payload] that ends between two values, and the containers open where it ends.
     var safe = 0
     var safeOpen = ""
     fun boundary(at: Int) {
         if (at > safe) { safe = at; safeOpen = open.toString() }
     }
-    for (index in payload.indices) {
+    var index = 0
+    while (index < payload.length) {
         val c = payload[index]
         if (inString) {
-            when {
-                escaped -> escaped = false
-                c == '\\' -> escaped = true
-                c == '"' -> {
+            when (c) {
+                '\\' -> {
+                    val escape = escapeLength(payload, index)
+                    if (escape == 0) {
+                        // The cut landed inside this escape. `\u00` cannot stand in a string, so the value keeps the
+                        // text before it and ends there.
+                        stringEnd = index
+                        break
+                    }
+                    escapeStart = index
+                    index += escape
+                    continue
+                }
+                '"' -> {
                     inString = false
                     if (name) expect = JSON_COLON else { expect = JSON_SEPARATOR; boundary(index + 1) }
                 }
             }
+            index++
             continue
         }
         when (c) {
@@ -596,13 +662,38 @@ internal fun closedPayloadSlice(payload: String): String {
             ' ', '\n', '\r', '\t' -> if (bare) { bare = false; expect = JSON_SEPARATOR; boundary(index) }
             else -> if (expect == JSON_VALUE) bare = true
         }
+        index++
     }
-    // A cut inside a value's string keeps the value as far as it arrived, escaping aside; anywhere else the row's last
+    // A cut inside a value's string keeps the value as far as it arrived, escapes aside; anywhere else the row's last
     // whole field is what still parses.
     if (inString && !name) {
-        return payload.substring(0, if (escaped) payload.length - 1 else payload.length) + '"' + closers(open)
+        var end = stringEnd
+        // A `\u` escape of a high surrogate that ends the string cannot be encoded back without its pair: keep the
+        // text before it rather than a string the decoder refuses.
+        if (escapeStart >= 0 && escapeStart + 6 == end && payload[escapeStart + 1] == 'u') {
+            val code = payload.substring(escapeStart + 2, end).toIntOrNull(16)
+            if (code != null && code in 0xD800..0xDBFF) end = escapeStart
+        }
+        return payload.substring(0, end) + '"' + closers(open)
     }
     return payload.substring(0, safe) + closers(safeOpen)
+}
+
+/**
+ * Characters of the escape sequence at [start], which is a backslash: 2 for `\"` and the other one-character escapes, 6
+ * for `\uXXXX`. 0 when [text] ends inside it, or its digits are not hex, so the sequence cannot stand in a string.
+ */
+private fun escapeLength(text: String, start: Int): Int {
+    if (start + 1 >= text.length) return 0
+    return when (text[start + 1]) {
+        '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> 2
+        'u' -> {
+            if (start + 6 > text.length) return 0
+            val digits = text.substring(start + 2, start + 6)
+            if (digits.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) 6 else 0
+        }
+        else -> 0
+    }
 }
 
 /** The characters that shut the objects and arrays in [open], innermost first. */

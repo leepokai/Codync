@@ -17,6 +17,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
+/**
+ * A stored row's front as far as one bounded read takes it ([MirrorDatabase.storedSlice]), and whether that front is
+ * the whole row. A sheet shows a slice that is short of its row with [STORED_CUT_MARK]; one that is not short of it is
+ * the whole payload, and failing to read it is a failure rather than a cut.
+ */
+internal class StoredSlice(val payload: String, val complete: Boolean)
+
 /** All entity writes, send reconciliation and the event cursor commit together. */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
     SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, SCHEMA_VERSION) {
@@ -30,6 +37,9 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         private const val BYTES_PER_SHOWN = 2_000L
         /** Characters of stored payload a chat that isn't open may hold as its preview. */
         private const val PREVIEW_BYTES = 8_000L
+
+        /** The first column of a row's [STUB_FLAG_KEYS], right after its length, payload, tail, route and route trust. */
+        private const val FLAG_COLUMN = 5
 
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
@@ -135,13 +145,14 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
 
     /**
      * One row's payload as far as the sheet that opens it reads: at most [PER_MESSAGE_CHARS] characters of it, however
-     * long the stored row is, so a message bigger than one cursor window still opens. The caller closes a slice that is
-     * short of the row (`closedPayloadSlice`). Null when the row is gone.
+     * long the stored row is, so a message bigger than one cursor window still opens. [StoredSlice.complete] says
+     * whether that is the row itself; a slice short of it is closed by the caller (`closedPayloadSlice`). Null when the
+     * row is gone. A caller that needs the whole row, such as an approval's answers, reads [storedPayload] instead.
      */
-    @Synchronized internal fun storedSlice(botId: String, id: String): String? = readableDatabase.rawQuery(
-        "SELECT substr(payload, 1, $PER_MESSAGE_CHARS) FROM entries WHERE bot_id=? AND id=? LIMIT 1",
+    @Synchronized internal fun storedSlice(botId: String, id: String): StoredSlice? = readableDatabase.rawQuery(
+        "SELECT length(payload), substr(payload, 1, $PER_MESSAGE_CHARS) FROM entries WHERE bot_id=? AND id=? LIMIT 1",
         arrayOf(botId, id)).use {
-        if (it.moveToFirst()) it.getString(0) else null
+        if (it.moveToFirst()) StoredSlice(it.getString(1).orEmpty(), it.getLong(0) <= PER_MESSAGE_CHARS) else null
     }
 
     /**
@@ -397,7 +408,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     /**
      * [bot]'s newest [limit] stored payloads, newest first, read while the cursor is open.
      * A payload longer than [PER_MESSAGE_CHARS] comes back as its first [PAYLOAD_HEAD_CHARS] and last [PAYLOAD_TAIL_CHARS],
-     * with its full length. Its route comes from the column stored beside it, never from its text.
+     * with its full length. Its route comes from the column stored beside it, never from its text, and the boolean
+     * control fields a stub keeps are projected from wherever the row holds them ([STUB_FLAG_KEYS]).
      */
     private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<StoredRow>) -> T): T =
         db.rawQuery(
@@ -411,8 +423,14 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 "AND instr(CAST(thread_id AS BLOB), x'00') = 0 THEN substr(thread_id, 1, $MAX_ROUTING_ID_CHARS) ELSE NULL END, " +
                 // Metadata this mirror cannot trust: no route, and the card keeps the stub instead of offering answers.
                 "CASE WHEN thread_id IS NOT NULL AND (length(thread_id) > $MAX_ROUTING_ID_CHARS " +
-                "OR instr(CAST(thread_id AS BLOB), x'00') > 0) THEN 1 ELSE 0 END " +
-                "FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
+                "OR instr(CAST(thread_id AS BLOB), x'00') > 0) THEN 1 ELSE 0 END, " +
+                // A stub's kind sits after the body, where a large replyTo or files member written after it leaves it in
+                // the unread middle. Each flag is read from where the row holds it, in a bounded slice of it; a row that
+                // does not hold the name at all gives a slice that is not the flag, so it adds none.
+                STUB_FLAG_KEYS.joinToString(", ") { key ->
+                    "substr(payload, max(instr(payload, '\"$key\"'), 1), $FLAG_FRAGMENT_CHARS)"
+                } +
+                " FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit",
             arrayOf(bot),
         ).use { cursor ->
             read(generateSequence {
@@ -422,8 +440,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 val tail = if (chars > PER_MESSAGE_CHARS) cursor.getString(2).orEmpty() else null
                 val ambiguous = cursor.getInt(4) != 0
                 val stored = cursor.getString(3)?.takeIf { it.isNotBlank() && '\u0000' !in it && it.length <= MAX_ROUTING_ID_CHARS }
+                val flags = STUB_FLAG_KEYS.indices.mapNotNull { index ->
+                    cursor.getString(FLAG_COLUMN + index)?.let(::stubFlag)
+                }.toMap()
                 // Every row is written with its route beside it, so a missing one is the row's answer, not a gap to fill.
-                StoredRow(head, chars, tail, if (ambiguous) null else stored, ambiguous)
+                StoredRow(head, chars, tail, if (ambiguous) null else stored, ambiguous, flags)
             })
         }
 

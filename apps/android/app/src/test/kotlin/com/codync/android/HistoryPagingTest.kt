@@ -107,6 +107,44 @@ class HistoryPagingTest {
         assertTrue("a thread lists its rows by isChat, so a stub reply has to stay one", kept.isChat)
     }
 
+    @Test fun `a stubbed reply keeps its kind when a large member follows its final flag`() {
+        val filler = "R".repeat(PER_MESSAGE_CHARS)
+        // The host writes `final` after the body, then the quoted reply, which is large too: neither the head nor the
+        // tail of the row holds the flag.
+        val reply = row(3, "agent").copy(data = buildJsonObject {
+            put("text", filler)
+            put("final", true)
+            putJsonObject("replyTo") {
+                put("id", "e-1")
+                put("kind", "user")
+                put("text", "Q".repeat(4_000))
+            }
+        })
+        val payload = WireJson.encodeToString(reply)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        assertFalse("the head stops inside the body", "\"final\"" in payload.take(PAYLOAD_HEAD_CHARS))
+        assertFalse("the tail holds the end of the quote", "\"final\"" in payload.takeLast(PAYLOAD_TAIL_CHARS))
+        val kept = newestWindow(sequenceOf(payload), 10, PER_MESSAGE_CHARS.toLong() + 2_000).single()
+        assertTrue(kept.isStoredStub)
+        assertEquals("true", kept.data["final"]?.jsonPrimitive?.content)
+        assertTrue("the reply stays in the thread whatever the row writes after its flag", kept.isChat)
+
+        // The same for a tool row's bookkeeping flag, written before the files it produced.
+        val tool = row(5, "tool").copy(turn = 1, data = buildJsonObject {
+            put("toolKind", "execute")
+            put("output", filler)
+            put("bookkeeping", false)
+            put("files", buildJsonArray { add(buildJsonObject { put("name", "F".repeat(4_000)) }) })
+        })
+        val toolPayload = WireJson.encodeToString(tool)
+        assertFalse("\"bookkeeping\"" in toolPayload.take(PAYLOAD_HEAD_CHARS))
+        assertFalse("\"bookkeeping\"" in toolPayload.takeLast(PAYLOAD_TAIL_CHARS))
+        val keptTool = newestWindow(sequenceOf(toolPayload), 10, PER_MESSAGE_CHARS.toLong() + 2_000).single()
+        assertTrue(keptTool.isStoredStub)
+        assertEquals("false", keptTool.data["bookkeeping"]?.jsonPrimitive?.content)
+        assertTrue("the tool stays a working step", keptTool.isWorkingStep)
+    }
+
     @Test fun `a stubbed tool row is still one of the working steps`() {
         val filler = "T".repeat(PER_MESSAGE_CHARS)
         val tool = row(4, "tool").copy(turn = 1, data = buildJsonObject {

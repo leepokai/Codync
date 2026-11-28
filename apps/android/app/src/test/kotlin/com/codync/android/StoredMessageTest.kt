@@ -70,12 +70,12 @@ class StoredMessageTest {
             put("final", true)
         })
         val payload = WireJson.encodeToString(stored)
-        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut")
+        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut", complete = false)
         assertTrue(shown.startsWith("MMMM"))
         assertEquals("the formatter marks a message longer than the sheet reads", STORED_CUT_MARK, shown.takeLast(1))
         assertTrue("the slice's whole body is kept, not a field or two", shown.length > PER_MESSAGE_CHARS - 200)
         // The row is unchanged: the same bound reads the same front.
-        assertEquals(shown, storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut"))
+        assertEquals(shown, storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut", complete = false))
     }
 
     @Test fun `a cut tool payload keeps the patches it holds`() {
@@ -87,9 +87,43 @@ class StoredMessageTest {
         })
         val payload = WireJson.encodeToString(stored)
         assertTrue(payload.length > PER_MESSAGE_CHARS)
-        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-tool")
+        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-tool", complete = false)
         assertTrue(shown.startsWith("src/a.kt\n+ "))
         assertEquals(STORED_CUT_MARK, shown.takeLast(1))
+    }
+
+    @Test fun `a cut inside a unicode escape still opens with the text before it`() {
+        // A control character is what a payload spells with a \uXXXX escape; a long body puts the cut inside one.
+        val text = "before" + '\u0001' + "after".repeat(PER_MESSAGE_CHARS)
+        val stored = Entry("e-escape", 4, "a", rev = 4, kind = "agent", data = buildJsonObject { put("text", text) })
+        val payload = WireJson.encodeToString(stored)
+        val escape = payload.indexOf("\\u0001")
+        assertTrue("the payload spells the control character as an escape", escape > 0)
+        // Every place a bounded read can end inside the escape: after the backslash, the u, and each digit but the last.
+        for (cut in escape..escape + 5) {
+            val closed = closedPayloadSlice(payload.substring(0, cut))
+            val decoded = WireJson.decodeFromString<Entry>(closed)
+            assertEquals("cut at $cut stays the row", "e-escape", decoded.id)
+            assertEquals("cut at $cut keeps the text before the escape", "before", decoded.text)
+        }
+        // A character a payload spells as a surrogate pair: a cut inside the second escape keeps the pair out of the
+        // string, since half of it cannot be encoded back.
+        val pairPayload = """{"id":"e-pair","seq":5,"botId":"a","rev":5,"kind":"agent","data":{"text":"\uD83D\uDE00 end"}}"""
+        val low = pairPayload.indexOf("""\uDE00""")
+        assertTrue("the pair's second escape is where this cuts", low > 0)
+        for (cut in low until low + 6) {
+            val decoded = WireJson.decodeFromString<Entry>(closedPayloadSlice(pairPayload.substring(0, cut)))
+            assertEquals("cut at $cut stays the row", "e-pair", decoded.id)
+        }
+    }
+
+    @Test fun `a whole row that will not decode reads as unreadable, not as a cut of itself`() {
+        val stored = Entry("e-broken", 6, "a", rev = 6, kind = "agent", data = buildJsonObject { put("text", "hello") })
+        val whole = WireJson.encodeToString(stored).dropLast(1)
+        assertTrue("the row does not decode as it is stored", runCatching { WireJson.decodeFromString<Entry>(whole) }.isFailure)
+        assertTrue("a whole row is not passed off as the cut front of itself", runCatching { storedTextOfPayload(whole, "e-broken", complete = true) }.isFailure)
+        // The same text, read as the front of a row the read cut: that is the sheet's cut, and it says so.
+        assertEquals("hello$STORED_CUT_MARK", storedTextOfPayload(whole, "e-broken", complete = false))
     }
 
     @Test fun `a closed slice is whole JSON again`() {

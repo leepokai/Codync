@@ -898,10 +898,10 @@ class MirrorDatabaseTest {
     @Test fun aFailingStoredMessageReadIsReportedOnce() {
         armAnalytics()
         val bad = "{not-json"
-        repeat(2) { assertTrue(runCatching { storedTextOfPayload(bad, "once-stored") }.isFailure) }
+        repeat(2) { assertTrue(runCatching { storedTextOfPayload(bad, "once-stored", complete = true) }.isFailure) }
         assertEquals("two reads of a payload that will not decode send one event", 1, reported("stored_message_read_failed"))
         val blank = WireJson.encodeToString(chat("bot", 3).copy(data = buildJsonObject { put("text", "   ") }))
-        repeat(2) { assertTrue(runCatching { storedTextOfPayload(blank, "once-blank") }.isFailure) }
+        repeat(2) { assertTrue(runCatching { storedTextOfPayload(blank, "once-blank", complete = true) }.isFailure) }
         assertEquals("a row with no text is its own failure, once", 2, reported("stored_message_read_failed"))
     }
 
@@ -927,6 +927,40 @@ class MirrorDatabaseTest {
         assertTrue("the sheet reads at most one message's characters", shown.length <= PER_MESSAGE_CHARS)
         assertEquals("the sheet says the rest of the row was not read", STORED_CUT_MARK, shown.takeLast(1))
         assertEquals("a message that opened reports nothing", 0, reported("stored_message_read_failed"))
+    }
+
+    @Test fun aStubKeepsTheKindItsRowWroteAfterTheBody() {
+        // The host writes `final` after the body, then the quoted reply, which is long enough to cover the row's tail.
+        val reply = Entry("e-final", 3, "bot", rev = 3, kind = "agent", data = buildJsonObject {
+            put("text", "R".repeat(PER_MESSAGE_CHARS))
+            put("final", true)
+            putJsonObject("replyTo") {
+                put("id", "e-1"); put("kind", "user"); put("text", "Q".repeat(4_000))
+            }
+        })
+        mirror.receive(listOf(chat("bot", 2), reply))
+        val kept = mirror.snapshot(Residency(setOf("bot"), window = 10)).entries.single { it.id == reply.id }
+        assertTrue(kept.isStoredStub)
+        assertEquals("the flag is read from where the row holds it", "true", kept.data["final"]?.jsonPrimitive?.content)
+        assertTrue("a stubbed final reply stays a chat row in its thread", kept.isChat)
+    }
+
+    @Test fun aWholeRowReadKeepsTheWholeMessage() {
+        armAnalytics()
+        val long = Entry("once-whole", 1, "bot", rev = 1, kind = "user", data = buildJsonObject {
+            put("text", "W".repeat(PER_MESSAGE_CHARS + 8_000))
+        })
+        storeRaw(long, WireJson.encodeToString(long))
+        val store = previewStore()
+        store.database = mirror
+        // The sheet reads its bound, and says that is what it read.
+        val bounded = store.storedMessageText(long)
+        assertTrue("the sheet reads at most one message's characters", bounded.length <= PER_MESSAGE_CHARS)
+        assertEquals(STORED_CUT_MARK, bounded.takeLast(1))
+        // A caller that wants the row itself gets all of it.
+        val whole = store.storedMessageText(long, whole = true)
+        assertEquals("the whole row is readable when the caller asks for it", long.text, whole)
+        assertEquals("a row that opened either way reports nothing", 0, reported("stored_message_read_failed"))
     }
 
     private fun armAnalytics() {

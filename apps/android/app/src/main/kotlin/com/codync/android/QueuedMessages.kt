@@ -55,7 +55,7 @@ internal fun Entry.opensQueuedStoredMessage(): Boolean =
 internal fun queuedStoredText(entry: Entry, payload: String?): String? {
     if (!entry.opensQueuedStoredMessage() || payload == null) return null
     return try {
-        storedTextOfPayload(payload, entry.id)
+        storedTextOfPayload(payload, entry.id, complete = true)
     } catch (_: IOException) {
         null
     }

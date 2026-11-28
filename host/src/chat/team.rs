@@ -24,6 +24,7 @@ pub mod remote;
 mod requests;
 pub mod restart;
 pub use ceilings::Ceilings;
+pub(crate) use remote::expire_loop;
 pub use requests::{Requests, Turn};
 
 const MAX_MESSAGE_BYTES: usize = 32_000;
@@ -52,7 +53,7 @@ pub fn tools() -> Value {
     json!([
         {
             "name": "list_bots",
-            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
+            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then the coding agents' sessions here (tier pull: they read their mail themselves, so an answer may take a while or not come; tier turn: their hook tells them of it at their next step; tier push: told as soon as a letter comes, an idle session starts a turn), then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -71,7 +72,7 @@ pub fn tools() -> Value {
         },
         {
             "name": "message_bot",
-            "description": "Send a self-contained request to another Codync bot and return as soon as it is queued. The recipient works with its own tools, folder and permissions; its final reply (or why it couldn't finish) comes back to you later as a new turn in your own chat, with replies that arrive while you are busy taken together. Don't wait or poll for it. Stopping you does not cancel accepted requests; stopping the recipient does, and you hear so. After a host restart a request that hadn't started is sent again, and one that was running comes back as failed (check its partial work before asking again).",
+            "description": "Send a self-contained request to another Codync bot and return as soon as it is queued. The recipient works with its own tools, folder and permissions; its final reply (or why it couldn't finish) comes back to you later as a new turn in your own chat, with replies that arrive while you are busy taken together. Don't wait or poll for it. Stopping you does not cancel accepted requests; stopping the recipient does, and you hear so. After a host restart a request that hadn't started is sent again, and one that was running comes back as failed (check its partial work before asking again); a request to a coding agent's session (it reads its mail itself) isn't sent again: its notice ends, the letter stays in that session's inbox, and an answer after the restart reaches you as a new request.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -498,10 +499,19 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         "list_bots" => {
             visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
-            directory::list(hub, from, args, &remote, &[], |_| true)
+            // A session whose saved address is a bot's id stays unlisted: the id means the bot.
+            let mut sessions = assistant::sessions_here(hub, None, args).await?;
+            sessions.retain(|s| !names_bot(hub, &s.address));
+            directory::list(hub, from, args, &remote, &sessions, |_| true)
         }
         "message_bot" => {
             let (to, message) = message_args(args)?;
+            // A coding agent's session on this computer, by its address; a bot's id or address name wins.
+            if !names_bot(hub, to)
+                && let Some(session) = hub.network.sessions.by_address(&hub.store, to)
+            {
+                return remote::to_local_session(hub, &visible_bot(hub, from)?, turn, &session, message);
+            }
             match hub.network.recipient(to)? {
                 Recipient::There(target) => {
                     remote::message(hub, &visible_bot(hub, from)?, turn, &target, message).await
@@ -511,6 +521,11 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         }
         _ => call(hub, from, turn, name, args),
     }
+}
+
+/// Whether `to` names one of this computer's bots (its id or address name).
+fn names_bot(hub: &Hub, to: &str) -> bool {
+    matches!(hub.network.recipient(to), Ok(Recipient::Here(id)) if visible_bot(hub, &id).is_ok())
 }
 
 /// A team tool call among this computer's bots.

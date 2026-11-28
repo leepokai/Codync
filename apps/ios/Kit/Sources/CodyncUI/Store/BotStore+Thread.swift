@@ -59,9 +59,13 @@ extension BotStore {
     /// Whether this computer starts a thread the user asks for; false before hello or on older hosts.
     public var startsThreads: Bool { hello?.startThread == true }
 
-    /// A thread the user starts with `botId`, opened by `text`: its task's id. Not replayed: a retry could start two.
-    public func startThread(botId: String, text: String) async throws -> String {
-        try await withLink { try await $0.startThread(botId: botId, text: text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    /// Whether a thread may start here without a bot; false before hello or on older hosts.
+    public var startsThreadsWithoutBot: Bool { startsThreads && hello?.threadsWithoutBot == true }
+
+    /// A thread the user starts, opened by `text`: with `botId` on its settings, or with none on `setup`. The bot it went
+    /// to and its task's id. Not replayed: a retry could start two.
+    public func startThread(botId: String?, text: String, setup: ThreadSetup? = nil) async throws -> (botId: String, taskId: String) {
+        try await withLink { try await $0.startThread(botId: botId, text: text.trimmingCharacters(in: .whitespacesAndNewlines), setup: setup) }
     }
 
     /// `taskId`'s task once sync brings it with a thread, or nil when it has none within `wait` (it waits behind
@@ -74,15 +78,5 @@ extension BotStore {
             guard (try? await Task.sleep(for: .milliseconds(250))) != nil else { return nil }
         }
         return nil
-    }
-
-    /// Has the bot's conversation open its details on `task`'s thread once it is on screen.
-    public func requestThread(of botId: String, task: WorkTask) { threadRequest = (botId, task) }
-
-    /// Consumed once, including when the conversation was already on screen.
-    func takeThreadRequest(for botId: String) -> WorkTask? {
-        guard let request = threadRequest, request.botId == botId else { return nil }
-        threadRequest = nil
-        return request.task
     }
 }

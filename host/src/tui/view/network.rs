@@ -131,7 +131,13 @@ fn list(buf: &mut Buffer, body: Rect, n: &NetworkSheet) -> &'static str {
         put(buf, body.x, y, body.width, &format!("{me} · {role} · {connector}"), t.secondary.patch(t.panel));
         y += 2;
         let rule_rows = n.rules().len().min(3);
-        let room = usize::from(body.height).saturating_sub(9 + rule_rows).max(1);
+        // A gap, the sessions' title, at least one of them and, with more, how many.
+        let session_rows = match n.sessions().len() {
+            0 => 0,
+            1 => 3,
+            _ => 4,
+        };
+        let room = usize::from(body.height).saturating_sub(9 + rule_rows + session_rows).max(1);
         let off = n.cursor.saturating_sub(room.saturating_sub(1));
         for (i, c) in n.computers().iter().enumerate().skip(off).take(room) {
             computer_row(buf, body, y, c, i == n.cursor);
@@ -154,7 +160,10 @@ fn list(buf: &mut Buffer, body: Rect, n: &NetworkSheet) -> &'static str {
         let note = tr("Connect your computers so bots on one can message bots on another.");
         wrapped(buf, body, &mut y, &note, t.secondary);
     }
-    if n.says("assistantsAvailable") {
+    // The cloud switch keeps a gap, its line and one of its note's.
+    let switch = n.says("assistantsAvailable");
+    y = sessions(buf, body, y + 1, if switch { 3 } else { 0 }, n);
+    if switch {
         assistants(buf, body, y + 1, n.says("assistants"));
     }
     match (n.joined(), n.may("canInvite"), n.may("canRecover")) {
@@ -181,9 +190,86 @@ fn networks_line(buf: &mut Buffer, body: Rect, y: u16, n: &NetworkSheet) -> u16 
     y + 1
 }
 
+/// This computer's coding agents' sessions, one line each in the host's order (running, then the
+/// most recent, the older ones dimmed last) as many as fit above `below` rows, then how many more
+/// there are.
+fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkSheet) -> u16 {
+    let t = theme();
+    let all = n.sessions();
+    if all.is_empty() {
+        return y.saturating_sub(1);
+    }
+    // The heading only with room for a session under it, above what keeps its place below.
+    if body.bottom().saturating_sub(y + below) < 2 {
+        return y.saturating_sub(1);
+    }
+    line(buf, body, &mut y, &tr("Agents"), t.bold);
+    let room = usize::from(body.bottom().saturating_sub(y + below));
+    // The last row says how many more when they don't all fit.
+    let fit = if all.len() > room { room.saturating_sub(1) } else { all.len() };
+    for s in &all[..fit] {
+        let runs = s["runs"] == true;
+        let address = s["address"].as_str().unwrap_or_default();
+        let title = s["title"].as_str();
+        let state = match s["state"].as_str() {
+            Some("working") => Some(tr("Working")),
+            Some("idle") => Some(tr("Idle")),
+            _ => None,
+        };
+        let tier = match s["tier"].as_str() {
+            Some("pull") => Some(tr("Checks its mail")),
+            Some("turn") => Some(tr("Told of mail at its next step")),
+            Some("push") => Some(tr("Told of mail as it comes")),
+            _ => None,
+        };
+        let mut detail: Vec<String> = [title.map(|_| address.into()), state.map(Into::into), tier.map(Into::into)]
+            .into_iter()
+            .flatten()
+            .collect();
+        let name = if s["older"] == true { t.dim } else { t.text };
+        // Two columns for the dot and its space, two between title and details: the address goes in whole first, then
+        // the state and the mail text as room allows, and the title gets what is left (12 to 34).
+        let fixed = 2 + 2 + 12;
+        let width = |d: &[String]| u16::try_from(md::width(&d.join(" · "))).unwrap_or(u16::MAX);
+        while detail.len() > 1 && fixed + width(&detail) > body.width {
+            detail.pop();
+        }
+        let detail = detail.join(" · ");
+        // No state, no dot: unknown isn't offline.
+        let dot = if s["state"].is_null() {
+            " "
+        } else if runs {
+            "●"
+        } else {
+            "○"
+        };
+        let x = put(buf, body.x, y, 2, dot, if runs { t.text } else { t.dim }.patch(t.panel)) + 1;
+        let rest = width(std::slice::from_ref(&detail));
+        let room = body.width.saturating_sub(2 + 2 + rest).clamp(12, 34);
+        let x =
+            put(buf, x, y, room + 2, &md::truncate(title.unwrap_or(address), usize::from(room)), name.patch(t.panel));
+        let x = x + 2;
+        put(buf, x, y, body.right().saturating_sub(x), &detail, t.secondary.patch(t.panel));
+        y += 1;
+    }
+    if fit < all.len() {
+        line(
+            buf,
+            body,
+            &mut y,
+            &fill(&tr("More sessions: {count}"), &[("count", &(all.len() - fit).to_string())]),
+            t.dim,
+        );
+    }
+    y
+}
+
 /// The cloud assistants switch, for a computer in a Codync account (only there can they reach it).
 fn assistants(buf: &mut Buffer, body: Rect, mut y: u16, on: bool) {
     let t = theme();
+    if y >= body.bottom() {
+        return;
+    }
     put(buf, body.x, y, body.width, &tr("Cloud assistants"), t.text.patch(t.panel));
     let x = rput(buf, body.right(), y, &format!("  {}", tr("a switches")), t.dim.patch(t.panel));
     let state = if on { format!("◉ {}", tr("On")) } else { format!("○ {}", tr("Off")) };
@@ -287,5 +373,82 @@ pub(super) fn wrapped(buf: &mut Buffer, body: Rect, y: &mut u16, text: &str, sty
         }
         put_line(buf, body.x, *y, body.width, &l);
         *y += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const SHORT: u16 = 17;
+
+    #[test]
+    fn sessions_list_in_the_hosts_order_and_say_how_many_more_dont_fit() {
+        let all = json!([
+            {"address": "billing-claude", "title": "Fix refunds", "state": "working", "runs": true, "tier": "pull"},
+            {"address": "web-codex", "state": "offline", "runs": false},
+            {"address": "infra-codex", "older": true},
+        ]);
+        let text = |height: u16| {
+            let view = json!({"joined": false, "sessions": all, "assistantsAvailable": true});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, 100, height));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+        };
+        let tall = text(30);
+        assert!(tall.contains("Agents") && tall.contains("Working · Checks its mail"), "{tall}");
+        let at = |s: &str| tall.find(s).unwrap_or(usize::MAX);
+        assert!(at("Fix refunds") < at("web-codex") && at("web-codex") < at("infra-codex"), "{tall}");
+        assert!(tall.contains("● Fix refunds  billing-claude · Working"), "spaced apart: {tall}");
+        assert!(tall.contains("○ web-codex") && tall.contains("  infra-codex"), "no state, no dot: {tall}");
+        assert!(!tall.contains("More sessions"), "{tall}");
+        let short = text(SHORT);
+        assert!(short.contains("Fix refunds") && short.contains("More sessions: 2"), "{short}");
+        assert!(short.contains("Cloud assistants"), "the switch keeps its row: {short}");
+        // Narrow: the address stays whole, the mail text gives way first.
+        let address = "a-very-long-repository-name-claude-40ch";
+        let narrow = {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": address, "title": "A title long enough to be cut", "state": "working", "runs": true, "tier": "pull"},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, 64, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+        };
+        assert!(narrow.contains(address), "{narrow}");
+        // Exactly enough room keeps the state: the check and the drawing count the same columns.
+        let fits = |width: u16| {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": "billing-claude", "title": "A title long enough to be cut", "state": "working", "runs": true},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, width, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                .contains("billing-claude · Working")
+        };
+        // Wide characters count by the columns they take: at 46 a CJK address and its state still fit whole.
+        let wide = {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": "界-codex", "title": "A title long enough to be cut", "state": "working", "runs": true},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, 46, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+        };
+        assert!(wide.contains("-codex · Working"), "{wide}");
+        let first = (30..90).find(|w| fits(*w)).expect("the state fits somewhere");
+        assert!((first..90).all(fits), "once it fits, wider keeps it");
     }
 }

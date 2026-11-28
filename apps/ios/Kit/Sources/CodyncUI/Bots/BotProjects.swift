@@ -9,6 +9,8 @@ struct BotProjects: View {
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var picking = false
+    /// The project whose shared folders are being edited.
+    @State private var sharing: String?
 
     private var projects: [String] { draft.projects ?? [] }
 
@@ -22,6 +24,9 @@ struct BotProjects: View {
                 animate { draft.addProject(path) }
                 picking = false
             }
+        }
+        .codyncSheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let sharing { SharedFoldersSheet(project: sharing, draft: $draft) }
         }
         ForEach(projects, id: \.self) { row($0) }
         // Only once one of its projects is a git repository (as the host last said): elsewhere no worktree is made.
@@ -45,6 +50,11 @@ struct BotProjects: View {
                 Text(verbatim: path).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 4)
+            // Only where a worktree is made and the host links them in.
+            if model.hello?.worktreeFill == true, bot?.isGitProject(path) == true {
+                IconButton("Shared folders", systemImage: "link") { sharing = path }
+                    .padding(.vertical, -8)
+            }
             if path == projects.first {
                 Text(L10n.tr("Default")).font(.caption).foregroundStyle(Palette.secondary)
             } else {
@@ -85,4 +95,55 @@ private struct HomeFolderRow: View {
             copied = false
         }
     }
+}
+
+/// A git project's shared folders: the names (`node_modules`) linked into each of its new worktrees, added and removed
+/// in the draft, saved with the bot.
+private struct SharedFoldersSheet: View {
+    let project: String
+    @Binding var draft: BotDraft
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader { Text(verbatim: "\(L10n.tr("Shared folders")) · \(project.folderName)") }
+            CardForm {
+                CardSection(footer: "Linked into each new worktree, so installed packages don't have to be installed again.") {
+                    ForEach(draft.sharedFolders(of: project), id: \.self) { folder in
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder").foregroundStyle(Palette.secondary)
+                            Text(verbatim: folder).foregroundStyle(Palette.text).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            IconButton("Remove folder", systemImage: "minus.circle") {
+                                animate { draft.removeSharedFolder(folder, from: project) }
+                            }
+                            .padding(.vertical, -8)
+                        }
+                        .transition(.opacity)
+                    }
+                    HStack(spacing: 12) {
+                        TextField(L10n.tr("Folder name"), text: $name)
+                            .plainTextInput().focused($focused).submitLabel(.done).onSubmit(add)
+                        IconButton("Add folder", systemImage: "plus", action: add)
+                            .disabled(BotDraft.sharedFolderName(name) == nil)
+                            .padding(.vertical, -8)
+                    }
+                }
+            }
+            .textFieldStyle(.plain)
+        }
+        .background(Palette.background)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func add() {
+        guard BotDraft.sharedFolderName(name) != nil else { return }
+        animate { draft.addSharedFolder(name, to: project) }
+        name = ""
+        focused = true
+    }
+
+    private func animate(_ action: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), action) }
 }

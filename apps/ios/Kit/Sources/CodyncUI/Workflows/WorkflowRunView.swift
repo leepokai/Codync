@@ -1,13 +1,20 @@
 import CodyncKit
 import SwiftUI
 
-/// One run: each step's status and output, and an approval step answered in place.
+/// One run: each step's status and output, and an approval step answered in place. A step run on its own (outside
+/// any run, opened from its push) shows alone, its approval answered the same way.
 struct WorkflowRunView: View {
-    let runId: String
+    enum Target: Hashable {
+        case run(String)
+        case step(String)
+    }
+
+    let target: Target
 
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var run: WorkflowRunDetail?
+    @State private var soloStep: WorkflowStep?
     @State private var expanded: Set<String> = []
     @State private var expandedInput: Set<String> = []
     @State private var error: String?
@@ -24,6 +31,11 @@ struct WorkflowRunView: View {
                     ForEach(orderedSteps(run)) { step in
                         stepCard(step)
                     }
+                } else if let soloStep {
+                    if let error {
+                        Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled)
+                    }
+                    stepCard(soloStep)
                 } else if let error {
                     Text(L10n.tr(error)).font(.callout).foregroundStyle(Palette.danger)
                 } else {
@@ -34,11 +46,11 @@ struct WorkflowRunView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Palette.background)
-        .navigationTitle(run.map { WorkflowCopy.runTitle($0.number) } ?? "")
+        .navigationTitle(run.map { WorkflowCopy.runTitle($0.number) } ?? soloStep.map(shownTitle) ?? "")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .task(id: model.workflowRunReload) { await reload() }
-        .tracked(.screenViewed(.workflowRun))
+        .tracked(.screenViewed(target.screen))
     }
 
     private func subtitle(_ run: WorkflowRunDetail) -> String {
@@ -197,6 +209,22 @@ struct WorkflowRunView: View {
 
     private func reload() async {
         guard let client = model.client else { return }
+        switch target {
+        case let .run(runId): await reloadRun(runId, client)
+        case let .step(stepId): await reloadStep(stepId, client)
+        }
+    }
+
+    private func reloadStep(_ stepId: String, _ client: HostClient) async {
+        do {
+            soloStep = try await client.workflowStep(stepId)
+            error = nil
+        } catch {
+            if soloStep == nil { self.error = error.localizedDescription }
+        }
+    }
+
+    private func reloadRun(_ runId: String, _ client: HostClient) async {
         do {
             let loaded = try await client.workflowRun(runId)
             run = loaded
@@ -221,6 +249,15 @@ struct WorkflowRunView: View {
             await reload()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+private extension WorkflowRunView.Target {
+    var screen: AnalyticsEvent.Screen {
+        switch self {
+        case .run: .workflowRun
+        case .step: .workflowStep
         }
     }
 }
@@ -324,7 +361,7 @@ struct WorkflowRunsList: View {
                     Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger)
                 }
                 ForEach(runs) { run in
-                    Button { opened = WorkflowRunRoute(id: run.id) } label: {
+                    Button { opened = WorkflowRunRoute(.run(run.id)) } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(WorkflowCopy.runTitle(run.number)).foregroundStyle(Palette.text)
                             HStack(spacing: 6) {
@@ -362,7 +399,7 @@ struct WorkflowRunsList: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $opened) { route in
-            WorkflowRunView(runId: route.id)
+            WorkflowRunView(target: route.target)
                 .environment(model)
         }
         .task { await reload(before: nil) }

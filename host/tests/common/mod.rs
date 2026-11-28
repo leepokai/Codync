@@ -89,10 +89,13 @@ pub async fn ready(base: &str, home: &Path) -> Result<(), String> {
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own
 /// children: a SIGKILL would orphan whatever it had running, such as a harness
-/// sign-in check (`cursor-agent status` then spins forever). Kills it after 5 s.
+/// sign-in check (`cursor-agent status` then spins forever). Kills it after 20 s, this
+/// test's own limit (launchd gives `HOST_EXIT`, 40 s): an agent's background program keeps the host
+/// waiting its whole 10 s exit grace.
 pub fn stop(child: &mut Child) {
-    let _ = Command::new("kill").arg(child.id().to_string()).status();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Where no `kill` delivers it (Windows), waiting would only delay the kill.
+    let signalled = Command::new("kill").arg(child.id().to_string()).status().is_ok_and(|s| s.success());
+    let deadline = Instant::now() + if signalled { Duration::from_secs(20) } else { Duration::ZERO };
     while Instant::now() < deadline {
         if let Ok(Some(_)) = child.try_wait() {
             return;
@@ -113,6 +116,12 @@ pub fn kill(pid: &str) {
         command.args(["-KILL", pid])
     };
     command.status().unwrap();
+}
+
+/// Whether process `pid` still runs.
+#[allow(dead_code, reason = "only tests that follow a process of their own use it")]
+pub fn alive(pid: &str) -> bool {
+    Command::new("kill").args(["-0", pid]).stderr(Stdio::null()).status().unwrap().success()
 }
 
 /// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.

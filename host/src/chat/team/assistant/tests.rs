@@ -180,7 +180,7 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
 }
 
 fn session(kind: codync_network::AgentKind, id: &str) -> Caller {
-    Caller { kind, session: Some(id.into()), process: "1-test".into(), cwd: "/work/api".into(), hint: None }
+    Caller { kind, session: Some(id.into()), process: "1-test".into(), cwd: "/work/api".into() }
 }
 
 #[tokio::test]
@@ -297,4 +297,156 @@ fn a_reply_with_no_room_is_refused_not_kept_and_dropped() {
     }
     assert!(replies.add(Reply::queued("bot", "late", "Coder", "hi").unlimited()).is_none(), "no room for it");
     assert_eq!(replies.0.locked().len(), KEEP, "nothing else went");
+}
+
+#[tokio::test]
+async fn a_bot_messages_a_session_and_gets_its_answer() {
+    use codync_network::AgentKind::Codex;
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let codex = session(Codex, "t1");
+    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    assert!(me["address"].is_string(), "{me}");
+    // A session can't take a bot's id as its address, so it can't catch the bot's messages.
+    let renamed = local_call(hub, &codex, "set_name", &json!({"name": "b"})).await.unwrap();
+    let address = renamed["address"].as_str().unwrap().to_owned();
+    assert_ne!(address, "b", "{renamed}");
+    hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
+    let listed = crate::chat::team::call_async(hub, "b", "b", "list_bots", &json!({"kind": "codex", "query": address}))
+        .await
+        .unwrap();
+    // As the desktop e2e asks: narrowed to its address, with the same shape.
+    assert_eq!(listed["bots"][0]["id"], *address, "{listed}");
+    let sent = crate::chat::team::call_async(
+        hub,
+        "b",
+        "b",
+        "message_bot",
+        &json!({"botId": address, "message": "is the API done?"}),
+    )
+    .await
+    .unwrap();
+    let request = sent["requestId"].as_str().unwrap().to_owned();
+    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    assert!(inbox["letters"].as_str().unwrap().contains(&format!("id=\"{request}\"")), "{inbox}");
+    // Another session can't end it; the one it went to can.
+    let other = session(Codex, "t2");
+    let wrong =
+        local_call(hub, &other, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
+    let wrong = wrong.unwrap_err().to_string();
+    assert!(wrong.contains("went to another session"), "no new work on the bot either: {wrong}");
+    // Paired with another bot's id, the answer is refused, and the request still waits for it.
+    let mixed = json!({"botId": "nobody", "message": "yes", "replyTo": request});
+    let mixed = local_call(hub, &codex, "message_bot", &mixed).await.unwrap_err().to_string();
+    assert!(mixed.contains("answer it with botId"), "{mixed}");
+    let answer = json!({"botId": "b", "message": "yes, merged", "replyTo": request});
+    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    // Sent again (a retry), it's delivered already: no new request to the bot.
+    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    let notice = || {
+        let history = hub.store.history("b", i64::MAX, 50).unwrap();
+        history.into_iter().find(|e| e.data["delegationId"] == *request).map(|e| e.data)
+    };
+    f.until(|| notice().is_some_and(|d| d["status"] == "completed")).await;
+    assert!(notice().unwrap().to_string().contains("yes, merged"));
+
+    // A request whose letter a full inbox drops unread ends, as failed.
+    hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
+    let ask = json!({"botId": address, "message": "still there?"});
+    let sent = crate::chat::team::call_async(hub, "b", "b", "message_bot", &ask).await.unwrap();
+    let dropped = sent["requestId"].as_str().unwrap().to_owned();
+    for n in 0..100 {
+        local_call(hub, &other, "message_bot", &json!({"botId": address, "message": format!("note {n}")}))
+            .await
+            .unwrap();
+    }
+    let ended = || {
+        let history = hub.store.history("b", i64::MAX, 50).unwrap();
+        history.into_iter().find(|e| e.data["delegationId"] == *dropped).map(|e| e.data)
+    };
+    f.until(|| ended().is_some_and(|d| d["status"] == "failed")).await;
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_hook_tells_its_session_of_new_mail_once() {
+    use crate::chat::team::mailbox::{HookAsk, hook};
+    use codync_network::AgentKind::{ClaudeCode, Codex};
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(),
+        json!({}),
+        "a session its MCP server never registered"
+    );
+    local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    assert_eq!(hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(), json!({}), "no mail");
+    assert_eq!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
+    let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    assert_eq!(listed["bots"][0]["tier"], "turn", "{listed}");
+    let sent =
+        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
+            .await
+            .unwrap();
+    assert_eq!(sent["tier"], "turn");
+    let told = hook(hub, Codex, "t1", HookAsk::default()).await.unwrap();
+    assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "{told}");
+    assert!(!told.to_string().contains("did the API"), "a count, never the text");
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(),
+        told,
+        "told again until its hook confirms it"
+    );
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk { told: told["letter"].as_str(), ..HookAsk::default() }).await.unwrap()["saved"],
+        true
+    );
+    assert_eq!(
+        hook(hub, Codex, "t1", HookAsk { told: told["letter"].as_str(), ..HookAsk::default() }).await.unwrap()["saved"],
+        false,
+        "nothing new"
+    );
+    assert_eq!(hook(hub, Codex, "t1", HookAsk::default()).await.unwrap(), json!({}), "told once");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_push_waits_for_a_letter_and_wakes_a_session_only_so_often() {
+    use crate::chat::team::mailbox::{HookAsk, hook};
+    use crate::network::sessions::{Tier, WAKES_PER_HOUR};
+    use codync_network::AgentKind::{ClaudeCode, Codex};
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
+    local_call(hub, &claude, "whoami", &json!({})).await.unwrap();
+    let push = |told: Option<String>, secs: u64| async move {
+        let ask = HookAsk {
+            told: told.as_deref(),
+            tier: Tier::Push,
+            wait: std::time::Duration::from_secs(secs),
+            ..HookAsk::default()
+        };
+        hook(hub, ClaudeCode, "s1", ask).await.unwrap()
+    };
+    let send = || async {
+        local_call(hub, &codex, "message_bot", &json!({"botId": "api-claude", "message": "hi"})).await.unwrap();
+    };
+    let waiting = push(None, 20);
+    let later = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        send().await;
+    };
+    let (told, ()) = tokio::join!(waiting, later);
+    assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "a wait ends when a letter comes: {told}");
+    assert_eq!(local_call(hub, &claude, "whoami", &json!({})).await.unwrap()["tier"], "push");
+    assert_eq!(push(told["letter"].as_str().map(str::to_owned), 0).await["saved"], true);
+    for _ in 1..WAKES_PER_HOUR {
+        send().await;
+        let told = push(None, 0).await;
+        push(told["letter"].as_str().map(str::to_owned), 0).await;
+    }
+    send().await;
+    assert_eq!(push(None, 0).await, json!({}), "an hour's wakes are used up: it reads its mail itself");
+    f.shutdown().await;
 }

@@ -302,6 +302,7 @@ impl Store {
              CREATE INDEX IF NOT EXISTS entries_rev ON entries(rev);
              CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);",
         )?;
+        c.execute_batch(super::archive::TABLES)?;
         migrate(&c)?;
         codync_mem::schema::migrate(&c)?;
         let secret_key = if path == Path::new(":memory:") {

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { addAccount, api, attach, loginProfilesOf, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
+import { addAccount, api, attach, loginProfilesOf, openDetails, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
 // docs/guides/test-stack.md#stand-in-agents): its sign-in and its agent are that script, so nothing here starts a
@@ -120,8 +120,7 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     expect(await loginOf()).toBe(profileId)
     await openPage(page, 'Bots')
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+    await openDetails(page, 'Settings')
     // Its agent's login, shown without opening the panel. The bot's own comes before any fallback's.
     const chosen = page.locator('.details-panel .model-picker-field').first()
     await expect(chosen).toContainText(`${agent.name} · ${WORK}`)
@@ -212,8 +211,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     })).bot.id
     await page.reload()
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+    await openDetails(page, 'Settings')
     expect(await editFallbackModel(page, botId, 'New login profile')).toEqual([[agent.id, profileId, null]])
     await api(page, 'deleteBot', { botId })
     botId = undefined

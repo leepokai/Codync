@@ -30,6 +30,7 @@ A thread is where the bot does tasks away from the chat, with a session of its o
 | --- | --- |
 | One the bot starts for its own work | The folder it names, else its default project, else its own folder |
 | One you start | The folder you pick, else the default project, else the bot's own folder |
+| One you start without a bot | The folder you pick, else [a folder of its own](#a-thread-without-a-bot) |
 | A routine's run | The routine's **Folder**, else the bot's own folder |
 | Another bot's request | The bot's own folder |
 | One that follows another | Where that one worked |
@@ -40,11 +41,36 @@ In a project in a Git repository, **Worktree mode** decides whether a thread get
 - **Side by side** (the default): the first thread works in the project itself. Each further one that starts while another thread is still working in the same repository gets its own copy.
 - **Always:** every thread gets its own copy, the first one included, so none of them touches your folder.
 
+A task can also name its place, which wins over the mode: in the project itself, or in a copy of its own. The bot chooses for each task it hands out, for example a copy for a change you may be making in the same files yourself, or the project itself to build on what an earlier thread left there. On the desktop, you choose for a thread you start: **Here** or **New worktree**, beside its folder ([start a thread yourself](/docs/conversations#work)). A copy asked for a folder that isn't in a Git repository, or for the bot's own folder, isn't made: the thread works in the folder. Routine runs, other bots' requests and a thread that follows another stay where they are, whatever the task asks.
+
 The copy is a Git worktree: a separate checkout under `~/.codync/worktrees`, on a new branch named `codync/` and its task's title (for example `codync/fix-login`), started from the commit your folder is on. The threads never overwrite each other, and none of them touches your folder. Routine runs and other bots' requests never get one, and neither do threads in the bot's own folder.
 
-A copy holds what is committed. Changes in your folder that aren't committed aren't in it, and neither is what Git ignores there, such as installed packages.
+A copy holds what is committed. Changes in your folder that aren't committed aren't in it, and neither is what Git ignores there, such as installed packages and `.env` files, unless you [fill it](#filling-a-new-copy).
 
 **Worktree mode** is under **Workspace** in the bot's **Settings**. It shows only once one of the bot's projects is in a Git repository.
+
+## Filling a new copy
+
+A new copy starts clean: none of the files Git ignores in your folder, none of your uncommitted changes. Two lists bring in what a thread needs before its agent starts, so its first step finds them.
+
+- **`.worktreeinclude`** is a file you keep at the top of your repository. It lists files Git ignores to **copy** into each new copy, such as `.env` or `.env.local`: one path a line, written out in full from the top of the repository (no patterns such as `*.env`), and a line starting with `#` is a comment. A path that is missing, that Git tracks or doesn't ignore, or that is absolute or leads outside the repository, is skipped.
+
+```text
+# .worktreeinclude
+.env
+.env.local
+apps/web/.env.development
+```
+
+- **Shared folders** are folders Git ignores to **link** into each new copy, such as `node_modules` or `.cache`, so a thread doesn't install them again. You set them per project in the bot's **Settings**, under **Workspace** > **Projects**: **Shared folders** on the row of a project in a Git repository lists them; type a folder's name, as a path inside the project, and add it, or remove one. Terminal UI: the **Shared folders** field edits the project picked on **Projects**: type a name and press Enter to add it, ←/→ picks one, Backspace on an empty field removes it. Nothing has to be committed to the project for them.
+
+A linked folder is the same folder as in your project, not a copy: what a thread installs or deletes there changes it for your project too. On Windows, links need Developer Mode turned on.
+
+Nothing already in the copy is replaced: a folder Git tracks under the same name stays as the commit has it. A file or folder that can't be copied or linked is skipped, and the thread starts anyway. The copied files and the links don't count as changes, so a copy the thread didn't touch is still removed when it ends. Your uncommitted changes are never carried over: the thread is told it started from the project's last commit.
+
+## A thread without a bot
+
+A thread you start without a bot, with no folder picked, works in a folder of its own that Codync makes for it, inside `~/.codync/threads/`. On the desktop that is the first folder choice, **Own folder**, and every app calls the folder **Own folder** wherever the thread shows where it works (copying the path still gives the real one). Grouped by folder in **Threads**, all these threads sit together under one **Own folder** group. Like a bot's own folder, it gets [versions](#versions-of-a-bots-own-folder) before and after each turn when Git is installed, and never a copy. So threads without a bot don't share your home folder or write over each other. The folder goes with its task: when you drop the task, or when [Delete old threads](/docs/conversations#old-threads) deletes it (never, unless you pick a time). To keep what such a thread made, pick a project for it instead (**Browse other folders**).
 
 ## What happens to the copies
 

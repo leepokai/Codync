@@ -4,6 +4,7 @@
 use super::steer::{self, Steer};
 use super::tasks::{self, FolderKind, Shown, Status, Task};
 use super::thread::{self, Told};
+use super::worktree::PlaceChoice;
 use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, recall, sources};
 use crate::LockExt;
 use crate::analytics::{self, Event};
@@ -15,7 +16,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The `chat` server's tools that are the box's.
-pub const TOOLS: [&str; 5] = ["add_task", "steer_task", "tell_task", "work_status", "recall_task"];
+pub const TOOLS: [&str; 7] =
+    ["add_task", "steer_task", "tell_task", super::ask::TOOL, super::ask_chat::ANSWER, "work_status", "recall_task"];
 
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
@@ -62,12 +64,13 @@ pub fn tools() -> Vec<Value> {
     vec![
         json!({
             "name": "add_task",
-            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
+            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message by itself, so no follow-up is needed to wait for it. One task per piece of work.",
             "inputSchema": {"type": "object", "properties": {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
                 "brief": {"type": "string", "description": "Everything needed to do the work, standing alone (the thread sees nothing of this chat): the goal, what you already know, the user's words that matter, what done looks like."},
                 "after": {"type": "string", "description": "The id of a task that is working or waiting: this one is done after it, in the same thread, knowing what that one did. For more of the same work."},
                 "folder": {"type": "string", "description": "The full path of the folder the thread works in: one of your projects, or another folder the user named. Leave out for your default project (your own folder when you have none). With after, it works where that task does."},
+                "place": {"type": "string", "enum": ["here", "worktree"], "description": "Where in a git repository it works. here: in the folder itself, e.g. to build on what the task before it left there. worktree: in a git worktree of its own from the last commit, away from the user's checkout, e.g. when it edits code the user may be touching. Leave out for your worktree mode's choice. Your own folder never gets a worktree."},
             }, "required": ["title", "brief"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
@@ -93,6 +96,16 @@ pub fn tools() -> Vec<Value> {
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
         json!({
+            "name": super::ask::TOOL,
+            "description": "Ask one of your working tasks a short question and get its answer: how far it is, what it found so far, what it assumed. The question goes into its running turn at its next step, marked as yours (an agent that can't take a message mid-turn stops its current turn for it); it answers in one short message and goes on with its task. Waits up to a minute: without an answer by then you get status \"no answer yet\", and the answer comes to you later as a message of its own. Not for a task that waits or ended (tell_task it, or read its report), a routine's run or another bot's request.",
+            "inputSchema": {"type": "object", "properties": {
+                "task": {"type": "string", "description": "The working task's id."},
+                "question": {"type": "string", "description": "What to ask, as the task should read it."},
+            }, "required": ["task", "question"]},
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        }),
+        super::ask_chat::answer_tool(),
+        json!({
             "name": "work_status",
             "description": "Your event box: every task that is working or waiting, and those ended in the last day, with its status, what it does now, how long, and its result.",
             "inputSchema": {"type": "object", "properties": {}},
@@ -111,11 +124,21 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+/// A work tool's call from `bot`'s chat: `ask_task` waits for its thread's answer, the others run on a blocking thread.
+pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+    if name == super::ask::TOOL {
+        return super::ask::ask(hub, bot, args).await;
+    }
+    let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), args.clone());
+    tokio::task::spawn_blocking(move || call_now(&hub, &bot, &name, &args)).await?
+}
+
+fn call_now(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
         "add_task" => add(hub, bot, args),
         "steer_task" => steer_task(hub, bot, args),
         "tell_task" => tell(hub, bot, args),
+        super::ask_chat::ANSWER => super::ask_chat::answer(hub, bot, args),
         "work_status" => status(hub, bot),
         "recall_task" => recall::call(hub, bot, args),
         _ => bail!("unknown work tool: {name}"),
@@ -140,15 +163,54 @@ enum Admission {
 fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let added = admit(hub, bot, args);
     let outcome = added.as_ref().map_or_else(|(reason, _)| *reason, |_| Admission::Added);
-    let folder = added.as_ref().ok().map(|(_, folder)| *folder);
-    let properties = json!({"outcome": outcome, "after": args["after"].is_string(), "source": "bot", "folder": folder});
+    let folder = added.as_ref().ok().map(|i| i.folder);
+    let place = added.as_ref().ok().and_then(|i| i.place);
+    let properties = json!({"outcome": outcome, "after": args["after"].is_string(), "source": "bot", "folder": folder,
+        "place": place});
     analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
-    let (id, _) = added.map_err(|(_, error)| error)?;
+    let Admitted { id, place_note, .. } = added.map_err(|(_, error)| error)?;
     dispatch(hub, bot);
-    Ok(json!({
+    let mut answer = json!({
         "taskId": id, "status": Status::Waiting,
-        "note": "It starts when this turn ends and a thread is free. Its report comes back to you later as a message.",
-    }))
+        "note": "It starts when this turn ends and a thread is free. Its report comes back to you later as a message by itself: no follow-up needed.",
+    });
+    if let Some(note) = place_note {
+        answer["placeNote"] = note.into();
+    }
+    Ok(answer)
+}
+
+/// A task `add_task` put in the box.
+#[derive(Debug)]
+struct Admitted {
+    id: String,
+    /// What its folder is to the bot.
+    folder: FolderKind,
+    /// Where it asked to work, as it will.
+    place: Option<PlaceChoice>,
+    /// Why the place it asked for doesn't apply, for the bot.
+    place_note: Option<&'static str>,
+}
+
+/// The place `add_task` asks for in `folder` (`kind` to the bot), as it will apply: with why one doesn't. A worktree
+/// is never made of the bot's own folder, nor outside a git repository; a task that follows another works where it
+/// does.
+fn placed(
+    asked: Option<PlaceChoice>,
+    kind: FolderKind,
+    folder: &str,
+    after: bool,
+) -> (Option<PlaceChoice>, Option<&'static str>) {
+    match asked {
+        Some(PlaceChoice::Worktree) if kind == FolderKind::Home => {
+            (None, Some("place worktree was left out: your own folder never gets a worktree, so it works there"))
+        }
+        Some(PlaceChoice::Worktree) if !super::worktree::in_repo(folder) => {
+            (None, Some("place worktree was left out: the folder isn't in a git repository, so it works there"))
+        }
+        Some(_) if after => (asked, Some("with after, it works where that task does once that task is done")),
+        _ => (asked, None),
+    }
 }
 
 type Refusal = (Admission, anyhow::Error);
@@ -166,7 +228,7 @@ fn checked<'a>(title: Option<&'a str>, brief: Option<&'a str>) -> Result<(&'a st
 }
 
 /// Puts `task` last in `tasks`, unless too many wait already or it follows nothing that is working or waiting.
-fn place(tasks: &mut Vec<Task>, mut task: Task) -> Result<String, Refusal> {
+fn place_task(tasks: &mut Vec<Task>, mut task: Task) -> Result<String, Refusal> {
     if tasks.iter().filter(|i| i.status == Status::Waiting).count() >= MAX_WAITING {
         let why = anyhow!("{MAX_WAITING} tasks already wait: let some finish, or drop one, before adding more");
         return Err((Admission::Full, why));
@@ -182,9 +244,8 @@ fn place(tasks: &mut Vec<Task>, mut task: Task) -> Result<String, Refusal> {
     Ok(id)
 }
 
-/// Puts a task in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot. Answers
-/// the task's id and what its folder is to the bot.
-fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<(String, FolderKind), Refusal> {
+/// Puts a task in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot.
+fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<Admitted, Refusal> {
     let failed = |error: anyhow::Error| (Admission::Failed, error);
     let row = hub.store.bot(bot).map_err(failed)?.filter(|r| !r.deleted);
     let cfg = row.ok_or_else(|| failed(anyhow!("unknown bot")))?.config;
@@ -205,12 +266,21 @@ fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<(String, FolderKind), Ref
         return Err((Admission::Hops, why));
     }
     let folder = text("folder").map(checked_folder).transpose()?;
+    let asked = match &args["place"] {
+        Value::Null => None,
+        place => Some(
+            PlaceChoice::deserialize(place).map_err(|_| (Admission::Invalid, anyhow!("place is here or worktree")))?,
+        ),
+    };
     let mut task = Task::waiting(title, brief, users_words(hub, bot), text("after"), hops);
     task.setup.cwd = folder;
-    let kind = FolderKind::of(&cfg, &task.existing_folder(&cfg).map_err(|error| (Admission::Invalid, error))?);
-    let id = tasks::change(hub, bot, |tasks| Ok(place(tasks, task))).map_err(failed)??;
+    let folder = task.existing_folder(&cfg).map_err(|error| (Admission::Invalid, error))?;
+    let kind = FolderKind::of(&cfg, &folder);
+    let (place, place_note) = placed(asked, kind, &folder, task.after.is_some());
+    task.setup.place = place;
+    let id = tasks::change(hub, bot, |tasks| Ok(place_task(tasks, task))).map_err(failed)??;
     hub.work.added.locked().entry(bot.to_owned()).or_default().push(id.clone());
-    Ok((id, kind))
+    Ok(Admitted { id, folder: kind, place, place_note })
 }
 
 /// A folder `add_task` names: the full path of one that exists (any folder: the bot proposes its projects).
@@ -228,7 +298,7 @@ fn users_words(hub: &Hub, bot: &str) -> Option<String> {
 }
 
 /// Refuses a task the user started as a thread: it is theirs, not the bot's to steer or write to.
-fn the_bots(hub: &Hub, bot: &str, id: &str) -> Result<()> {
+pub(super) fn the_bots(hub: &Hub, bot: &str, id: &str) -> Result<()> {
     if tasks::load(&hub.store, bot).iter().any(|i| i.id == id && i.source.is_user()) {
         let why = "that thread is one the user started: it's theirs to steer, not yours".to_owned();
         return Err(thread::Refused::error("users", why));
@@ -312,12 +382,17 @@ fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let now = now_ms();
     let tasks: Vec<Value> = tasks::seen_by_bot(hub, &cfg)
         .into_iter()
-        .map(|Shown { task, status, activity, wait }| {
+        .map(|Shown { task, status, activity, wait, background }| {
             let seconds = task.started_at.map(|at| (task.ended_at.unwrap_or(now) - at) / 1000);
-            json!({
+            let mut row = json!({
                 "taskId": task.id, "title": task.title, "status": status, "doingNow": activity, "wait": wait,
                 "seconds": seconds, "result": task.result,
-            })
+            });
+            // What its thread's agent runs in the background, which the task waits on: it isn't stuck.
+            if !background.is_empty() {
+                row["inBackground"] = background.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().into();
+            }
+            row
         })
         .collect();
     Ok(json!({"tasks": tasks}))
@@ -335,21 +410,37 @@ mod tests {
     fn a_box_takes_twenty_waiting_tasks_and_refuses_the_next() {
         let mut tasks = Vec::new();
         for n in 0..MAX_WAITING {
-            place(&mut tasks, waiting(None)).unwrap_or_else(|(_, why)| panic!("task {n}: {why}"));
+            place_task(&mut tasks, waiting(None)).unwrap_or_else(|(_, why)| panic!("task {n}: {why}"));
         }
         assert_eq!(tasks.last().map(|i| i.order), i64::try_from(MAX_WAITING).ok(), "each one last");
-        let (outcome, why) = place(&mut tasks, waiting(None)).expect_err("the box is full");
+        let (outcome, why) = place_task(&mut tasks, waiting(None)).expect_err("the box is full");
         assert_eq!(outcome, Admission::Full);
         assert_eq!(why.to_string(), "20 tasks already wait: let some finish, or drop one, before adding more");
 
         // Only the waiting count: one that started leaves room for another.
         tasks[0].status = Status::Working;
         let first = tasks[0].id.clone();
-        place(&mut tasks, waiting(Some(&first))).unwrap_or_else(|(_, why)| panic!("after a working task: {why}"));
+        place_task(&mut tasks, waiting(Some(&first))).unwrap_or_else(|(_, why)| panic!("after a working task: {why}"));
         tasks[1].status = Status::Done;
         let ended = tasks[1].id.clone();
-        let (outcome, _) = place(&mut tasks, waiting(Some(&ended))).expect_err("it follows an ended task");
+        let (outcome, _) = place_task(&mut tasks, waiting(Some(&ended))).expect_err("it follows an ended task");
         assert_eq!(outcome, Admission::Invalid);
+    }
+
+    #[test]
+    fn a_tasks_place_says_why_when_it_cant_apply() {
+        let repo = std::env::temp_dir().join(format!("codync-place-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(repo.join(".git")).expect("a repository");
+        let (repo, plain) = (repo.to_string_lossy().into_owned(), std::env::temp_dir().to_string_lossy().into_owned());
+        let worktree = Some(PlaceChoice::Worktree);
+        assert_eq!(placed(worktree, FolderKind::Project, &repo, false), (worktree, None));
+        let (left, why) = placed(worktree, FolderKind::Home, &repo, false);
+        assert!(left.is_none() && why.is_some_and(|w| w.contains("own folder")), "the bot's own folder: never");
+        let (left, why) = placed(worktree, FolderKind::Other, &plain, false);
+        assert!(left.is_none() && why.is_some_and(|w| w.contains("git repository")), "outside a repository");
+        assert!(placed(Some(PlaceChoice::Here), FolderKind::Project, &repo, true).1.is_some(), "after: where it was");
+        assert_eq!(placed(None, FolderKind::Project, &repo, false), (None, None), "the mode decides");
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
@@ -380,7 +471,8 @@ mod tests {
         ]);
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
 
-        let told = call(&hub, "b1", "tell_task", &json!({"task": "i1", "text": " also the API page "})).expect("told");
+        let told =
+            call_now(&hub, "b1", "tell_task", &json!({"task": "i1", "text": " also the API page "})).expect("told");
         assert_eq!(
             (told["status"].as_str(), told["note"].as_str()),
             (Some("waiting"), Some("It reads this when it starts."))
@@ -390,14 +482,14 @@ mod tests {
         assert!(docs.notes.is_empty(), "never as the user's own words");
 
         let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
-        let ended = call(&hub, "b1", "tell_task", &json!({"task": "i2", "text": "more"})).expect_err("it ended");
+        let ended = call_now(&hub, "b1", "tell_task", &json!({"task": "i2", "text": "more"})).expect_err("it ended");
         assert!(ended.to_string().starts_with("\"Login\" has ended"), "{ended}");
         assert_eq!(category(ended), Some("ended"));
-        let run = call(&hub, "b1", "tell_task", &json!({"task": "i3", "text": "skip staging"})).expect_err("a run");
+        let run = call_now(&hub, "b1", "tell_task", &json!({"task": "i3", "text": "skip staging"})).expect_err("a run");
         assert_eq!(run.to_string(), "\"Morning\" is a routine's run: it can be read and stopped, not written to");
         assert_eq!(category(run), Some("read_only"));
         assert!(tasks::load(&hub.store, "b1")[2].relayed.is_empty(), "nothing it would never read");
-        let empty = call(&hub, "b1", "tell_task", &json!({"task": "i1"})).expect_err("nothing to pass on");
+        let empty = call_now(&hub, "b1", "tell_task", &json!({"task": "i1"})).expect_err("nothing to pass on");
         assert_eq!(category(empty), Some("invalid"));
 
         let thread = crate::store::BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
@@ -420,16 +512,17 @@ mod tests {
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
 
         let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
-        let told = call(&hub, "b1", "tell_task", &json!({"task": "u1", "text": "x"})).expect_err("the user's");
+        let told = call_now(&hub, "b1", "tell_task", &json!({"task": "u1", "text": "x"})).expect_err("the user's");
         assert_eq!(category(told), Some("users"));
-        let steered = call(&hub, "b1", "steer_task", &json!({"task": "u1", "how": "first"})).expect_err("the user's");
+        let steered =
+            call_now(&hub, "b1", "steer_task", &json!({"task": "u1", "how": "first"})).expect_err("the user's");
         assert_eq!(category(steered), Some("users"));
-        let listed = call(&hub, "b1", "work_status", &json!({})).expect("listed");
+        let listed = call_now(&hub, "b1", "work_status", &json!({})).expect("listed");
         assert_eq!(
             listed["tasks"].as_array().map(|t| t.iter().map(|i| i["taskId"].clone()).collect()),
             Some(vec![json!("i1")])
         );
-        let recalled = call(&hub, "b1", "recall_task", &json!({})).expect("recalled");
+        let recalled = call_now(&hub, "b1", "recall_task", &json!({})).expect("recalled");
         assert!(!recalled.to_string().contains("u1"), "{recalled}");
         let cfg = hub.store.bot("b1").expect("read").expect("there").config;
         let lines = tasks::lines(&hub, &cfg, "Your").expect("one live");

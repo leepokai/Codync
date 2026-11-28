@@ -1,6 +1,9 @@
 # The Workflows tab on the phones is for looking and approving: the list, a workflow's details and its runs, with no
 # way to edit, start, stop or delete one. A run waiting on an approval offers only Approve and Reject, and Approve lets
-# it finish. The phone must already be signed in and connected to the host (a worktree's sandbox,
+# it finish. A step run on its own waits outside any run, and its push opens that step alone with the same two
+# answers: on Android through the link the push carries (`-e SCOPE`: see workflows.js);
+# iOS opens it from the notification's userInfo, which Maestro can't send, so check it there with `xcrun simctl push`.
+# The phone must already be signed in and connected to the host (a worktree's sandbox,
 # docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`; the flow makes its own workflow there:
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags workflows \
 #     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
@@ -33,6 +36,16 @@ onFlowComplete:
     visible: ".*${output.workflow.title}.*"
     timeout: 20000
 - assertNotVisible: "New workflow"
+# Search, in its header, finds workflows by title; Close (Cancel on Android) brings the list back.
+- tapOn: "Search"
+- inputText: "no such workflow"
+- extendedWaitUntil:
+    visible: "No results"
+    timeout: 10000
+- tapOn: "(Close|Cancel)"
+- extendedWaitUntil:
+    visible: ".*${output.workflow.title}.*"
+    timeout: 10000
 - tapOn: ".*${output.workflow.title}.*"
 - extendedWaitUntil:
     visible: "Run history"
@@ -54,3 +67,21 @@ onFlowComplete:
     notVisible: "Approve"
     timeout: 15000
 - assertNotVisible: "Reject"
+- runScript:
+    file: workflows.js
+    env:
+      SOLO: "true"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - openLink: ${output.soloLink}
+      - extendedWaitUntil:
+          visible: "Approve"
+          timeout: 15000
+      - assertVisible: "Reject"
+      - takeScreenshot: workflows-step-approval
+      - tapOn: "Approve"
+      - extendedWaitUntil:
+          notVisible: "Approve"
+          timeout: 15000

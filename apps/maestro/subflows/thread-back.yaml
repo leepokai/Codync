@@ -1,0 +1,14 @@
+# Back from a thread page (or the new-thread page): the system back on iPhone, Back on Android.
+appId: com.pokai.Codync.ios.dev
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn: "Back"

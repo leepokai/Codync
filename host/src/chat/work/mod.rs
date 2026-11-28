@@ -12,11 +12,17 @@
 //! they see `work` on the bot and fetch a thread's transcript by id.
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
-//! [`tools`] the bot's tools ([`recall`] the one that looks back), [`prompts`] the words, [`worktree`] the git
-//! worktree of a thread that works beside another in one repository, [`watch`] the watchdog that wakes the bot for a
-//! thread that looks stuck.
+//! [`tools`] the bot's tools ([`recall`] the one that looks back, [`ask`] the one that asks a thread and waits for its
+//! answer, [`ask_chat`] a thread's question to its bot), [`prompts`] the words, [`worktree`] the git worktree of a
+//! thread that works beside another in one repository ([`fill`] what a new one is given), [`plain`] threads without a
+//! bot, [`watch`] the watchdog that wakes the bot for a thread that looks stuck, [`archive`] the threads that ended
+//! over a week ago.
 
+pub mod archive;
+pub mod ask;
+pub mod ask_chat;
 mod dispatch;
+mod fill;
 pub mod plain;
 mod prompts;
 mod recall;
@@ -30,12 +36,12 @@ mod watch;
 mod worktree;
 
 pub use dispatch::{Wait, dispatch};
-pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
+pub use prompts::{BRIEF, asked, in_thread, relayed, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, add_thread, boxed, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
-pub use tasks::{Setup, Source, Status, doing, lines, outside, waiting_threads, wire, working_threads};
+pub use tasks::{Setup, Source, Status, doing, lines, outside, reporting, waiting_threads, wire, working_threads};
 pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
 pub use tools::{TOOLS, acting_as, call, chat_only, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
@@ -59,8 +65,8 @@ const MAX_HOPS: u8 = 8;
 const _: () = assert!(MAX_HOPS == 8, "chat::team::limit::NOTICE and its translations say 8");
 /// Tasks a box holds waiting at most.
 const MAX_WAITING: usize = 20;
-/// An ended task stays in its box, and a thread's transcript with its last task, this long; `recall_task` still reads
-/// the task for [`tasks::PAST_MS`].
+/// An ended task stays in its box this long, then goes to the [`archive`] with its thread, kept until the user's
+/// `threadKeepDays`; `recall_task` still reads it for [`tasks::PAST_MS`].
 const KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TITLE: usize = 80;
 const MAX_BRIEF: usize = 32_000;
@@ -93,6 +99,19 @@ pub struct Report {
 /// How a thread's turn ended (from its actor).
 pub enum Outcome {
     Done(Option<String>),
+    /// It ended normally while work it started in the background still runs (`agent::bot::background_work`): what
+    /// runs (`running`, in words that fit "while … still runs"), and its last message (`text`). The first time its
+    /// task waits on it: that message is a progress line, not a report.
+    LeftRunning {
+        running: String,
+        text: Option<String>,
+    },
+    /// It ended normally while work its agent reports (`agent::bot::background_tasks`) still runs: its task waits,
+    /// as often as that happens, for the agent's own turn once that work ends, whose last message is the report.
+    /// `text`: its last message, a progress line.
+    Waiting {
+        text: Option<String>,
+    },
     /// Why, in words for its bot.
     Failed(Failure, String),
     /// The host couldn't give the task to its thread, so no agent was ever asked; why, in words for its bot.
@@ -132,6 +151,9 @@ pub enum Failure {
     NoReport,
     /// A routine run went past its time limit.
     TimedOut,
+    /// Its thread ended its turn while work it started in the background still ran, after it was asked to wait for
+    /// it once (#634).
+    Background,
 }
 
 /// State of the boxes that lives only while the host runs.
@@ -153,6 +175,11 @@ pub struct Work {
     seat_freed: tokio::sync::Notify,
     /// What the watchdog remembers of the threads it looks at (`watch`).
     watch: Mutex<watch::Memory>,
+    /// Thread → the question of its bot's it hasn't answered (`ask`). Gone with the host process: an answer that
+    /// comes after a restart is the thread's report's.
+    asks: Mutex<HashMap<String, ask::Pending>>,
+    /// Thread → its question to its bot that waits for the answer (`ask_chat`).
+    questions: Mutex<HashMap<String, ask_chat::Waiting>>,
 }
 
 impl Work {
@@ -321,13 +348,33 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 /// Thread `cfg`'s turn ended: its task says how, its result goes where its source reads it (the bot's own work: a
 /// report, as a turn in the chat), and the dispatcher decides what the thread does next. A task the user stopped
 /// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the task isn't
-/// over: that turn's end is its end.
-pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
-    let Some(bot) = cfg.thread_of.as_deref() else { return };
+/// over: that turn's end is its end. Nor is it the first time its turn ends while what it started in the background
+/// still runs ([`hold`]). Whether it goes on with what the turn left running, either way: then its agent and session
+/// stay as they are. Nor while work its agent reports still runs ([`Outcome::Waiting`]).
+pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) -> bool {
+    let Some(bot) = cfg.thread_of.as_deref() else { return false };
     let (owner, thread) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&thread));
+    let left = matches!(outcome, Outcome::LeftRunning { .. } | Outcome::Waiting { .. });
+    let mut goes_on = false;
     let ended = tasks::change(hub, bot, |tasks| {
-        Ok(if thread::unheard(&hub.store, &cfg.id) { None } else { end_claimed(tasks, &cfg.id, outcome) })
+        goes_on = thread::unheard(&hub.store, &cfg.id);
+        if goes_on {
+            return Ok(None);
+        }
+        if matches!(outcome, Outcome::Waiting { .. }) {
+            goes_on = tasks::of_thread(tasks, &cfg.id).is_some();
+            if goes_on {
+                return Ok(None);
+            }
+        }
+        if let Outcome::LeftRunning { running, .. } = &outcome {
+            goes_on = hold(hub, cfg, tasks, running);
+            if goes_on {
+                return Ok(None);
+            }
+        }
+        Ok(end_claimed(tasks, &cfg.id, outcome))
     });
     match ended {
         Ok(Some(over)) => close(hub, bot, over, next),
@@ -337,6 +384,34 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
             next(hub);
         }
     }
+    goes_on && left
+}
+
+/// Thread `cfg`'s task waited on background work of its agent's, and the last of it (`name`) was stopped: its agent
+/// hears nothing of that, so a message from the host in its thread asks for its report (`Outcome::Waiting`).
+pub fn ask_report(hub: &Arc<Hub>, cfg: &BotConfig, name: &str) {
+    let data = json!({"text": prompts::report_after_stop(name), "from": "host"});
+    if let Err(error) = thread::post_to(hub, cfg, data) {
+        host_error!(hub, "couldn't ask a thread for its report", thread = %cfg.id, error = format!("{error:#}"));
+    }
+}
+
+/// Thread `cfg` ended its turn while `running` still runs: the first time, its task goes on, and a message from the
+/// host in its thread asks it to wait for that and report then (`work_held`). Whether it does. A message that
+/// can't be posted ends the task as it is.
+fn hold(hub: &Arc<Hub>, cfg: &BotConfig, tasks: &mut [Task], running: &str) -> bool {
+    let task = tasks.iter_mut().find(|i| i.status == Status::Working && i.thread.as_deref() == Some(&cfg.id));
+    let Some(task) = task.filter(|task| !task.held) else { return false };
+    let data = json!({"text": prompts::wait_for(running), "from": "host"});
+    if let Err(error) = thread::post_to(hub, cfg, data) {
+        host_error!(hub, "couldn't ask a thread to wait for its background work", thread = %cfg.id,
+            error = format!("{error:#}"));
+        return false;
+    }
+    task.held = true;
+    let properties = json!({"agent": cfg.backend, "source": task.source.kind()});
+    analytics::capture(hub, Event::WorkHeld, properties.as_object().cloned().unwrap_or_default());
+    true
 }
 
 /// A task that just ended, with its worktree when that is to be looked over before its report says where the
@@ -379,12 +454,9 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             task.cut_in = true;
             return None;
         }
-        Outcome::Done(text) => {
-            // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
-            // whole, as its message.
-            let most = if task.source.own() { MAX_REPORT } else { usize::MAX };
-            let text = text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
-            match text {
+        // Its agent's work ended with no turn of its own after it: what the thread said last is all there is.
+        Outcome::Done(text) | Outcome::Waiting { text } => {
+            match report_text(task, text) {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
                 None if matches!(task.source, Source::Routine { .. }) => (Status::Done, Some(Ok(String::new())), None),
@@ -392,6 +464,15 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             }
         }
         Outcome::Failed(failure, why) => (Status::Failed, Some(Err(why)), Some(failure)),
+        // Asked to wait once already, or the host couldn't ask: what it said is kept, after why.
+        Outcome::LeftRunning { running, text } => {
+            let why = format!("it ended its turn while {running} still ran");
+            let why = match report_text(task, text) {
+                Some(text) => format!("{why}. Its last message:\n\n{text}"),
+                None => why,
+            };
+            (Status::Failed, Some(Err(why)), Some(Failure::Background))
+        }
         // To its bot, and in the box, a turn that never began; only `work_finished` tells the two apart.
         Outcome::Undispatched(why) => {
             task.undispatched = true;
@@ -412,6 +493,13 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
         told: std::mem::take(&mut task.told),
     });
     Some(task.clone())
+}
+
+/// What its thread's last message gives as `task`'s report: one to the bot's own turn carries only so much; a routine
+/// run's or a request's result is posted whole, as its message.
+fn report_text(task: &Task, text: Option<String>) -> Option<String> {
+    let most = if task.source.own() { MAX_REPORT } else { usize::MAX };
+    text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty())
 }
 
 /// `work_finished` for `task`, which just ended. `agent`: the one its thread was given, where a thread took it (a turn
@@ -437,6 +525,10 @@ fn finished_properties(task: &Task, agent: Option<&str>) -> serde_json::Map<Stri
     if task.place == worktree::Place::NoWorktree {
         properties["worktreeFailed"] = true.into();
     }
+    // It was asked to wait for what it left running (#634): `outcome` says whether it then reported.
+    if task.held {
+        properties["held"] = true.into();
+    }
     properties.as_object().cloned().unwrap_or_default()
 }
 
@@ -460,6 +552,10 @@ fn deliver(hub: &Hub, bot: &str, task: &Task) {
 
 /// `task` of `bot` ended: says so (`work_finished`), and its result goes where its source reads it.
 fn ended(hub: &Hub, bot: &str, task: &Task) {
+    if let Some(thread) = &task.thread {
+        ask::forget(hub, thread);
+        ask_chat::forget(hub, thread);
+    }
     let thread = task.thread.as_deref().and_then(|thread| hub.store.bot(thread).ok().flatten());
     let agent = thread.as_ref().map(|thread| thread.config.backend.as_str());
     analytics::capture(hub, Event::WorkFinished, finished_properties(task, agent));
@@ -471,7 +567,28 @@ pub fn forget(hub: &Hub, bot: &str) {
     let tasks = tasks::load(&hub.store, bot);
     sources::forget_requests(hub, &tasks);
     worktree::leave(&tasks);
+    plain::forget_folders(&tasks);
     tasks::forget(&hub.store, bot);
+    archive::forget(hub, bot);
+}
+
+/// `bot`'s tasks that ended over [`KEEP_MS`] ago leave its box for the archive.
+fn age(hub: &Hub, bot: &str) {
+    let now = now_ms();
+    let aged = tasks::change(hub, bot, |tasks| {
+        let old = |i: &Task| i.ended_at.is_some_and(|at| now - at > KEEP_MS);
+        if !tasks.iter().any(old) {
+            return Ok(());
+        }
+        let (old, kept): (Vec<Task>, Vec<Task>) = std::mem::take(tasks).into_iter().partition(old);
+        // On an error `change` saves nothing: the box stays as it was.
+        archive::put(hub, bot, &old, &kept)?;
+        *tasks = kept;
+        Ok(())
+    });
+    if let Err(error) = aged {
+        host_error!(hub, "couldn't archive a bot's old threads", bot, error = format!("{error:#}"));
+    }
 }
 
 /// The reports of these tasks of `bot` arrived: the bot's turn for them is over (they reached the user, from the
@@ -492,6 +609,7 @@ pub fn reported(hub: &Hub, bot: &str, delivered: &[String]) {
 pub fn restore(hub: &Arc<Hub>) {
     look_when_seats_free(hub);
     watch::start(hub);
+    archive::move_old_past(hub);
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let threads = hub.store.thread_bots().unwrap_or_default();
     for thread in threads.iter().filter(|thread| !thread.config.thread_of.as_deref().is_some_and(lives)) {
@@ -513,19 +631,15 @@ pub fn restore(hub: &Arc<Hub>) {
     }
     sources::settle_runs(hub);
     worktree::tidy(hub);
+    archive::prune(hub);
+    archive::look_daily(hub);
 }
 
 /// `bot`'s box at host start: its threads resume the turns the last process cut off, a task whose thread can't ends,
 /// and the reports that never arrived are sent again.
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
+    age(hub, bot);
     let (resumed, failed, undelivered, recheck) = tasks::change(hub, bot, |tasks| {
-        let now = now_ms();
-        let (old, kept) =
-            std::mem::take(tasks).into_iter().partition(|i| i.ended_at.is_some_and(|at| now - at > KEEP_MS));
-        *tasks = kept;
-        if let Err(error) = tasks::put_past(&hub.store, bot, old, now) {
-            tracing::warn!(bot, error = format!("{error:#}"), "couldn't keep a bot's past tasks");
-        }
         let recheck = worktree::recheck(tasks);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         tasks.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
@@ -565,11 +679,14 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
 
 /// `threadEntries`: a thread's transcript, newest `limit`, for its details. `bot` must be the thread's own.
 pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
-    let row = hub.store.bot(id)?.filter(|r| !r.deleted && r.config.thread_of.as_deref() == Some(bot));
-    let cfg = row.ok_or_else(|| anyhow!("unknown thread"))?.config;
+    // A thread that ended over a week ago is parked, its task in the archive.
+    let cfg = archive::thread(&hub.store, bot, id).ok_or_else(|| anyhow!("unknown thread"))?;
     // What it works on, else what it worked on last.
     let mut worked: Vec<Task> =
         tasks::load(&hub.store, bot).into_iter().filter(|i| i.thread.as_deref() == Some(id)).collect();
+    if worked.is_empty() {
+        worked.extend(archive::last_of(&hub.store, bot, id));
+    }
     worked.sort_by_key(|i| (i.status.ended(), i.started_at));
     let task = worked.iter().find(|i| !i.status.ended()).or(worked.last()).ok_or_else(|| anyhow!("unknown thread"))?;
     Ok(json!({
@@ -584,7 +701,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_and_stays_for_recall() {
+    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_for_the_archive() {
         use crate::chat::calls::context::tests::{bot, hub};
         let hub = hub();
         hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
@@ -600,7 +717,7 @@ mod tests {
         pick_up(&hub, "b1").expect("picked up");
         let ids = |tasks: Vec<Task>| tasks.into_iter().map(|i| i.id).collect::<Vec<_>>();
         assert_eq!(ids(tasks::load(&hub.store, "b1")), ["new"]);
-        assert_eq!(ids(tasks::past(&hub.store, "b1", now)), ["old"]);
+        assert_eq!(ids(archive::recent(&hub.store, "b1", 0, 10)), ["old"]);
     }
 
     fn working(id: &str, thread: &str) -> Task {
@@ -627,6 +744,29 @@ mod tests {
         assert!(stopped.status == Status::Stopped && stopped.report.is_none(), "the user knows");
         assert!(end(&mut tasks, "t3", Outcome::Stopped).is_none(), "its thread has no task any more");
         assert_eq!(json!(Failure::EndedEarly), "ended_early");
+    }
+
+    #[test]
+    fn a_task_that_ends_its_turn_again_while_its_background_work_runs_fails_saying_what_ran() {
+        let mut tasks = [Task { held: true, ..working("a", "t1") }];
+        let running = "a command started in the background".to_owned();
+        let text = Some(" Still waiting for it ".to_owned());
+        let failed = end(&mut tasks, "t1", Outcome::LeftRunning { running, text }).expect("ended");
+        assert_eq!((failed.status, failed.failure), (Status::Failed, Some(Failure::Background)));
+        assert_eq!(
+            failed.result.as_deref(),
+            Some(
+                "it ended its turn while a command started in the background still ran. Its last message:\n\nStill waiting for it"
+            )
+        );
+        let told = finished_properties(&failed, None);
+        assert_eq!((&told["error"], &told["held"]), (&json!("background"), &json!(true)));
+        let saved = serde_json::to_value(&failed).expect("a task");
+        assert_eq!(saved["held"], true);
+        assert!(serde_json::to_value(working("b", "t2")).expect("a task").get("held").is_none(), "only once held");
+        let mut tried = failed;
+        tried.set_aside(0);
+        assert!(!tried.held, "tried again, it may be asked to wait again");
     }
 
     #[test]

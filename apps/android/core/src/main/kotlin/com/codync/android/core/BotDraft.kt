@@ -52,6 +52,8 @@ data class BotDraft(
     val projects: List<String>? = null,
     /** Where its threads work ([Bot.worktreeMode]); null where the host has none, or on a new bot, so it isn't sent. */
     val worktreeMode: WorktreeMode? = null,
+    /** Per project, the folders linked into each new worktree of it ([Bot.sharedFolders]); null where the host has none, so it isn't sent. */
+    val sharedFolders: Map<String, List<String>>? = null,
     /** Advisor mode's agent for its threads ([Bot.threadAgent]); null, sent as null, turns it off. */
     val threadAgent: Fallback? = null,
     /** The threads' fallbacks; null where the host has no Advisor mode, so neither this nor [threadAgent] is sent. */
@@ -85,9 +87,18 @@ data class BotDraft(
             ?: Fallback(login.backend, loginProfile = login.loginProfile), threadFallbacks = threadFallbacks?.filter { it.login != login })
     /** [path] added as its last project (one it has stays where it is). */
     fun withProject(path: String): BotDraft = if (path in projects.orEmpty()) this else copy(projects = projects.orEmpty() + path)
-    fun withoutProject(path: String): BotDraft = copy(projects = projects.orEmpty() - path)
+    fun withoutProject(path: String): BotDraft = copy(projects = projects.orEmpty() - path, sharedFolders = sharedFolders?.minus(path))
     /** [path] as its default project: moved first. */
     fun withDefaultProject(path: String): BotDraft = copy(projects = listOf(path) + (projects.orEmpty() - path))
+    /** The folders linked into each new worktree of [project]. */
+    fun sharedFolders(project: String): List<String> = sharedFolders?.get(project).orEmpty()
+    /** [name] (see [sharedFolderName]) linked into each new worktree of [project]; one it has, or one the host refuses, changes nothing. */
+    fun withSharedFolder(project: String, name: String): BotDraft {
+        val folder = sharedFolderName(name)?.takeIf { it !in sharedFolders(project) } ?: return this
+        return copy(sharedFolders = sharedFolders.orEmpty() + (project to sharedFolders(project) + folder))
+    }
+    fun withoutSharedFolder(project: String, name: String): BotDraft =
+        copy(sharedFolders = (sharedFolders.orEmpty() + (project to sharedFolders(project) - name)).filterValues { it.isNotEmpty() })
     fun body(): JsonObject {
         val normalized = if (backend == "custom") this else copy(command = null)
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
@@ -115,7 +126,7 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxThreads", "threadWorktrees", "threadFallbacks", "projects", "worktreeMode")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxThreads", "threadWorktrees", "threadFallbacks", "projects", "worktreeMode", "sharedFolders")
         /** Who reaches a bot and the login profile it runs on belong to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
             setOf("id", "pinned", "hidden", "loginProfile", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants",
@@ -129,8 +140,20 @@ data class BotDraft(
             bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction, bot.loginProfile, bot.maxThreads, bot.threadWorktrees,
             // A host with projects says where threads work: what tells its bots from an older host's.
             projects = bot.projects.takeIf { bot.worktreeMode != null }, worktreeMode = WorktreeMode.of(bot.worktreeMode),
+            sharedFolders = bot.sharedFolders,
             threadAgent = bot.threadAgent, threadFallbacks = bot.threadFallbacks)
     }
+}
+
+/**
+ * A shared folder's name as typed, made what the host takes, a plain path inside the project (`node_modules`, `.cache/pip`):
+ * trimmed, no `./` or trailing slash. Null for none, an absolute path or one that climbs out (`..`), which the host refuses.
+ */
+fun sharedFolderName(input: String): String? {
+    val text = input.trim()
+    val parts = text.split('/', '\\').filter { it.isNotEmpty() && it != "." }
+    val absolute = text.startsWith('/') || text.startsWith('\\') || Regex("^[A-Za-z]:").containsMatchIn(text)
+    return parts.takeUnless { it.isEmpty() || absolute || ".." in it }?.joinToString("/")
 }
 
 /** Where a bot's threads work (`worktreeMode`), with the line settings shows for each. */

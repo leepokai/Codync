@@ -96,7 +96,7 @@ fn session_row(s: &Session) -> Row {
         Some(false) => "idle",
         None => "unknown",
     };
-    let mut value = json!({"id": s.address, "kind": s.kind, "cwd": s.cwd, "status": status, "tier": "pull"});
+    let mut value = json!({"id": s.address, "kind": s.kind, "cwd": s.cwd, "status": status, "tier": s.tier});
     if s.temporary {
         value["temporary"] = true.into();
     } else if let Some(title) = &s.title {
@@ -126,7 +126,7 @@ impl Filter {
             words: args["query"].as_str().unwrap_or_default().split_whitespace().map(str::to_lowercase).collect(),
             computer: args["computer"].as_str().map(str::to_lowercase),
             online: args["online"].as_bool() == Some(true),
-            kind: AgentKind::deserialize(&args["kind"]).ok(),
+            kind: kind_of(args),
         }
     }
 
@@ -146,6 +146,11 @@ impl Filter {
             && (!self.online || row.online)
             && self.kind.is_none_or(|kind| kind == row.kind)
     }
+}
+
+/// The kind `list_bots`'s `args` keep, if it names one.
+pub(super) fn kind_of(args: &Value) -> Option<AgentKind> {
+    AgentKind::deserialize(&args["kind"]).ok()
 }
 
 /// The `kind` argument of the tools' `list_bots`, which [`Filter::of`] reads.

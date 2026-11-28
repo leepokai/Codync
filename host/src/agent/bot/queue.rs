@@ -29,6 +29,7 @@ impl Actor {
                 self.queue.retain(|q| !matches!(q, Queued::Watchdog(s) if s.thread() == stuck.thread()));
                 self.enqueue(Queued::Watchdog(stuck), done_tx).await;
             }
+            Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
             Cmd::Send { lane, entry_id, mut text } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
@@ -222,6 +223,12 @@ impl Actor {
             });
             self.turn_over(Outcome::Stopped);
         }
+        // Nor does one whose task waits on what its agent runs in the background: that stops with its agent.
+        if self.turn.is_none() && self.cfg.is_thread() && self.runs_in_background() {
+            self.hub.set_runtime(&self.id(), |r| r.background.clear());
+            self.kill_agent().await;
+            self.turn_over(Outcome::Stopped);
+        }
     }
 
     async fn stop_workflow(&mut self, step_id: &str) {
@@ -254,9 +261,7 @@ impl Actor {
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
     pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.kill_agent().await;
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);
         }
@@ -397,6 +402,18 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::TaskAnswer { .. }) => {
+                    let Some(Queued::TaskAnswer { prompt, hops }) = self.queue.pop_front() else {
+                        unreachable!("front is a thread's answer")
+                    };
+                    self.host_turn = Some(HostTurn::TaskAnswer);
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                        // A task this turn adds carries the chain on, as a report's turn does.
+                        Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
+                        Err(e) => self.start_error(e, done_tx).await,
+                    }
+                    continue;
+                }
                 Some(Queued::Prompt { .. }) => {
                     let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
@@ -524,7 +541,7 @@ impl Actor {
         match ended {
             Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
             Some(HostTurn::TaskReport) => self.reports_over(answered),
-            Some(HostTurn::Opening | HostTurn::Watchdog) | None => {}
+            Some(HostTurn::Opening | HostTurn::Watchdog | HostTurn::TaskAnswer) | None => {}
         }
         ended
     }
@@ -543,12 +560,19 @@ impl Actor {
     }
 
     /// The turn is over, however it ended (or never began): a thread's task says how and its bot gets the report;
-    /// the tasks a bot added in the turn may start.
-    pub(super) fn turn_over(&mut self, outcome: Outcome) {
+    /// the tasks a bot added in the turn may start. Whether the thread's task goes on with what the turn left running
+    /// instead, which then stays as it is ([`work::finished`]).
+    pub(super) fn turn_over(&mut self, outcome: Outcome) -> bool {
         if self.cfg.is_thread() {
-            work::finished(&self.hub, &self.cfg, outcome);
+            let goes_on = work::finished(&self.hub, &self.cfg, outcome);
+            if !goes_on {
+                // Its task's next round begins from what runs then.
+                self.detached_before = None;
+            }
+            goes_on
         } else {
             work::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
+            false
         }
     }
 

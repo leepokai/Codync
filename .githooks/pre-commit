@@ -17,10 +17,12 @@ fi
 touches() { printf '%s\n' "$staged_files" | grep -Eq "$1"; }
 
 repo=$(git rev-parse --show-toplevel)
-git_dir=$(git rev-parse --absolute-git-dir)
-# A fixed path keeps cargo's build cache; the lock keeps two commits from sharing it at once.
-snapshot="$git_dir/precommit-snapshot"
-lock="$git_dir/precommit.lock"
+# One snapshot and one build cache for the main checkout and all its worktrees, so a commit from a new worktree
+# builds warm; the lock keeps two commits from sharing them at once.
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+snapshot="$common_dir/precommit-snapshot"
+lock="$common_dir/precommit.lock"
+build_cache="$(dirname "$common_dir")/host/target/precommit"
 locked=""
 
 # Runs a command, and everything it starts, for at most $1 seconds: a hung test would otherwise hold
@@ -41,23 +43,42 @@ staged_copy() {
     locked=1
     trap 'rm -rf "$lock"' EXIT
     trap 'exit 1' INT TERM
-    rm -rf "$snapshot"
+    # Only the files that differ are rewritten: an unchanged file keeps its time, so cargo rebuilds only what changed.
+    # node_modules are links to the checkout's own, made again by each check.
+    staged=$(mktemp -d)
+    git archive "$(git write-tree)" | tar -x -C "$staged"
     mkdir -p "$snapshot"
-    git archive "$(git write-tree)" | tar -x -C "$snapshot"
+    rsync -rlpc --delete --exclude=node_modules "$staged/" "$snapshot/"
+    rm -rf "$staged"
 }
 
-# The host tests a commit needs, as a nextest filter: unit tests always, plus the end-to-end tests of
-# the areas it touches; "all" for everything else (the hub, the store, the API, bots, agents and chats,
-# which every end-to-end test goes through, and the tests' shared helpers).
+# A Cargo manifest or lock whose staged change only moves `version = ` lines (a release bump).
+version_only() { ! git diff --cached -U0 -- "$1" | grep -E '^[+-][^+-]' | grep -qvE '^[+-]version = '; }
+
+# The host tests a commit needs, as a nextest filter: unit tests always, plus the end-to-end tests of the areas it
+# touches. Code every end-to-end test goes through (the hub, the store, the API, the bot actor, agents, the rest of
+# chat) has no area of its own, so it runs the basic end-to-end tests (`host/tests/e2e.rs`); "all" only for the
+# tests' shared helpers and dependency changes. CI runs the whole suite on the pull request into main.
 host_tests() {
     targets=""
     for file in $(printf '%s\n' "$staged_files" | grep -E '^(host/|packaging/updates/|docs/reference/fixtures/)'); do
         case "$file" in
             host/src/routines/*) add="routines_e2e routine_retry_e2e routine_unread_e2e" ;;
-            host/src/network/*|host/src/network_cli.rs|host/crates/network/*) add="network_e2e two_computers" ;;
+            host/src/network/*|host/src/network_cli*|host/crates/network/*) add="network_e2e two_computers" ;;
             host/src/send_cli*) add="send_cli_e2e" ;;
             host/src/chat/memory/*|host/crates/memory/*) add="memory_e2e memory_files_e2e compaction_e2e" ;;
             host/src/voice.rs|host/src/chat/calls*) add="calls_e2e" ;;
+            host/src/chat/work/*) add="work_e2e background_work_e2e" ;;
+            host/src/chat/team*) add="team_e2e" ;;
+            host/src/chat/manage*) add="manage_e2e" ;;
+            host/src/chat/decision*) add="decision_e2e decision_cancellation_e2e" ;;
+            host/src/workflows/*) add="workflows_e2e" ;;
+            host/src/agent/fallback/*) add="fallback_e2e" ;;
+            host/src/dev_servers/*) add="dev_server_e2e" ;;
+            host/src/market/vault*) add="vault_e2e" ;;
+            host/*.md) add="" ;;
+            host/Cargo.toml|host/Cargo.lock|host/crates/*/Cargo.toml)
+                if version_only "$file"; then add=""; else echo all; return; fi ;;
             host/src/tui/*|host/src/screen/*|host/src/update/*|host/src/usage/*|host/src/remote/*|host/src/analytics*|\
             host/src/service/*|host/src/cloud_cli.rs|host/src/compat.rs|host/src/prompt.rs|\
             packaging/updates/*|docs/reference/fixtures/*) add="" ;;
@@ -66,12 +87,12 @@ host_tests() {
                 add=$(grep -rl --include='*.rs' "$(basename "$file")" "$snapshot/host/tests" |
                     sed -E 's#^.*/host/tests/([^/.]+).*#\1#' || true) ;;
             host/tests/*) add=$(printf '%s' "$file" | sed -E 's#^host/tests/([^/.]+).*#\1#') ;;
-            *) echo all; return ;;
+            *) add="e2e" ;;
         esac
         targets="$targets $add"
     done
     filter="kind(lib) | kind(bin)"
-    for target in $targets; do filter="$filter | binary($target)"; done
+    for target in $(printf '%s\n' $targets | sort -u); do filter="$filter | binary($target)"; done
     printf '%s\n' "$filter"
 }
 
@@ -92,26 +113,28 @@ if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vect
         exit 1
     fi
     echo "Checking the host (cargo fmt, clippy, test: $tests)..."
-    set -- --profile ci
+    set -- --profile precommit
     [ "$tests" = all ] || set -- "$@" -E "$tests"
-    # nextest runs every test at once, retries a flaky one and stops one that hangs (`host/.config/nextest.toml`).
-    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" &&
+    # nextest runs every test at once, retries a flaky one and stops one that hangs after five minutes, and leaves
+    # the slowest to CI (`host/.config/nextest.toml`). The outer limit only catches nextest itself hanging: a
+    # loaded machine runs the whole suite for well over 15 minutes without anything being stuck.
+    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$build_cache" &&
         cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings &&
-        within 900 cargo nextest run --workspace "$@")
+        within 2700 cargo nextest run --workspace "$@")
 fi
 
 # The desktop tests also check the iPhone, Android and terminal tr() phrases against the catalogs (#488).
 if touches "^(apps/desktop/|$shared_text|apps/ios/.*\.swift$|apps/android/app/src/main/.*\.kt$|host/src/tui/)"; then
     staged_copy
     echo "Checking the desktop app (typecheck, test)..."
-    ln -s "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"
+    ln -sfn "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"
     (cd "$snapshot/apps/desktop" && npm run typecheck && npm test)
 fi
 
 if touches '^web/'; then
     staged_copy
     echo "Checking the user manual (pages compile, links and anchors)..."
-    ln -s "$repo/web/node_modules" "$snapshot/web/node_modules"
+    ln -sfn "$repo/web/node_modules" "$snapshot/web/node_modules"
     (cd "$snapshot/web" && npm run check:docs)
 fi
 
@@ -119,7 +142,7 @@ for dir in cloud relay discord private-relay; do
     if touches "^($dir/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
         staged_copy
         echo "Checking $dir (typecheck, test)..."
-        ln -s "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"
+        ln -sfn "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"
         (cd "$snapshot/$dir" && npm run typecheck && npm test)
     fi
 done

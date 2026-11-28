@@ -1,6 +1,6 @@
 /** What the Network section says about this computer's networks (codync-network). */
 
-import type { Network, NetworkComputer, NetworkRole, NetworkRule } from '@shared/network'
+import type { Network, NetworkComputer, NetworkRole, NetworkRule, NetworkSession } from '@shared/network'
 import { fill } from '../../shared/fill.ts'
 
 /** How computers reach each other without a direct path. */
@@ -30,6 +30,21 @@ export const botsTemplate = (c: NetworkComputer) => (c.agents.length === 1 ? '1 
 export const expiryTime = (expiresAt: number) => new Date(expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
 export const ANY = '*'
+
+/** What a running session's agent does, untranslated, where it says (working or idle); the dot alone shows online or offline. */
+export const sessionStateTitle = (state: NetworkSession['state']) =>
+  state ? (({ working: 'Working', idle: 'Idle' }) as Record<string, string>)[state] ?? null : null
+
+/** What a session's dot says to a screen reader, untranslated, where no word shows (online or offline); null: no dot. */
+export const sessionDotTitle = (state: NetworkSession['state']) =>
+  state ? (({ online: 'Online', offline: 'Offline' }) as Record<string, string>)[state] ?? null : null
+
+/** How a session gets its mail, untranslated; null for a tier this app doesn't know. */
+export const tierTitle = (tier: string) => ({ pull: 'Checks its mail', turn: 'Told of mail at its next step', push: 'Told of mail as it comes' } as Record<string, string>)[tier] ?? null
+
+/** The levels a rule to `session` can take, as the host sends them; to anyone else, every level. */
+export const levelsFor = (session?: NetworkSession): NetworkRule['access'][] =>
+  session ? (session.levels ?? ['allow', 'deny']) : ['allow', 'auto', 'ask', 'deny']
 
 /** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
 export const rulesFooter = (net: Network) =>

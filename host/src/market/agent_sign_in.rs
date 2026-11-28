@@ -221,6 +221,7 @@ fn settled(hub: &Hub, profile: &login_profiles::Profile) -> Result<Value> {
 /// login complete.
 pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<()> {
     crate::agent::fallback::signed_in(hub, backend, login_profile);
+    crate::agent::auth::model_list_signed_in(&hub.store, backend, login_profile);
     if login_profile.is_some() {
         // Its limits are read and listed from now on.
         crate::usage::login_profiles_changed(hub);

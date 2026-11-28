@@ -1,0 +1,75 @@
+# Delete old threads on the computer's card in Manage computers: Keep forever by default, a choice picked from its menu
+# reaches the host, and one made on another device (the desktop, the terminal UI) shows up while the phone stays
+# connected (the host's `threadKeepDays` event). The phone must already be signed in and connected to the host (a
+# worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`:
+#   maestro --device <simulator udid or adb serial> test --include-tags thread-retention \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+# Both phones set the same computer's choice, so run one device after the other, not `--shard-all`.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - thread-retention
+onFlowComplete:
+  - runScript:
+      file: thread-retention.js
+      env:
+        RESTORE: "true"
+---
+- runScript:
+    file: thread-retention.js
+    env:
+      DAYS: "0"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "(Settings|Skip)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's filter button (top right; named Computers and how many are connected) opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "Computers, .*Filter conversations"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- scrollUntilVisible:
+    element: "Delete old threads"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "Keep forever"
+- takeScreenshot: thread-retention-forever
+# Picked here: the menu offers the choices and only the one tapped is sent.
+- tapOn: "Keep forever"
+- tapOn: "After 90 days"
+- runScript:
+    file: thread-retention.js
+    env:
+      EXPECT: "90"
+# Picked on another device: the row follows.
+- runScript:
+    file: thread-retention.js
+    env:
+      DAYS: "30"
+- extendedWaitUntil:
+    visible: "After 30 days"
+    timeout: 10000
+- takeScreenshot: thread-retention-followed

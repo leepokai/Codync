@@ -395,6 +395,25 @@ public struct Disclosure<Label: View, Content: View>: View {
     }
 }
 
+/// A chip's label in a row of chips (a chat's model chip, New thread's bot and model): what it shows, then a small
+/// chevron, in secondary ink.
+struct ChipLabel<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 5) {
+            content
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.tertiary)
+        }
+        .font(.subheadline)
+        .foregroundStyle(Palette.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 8)
+        .frame(height: 34)
+        .contentShape(Rectangle())
+    }
+}
+
 // MARK: - Shared bits
 
 extension View {

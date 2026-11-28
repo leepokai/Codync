@@ -6,13 +6,14 @@
 mod detected;
 mod logs;
 mod platform;
-mod ports;
+pub(crate) mod ports;
 mod run;
 mod scan;
 #[cfg(test)]
 mod tests;
 mod tools;
 
+pub(crate) use platform::process_start;
 pub use run::{remove, restart, stop};
 pub use scan::scan_loop;
 pub use tools::{BRIEF, START, TOOLS, call, tools};

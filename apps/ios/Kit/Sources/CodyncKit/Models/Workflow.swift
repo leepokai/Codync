@@ -228,6 +228,14 @@ public struct WorkflowSummary: Decodable, Identifiable, Hashable, Sendable {
             return lhs.id < rhs.id
         }
     }
+
+    /// What the Workflows list's search finds: the items whose title holds `query` or whose id starts with it; all of
+    /// them for a blank one.
+    public static func matching(_ items: [WorkflowSummary], _ query: String) -> [WorkflowSummary] {
+        let words = query.trimmingCharacters(in: .whitespaces)
+        guard !words.isEmpty else { return items }
+        return items.filter { $0.title.localizedCaseInsensitiveContains(words) || $0.id.hasPrefix(words) }
+    }
 }
 
 public struct WorkflowDetail: Decodable, Identifiable, Hashable, Sendable {

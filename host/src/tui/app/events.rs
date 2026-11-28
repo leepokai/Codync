@@ -79,6 +79,12 @@ impl App {
             // Not a rev event. An open workflow page loads again; every other screen ignores it.
             Some("workflow") => self.on_workflow_event(v),
             Some("usage") => self.usage = v["usage"].clone(),
+            // Not a rev event: a model list the computer read again.
+            Some("models") => {
+                if let Some(backend) = v["backend"].as_str() {
+                    self.keep_models(Self::model_key(backend, v["loginProfile"].as_str()), &v["models"]);
+                }
+            }
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
             Some("cloud") => self.cloud = v["cloud"].clone(),
@@ -88,6 +94,10 @@ impl App {
                 }
             }
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
+            Some("threadKeepDays") => {
+                self.thread_keep_days = super::thread_keep::days(&v["days"]);
+                self.relist_older();
+            }
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
@@ -274,10 +284,12 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.thread_keep_days = super::thread_keep::days(&v["threadKeepDays"]);
                 self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.routine_folder = v["routineFolder"].as_bool().unwrap_or(false);
                 self.projects = v["projects"].as_bool().unwrap_or(false);
+                self.worktree_fill = v["worktreeFill"] == true;
                 self.screen = v["screen"].clone();
                 // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
                 // missed, now that the host's version says which name `threadEntries` goes by.
@@ -285,6 +297,7 @@ impl App {
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::ThreadKeep => self.thread_keep_set(&v),
             After::CredentialsReset => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Saved credentials reset. Enter them again where you use them.");
@@ -475,6 +488,26 @@ mod tests {
         connect(&mut app, 0);
         app.on_event(&entry_event(1));
         assert_eq!(seqs(&app), [1, 2, 4, 7, 9], "each connection replaces the floors");
+    }
+
+    #[test]
+    fn a_model_list_the_computer_read_again_replaces_the_one_shown() {
+        let mut app = test_app();
+        let key = App::model_key("codex", None);
+        app.keep_models(key.clone(), &json!({"models": [{"id": "old", "name": "Old"}], "fastMode": true}));
+        app.on_event(&json!({"type": "models", "backend": "codex", "loginProfile": null,
+            "models": {"models": [{"id": "new", "name": "New"}]}}));
+        let ids: Vec<_> = app
+            .models_for("codex", None)
+            .and_then(Option::as_ref)
+            .into_iter()
+            .flatten()
+            .map(|m| m.id.clone())
+            .collect();
+        assert_eq!(ids, ["new"]);
+        assert!(!app.has_fast_mode("codex", None), "Fast mode goes with the list that dropped it");
+        app.on_event(&json!({"type": "models", "loginProfile": null, "models": {"models": []}}));
+        assert!(app.models_for("codex", None).is_some(), "an event without its agent is passed over");
     }
 
     #[test]

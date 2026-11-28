@@ -34,6 +34,12 @@ class WorkTest {
         assertEquals(bot, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), bot)).jsonObject))
     }
 
+    @Test fun `a task names the agent its thread runs on`() {
+        val owner = bot(""","backend":"claude","work":[{"id":"a","status":"working","runsOn":"codex"},{"id":"b","status":"waiting"},{"id":"c","status":"working","agent":"gemini"}]""")
+        assertEquals(listOf("codex", "claude", "gemini"), owner.work.map { it.agentOf(owner) })
+        assertNull("the box of threads without a bot has no agent of its own", owner.work[1].agentOf(owner.copy(plain = true)))
+    }
+
     @Test fun `a host from before the box has no work and no ceiling`() {
         assertEquals(emptyList<WorkTask>(), bot().work)
         assertNull(bot().maxThreads)
@@ -160,6 +166,12 @@ class WorkTest {
         assertEquals(listOf("early", "late"), threadSections(listOf(moved), { it }, { it.id }, { "Mac" }, ThreadGrouping.None, byActivity = true).recent.map { it.task.id })
         // An empty folder names no place.
         assertEquals(null, WorkTask("x", "x", WorkStatus.Done, folder = "").wherePath)
+        // Every thread in a folder Codync made for it, in one "Own folder" group, not one per folder.
+        val box = bot(""","cwd":"/home/me","plain":true""").copy(work = listOf(
+            WorkTask("x", "x", WorkStatus.Done, createdAt = 1, folder = "/home/me/.codync/threads/1", ownFolder = true),
+            WorkTask("y", "y", WorkStatus.Done, createdAt = 2, folder = "/home/me/.codync/threads/2", ownFolder = true)))
+        val alone = threadSections(listOf(box), { it }, { it.id }, { "Mac" }, ThreadGrouping.Folder).groups
+        assertEquals(listOf(Triple(OWN_FOLDER_GROUP, "Own folder", listOf("y", "x"))), alone.map { Triple(it.key, it.title, it.rows.map { r -> r.task.id }) })
     }
 
     @Test fun `the threads search finds threads by title or bot name, newest first, and never a plain box by its name`() {
@@ -233,6 +245,22 @@ class WorkTest {
         assertNull(BotDraft.from(bot(""","projects":[],"worktreeMode":"later"""")).worktreeMode)
     }
 
+    @Test fun `shared folders go as the whole map, only names the host takes`() {
+        val bot = bot(""","projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide",
+            "sharedFolders":{"/p/app":["node_modules"]}""")
+        val draft = BotDraft.from(bot)
+        assertEquals(listOf("node_modules"), draft.sharedFolders("/p/app"))
+        fun sent(edit: BotDraft) = edit.body().getValue("sharedFolders").toString()
+        assertEquals("""{"/p/app":["node_modules",".cache/pip"]}""", sent(draft.withSharedFolder("/p/app", " .cache/pip/ ")))
+        assertEquals("""{"/p/app":["node_modules"],"/p/docs":["vendor"]}""", sent(draft.withSharedFolder("/p/docs", "vendor")))
+        for (refused in listOf("", "node_modules", "./node_modules", "/abs", "C:\\x", "../up", "a/../b")) assertEquals(draft, draft.withSharedFolder("/p/app", refused))
+        assertEquals("node_modules", sharedFolderName("./node_modules"))
+        assertEquals("{}", sent(draft.withoutSharedFolder("/p/app", "node_modules")))
+        assertEquals("{}", sent(draft.withoutProject("/p/app")))
+        // A host before shared folders has none: nothing goes.
+        assertFalse("sharedFolders" in BotDraft.from(bot(""","projects":[],"worktreeMode":"off"""")).body())
+    }
+
     @Test fun `only the bot's own work in one of its seats gives way to a task that cuts in`() {
         val waiting = task("w", WorkStatus.Waiting)
         val own = task("a", WorkStatus.Working).copy(seat = true)
@@ -285,6 +313,7 @@ class WorkTest {
         assertEquals(listOf(true, false, false), tasks.map { it.talk })
         assertEquals(listOf(true, false, false), tasks.map { it.talkFiles })
         assertEquals(listOf("/Users/kai/code/app", null, null), tasks.map { it.folder })
+        assertEquals(listOf(true, false), work("""[{"id":"o","status":"working","folder":"/h/.codync/threads/1","ownFolder":true},{"id":"p","status":"working"}]""").map { it.ownFolder })
     }
 
     @Test fun `a task says where it works, the branch for one in a worktree of its own`() {
@@ -297,6 +326,9 @@ class WorkTest {
         assertEquals("/w/a", whereLine(tree.copy(folder = null), home)?.path)
         assertNull(whereLine(tree.copy(folder = null, worktree = Worktree("codync/x")), home)?.path)
         assertNull(whereLine(task("w", WorkStatus.Waiting), home))
+        // The folder Codync made for a thread without a bot: a phrase, its path still the one to copy.
+        assertEquals(WhereLine(WhereKind.Own, "Own folder", "/Users/kai/.codync/threads/1"),
+            whereLine(folder.copy(folder = "/Users/kai/.codync/threads/1", ownFolder = true), home))
         assertEquals("folder" to "arrow.triangle.branch", WhereKind.Folder.symbol to WhereKind.Branch.symbol)
     }
 
@@ -325,32 +357,6 @@ class WorkTest {
         // The thread's own first at the same moment; the chat's own and another thread's stay in the chat.
         assertEquals(listOf("c1", "t1", "c2", "t2", "c4"), sharing(own, chat, "thread-1").map { it.id })
         assertEquals(listOf("t1", "t2"), sharing(own, chat, "thread-9").map { it.id })
-    }
-
-    @Test fun `what a thread put in the chat is one line of its thread, saying how it stands`() {
-        fun line(kind: String, data: String) = sharedLine(Entry("c", 1, "b", 1, kind, data = Json.parseToJsonElement(data).jsonObject)) { it }
-        val options = """"options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"""
-        fun approval(status: String, selected: String = "") = line("permission", """{"status":"$status","title":"npm test",$options,"selected":"$selected"}""")
-        assertEquals(SharedLine("hand.raised", "Waiting for your approval: npm test"), approval("pending"))
-        assertEquals(SharedLine("checkmark", "Approved: npm test"), approval("answered", "ok"))
-        assertEquals(SharedLine("xmark", "Denied: npm test"), approval("answered", "no"))
-        assertEquals("Answered: Skip", approval("answered", "x")?.text)
-        assertEquals(SharedLine("clock", "Not answered: npm test"), approval("expired"))
-        fun choice(status: String, selected: String = "") = line("notice", """{"decision":true,"status":"$status","question":"Squash?","choices":["Yes","No"],"selected":"$selected"}""")
-        assertEquals("Asked: Squash?", choice("pending")?.text)
-        assertEquals("Answered: No", choice("answered", "No")?.text)
-        assertEquals("Not answered: Squash?", choice("expired")?.text)
-        fun signIn(status: String, kind: String = "agent") = line("notice", """{"text":"Needs you to sign in.","connectionRequest":{"kind":"$kind","status":"$status","title":"Kimi Code"}}""")
-        assertEquals(SharedLine("hand.raised", "Needs Kimi Code sign-in"), signIn("pending"))
-        assertEquals(SharedLine("checkmark", "Signed in"), signIn("ready"))
-        assertEquals(SharedLine("xmark", "Cancelled"), signIn("cancelled"))
-        assertNull("a connector's card is not a thread's", line("notice", """{"connectionRequest":{"kind":"oauth","status":"pending","title":"Linear"}}"""))
-        val file = """{"id":"f","name":"log.txt","size":3,"sha256":""}"""
-        assertEquals(SharedLine("doc", "Sent a file: log.txt"), line("agent", """{"final":true,"files":[$file]}"""))
-        assertEquals(SharedLine("waveform", "Sent a voice note"), line("agent", """{"final":true,"files":[$file],"voiceNote":true,"text":"Hi"}"""))
-        assertEquals(SharedLine("doc.richtext", "Made an artifact: Plan"), line("agent", """{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"""))
-        assertNull(line("agent", """{"text":"Just words","final":true}"""))
-        assertNull(line("notice", """{"text":"A notice"}"""))
     }
 
     @Test fun `a bot's folder is a repository, isn't one, or the computer has no git`() {
@@ -390,5 +396,15 @@ class WorkTest {
         assertEquals(listOf(passed), thread.hidingQueue(working = true))
         assertEquals(emptyList<Entry>(), thread.queue(working = false))
         assertEquals(listOf(mine, passed), thread.hidingQueue(working = false))
+    }
+
+    @Test fun `a thread's background work decodes, and survives the mirror's copy`() {
+        val bot = bot(""","work":[{"id":"w","status":"working","background":[
+            {"id":"a","kind":"workflow","name":"probe","activity":"Count: two","startedAt":7},
+            {"id":"b","kind":"timer","name":"wait","startedAt":8}]}]""")
+        assertEquals(listOf(BackgroundTask("a", "probe", "Count: two", 7), BackgroundTask("b", "wait", startedAt = 8)),
+            bot.work.single().background)
+        assertEquals(bot, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), bot)).jsonObject))
+        assertTrue(work("""[{"id":"w","status":"working"}]""").single().background.isEmpty())
     }
 }

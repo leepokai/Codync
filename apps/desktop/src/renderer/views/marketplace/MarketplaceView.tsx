@@ -22,6 +22,7 @@ import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './Market
 import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
+import { pageIcon } from '../NavRail'
 import { fill } from '@shared/fill'
 
 /**
@@ -108,6 +109,7 @@ export function MarketplaceView({ computer, focus = null }: { computer: Computer
     <div className="market-heading">
       {/* Everything here lives on one computer: which, in a capsule beside the title, its menu the others. */}
       <HStack gap={10} shrink className="market-heading-titles">
+        <Icon name={pageIcon('extensions')} size={26} weight="medium" />
         <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
         {computer ? (
           <ChoicePicker

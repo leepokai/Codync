@@ -29,7 +29,7 @@ Bots never wait on each other. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
 2. **The recipient does the work** away from its chat, as a [task](/docs/conversations#work): its chat stays free, and the request waits for a free thread like its other tasks. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
-3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the thread's steps in the recipient's **Details**, but not as a message in the recipient's chat.
+3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the recipient's thread (in its **Details**), but not as a message in the recipient's chat.
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
 Because nobody waits, there's no time limit: the recipient takes as long as the work needs.
@@ -91,15 +91,25 @@ Each computer decides for itself who may message its bots; the senders can't get
 
 ### Agents that aren't Codync bots
 
-A Claude Code, Codex, Copilot CLI or other coding agent session on the same computer gets its own Network address and mailbox through an MCP server the host runs. It can list your bots (here and on your other computers) and the other sessions here, message them, and read the replies:
+A Claude Code, Codex, Copilot CLI or other coding agent session on the same computer gets its own Network address and mailbox through an MCP server the host runs. It can list your bots (here and on your other computers) and the other sessions here, message them, and read the replies. Set it up for every coding agent installed on the computer:
 
 ```sh
-claude mcp add codync -- codync-host mcp network
+codync-host network setup
 ```
+
+It works with Claude Code, Codex, Copilot CLI, Grok, pi, Antigravity, Cursor and opencode (name some to set up only those, like `codync-host network setup codex`). It adds a `codync` MCP server to each agent's own settings, and for Codex, Copilot CLI and Grok the hooks described below; Codex then asks you to approve its hooks once in `/hooks`. Running it again changes nothing, and `--remove` takes out what it added. If an agent already has a different server named `codync`, setup leaves it alone and tells you. If you added the server by hand with `--name` before, it no longer starts: run `codync-host network setup` once to replace it.
 
 Each session is named once, when it first uses the server: its project folder and agent, like `api-claude` (`api-claude-2` for a second one). The same session keeps that address when you resume it, and the letters waiting for it. A new session gets a new address. The address doesn't change when the session's title does; ask the agent to change it (`set_name`) if you want another one. A session asks `whoami` for its address. `check_inbox` reads its letters, and every tool result says how many are waiting. A bot's chat shows "Message from api-claude (this computer)". Bots can take minutes, so the session collects answers with `read_replies` when it's ready, rather than waiting.
 
-Sessions aren't offered to your other computers unless a rule under the network allows a sender to reach that session's address by name (**Allow**, naming the address; a rule for any agent doesn't count). The apps can't pick a session in a rule yet; that comes when they show sessions. An agent that doesn't tell the server which session it is gets an address that lasts only while it runs; listings mark it temporary.
+Codex, Copilot CLI and Grok sessions (macOS and Linux) also hear of new letters without asking: setup adds a hook that runs after each tool call and when a turn ends, so the session is told, at its next step, how many letters are waiting, and reads them with `check_inbox`.
+
+Claude Code sessions (macOS and Linux) are told as soon as a letter comes, with nothing more to set up: when the session is idle, its codync server starts a turn with a short automated notice (how many letters wait, never their text), and the session reads them with `check_inbox`. A session is woken at most 12 times an hour; past that it isn't woken again until the hour's count frees up, or it checks itself.
+
+Your bots can message these sessions too: a bot's list of bots includes the sessions on its computer. The message waits in the session's inbox until the session reads it itself, so the answer may take a while, or never come. When the session answers it (`replyTo` = the letter's id), the answer comes back to the bot's chat like any reply. If the host restarts before then, the answer reaches the bot as a new message instead.
+
+The **Network** page on every app lists the sessions on the computer. Each shows its title, address and logo, and a dot when it's running; Claude Code sessions also say **Working** or **Idle**. Running sessions come first. Sessions not used in the last day fold under **Older sessions**. On the desktop, the page lists only the sessions on the computer the app runs on.
+
+Sessions aren't offered to your other computers unless a rule under the network allows a sender to reach that session's address by name (**Allow**, naming the address; a rule for any agent doesn't count). On the desktop or in the terminal UI, pick the session as the rule's **To bot**. A session reads its own mail, so a rule for it can only allow or deny. An agent that doesn't tell the server which session it is gets an address that lasts only while it runs. Listings mark it temporary, and the Network page leaves it out.
 
 ## Manage the team
 

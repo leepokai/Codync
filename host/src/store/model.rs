@@ -87,6 +87,10 @@ pub struct BotConfig {
     /// default. Never a thread's or a group's.
     #[serde(default)]
     pub projects: Vec<String>,
+    /// Per project (a path in `projects`): the ignored folders of its main checkout, relative to it, that each new
+    /// worktree of it links to (`node_modules`), so a thread there doesn't fill them again (`chat::work::fill`).
+    #[serde(default)]
+    pub shared_folders: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub permission: Permission,
     /// The agent mode to work in (see `codync_agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent

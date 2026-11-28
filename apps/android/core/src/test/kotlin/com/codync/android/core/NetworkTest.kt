@@ -94,4 +94,19 @@ class NetworkTest {
         assertEquals(JsonPrimitive(false), body["reachableByAssistants"])
         assertFalse("not part of a template", "offeredToNetwork" in BotDraft.from(new).template())
     }
+
+    @Test fun `sessions read what the host says`() {
+        val read = NetworkView.decode(WireJson.parseToJsonElement("""
+            {"joined": false, "sessions": [
+              {"address": "billing-claude", "title": "Fix refunds", "kind": "claude-code", "registry": "claude-acp",
+               "tier": "pull", "state": "working", "runs": true, "older": false, "seen": 1},
+              {"address": "infra-codex", "kind": "someday", "tier": "later", "seen": 0, "older": true, "later": 1}]}
+        """))
+        assertTrue("sessions alone are worth showing", read.shown)
+        assertEquals(listOf(false, true), read.sessions.map { it.older })
+        assertTrue(read.sessions.first().runs)
+        assertEquals("Working", read.sessions.first().stateTitle)
+        assertNull(read.sessions.last().stateTitle)
+        assertNull("a tier this app doesn't know shows nothing", read.sessions.last().tierTitle)
+    }
 }

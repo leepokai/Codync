@@ -20,6 +20,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
+  private threadKeepDays = 0
 
   constructor(
     readonly version: string,
@@ -179,7 +180,7 @@ export class FakeHost {
       case 'hello':
         return {
           hostId: this.hostId, computerId: this.computer.id, signKey: '', boxKey: '', cloud: null, name: this.computer.name,
-          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', projects: true, rev: this.rev, analytics: this.analytics,
+          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', projects: true, threadPlace: true, worktreeFill: true, threadFolders: true, rev: this.rev, analytics: this.analytics, threadKeepDays: this.threadKeepDays,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },
@@ -290,6 +291,11 @@ export class FakeHost {
       case 'setAnalytics':
         this.analytics = b.enabled === true
         return { enabled: this.analytics }
+      case 'setThreadKeepDays':
+        this.threadKeepDays = typeof b.days === 'number' ? b.days : 0
+        return { days: this.threadKeepDays }
+      case 'olderThreads':
+        return { threads: [], more: false }
       case 'track':
         return {}
       default:

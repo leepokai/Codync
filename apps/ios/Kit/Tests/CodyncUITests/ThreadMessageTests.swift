@@ -112,20 +112,6 @@ private let thread = WorkThread(botId: "b1", taskId: "i1", threadId: "thread-1")
     #expect(store.lastError == "This message's files aren't on this device anymore. Delete it and attach them again.")
 }
 
-/// The view of all bots' work asks a bot's conversation to open its details on a task's thread; only that
-/// conversation takes it, once.
-@MainActor @Test func aThreadRequestIsTakenOnceByItsOwnConversation() {
-    let (storage, suite) = context()
-    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in FakeRemote(.ready(.direct)) }
-    defer { store.retire() }
-    store.requestThread(of: "b1", task: WorkTask(id: "i1", title: "Fix login", status: .working, thread: "thread-1"))
-    #expect(store.takeThreadRequest(for: "b2") == nil)
-    #expect(store.takeThreadRequest(for: "b1")?.id == "i1")
-    #expect(store.takeThreadRequest(for: "b1") == nil)
-    #expect(DetailsRequest(thread: WorkTask(id: "i1", title: "Fix login", status: .working)).thread?.id == "i1")
-}
-
 /// Hosts before 2.51.0: goes when minHost reaches 2.51.0.
 /// What names a task or a bot's thread settings goes out under both names (`taskId` and `itemId`, `maxThreads` and
 /// `maxAgents`) whatever the host's version, so one not known yet or left from the last connection never sends a

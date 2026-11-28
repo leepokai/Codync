@@ -2,12 +2,14 @@
 //! made at the computer (loopback only, like pairing a device).
 
 use super::saved::{self, Saved};
+use super::sessions::{Listed, Live, Session};
 use super::{Slot, default_name, start_node, take_in};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
 use codync_network::{Connector, Node, Role, Rule};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -25,10 +27,75 @@ pub fn emit(hub: &Hub) {
 pub fn status(hub: &Hub) -> Value {
     let networks: Vec<Value> = hub.network.slots().iter().filter(|s| s.node.name().is_some()).map(network).collect();
     json!({
-        "joined": !networks.is_empty(), "networks": networks,
+        "joined": !networks.is_empty(), "networks": networks, "sessions": sessions(hub),
         "assistants": crate::chat::team::assistant::enabled(&hub.store),
         "assistantsAvailable": crate::chat::team::assistant::available(hub),
     })
+}
+
+/// How often the listed sessions are looked at again while the host runs.
+const LIVE_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Looks again at what the listed sessions' agents do, in the background; the `network` event
+/// brings a change.
+fn refresh_live(hub: &Arc<Hub>) {
+    tokio::spawn(look_again(hub.clone()));
+}
+
+/// Keeps the listed sessions' state current, so a Network page left open follows them: a change is
+/// a `network` event. ponytail: looks every `LIVE_EVERY` whether or not a page is open (a registry
+/// read and one `ps` per listed session); a client's "page open" signal if that ever costs.
+pub fn follow_live(hub: &Arc<Hub>) {
+    let hub = hub.clone();
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(LIVE_EVERY);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            every.tick().await;
+            look_again(hub.clone()).await;
+        }
+    });
+}
+
+async fn look_again(hub: Arc<Hub>) {
+    let started = crate::store::now_ms();
+    let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
+    if listed.is_empty() {
+        return;
+    }
+    let read = tokio::task::spawn_blocking(move || {
+        listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s, &listed)?))).collect::<HashMap<_, _>>()
+    });
+    if let Ok(now) = read.await
+        && hub.network.sessions.renew_live(now, started)
+    {
+        emit(&hub);
+    }
+}
+
+/// The coding agents' sessions on this computer the apps show (`Sessions::listed`), a rule that
+/// names one (allowing or denying it) keeping it listed.
+fn listed(hub: &Hub) -> Vec<Listed> {
+    let slots = hub.network.slots();
+    let named = |s: &Session| {
+        slots.iter().any(|slot| slot.node.rules().iter().any(|r| r.to_agent.eq_ignore_ascii_case(&s.address)))
+    };
+    hub.network.sessions.listed(&hub.store, named)
+}
+
+/// The sessions in the apps' order: each with its address, title, kind (and the registry id of its
+/// logo), how it gets its mail (`tier`), what its agent does, and whether it folds under the older ones.
+fn sessions(hub: &Hub) -> Vec<Value> {
+    listed(hub)
+        .into_iter()
+        .map(|Listed { session: s, state, older }| {
+            json!({
+                "address": s.address, "title": s.title, "kind": s.kind,
+                "registry": super::sessions::registry(s.kind), "tier": s.tier, "levels": super::sessions::LEVELS,
+                "state": state, "runs": state.is_some_and(Live::runs), "older": older, "seen": s.seen,
+            })
+        })
+        .collect()
 }
 
 fn network(slot: &Slot) -> Value {
@@ -58,7 +125,8 @@ fn network(slot: &Slot) -> Value {
 /// `networkView`: `status`, asking the others in the background when what they offer is stale;
 /// the `network` event brings what they answer. Before the first bot listing it asks without
 /// counting as asked, so that listing still waits for the answers (`Network::directory`).
-pub fn view(hub: &Hub) -> Value {
+pub fn view(hub: &Arc<Hub>) -> Value {
+    refresh_live(hub);
     let never = hub.network.asked.locked().is_none();
     if never || hub.network.due().is_some() {
         for slot in hub.network.slots() {
@@ -193,8 +261,16 @@ pub fn recover(hub: &Hub, network: Option<&str>, code: &str) -> Result<Value> {
 /// `setNetworkRules`: who on a network's other computers may write to this computer's bots, in
 /// order (the first match decides); a computer no rule matches gets [`super::DEFAULT_ACCESS`].
 pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Result<Value> {
-    let rules: Vec<Rule> =
+    let mut rules: Vec<Rule> =
         serde_json::from_value(rules.clone()).context("rules are {fromComputer, fromAgent, toAgent, access}")?;
+    // A session can't be held to Auto or Ask: such a rule (an older one, or from the API) denies it
+    // instead, so saving the rest of the list still works and nothing gets more access.
+    for r in &mut rules {
+        let session = || hub.network.sessions.by_address(&hub.store, &r.to_agent).is_some();
+        if !super::sessions::LEVELS.contains(&r.access) && session() {
+            r.access = codync_network::Access::Deny;
+        }
+    }
     // The saved list has one writer at a time: a create or join holds it while its node starts.
     let _one = hub.network.changing.lock().await;
     let slot = joined(hub, network)?;

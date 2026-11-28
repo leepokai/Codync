@@ -48,6 +48,9 @@ not finish the task.
    before the host was ready. Do not report installation complete before both
    checks pass.
 
+For a requested **build and install on the Mac mini**, run `tools/install-dev-mac-mini.sh`:
+[Mac mini testing](mac-mini-testing.md).
+
 This sequence records the Dev installation failure on 2026-10-23: the old host
 was booted out, the app bundle was replaced, but the service was not reloaded
 until the new bundled host's `install` command was run explicitly.
@@ -89,10 +92,10 @@ Install Xcode and XcodeGen, then generate the project from its source. The Xcode
 
 ```sh
 xcodegen generate --spec apps/project.yml
-xcodebuild build -project apps/Codync.xcodeproj -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
+tools/xcodebuild.sh build -project apps/Codync.xcodeproj -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
 ```
 
-Use `iOS Dev` for development and `iOS` for production, with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
+`tools/xcodebuild.sh` is `xcodebuild` with the machine-wide compile cache, so a new worktree reuses what other checkouts compiled: [Xcode build cache](xcode-build-cache.md). Use `iOS Dev` for development and `iOS` for production, with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
 
 Install the device build and replace the old iPhone process (substitute its device ID):
 
@@ -109,7 +112,7 @@ Unlock the phone when required. Build, install, launch, and visual inspection ar
 | --- | --- | --- |
 | Host | `cd host && cargo build` | rustup; `host/rust-toolchain.toml` pins the version CI uses (a Homebrew `rust` ahead of rustup on PATH ignores it) |
 | Host checks | `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` | Local agent credentials are unnecessary for unit tests |
-| iOS Kit | `cd apps/ios/Kit && xcodebuild test -scheme CodyncKit-Package -destination 'platform=iOS Simulator,id=<sim-id>'` | Swift 6 / Xcode; iOS-only package |
+| iOS Kit | `cd apps/ios/Kit && ../../../tools/xcodebuild.sh test -scheme CodyncKit-Package -destination 'platform=iOS Simulator,id=<sim-id>'` | Swift 6 / Xcode; iOS-only package |
 | Desktop | `cd apps/desktop && npm ci && npm run typecheck && npm test` | Node and npm; CI uses Node 24 |
 | Cloud | `cd cloud && npm ci && npm test && npm run typecheck` | Node and npm; CI uses Node 24 |
 | Cloud integration | `cd cloud && env -u CODYNC_CLOUD npm run e2e` | Built host; see [Cloudflare testing](cloudflare-testing.md) |
@@ -128,20 +131,23 @@ git config core.hooksPath .githooks
 ```
 
 It runs CI's checks for each part a commit touches, so a failure shows up before the push:
-host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile ci` as CI
-runs them: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
+host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with `cargo nextest run --profile precommit`, CI's profile without the five tests that wait out the
+270-second choice deadline, which CI still runs: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
 relay, discord and private-relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
 the app and its instrumentation tests, with JDK 21), Linux screen helper formatting, a parse of the macOS
 screen helper's Swift sources (on macOS), the PR validation script against the PR template
 (`tools/pr-validation-test.py`, which no CI job runs), and the website's user manual (`npm run check:docs` in `web/`: pages
-compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot`,
+compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot` of the main checkout, shared with its worktrees (only changed files are rewritten, so cargo rebuilds only what changed),
 so other agents' uncommitted edits in the same checkout neither break nor rescue a commit; the
-host builds into `host/target/precommit`. Its unit tests always run; its end-to-end tests run for the
-areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, or a changed test and
-the tests sharing a changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates,
-usage, remote, analytics, service), and all of them for anything else (the hub, store, API, bots, agents and chats,
-or the tests' shared helpers). nextest runs them side by side, retries a flaky one, and stops one that hangs
-(`host/.config/nextest.toml`); the whole run is stopped after 15 minutes. Host CI runs only on pull requests, so a
+host builds into the main checkout's `host/target/precommit`, one warm cache for every worktree. Its unit tests always run; its end-to-end tests run for the
+areas the commit touches (`host_tests` in the hook: routines, network, the send CLI, memory, calls, threads, teams,
+management, choice cards, workflows, fallbacks, dev servers, the vault, or a changed test and the tests sharing a
+changed fixture), none for areas no end-to-end test covers (the terminal UI, screen, updates, usage, remote,
+analytics, service, Markdown, a version-only Cargo bump), the basic ones (`host/tests/e2e.rs`) for code every
+end-to-end test goes through (the hub, store, API, bot actor, agents, the rest of chat), and all of them only for
+the tests' shared helpers or a dependency change. nextest runs them side by side, retries a flaky one, and stops one that hangs
+(`host/.config/nextest.toml`); the whole run is stopped only after 45 minutes, a backstop for nextest itself
+hanging, since a loaded machine can take well over 15 minutes without anything being stuck. Host CI runs only on pull requests, so a
 host change that skipped end-to-end tests here is fully tested when its PR into `main` opens. The npm checks reuse each package's `node_modules`
 (run `npm ci` there first). Each worker package is checked only when its own folder (or the
 shared relay vectors) changes. The interface catalogs and What's new announcements in
@@ -178,13 +184,13 @@ Versions are defined in `apps/project.yml` (`MARKETING_VERSION`, also in the gen
 
 Greptile reviews every PR into `dev` or `main` when it opens and on each push (`.greptile/config.json`), and posts a *Greptile Review* check beside CI. `@greptileai review` on the PR asks for a fresh review.
 
-A release runs end to end through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". It:
+A release runs through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". The first run stops once the gate passes (outcome `ready`), steps 1–3; steps 4–5 run only when the maintainer explicitly says to merge, as a rerun with `{merge: true}` that picks up the open release PR, rechecks its gate (skipping the real-agent check its body already records) and merges. It:
 
 1. Reads what `dev` holds against `main`: the version, whether shipped code (`apps/`, `host/`, `packaging/`) changed, `MIN_APP`, `cloud/`, the crates, the store notes and the open PRs into `main`. A `MIN_APP` raise stops it to ask first (rerun with `{allowMinAppRaise: true}`).
 2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. An open `release/X.Y.Z` PR of our own is picked up instead of cutting a new one, and a release PR opened straight from `dev` is closed as superseded; any other PR into `main` is neither gated nor merged, only reported. On that branch it bumps the version when shipped code changed and the version isn't ahead of the latest tag (docs, `web/`, `cloud/`, `relay/` and CI-only releases don't bump, so they get no tag), raises the crates, writes the missing WhatsNew sections, runs the agent check once when shipped code changed (aimock for every covered agent, a real turn only for Cursor: [test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
 3. Works the gate, at most four rounds: `tools/pr-gate.py` on the head, then every failing check, the findings in Greptile's summary of that head and every unresolved Greptile review thread, whatever commit it was left on (a later push doesn't fix it), are checked against the code and fixed on the release branch, not routed to the owning agent, and those fixes go through `after-change` before the next round commits them; each thread fixed or refuted gets a reply and is resolved, and a known flaky test is rerun once. It stops to ask about a finding that needs a product decision, and stops when the gate still fails after four rounds or when a failing round leaves nothing fixed or rerun.
-4. When `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
-5. Merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
+4. Only with `{merge: true}`: when `cloud/` changed, checks before merging that `dev-api` runs it and its changed flows were tested there, and lists what `main`'s Worker lacks; a prerequisite only the maintainer can create stops it to ask ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
+5. Only with `{merge: true}`: merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward). Then, in order: deploys `main`'s cloud when `cloud/` changed, from the merged `main` fetched after the merge (its bindings, migrations, `npm run deploy:main`), deploys `relay/` and `discord/` when the merge changed them (against `main` before it) and checks their real paths, rolling a broken version back and stopping ([releasing Worker changes](environments-and-deployment.md#releasing-worker-changes)), merges the release branch back into `dev`, watches the tag's release runs and deletes the release branch and its worktree; the main checkout is only fast-forwarded (`pull --ff-only`, never an autostash of other agents' work). A merge whose later steps didn't finish ends as `merged_incomplete`, naming what is left.
 
 `node tools/release-pr-test.mjs` checks the workflow's routing with canned agent results.
 

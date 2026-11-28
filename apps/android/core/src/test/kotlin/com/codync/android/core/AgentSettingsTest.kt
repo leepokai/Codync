@@ -14,6 +14,13 @@ class AgentSettingsTest {
         assertEquals("removed-model", catalog.normalize("removed-model"))
         assertEquals("Default · Host model", catalog.copy(models = catalog.models.drop(1)).options(null).first().name)
         assertEquals(listOf(ModelChoice(null, "Default")), AgentModels(emptyList()).options(null))
+        // The agent's own default reads as Default, and Default shows no settings unless the agent gives it some.
+        assertEquals("", catalog.listValue("default-id"))
+        assertEquals("on-host", catalog.listValue("on-host"))
+        assertEquals("on-host", catalog.copy(models = catalog.models.drop(1)).selected(null)?.id)
+        assertEquals(emptyList<ModelOption>(), catalog.settings(null))
+        assertFalse((null as AgentModels?).showsFast("custom", on = false, bot = null))
+        assertTrue(catalog.copy(fastMode = true).showsFast("codex", on = false, bot = null))
     }
 
     @Test fun `new bot defaults preserve host connectors and a nullable notification toggle turns off`() {

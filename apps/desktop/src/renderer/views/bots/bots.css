@@ -354,3 +354,7 @@ button.member-row:hover {
   gap: 6px;
   color: var(--text);
 }
+/* A project's shared folders sheet: lined up with its title. */
+.shared-folders-body {
+  padding: 4px 20px 20px;
+}

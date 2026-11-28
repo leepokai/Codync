@@ -14,10 +14,11 @@ Codex (or a person) follows the same steps by hand. Each item ends in one outcom
 pushes to a PR's branch, approves its fork CI runs, asks Greptile for a review and merges, but it posts no comment:
 it returns drafts, and the session reads them, checks each claim against the code, and then posts them.
 
-A contributor's PR must fill in the template's *Validation* section: every checklist item of the template kept and
-ticked (an item that doesn't apply is ticked with "N/A: <why>"; *Notes* below it is optional). The *PR validation*
+Every PR, the maintainer's own included, must fill in the template's *Validation* section: every checklist item of
+the template kept and ticked (an item that doesn't apply is ticked with "N/A: <why>"; *Notes* below it is optional). The *PR validation*
 check (`.github/workflows/pr-validation.yml` → `tools/pr-validation.py`, against the base branch's template) fails
-until it is; the maintainer's own PRs and bots are skipped. Items are counted, not matched word for word, so
+until it is; only bots' PRs are skipped. Release PRs into `main` pass the same way (the `release-pr` workflow
+ticks every item with "N/A: release PR"). Items are counted, not matched word for word, so
 rewording one in the template doesn't fail open PRs; adding one does. `python3 tools/pr-validation-test.py` tests the
 script, and the pre-commit hook runs it when the script or the template changes. A ticked box is the author's claim, not proof: the review still
 checks it against the diff and our own end-to-end run.

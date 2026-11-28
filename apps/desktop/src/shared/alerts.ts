@@ -8,6 +8,8 @@ export interface HostAlert {
   kind: AlertKind
   title: string
   body: string
+  /** A workflow step's alert: clicking it opens this workflow instead of the bot's chat. */
+  workflowId?: string
 }
 
 /** What the chat window asks the main process to show: `ref` is the bot's `computerId/botId`. */
@@ -16,6 +18,7 @@ export interface DesktopAlert {
   kind: AlertKind
   title: string
   body: string
+  workflowId?: string
 }
 
 const KINDS: readonly AlertKind[] = ['done', 'needsInput', 'failed']
@@ -24,7 +27,9 @@ const KINDS: readonly AlertKind[] = ['done', 'needsInput', 'failed']
 export function parseAlert(raw: unknown): HostAlert | null {
   const a = raw as Partial<HostAlert> | null | undefined
   if (!a || typeof a.botId !== 'string' || typeof a.title !== 'string' || !KINDS.includes(a.kind as AlertKind)) return null
-  return { botId: a.botId, kind: a.kind as AlertKind, title: a.title, body: typeof a.body === 'string' ? a.body : '' }
+  const alert: HostAlert = { botId: a.botId, kind: a.kind as AlertKind, title: a.title, body: typeof a.body === 'string' ? a.body : '' }
+  if (typeof a.workflowId === 'string') alert.workflowId = a.workflowId
+  return alert
 }
 
 /** An alert kind as analytics names it (`desktop_notification_opened`). */

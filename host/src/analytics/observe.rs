@@ -108,6 +108,12 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("on".into(), (b["shown"] == true).into());
             Event::SettingChanged
         }
+        "setThreadKeepDays" => {
+            p.insert("setting".into(), "thread_keep_days".into());
+            p.insert("on".into(), (b["days"].as_u64().unwrap_or(0) > 0).into());
+            p.insert("days".into(), b["days"].as_u64().unwrap_or(0).into());
+            Event::SettingChanged
+        }
         "setUsageOrder" => {
             p.insert("setting".into(), "usage_order".into());
             p.insert("on".into(), true.into());

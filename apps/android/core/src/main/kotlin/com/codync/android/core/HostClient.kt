@@ -118,6 +118,9 @@ data class Bot(
     val projects: List<String> = emptyList(),
     /** Whether each of [projects], in the same order, is in a git repository: where [worktreeMode] matters. */
     val projectGitRepos: List<Boolean> = emptyList(),
+    /** Per project (a path in [projects]): the folders, relative to it, linked into each new worktree of it; null from a
+     *  host before `hello.worktreeFill`. */
+    val sharedFolders: Map<String, List<String>>? = null,
     /** Where its threads work ([WorktreeMode], by its wire name); null from a host before projects. */
     val worktreeMode: String? = null,
     /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */

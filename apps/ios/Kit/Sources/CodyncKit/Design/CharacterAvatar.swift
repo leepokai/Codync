@@ -321,6 +321,24 @@ public struct GroupAvatar: View {
     }
 }
 
+/// No bot, the desktop's `NoBotAvatar`: an empty dashed square the size of a bot's avatar.
+public struct NoBotAvatar: View {
+    let size: CGFloat
+
+    public init(size: CGFloat = 44) {
+        self.size = size
+    }
+
+    public var body: some View {
+        Image(systemName: "app.dashed")
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(Palette.secondary)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
 /// A bot's character, or a group's `members` (Android `BotAvatar`).
 public struct BotAvatar: View {
     let bot: Bot

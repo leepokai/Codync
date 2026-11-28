@@ -56,7 +56,7 @@ can be traced from the events around it:
 
 - **Use**: an event when it is used. A host method gets it from `api::dispatch`
   (`analytics::observe_call` in `analytics/observe.rs`); an app-only action from its client
-  (`track` on the desktop and terminal UI, added to `analytics::Reported`; the analytics client
+  (`track` on the desktop, the terminal UI and `codync-host` commands, added to `analytics::Reported`; the analytics client
   on the iPhone and Android, both alike).
 - **Outcome**: how it ended, as `turn_finished` does: `outcome` (`done`, `failed`, …) and, for a
   failure, its category in `error`. Never the error's message.
@@ -100,7 +100,8 @@ Every bug fix leaves a way to see in PostHog whether the bug still happens in th
   host stops.
 - **Desktop and terminal UI** report app-level events (opening, onboarding, sign-in, screens,
   the star ask, links) through the loopback-only `track` method, which accepts only the
-  catalog's events and properties. The desktop app queues them until the host answers; when it
+  catalog's events and properties. `codync-host` commands report theirs the same way with `app` =
+  `cli`, not counted when the host isn't running. The desktop app queues them until the host answers; when it
   can't get a working host at all, its main process reports `host_setup_failed` straight to
   PostHog, only while the host's last answer said sharing is on (or on a first install, before
   the host stored any setting). It turns sharing on or off with `setAnalytics`; `hello` carries

@@ -46,8 +46,15 @@ struct Output {
     exit: Option<i32>,
 }
 
-/// What a terminal is for: an agent (a bot, for its shell), the step, and the account login profile a sign-in is for.
-type Key = (String, Step, Option<String>);
+/// What a terminal is for: an agent (a bot, for its shell), the step, the account login profile a sign-in is for, and
+/// the app's tab a shell is drawn in.
+#[derive(PartialEq, Eq)]
+struct Key {
+    agent: String,
+    step: Step,
+    profile: Option<String>,
+    tab: Option<String>,
+}
 
 pub struct Term {
     key: Key,
@@ -94,7 +101,7 @@ pub struct Terms(Mutex<HashMap<String, Arc<Term>>>);
 impl Terms {
     /// A setup still running: a bot's shell stays open as long as its tab does, and holds nothing up.
     pub fn busy(&self) -> bool {
-        self.0.locked().values().any(|term| term.key.1 != Step::Shell && term.output.locked().exit.is_none())
+        self.0.locked().values().any(|term| term.key.step != Step::Shell && term.output.locked().exit.is_none())
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<Term>> {
@@ -103,7 +110,7 @@ impl Terms {
 
     /// Whether a sign-in to login profile `id` is open.
     pub fn signing_in(&self, id: &str) -> bool {
-        let open = |term: &Arc<Term>| term.key.2.as_deref() == Some(id) && term.output.locked().exit.is_none();
+        let open = |term: &Arc<Term>| term.key.profile.as_deref() == Some(id) && term.output.locked().exit.is_none();
         self.0.locked().values().any(open)
     }
 
@@ -117,7 +124,7 @@ impl Terms {
         rows: u16,
     ) -> Result<String> {
         self.spawn(
-            (backend.to_owned(), Step::Login, Some(id.to_owned())),
+            Key { agent: backend.to_owned(), step: Step::Login, profile: Some(id.to_owned()), tab: None },
             command_line(command),
             Some(command),
             home(),
@@ -126,12 +133,20 @@ impl Terms {
         )
     }
 
-    /// The user's login shell in bot `bot`'s folder `cwd`, or the one already open there.
-    pub fn shell(self: &Arc<Self>, bot: &str, cwd: &Path, cols: u16, rows: u16) -> Result<String> {
+    /// The user's login shell in bot `bot`'s folder `cwd` for the app's tab `tab` (a bot can have several), or the one
+    /// already open for it.
+    pub fn shell(self: &Arc<Self>, bot: &str, tab: Option<&str>, cwd: &Path, cols: u16, rows: u16) -> Result<String> {
         if !cwd.is_dir() {
             bail!("{} is not a folder on this computer", cwd.display());
         }
-        self.spawn((bot.to_owned(), Step::Shell, None), login_shell(), None, cwd.to_owned(), cols, rows)
+        self.spawn(
+            Key { agent: bot.to_owned(), step: Step::Shell, profile: None, tab: tab.map(str::to_owned) },
+            login_shell(),
+            None,
+            cwd.to_owned(),
+            cols,
+            rows,
+        )
     }
 
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
@@ -163,7 +178,8 @@ impl Terms {
             },
             Step::Shell => bail!("a shell opens from its bot"),
         };
-        self.spawn((backend.to_owned(), step, None), command_line(&command), Some(&command), home(), cols, rows)
+        let key = Key { agent: backend.to_owned(), step, profile: None, tab: None };
+        self.spawn(key, command_line(&command), Some(&command), home(), cols, rows)
     }
 
     /// Runs `builder` in `cwd` on a new PTY, its `banner` (the command) shown first, or returns the open terminal for
@@ -200,7 +216,7 @@ impl Terms {
         }
         let id = uuid::Uuid::new_v4().to_string();
         map.insert(id.clone(), term.clone());
-        tracing::info!(backend = term.key.0, step = ?term.key.1, term = %id, "setup terminal started");
+        tracing::info!(backend = term.key.agent, step = ?term.key.step, term = %id, "setup terminal started");
         tokio::spawn(run(self.clone(), id.clone(), term, master, child, rx));
         Ok(id)
     }
@@ -218,6 +234,17 @@ impl Terms {
         if let Some(t) = self.0.locked().remove(id) {
             let _ = t.input.send(Input::Kill);
         }
+    }
+
+    /// Ends the shells drawn in the app's tab `tab`, one for each bot it was shown for.
+    pub fn close_shells(&self, tab: &str) {
+        self.0.locked().retain(|_, t| {
+            let shell = t.key.step == Step::Shell && t.key.tab.as_deref() == Some(tab);
+            if shell {
+                let _ = t.input.send(Input::Kill);
+            }
+            !shell
+        });
     }
 
     fn send(&self, id: &str, input: Input) -> Result<()> {
@@ -341,8 +368,8 @@ async fn run(
     tracing::info!(term = %id, code, "setup terminal finished");
     // A finished sign-in is believed again, over the prompt that login (the login profile's, or the agent's own)
     // refused before.
-    if term.key.1 == Step::Login && code == 0 {
-        backends::clear_prompt_refused(term.key.2.as_deref().unwrap_or(&term.key.0));
+    if term.key.step == Step::Login && code == 0 {
+        backends::clear_prompt_refused(term.key.profile.as_deref().unwrap_or(&term.key.agent));
     }
     term.finish(code);
     tokio::time::sleep(LINGER).await;
@@ -369,7 +396,14 @@ mod tests {
             ("[ -t 0 ] && echo tty; read x; echo got-$x", "\n")
         };
         let id = terms
-            .spawn(("test".into(), Step::Login, None), command_line(command), Some(command), home(), 80, 24)
+            .spawn(
+                Key { agent: "test".into(), step: Step::Login, profile: None, tab: None },
+                command_line(command),
+                Some(command),
+                home(),
+                80,
+                24,
+            )
             .unwrap();
         let term = terms.get(&id).unwrap();
         let (_, mut rx) = term.attach();
@@ -390,15 +424,22 @@ mod tests {
         assert!(text.contains("tty") && text.contains("got-hi"), "{text}");
     }
 
-    /// A bot's shell opens in its folder, and a second open while it runs is the same terminal.
+    /// A bot's shell opens in its folder, a second open for the same tab while it runs is the same terminal, another tab
+    /// gets its own, and closing a tab ends its shell on every bot and no other.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_bot_shell_opens_in_its_folder() {
         let terms = Arc::new(Terms::default());
         let dir = std::env::temp_dir().join(format!("codync-term-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let id = terms.shell("bot", &dir, 80, 24).unwrap();
-        assert_eq!(terms.shell("bot", &dir, 80, 24).unwrap(), id);
+        let id = terms.shell("bot", Some("t1"), &dir, 80, 24).unwrap();
+        assert_eq!(terms.shell("bot", Some("t1"), &dir, 80, 24).unwrap(), id);
+        let other = terms.shell("bot", Some("t2"), &dir, 80, 24).unwrap();
+        assert_ne!(other, id, "another tab, another shell");
+        let elsewhere = terms.shell("bot2", Some("t2"), &dir, 80, 24).unwrap();
+        assert!(!terms.signing_in("t2"), "a tab is no login profile");
+        terms.close_shells("t2");
+        assert!(terms.get(&other).is_none() && terms.get(&elsewhere).is_none(), "the tab's shells end");
         assert!(!terms.busy(), "an open shell holds nothing up");
         let term = terms.get(&id).unwrap();
         let (_, mut rx) = term.attach();

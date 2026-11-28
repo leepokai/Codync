@@ -35,10 +35,6 @@ fn call(base: &str, home: &Path, method: &str) -> reqwest::RequestBuilder {
         .json(&serde_json::json!({"refresh": true, "backend": "cursor", "id": "claude", "shown": true}))
 }
 
-fn alive(pid: &str) -> bool {
-    std::process::Command::new("kill").args(["-0", pid]).stderr(std::process::Stdio::null()).status().unwrap().success()
-}
-
 #[tokio::test]
 async fn a_stopped_host_ends_the_checks_it_was_running() {
     let home = std::env::temp_dir().join(format!("codync-agent-checks-{}", uuid::Uuid::new_v4()));
@@ -69,7 +65,7 @@ async fn a_stopped_host_ends_the_checks_it_was_running() {
     let lines = read();
     let pids: Vec<&str> = lines.lines().filter_map(|line| line.split_whitespace().next()).collect();
     common::eventually("the checks ended with the host", Duration::from_secs(5), async || {
-        !pids.iter().any(|pid| alive(pid))
+        !pids.iter().any(|pid| common::alive(pid))
     })
     .await;
     let _ = std::fs::remove_dir_all(&home);

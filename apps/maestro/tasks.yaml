@@ -3,9 +3,10 @@
 # thread, where a message written while it works waits and can be taken back. With the ceiling at 1, what is added
 # next waits in the Event box, numbered in order; First moves a waiting task to the front, Drop (touch and hold) takes
 # one out, and Cut in asks which working task gives way: that one returns to the event box. Stop on the capsule asks
-# once. A thread's approval card is answered in the chat and says which task it comes from (`Work · <title>`), its
-# Threads row leads to it, and its report comes back as the bot's message; so does the sign-in card of an agent the
-# thread needs signing in to, whose row names the agent, and the task goes on once a turn of that agent ends well (it
+# once. A thread's approval card is in the chat and says which task it comes from (`Work · <title>`); its row on the
+# Threads tab opens the thread, where the card is answered, and its report comes back as the bot's message. A routine's
+# run opens read only, with Stop. The sign-in card of an agent the thread needs signing in to is in the chat too, its
+# row in the details names the agent and leads to it, and the task goes on once a turn of that agent ends well (it
 # is signed in). A stopped task is tried again from Recent, and Threads at once in Settings moves the ceiling. A row
 # reads as one element on iPhone
 # (its number, title and line together) and as separate texts on Android, hence the `.*` around titles. The phone must
@@ -52,9 +53,9 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: ${output.bot.name}
     timeout: 10000
-# Every thread, on the Threads tab: the working task is a row of its own (its title and its mark), with no Free rows.
+# Every thread, on the Threads tab: the working task is a row of its own (the coding agent's icon, its title and its mark), with no Free rows.
 # (The tab's count of working tasks may read after its name.) Its filter button offers the list's groupings. The row
-# opens the bot's details on its thread, over its chat on the Bots tab.
+# pushes its thread over the list, in the chat's form, and Back returns to the list.
 - tapOn: "Threads(, .*)?"
 - extendedWaitUntil:
     visible: ".*Audit the repo.*"
@@ -79,29 +80,59 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: "Message this thread"
     timeout: 10000
-- tapOn: "Back to details"
+- assertVisible: "Details"
+- runFlow: subflows/thread-back.yaml
 - extendedWaitUntil:
-    visible: "Close details"
+    visible: ".*Audit the repo.*"
     timeout: 10000
-- tapOn: "Close details"
-# New thread, in the Threads header, starts one with a bot on its first message and opens it once it has its thread.
-# It ends at once, so one task still works below.
+# New thread, in the Threads header, pushes the new-thread page (a chat nothing was said in yet) and, sent, becomes the
+# thread's chat once it has its thread; Back goes to the list. It opens on No bot (as the desktop's), and the bot chip
+# in the composer's row picks the bot. It ends at once, so one task still works below.
 - runFlow: subflows/bot-list.yaml
 - tapOn: "Threads(, .*)?"
 - tapOn: "New thread"
+- assertVisible: "New thread with .*"
+- assertVisible: "No bot"
+# Without a bot, the chip beside it opens the model panel on the agent's models. A thread without a bot runs on one of
+# the computer's installed agents, not the flow's stand-in, so the flow sends with its bot (as the desktop's work.spec.ts).
+- tapOn: "Model"
+- assertVisible: "Search models"
+# Approvals are a bot's: none without one.
+- assertNotVisible: "Approvals"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # From the panel's top row, not its list, whose pull reads the models again.
+      - swipe:
+          from: "Search models"
+          direction: DOWN
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- tapOn: "Choose a bot"
 - tapOn: ${output.bot.name}
-- tapOn: "Message"
+- tapOn: "What should it work on\\?"
 - inputText: "Say hello"
+# The page's composer sits over the keyboard: on iOS Maestro's typing hides the keyboard until the next touch, which
+# lifts the composer, so touch the text and let it settle before Send (as reply-part.yaml does).
+- tapOn: "Say hello"
+- waitForAnimationToEnd
 - tapOn: "Send"
 - extendedWaitUntil:
     visible: "Message this thread"
     timeout: 20000
-- tapOn: "Back to details"
+- runFlow: subflows/thread-back.yaml
 - extendedWaitUntil:
-    visible: "Close details"
+    visible: "New thread"
     timeout: 10000
-- tapOn: "Close details"
-# One task working: the capsule.
+# The page became the thread's chat: Back returns to the list, not to the empty new-thread page.
+- assertNotVisible: "What should it work on\\?"
+# One task working, in the bot's chat: the capsule.
+- runFlow: subflows/bot-list.yaml
+- tapOn: ${output.bot.name}
 - extendedWaitUntil:
     visible: "Work · .*"
     timeout: 20000
@@ -114,13 +145,14 @@ onFlowComplete:
 - assertVisible: ".*Audit the repo.*"
 - assertNotVisible: "Event box"
 - takeScreenshot: tasks-threads
-# The row opens its thread in the details' place: what the task was told is folded on top, and the composer writes
-# to it.
+# The row pushes its thread inside the details, in the chat's form (no Details button there): what the task was told
+# is folded on top, and the composer writes to it.
 - tapOn: ".*Audit the repo.*"
 - extendedWaitUntil:
     visible: "Message this thread"
     timeout: 10000
 - assertNotVisible: "Threads"
+- assertNotVisible: "Details"
 - tapOn: "What it was told"
 - assertVisible: ".*HOLD:audit.*"
 # The thread's box takes files, as the chat's does.
@@ -139,7 +171,10 @@ onFlowComplete:
     notVisible: "also the docs"
     timeout: 10000
 # Back returns to Details, and on iPhone so does a swipe to the right anywhere on the thread.
-- tapOn: "Back to details"
+# Typing left Android's input method up, whose own nav button is also named Back: the page's Back is the one above.
+- tapOn:
+    text: "Back"
+    above: "What it was told"
 - extendedWaitUntil:
     visible: "Threads"
     timeout: 10000
@@ -275,7 +310,7 @@ onFlowComplete:
 - extendedWaitUntil:
     notVisible: "Work · .*"
     timeout: 10000
-# A task's card is answered in the chat, and says where it comes from.
+# A task's card is in the chat, and says where it comes from.
 - runScript:
     file: tasks.js
     env:
@@ -285,16 +320,22 @@ onFlowComplete:
     timeout: 20000
 - assertVisible: "Run the tests"
 - takeScreenshot: tasks-card
-# Its Threads row leads back to the card.
-# The capsule reads as one element on iPhone; on Android its lead is a text of its own. Not the card's line.
-- tapOn: "Work · (Needs you.*)?"
+# Its row on the Threads tab opens its thread, where the card is the chat's own row and is answered.
+- runFlow: subflows/bot-list.yaml
+- tapOn: "Threads(, .*)?"
 - tapOn: ".*Run the suite.*"
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 10000
 - extendedWaitUntil:
     visible: "Allow once"
     timeout: 10000
-- assertNotVisible: "Threads"
+- takeScreenshot: tasks-thread-card
 - tapOn: "Allow once"
+- runFlow: subflows/thread-back.yaml
 # Its report comes back as the bot's message.
+- runFlow: subflows/bot-list.yaml
+- tapOn: ${output.bot.name}
 - extendedWaitUntil:
     visible: "Relayed: Report Run the suite.*"
     timeout: 20000
@@ -317,6 +358,36 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: "Relayed: Report Pick a branch.*"
     timeout: 20000
+# A routine's run is read only: its thread has no composer, says why, and Stop (asking first) ends the run.
+- runScript:
+    file: tasks.js
+    env:
+      ROUTINE: "Digest"
+- runFlow: subflows/bot-list.yaml
+- tapOn: "Threads(, .*)?"
+- extendedWaitUntil:
+    visible: ".*Digest.*"
+    timeout: 20000
+# With the list grouped by folder (its default), the run is a row under its routine's heading, named by when it
+# started; the heading itself folds the group.
+- tapOn:
+    text: "Today .*"
+    below: ".*Digest.*"
+- extendedWaitUntil:
+    visible: "Read only: a routine.s run"
+    timeout: 10000
+- assertNotVisible: "Message this thread"
+- takeScreenshot: tasks-read-only
+- tapOn: "Stop"
+- tapOn:
+    text: "Stop"
+    below: "What it already changed stays."
+- extendedWaitUntil:
+    notVisible: "Stop"
+    timeout: 10000
+- runFlow: subflows/thread-back.yaml
+- runFlow: subflows/bot-list.yaml
+- tapOn: ${output.bot.name}
 # A task whose agent needs signing in asks in the chat too, and its row says which agent and leads to the card.
 - runScript:
     file: tasks.js

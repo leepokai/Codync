@@ -1,7 +1,7 @@
 //! A bot's box: its tasks (kv `work.<bot>`, one JSON list), how they read on the wire and to the bot itself.
 
 use super::dispatch::{self, Standing, Wait};
-use super::worktree::{Left, Place, Worktree};
+use super::worktree::{Left, Place, PlaceChoice, Worktree};
 use super::{Failure, Report};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
@@ -128,6 +128,10 @@ pub struct Setup {
     /// A thread opened beside a workflow to build it by talking (`BotConfig::workflow`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow: Option<String>,
+    /// Where its thread works, its folder or a worktree, when the task names it (`add_task`'s and `startThread`'s
+    /// `place`); none: the bot's worktree mode decides (`worktree::wanted`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<PlaceChoice>,
 }
 
 /// A model with its own settings (`BotConfig::model`, `model_options`): they go together, as in a bot's setup.
@@ -225,6 +229,10 @@ pub(super) struct Task {
     /// A host restart already sent it back to waiting once: the next one fails it.
     #[serde(default)]
     pub restarted: bool,
+    /// Its thread ended a turn while what it started in the background still ran, and was asked to wait for it: the
+    /// next such end fails it (`work::hold`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
     #[serde(default)]
     pub hops: u8,
     pub created_at: i64,
@@ -270,18 +278,22 @@ pub(super) struct Task {
 }
 
 /// Where a task's thread works, as `work_added` says it (`folder`), never the path: the bot's own folder, one of
-/// its projects, or another folder.
+/// its projects, or another folder; for a thread without a bot, its own folder or another.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(super) enum FolderKind {
     Home,
     Project,
+    Own,
     Other,
 }
 
 impl FolderKind {
     /// What `folder` is to bot `cfg`.
     pub(super) fn of(cfg: &BotConfig, folder: &str) -> Self {
+        if cfg.plain {
+            return if super::plain::is_own_folder(folder) { Self::Own } else { Self::Other };
+        }
         if cfg.projects.iter().any(|p| p == folder) {
             Self::Project
         } else if folder == cfg.cwd {
@@ -331,6 +343,7 @@ impl Task {
             thread: None,
             cut_in: false,
             restarted: false,
+            held: false,
             hops,
             created_at: now_ms(),
             started_at: None,
@@ -348,13 +361,14 @@ impl Task {
         }
     }
 
-    /// Back to waiting at the front of `tasks`, to start again in a new thread.
+    /// Back to waiting at the front of `tasks`, to start again in a new thread, which may be asked to wait once again.
     pub(super) fn set_aside(&mut self, front: i64) {
         self.status = Status::Waiting;
         self.order = front;
         self.thread = None;
         self.started_at = None;
         self.began = false;
+        self.held = false;
     }
 }
 
@@ -383,50 +397,21 @@ pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Task>
     Ok(out)
 }
 
-/// A deleted bot's box goes with it, and its past tasks.
+/// A deleted bot's box goes with it.
 pub(super) fn forget(store: &Store, bot: &str) {
-    for key in [key(bot), past_key(bot)] {
-        if let Err(error) = store.kv_delete(&key) {
-            tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
-        }
+    if let Err(error) = store.kv_delete(&key(bot)) {
+        tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
     }
 }
 
-/// Where a bot's tasks that ended over a week ago wait for `recall_task`: out of its box, which the wire and every
-/// change read whole.
-const PAST_PREFIX: &str = "work-past.";
 /// How long an ended task can still be recalled.
 pub(super) const PAST_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-/// Past tasks a bot keeps at most, the newest.
-const PAST_MOST: usize = 200;
-
-fn past_key(bot: &str) -> String {
-    format!("{PAST_PREFIX}{bot}")
-}
-
-/// `bot`'s tasks that left its box, ended within [`PAST_MS`].
-pub(super) fn past(store: &Store, bot: &str, now: i64) -> Vec<Task> {
-    let all: Vec<Task> =
-        store.kv_get(&past_key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
-    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| within_past(at, now))).collect()
-}
+/// Tasks out of the box (`archive`) `recall_task` reads at most, the newest.
+pub(super) const PAST_MOST: usize = 200;
 
 /// Whether a task that ended `at` can still be recalled `now`.
 pub(super) fn within_past(at: i64, now: i64) -> bool {
     now - at <= PAST_MS
-}
-
-/// Keeps `old`, ended tasks leaving `bot`'s box, for `recall_task`, with the past ones still young enough.
-pub(super) fn put_past(store: &Store, bot: &str, old: Vec<Task>, now: i64) -> Result<()> {
-    if old.is_empty() {
-        return Ok(());
-    }
-    let mut all = past(store, bot, now);
-    all.extend(old.into_iter().map(|task| Task { report: None, ..task }));
-    all.retain(|i| i.ended_at.is_some_and(|at| within_past(at, now)));
-    all.sort_by_key(|i| std::cmp::Reverse(i.ended_at));
-    all.truncate(PAST_MOST);
-    store.kv_set(&past_key(bot), &serde_json::to_string(&all)?)
 }
 
 /// An order before every waiting task's.
@@ -460,6 +445,8 @@ pub(super) struct Shown {
     pub status: Status,
     pub activity: String,
     pub wait: Option<Wait>,
+    /// What its thread's agent runs in the background, which the task waits on.
+    pub background: Vec<crate::hub::BackgroundTask>,
 }
 
 /// `cfg`'s tasks worth showing: the working ones (oldest first), the waiting in dispatch order, then the ones ended
@@ -500,9 +487,18 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
                 task.thread.as_deref().filter(|_| task.status == Status::Working).map(|thread| hub.runtime(thread));
             let status = if asks_user(hub, &task) { Status::NeedsYou } else { task.status };
             let wait = waits.remove(&task.id);
-            Shown { status, activity: rt.map(|rt| rt.activity).unwrap_or_default(), wait, task }
+            let (activity, background) = rt.map(now_doing).unwrap_or_default();
+            Shown { task, status, activity, wait, background }
         })
         .collect()
+}
+
+/// What a working task's thread does (`rt`: its runtime): its turn's activity, else between turns what its agent runs
+/// in the background, which then is the task's work; and that work.
+fn now_doing(rt: crate::hub::Runtime) -> (String, Vec<crate::hub::BackgroundTask>) {
+    let between = || rt.background.first().map(|t| t.activity.clone().unwrap_or_else(|| t.name.clone()));
+    let activity = Some(rt.activity.clone()).filter(|a| !a.is_empty()).or_else(between).unwrap_or_default();
+    (activity, rt.background)
 }
 
 /// What the bot sees of its box: [`shown`] without the threads the user started, which are theirs.
@@ -521,16 +517,16 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     let shown = shown(hub, cfg);
     // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::free_seats`).
     let mut lent = false;
-    // Where each thread works: a worktree's folder, or the bot's as it was when the thread began.
-    let folders: HashMap<String, String> = if shown.is_empty() {
+    // Each thread: where it works (a worktree's folder, or the bot's as it was when the thread began) and on what agent.
+    let threads: HashMap<String, BotConfig> = if shown.is_empty() {
         HashMap::new()
     } else {
-        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id, thread.cwd)).collect()
+        super::of(&hub.store, &cfg.id).into_iter().map(|thread| (thread.id.clone(), thread)).collect()
     };
     Value::Array(
         shown
             .into_iter()
-            .map(|Shown { task, status, activity, wait }| {
+            .map(|Shown { task, status, activity, wait, background }| {
                 // It takes one of the bot's seats.
                 let seat = task.source.seated()
                     && match status {
@@ -538,37 +534,73 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                         Status::NeedsYou => std::mem::replace(&mut lent, true),
                         _ => false,
                     };
-                let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
-                let folder = folder_of(&task, cwd);
-                let talk = task.source.own() && cwd.is_some();
-                let mut row = json!({
-                    "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
-                    "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
-                    "endedAt": task.ended_at,
-                    "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
-                    // The user may write to its thread: the bot's own work, whose thread is still there; with files
-                    // too, which a host from before them doesn't say.
-                    "talk": talk,
-                    "talkFiles": talk,
-                    "seat": seat,
-                });
-                if let Some(folder) = folder {
-                    row["folder"] = folder.clone().into();
-                }
-                if let Some(source) = task.source.wire() {
-                    row["source"] = source;
-                }
-                if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
-                    row["worktree"] = worktree;
-                }
-                // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
-                if let Some(agent) = &task.setup.backend {
-                    row["agent"] = agent.clone().into();
+                let thread = task.thread.as_ref().and_then(|thread| threads.get(thread));
+                // A task waiting for its thread already knows the agent that thread will start on.
+                let runs_on = thread.map_or_else(
+                    || task.setup.over(&crate::agent::fallback::threads(cfg)).backend,
+                    |t| agent_of(&hub.store, t),
+                );
+                let mut row = row(task, status, &activity, wait, seat, thread.map(|t| &t.cwd), Some(runs_on));
+                if !background.is_empty() {
+                    row["background"] = json!(background);
                 }
                 row
             })
             .collect(),
     )
+}
+
+/// The agent `thread` runs on now, else the one it ran on last (a backend id): the fallback it is on or ended on, else
+/// its own.
+pub(super) fn agent_of(store: &Store, thread: &BotConfig) -> String {
+    crate::agent::fallback::effective(thread, crate::agent::bot::kept_step(store, thread)).backend
+}
+
+/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot and `runs_on` the agent
+/// its thread runs on (or will), when known.
+pub(super) fn row(
+    task: Task,
+    status: Status,
+    activity: &str,
+    wait: Option<Wait>,
+    seat: bool,
+    cwd: Option<&String>,
+    runs_on: Option<String>,
+) -> Value {
+    let folder = folder_of(&task, cwd);
+    let writable = task.source.own() && cwd.is_some();
+    let mut row = json!({
+        "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
+        "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
+        "endedAt": task.ended_at,
+        "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
+        // The user may write to its thread: the bot's own work, whose thread is still there (parked too); with files
+        // too, which a host from before them doesn't say.
+        "talk": writable,
+        "talkFiles": writable,
+        "seat": seat,
+    });
+    if let Some(folder) = folder {
+        row["folder"] = folder.clone().into();
+        // The folder Codync made for a thread without a bot: clients name it "Own folder" and list such threads together.
+        if super::plain::is_own_folder(folder) {
+            row["ownFolder"] = true.into();
+        }
+    }
+    if let Some(runs_on) = runs_on {
+        row["runsOn"] = runs_on.into();
+    }
+    if let Some(source) = task.source.wire() {
+        row["source"] = source;
+    }
+    if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
+        row["worktree"] = worktree;
+    }
+    // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
+    if let Some(agent) = &task.setup.backend {
+        row["agent"] = agent.clone().into();
+    }
+    row
 }
 
 /// The box in a few lines: counts and the ceiling, then the live and waiting titles with their ids. None when
@@ -577,6 +609,13 @@ pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
     let live: Vec<Shown> = seen_by_bot(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
     let live: Vec<_> = live.iter().map(|s| (s.status, s.task.title.as_str(), s.task.id.as_str())).collect();
     summary(&live, cfg.max_threads, whose)
+}
+
+/// The tasks still to come whose report comes to the bot's own chat (its `add_task`'s: not a routine's run, another
+/// bot's request or a thread the user started), as `(id, title)`.
+pub fn reporting(store: &Store, bot: &str) -> Vec<(String, String)> {
+    let mine = load(store, bot).into_iter().filter(|t| t.source.is_bot() && !t.status.ended());
+    mine.map(|t| (t.id, t.title)).collect()
 }
 
 /// What one of a bot's tasks does now, for who follows the bot from outside its chat (a call's voice).
@@ -685,6 +724,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_the_bots_own_tasks_still_to_come_report_to_its_chat() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let tasks = json!([
+            {"id": "a", "title": "Mine", "brief": "x", "status": "working", "order": 1, "createdAt": 1},
+            {"id": "b", "title": "Reported", "brief": "x", "status": "done", "order": 2, "createdAt": 1},
+            {"id": "c", "title": "Run", "brief": "x", "status": "waiting", "order": 3, "createdAt": 1,
+                "source": {"kind": "routine", "id": "r", "run": "1"}},
+        ]);
+        hub.store.kv_set(&key("b1"), &tasks.to_string()).expect("saved");
+        assert_eq!(reporting(&hub.store, "b1"), [("a".to_owned(), "Mine".to_owned())]);
+    }
+
+    #[test]
     fn a_task_works_in_its_folder_else_the_default_project_else_where_the_bot_lives() {
         let bot: BotConfig = serde_json::from_value(
             json!({"id": "b", "name": "B", "backend": "claude", "cwd": "/home", "projects": ["/p1", "/p2"]}),
@@ -711,6 +763,16 @@ mod tests {
             (kind("/p2"), kind("/home"), kind("/tmp")),
             (FolderKind::Project, FolderKind::Home, FolderKind::Other)
         );
+    }
+
+    #[test]
+    fn a_row_says_when_its_thread_works_in_a_folder_codync_made_for_it() {
+        let task = || Task::waiting("t", "b", None, None, 0);
+        let own = super::super::plain::own_folder(&uuid::Uuid::new_v4().to_string()).expect("an own folder");
+        let own = own.to_string_lossy().into_owned();
+        let row = |cwd: &String| row(task(), Status::Done, "", None, false, Some(cwd), None);
+        assert_eq!((row(&own)["folder"].as_str(), row(&own)["ownFolder"].as_bool()), (Some(own.as_str()), Some(true)));
+        assert!(row(&"/p/app".to_owned()).get("ownFolder").is_none(), "a folder the user picked is named as it is");
     }
 
     #[test]
@@ -873,6 +935,63 @@ mod tests {
         task("stopped", json!({"endedAt": 10}));
         hub.set_runtime(&cfg.id, |r| r.status = BotStatus::Idle);
         assert_eq!(stands(), BotStatus::Idle);
+    }
+
+    #[test]
+    fn a_row_names_the_agent_its_thread_runs_on() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let mut cfg = crate::chat::calls::context::tests::bot("b-agent", "Mika", "/tmp");
+        let mut thread = crate::chat::calls::context::tests::bot("thread-a", "Mika", "/tmp");
+        thread.thread_of = Some(cfg.id.clone());
+        thread.backend = "claude".into();
+        thread.fallbacks = vec![crate::store::Fallback { backend: "codex".into(), ..Default::default() }];
+        hub.store.save_bot(&cfg).expect("saved");
+        hub.store.save_bot(&thread).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-a"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let runs_on = || wire(&hub, &cfg)[0]["runsOn"].clone();
+        assert_eq!(runs_on(), "claude", "its own agent");
+        // On its fallback, as the actor keeps it: still so once the thread's actor and its runtime are gone.
+        hub.store.kv_set("fallback.on.thread-a", &crate::agent::fallback::login(&thread, 1)).expect("saved");
+        assert_eq!(runs_on(), "codex", "the fallback it switched to");
+        // Waiting for a seat, without a thread yet: the agent its thread will start on, in Advisor mode the threads'.
+        cfg.thread_agent = Some(crate::store::Fallback { backend: "gemini".into(), ..Default::default() });
+        let tasks = json!([{"id": "w", "title": "w", "brief": "x", "status": "waiting", "order": 1, "createdAt": 1}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        assert_eq!(wire(&hub, &cfg)[0]["runsOn"], "gemini");
+    }
+
+    #[test]
+    fn between_turns_a_task_shows_and_does_what_its_agent_runs_in_the_background() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b-bg", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let tasks = json!([{"id": "a", "title": "a", "brief": "x", "status": "working", "order": 1, "createdAt": 1,
+            "startedAt": 1, "thread": "thread-bg"}]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let workflow = crate::hub::BackgroundTask {
+            id: "w1".into(),
+            kind: crate::hub::BackgroundKind::Workflow,
+            name: "after-change".into(),
+            activity: None,
+            started_at: 5,
+        };
+        hub.set_runtime("thread-bg", |r| r.background = vec![workflow.clone()]);
+        let row = wire(&hub, &cfg)[0].clone();
+        assert_eq!(
+            row["background"],
+            json!([{"id": "w1", "kind": "workflow", "name": "after-change", "startedAt": 5}])
+        );
+        assert_eq!(row["activity"], "after-change", "no turn runs: the workflow is what it does");
+        hub.set_runtime("thread-bg", |r| r.background[0].activity = Some("Review: diff".into()));
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Review: diff");
+        // A turn's own activity comes first.
+        hub.set_runtime("thread-bg", |r| {
+            r.status = BotStatus::Working;
+            r.activity = "Thinking…".into();
+        });
+        assert_eq!(wire(&hub, &cfg)[0]["activity"], "Thinking…");
     }
 
     #[test]

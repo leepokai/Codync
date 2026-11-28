@@ -178,7 +178,8 @@ apply are reused; `{count} tasks running` goes.
   runs, however long and quiet, is left alone. The hour counts from the box's last change; an empty box sets no
   look. Nothing here wakes an agent unless a task was lost.
 - Stopping a working task stops its thread; tasks waiting `after` it become ordinary waiting tasks.
-- Tasks ended over seven days ago are deleted, and a thread bot with no task left is deleted with its transcript.
+- Tasks ended over seven days ago leave the box for the archive, their thread bots parked; they are deleted only as
+  the user's Delete old threads says ([older threads](../features/work.md#older-threads)).
 - Chains: tasks added from a report's turn carry its hops; the ninth is refused.
 
 ## Analytics
@@ -397,7 +398,7 @@ thread directly, as to a chat. Demo of the desktop panel: https://claude.ai/arti
 - **Writing to it.** A composer like the chat's (text; files and voice are not in this stage). While the thread's
   turn runs, a message waits in its queue and shows Send now and Remove, exactly as in the chat; Send now steers the
   running turn where the agent can, else stops it for the message. With no turn running the message starts one.
-- **After it ended.** A done, failed or stopped task of the bot's own whose thread still exists (kept seven days)
+- **After it ended.** A done, failed or stopped task of the bot's own whose thread still exists ([kept](../features/work.md#older-threads) until the user's Delete old threads)
   takes messages too: the first one reopens the task (`working` again, back under Threads, counted against Threads at
   once even past the ceiling, since the user asked), in the same session where the agent can resume it, else in a new
   one told what was done.
@@ -470,12 +471,18 @@ differs from the text above:
   as in the chat, with the chat's keys: `S` sends the next one now, `D` takes back the last. The heading has `⎇
   <branch>` or the folder (home as `~`) after the status. A routine's run and another bot's request have no
   composer and one dim line: `Read only: a routine's run`, `Read only: another bot's request`. The composer's
-  placeholder is `Message this thread`. What the thread put in the bot's chat is one dim line among the steps where
-  it came (`app::shared_line`: `◆` while it waits on the user, `✓`, `×` or `·` once answered or not, `▤` a file or
-  an artifact, `♪` a voice note; a sign-in card `◆`, `✓` once signed in, `×` cancelled). `tab` picks the newest line and goes up, `⇧tab` down, `esc` lets go; `↵` on a
-  picked line closes the page for the bot's chat at that entry: a card still waiting is at the chat's end, where
-  the chat's keys answer it, and anything else is picked there (an answered card counts as a message for that),
-  which brings it on screen. The page (`view/thread.rs`, `manage/threads.rs`) still opens over Details as before, not
+  placeholder is `Message this thread`. What the thread put in the bot's chat (the entries `app::is_shared` names:
+  cards, answered or not, a sign-in, files, voice notes, artifacts) shows among the steps where it came as the chat
+  draws it (`view::transcript::shared_entry_lines`): a waiting card whole, with its keys, an answered one as its
+  decided line, a file or an artifact as the bot's message. The thread's waiting card answers here with the chat's
+  keys (`y` / `a` / `n` an approval, `N` denies and gives the keys to the thread's composer to say why, `F1`… a
+  choice, `1`–`9` either, `C` its agent's sign-in), the picked one first, else the newest; a card leaves out the
+  `t shows the whole diff` hint, since the page has no trace pane, and the chat's other keys on a picked message
+  (reply, reactions, copy) stay the chat's, which `↵` opens. `tab` picks the newest of them and goes up,
+  `⇧tab` down, `esc` lets go; on a picked file or artifact `o` opens it in the browser and `f` saves it, as in the
+  chat; `↵` on a picked one closes the page for the bot's chat at that entry: a card still waiting is at the
+  chat's end, and anything else is picked there (an answered card counts as a message for that), which brings it on
+  screen. The page (`view/thread.rs`, `manage/threads.rs`) still opens over Details as before, not
   in its place.
 - **Where it works, shown (host, terminal, manual)**: `bot.gitInstalled` (bool, beside `bot.gitRepo`; absent =
   installed) from a cached look for git that never holds a snapshot up, refreshed at most every five minutes, so
@@ -493,32 +500,29 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
 
 - **Opening.** Desktop: the row opens the thread as a tab of the inspector's pane (`DetailsPanel` → `ThreadChat`,
   the chat's own form, as on the Threads page); a thread whose task left the box closes. What follows (one line per
-  shared entry, the header, a composer without dictation) is the phones'; the desktop shows each shared entry as
-  the chat's own row, answered and opened in the thread, with the chat's `Composer`. iPhone: the row
-  pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
-  the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
-  over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
-  `NavStack`, with the same header. A row of the Threads tab opens the bot's chat with its
-  details on that thread.
-- **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
-  line (below), which opens the chat at it; on the phones the thread has no card to answer.
-- **Header**: title, the status word with its mark and the time, the where line, Stop while the task is live (it
-  asks first).
+  shared entry) is the terminal's; the desktop and the phones show each shared entry as the chat's own row, answered
+  and opened in the thread, with the chat's composer. iPhone: the row pushes `ThreadChatView` inside the details
+  sheet (or, from the Threads tab, in that tab's stack) under the system navigation bar (`threadBar` in
+  `ThreadChatView.swift`: the system back and edge swipe, the bot, the title over the status line in the middle,
+  `Details` trailing outside the details, a soft scroll-edge blur); Android draws the bot chat's glass `Back` and
+  `Details` capsules over a blurred top edge. Android pushes `ThreadChat.kt` by the design module's `NavStack`.
+- **A row that needs you.** In the bot's details it still opens the chat at its card. On the phones' Threads tab a
+  row whose task has a thread opens that thread instead (a task without one opens the chat at its card). Wherever a
+  needs-you thread is open, the card it waits on is the chat's own row there, paged back for when the chat's loaded
+  rows don't hold it (desktop `cardOf`, iPhone `card(for:in:)`, Android `holdChat`).
+- **Header**: Back, the bot (a thread without a bot: its agent), the title over the status word with its mark and the
+  time (and where it works when there is no composer to say it), and `Details` outside the details. Stop is the
+  composer's while the thread works (it asks first), or the read-only line's.
 - **Transcript**: `What it was told` folded on top (the host's first words to the thread); what the host told it
   later (a task picked up again) is a quiet quote where it happened; the user's messages are the chat's bubbles;
   the thread's final replies (kind `agent` and `final`) are the chat's agent message, read only
-  (Copy; no reactions, reply or trace); the rest are the chat's working steps, the running turn's unfolded. A thread's
+  (Copy; no reactions, reply or trace); its steps are no rows, only the working line's while it works. A thread's
   own transcript holds no file or artifact (what it shares goes to the chat), so its replies are text on every
   client. What the thread put in the bot's chat (the entries whose `data.thread.id` is the thread's id: approval and
   choice cards, answered ones too, its agent's sign-in card, files, voice notes, artifact cards) joins the transcript in time order
-  (`createdAt`, each side kept in its order, the thread's own first at the same moment) as one quiet line with a
-  symbol (the phones' `sharedLine`: `hand.raised` while it waits on the user, `checkmark`, `xmark` or `clock` once answered or
-  not, `doc`, `waveform`, `doc.richtext`; a sign-in card reads as the card stands: `Needs <agent> sign-in`, `Signed
-  in`, `Cancelled`, not `Asked in the chat to sign in to <agent>.`, which the thread's own transcript already has
-  beside it). The full card, file or artifact stays in the chat, where the coordinator
-  shows it. A tap on the line opens the chat at that entry: the phones close the details sheet and bring it into view, as a
-  needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
-  looked at, as for a needs-you row.
+  (`createdAt`, each side kept in its order, the thread's own first at the same moment) as the chat's own row,
+  answered, downloaded and opened in the thread as in the chat (desktop `buildChat`, iPhone `ChatItem.thread`,
+  Android `threadChatItems`, the terminal `shared_entry_lines`, above).
 - **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
   (`talkFiles`), but on the phones no dictation, commands, reply or call (the desktop's has dictation). Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it
@@ -528,7 +532,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   two buttons. On the desktop a message that never arrived has Resend and Delete, and one dropped by Stop reads
   `Not sent — stopped`; the phones show the chat's own lines for both.
 - **Read-only threads**: no composer and one quiet line, `Read only: a routine's run` or `Read only: another bot's
-  request`, with Stop beside it on the desktop while it runs. An own task whose thread is gone (`talk` false) has neither.
+  request`, with Stop beside it while it runs. An own task whose thread is gone (`talk` false) has neither.
 - **Where line.** Every client writes the computer's home (`hello.home`) as `~`, with one rule (`homeRelative`,
   the terminal's `tilde`): at a separator boundary only, `/` or `\`; any other path shows whole and is cut in the
   middle.

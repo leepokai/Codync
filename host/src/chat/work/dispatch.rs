@@ -148,10 +148,12 @@ fn turn_runs(hub: &Hub, id: &str, over: Option<&str>) -> bool {
     over != Some(id) && matches!(hub.runtime(id).status, BotStatus::Working | BotStatus::NeedsInput)
 }
 
+/// A thread busy with its agent's background work is busy with its task, which waits on it (`Outcome::Waiting`); one
+/// with no task ends with that work all the same.
 pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> ThreadState {
     if !hub.has_actor(thread) {
         ThreadState::Gone
-    } else if turn_runs(hub, thread, over) {
+    } else if turn_runs(hub, thread, over) || !hub.runtime(thread).background.is_empty() {
         ThreadState::Busy
     } else {
         ThreadState::Idle
@@ -310,7 +312,7 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
             // run and another bot's request work where the bot said.
             let beside = task.source.own()
                 && crate::agent::workspace::own_folder(&thread).is_none()
-                && worktree::beside(cfg.worktree_mode, &thread.cwd, &others);
+                && worktree::wanted(task.setup.place, cfg.worktree_mode, &thread.cwd, &others);
             task.place = if task.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             task.thread = Some(thread.id.clone());
             {
@@ -399,8 +401,9 @@ fn thread_bot(cfg: &BotConfig, task: &Task) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
         cwd: task.folder(cfg),
-        // Its folder is its own: the bot's projects are the bot's to send work to.
+        // Its folder is its own: the bot's projects are the bot's to send work to, with their shared folders.
         projects: Vec::new(),
+        shared_folders: std::collections::BTreeMap::new(),
         thread_of: Some(cfg.id.clone()),
         created_at: now_ms(),
         // Its alerts are its bot's: the cards it raises in the chat, and the turn its report starts there.

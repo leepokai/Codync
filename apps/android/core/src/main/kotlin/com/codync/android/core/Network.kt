@@ -16,12 +16,53 @@ data class NetworkView(
     val assistants: Boolean = false,
     /** Cloud assistants can reach this computer at all: it's in a Codync account. */
     val assistantsAvailable: Boolean = false,
+    /** This computer's coding agents' sessions with a Network address; hosts before them send none. */
+    val sessions: List<NetworkSession> = emptyList(),
 ) {
-    /** Something to show: a network, or cloud assistants that can reach this computer's bots. */
-    val shown: Boolean get() = joined || (assistantsAvailable && assistants)
+    /** Something to show: a network, cloud assistants that can reach this computer's bots, or coding agents' sessions. */
+    val shown: Boolean get() = joined || (assistantsAvailable && assistants) || sessions.isNotEmpty()
 
     companion object {
         fun decode(value: JsonElement): NetworkView = WireJson.decodeFromJsonElement(value)
+    }
+}
+
+/**
+ * A coding agent's session on the computer (`codync-host mcp network`). [kind], [tier] and [state] stay strings: a
+ * newer host may send ones this app doesn't know.
+ */
+@Serializable
+data class NetworkSession(
+    /** What bots and other agents message it at. */
+    val address: String,
+    /** The agent's own title for it; display only. */
+    val title: String? = null,
+    val kind: String = "other",
+    /** The ACP registry id of its logo. */
+    val registry: String? = null,
+    /** How it gets its mail: `pull` (it checks); later `turn` and `push`. */
+    val tier: String = "pull",
+    /** Whether its agent runs now (`working`, `idle`, `online`, `offline`); null where nothing can tell. */
+    val state: String? = null,
+    /** Running now, as far as the computer can tell. */
+    val runs: Boolean = false,
+    /** Folded under the older ones: neither running nor called in the last day. The host lists running ones first, then the most recent. */
+    val older: Boolean = false,
+    /** Its last call (Unix ms). */
+    val seen: Long? = null,
+) {
+    /** What its agent does, untranslated, where it says; the dot alone shows online or offline. */
+    val stateTitle: String? get() = when (state) { "working" -> "Working"; "idle" -> "Idle"; else -> null }
+
+    /** What the dot says to a screen reader, untranslated, where no word shows (online or offline); with no state, there is no dot. */
+    val dotTitle: String? get() = when (state) { "online" -> "Online"; "offline" -> "Offline"; else -> null }
+
+    /** How it gets its mail, untranslated; null for a tier this app doesn't know. */
+    val tierTitle: String? get() = when (tier) {
+        "pull" -> "Checks its mail"
+        "turn" -> "Told of mail at its next step"
+        "push" -> "Told of mail as it comes"
+        else -> null
     }
 }
 

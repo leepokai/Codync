@@ -90,6 +90,10 @@ fn settings_routines_screen_and_devices() {
         setting("setAutoOrder", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("auto_order"), json!(true)))
     );
+    let keep = props("setThreadKeepDays", &json!({"days": 30}))
+        .map(|(_, p)| (p["setting"].clone(), p["on"].clone(), p["days"].clone()));
+    assert_eq!(keep, Some((json!("thread_keep_days"), json!(true), json!(30))));
+    assert_eq!(setting("setThreadKeepDays", json!({"days": 0})).map(|s| s.2), Some(json!(false)));
     assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))

@@ -48,7 +48,7 @@ test('main and fallback model dropdowns refresh with the selected loginProfile a
 
     await panel.getByRole('button', { name: 'Refresh model list' }).click()
     await expect.poll(async () => (await calls()).slice(3)).toEqual([
-      { backend: 'antigravity', loginProfile: 'ultra-8' },
+      { backend: 'antigravity', loginProfile: 'ultra-8', refresh: true },
     ])
     await page.keyboard.press('Escape')
 
@@ -77,7 +77,7 @@ test('main and fallback model dropdowns refresh with the selected loginProfile a
     // Clicking Refresh model list keeps Ultra #8 loginProfile.
     await panel.getByRole('button', { name: 'Refresh model list' }).click()
     await expect.poll(async () => (await calls()).slice(6)).toEqual([
-      { backend: 'antigravity', loginProfile: 'ultra-8' },
+      { backend: 'antigravity', loginProfile: 'ultra-8', refresh: true },
     ])
 
     // Switch main Login profile back to Default -> omits loginProfile and reverts dropdown.

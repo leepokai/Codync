@@ -26,6 +26,21 @@ import kotlinx.serialization.Serializable
 }
 data class ModelChoice(val id: String?, val name: String, val description: String? = null)
 
+/** [model] as a picker's list has it (iOS `AgentModels.listValue`): "" for Default (unset, or the agent's own default). */
+fun AgentModels?.listValue(model: String?): String = if (model == this?.agentDefault?.id) "" else model.orEmpty()
+
+/** The listed model [model] runs on: the agent's default (or current) one when unset. */
+fun AgentModels?.selected(model: String?): AgentModel? =
+    this?.let { catalog -> catalog.models.firstOrNull { it.id == (model ?: catalog.agentDefault?.id ?: catalog.currentModelId) } }
+
+/** The settings shown for [model]: none on Default unless the agent gives its default model settings. */
+fun AgentModels?.settings(model: String?): List<ModelOption> =
+    if (listValue(model).isNotEmpty() || this?.defaultModelOptions == true) selected(model)?.options.orEmpty() else emptyList()
+
+/** Whether Standard / Fast shows for [backend]: the agent offers it, it is [on], or [bot]'s sessions on that agent do. */
+fun AgentModels?.showsFast(backend: String, on: Boolean, bot: Bot?): Boolean =
+    (backend != "custom" && this?.fastMode == true) || on || (bot?.backend == backend && bot.fastModeShown)
+
 @Serializable data class RecentWorkspace(val path: String, val usedAt: Long)
 @Serializable data class DirListing(val path: String, val parent: String? = null, val isGit: Boolean = false, val dirs: List<DirItem>,
     val recent: List<RecentWorkspace>? = null, val ancestors: List<DirItem>? = null)

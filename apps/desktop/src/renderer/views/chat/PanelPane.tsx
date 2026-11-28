@@ -1,9 +1,12 @@
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { fill } from '@shared/fill'
-import type { PanelPane as Pane } from '@shared/panel-layout'
+import type { Bot } from '@shared/models'
+import { multiTabs, multiView, type PanelPane as Pane } from '@shared/panel-layout'
 import { IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Text } from '../../components/Text'
+import { BrowserTab } from './BrowserTab'
+import { TerminalTab } from './TerminalTab'
 import { useTr } from '../../lib/use-language'
 
 /** A view a pane can show: its tab's name, its symbol in the chooser, and the key that opens it there. A thread's tab
@@ -14,6 +17,23 @@ export interface PaneView {
   icon: string
   key?: string
   verbatim?: boolean
+}
+
+/** The tabs of browsers and terminals among `tabs`, each named after its view (`base`), numbered from the second on
+ * ("Terminal 2"), its view's symbol on the tab. */
+export function multiTabViews(tabs: readonly string[], base: readonly PaneView[], tr: (s: string) => string): PaneView[] {
+  return multiTabs(tabs).flatMap(({ id, view, n }) => {
+    const of = base.find((v) => v.id === view)
+    return of ? [{ id, label: n > 1 ? `${tr(of.label)} ${n}` : tr(of.label), icon: of.icon, verbatim: true }] : []
+  })
+}
+
+/** A browser's or a terminal's tab `tab` of `bot`'s panel, its terminal in `thread`'s folder when given. */
+export function MultiTab({ bot, thread, tab }: { bot: Bot; thread?: string | null; tab: string }) {
+  const view = multiView(tab)
+  return view === 'browser' ? <BrowserTab key={`${bot.id}/${tab}`} bot={bot} tab={tab} />
+    : view === 'terminal' ? <TerminalTab key={`${thread ?? bot.id}/${tab}`} bot={bot} thread={thread} tab={tab} />
+    : null
 }
 
 /**

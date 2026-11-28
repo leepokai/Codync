@@ -142,9 +142,6 @@ public struct ChatView: View {
             .onChange(of: model.cardRequest?.task.id, initial: true) { _, _ in
                 if let task = model.takeCardRequest(for: botId) { showCard(task) }
             }
-            .onChange(of: model.threadRequest?.task.id, initial: true) { _, _ in
-                if let task = model.takeThreadRequest(for: botId) { details = DetailsRequest(thread: task) }
-            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -166,8 +163,7 @@ public struct ChatView: View {
             .codyncSheet(item: $details) { request in
                 // A card is in this chat: another bot's details (a group member's) have none to go to.
                 let own = (request.botId ?? botId) == botId
-                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil,
-                               openInChat: own ? { showInChat($0.id) } : nil) { artifact in
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -200,13 +196,6 @@ public struct ChatView: View {
         let shown = rowId(of: id)
         Analytics.shared.capture(.quoteOpened(found: shown != nil))
         if let shown { reveal(shown) }
-    }
-
-    /// Closes the details over the chat and brings the entry `id` into view: what a task's thread says it put
-    /// here. Only among the loaded messages, like a quote.
-    private func showInChat(_ id: String) {
-        details = nil
-        if let shown = rowId(of: id) { reveal(shown) }
     }
 
     /// The chat's row that shows the entry `id`.

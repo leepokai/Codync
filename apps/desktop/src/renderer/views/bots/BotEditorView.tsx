@@ -229,7 +229,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {/* A host whose bots have projects keeps each in its own folder, which a new bot gets once it's created. */}
           {store.hasProjects ? [
             saved ? <HomeFolderRow key="home" bot={saved} /> : null,
-            <ProjectsRow key="projects" draft={draft} bot={saved} onChange={onChange} onAdd={() => setPickingFolder(true)} />,
+            <ProjectsRow key="projects" draft={draft} bot={saved} sharesFolders={store.fillsWorktrees} onChange={onChange} onAdd={() => setPickingFolder(true)} />,
             // Under the list, only where it matters: a project in a git repository.
             saved?.projectGitRepos.some(Boolean) ? <WorktreeModeRow key="worktrees" draft={draft} bot={saved} onChange={onChange} /> : null,
           ] : (

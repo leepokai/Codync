@@ -13,13 +13,6 @@ Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/leepokai)<br>
 <sub>Free, open source, no paid tier. A ⭐ is how others find it; a ☕ keeps it going.</sub>
 
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg)
-[![Download for Windows](https://img.shields.io/badge/Download-Windows_x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe)
-[![Download for Linux x86_64](https://img.shields.io/badge/Download-Linux_x86__64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/leepokai/Codync/releases/latest/download/codync-linux-x86_64.AppImage)
-[![Download for Linux ARM64](https://img.shields.io/badge/Download-Linux_ARM64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/leepokai/Codync/releases/latest/download/codync-linux-arm64.AppImage)
-
-macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage · [All downloads](https://github.com/leepokai/Codync/releases/latest)
-
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
@@ -39,8 +32,14 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 
 <img src="docs/screenshots/desktop-macos.png" width="760" alt="Codync desktop app on macOS: four bots in the sidebar and the welcome screen with no bot selected">
 
-<a href="https://apps.apple.com/app/codync/id6760984418"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
-<a href="https://play.google.com/store/apps/details?id=com.pokai.Codync.android"><img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" height="54" alt="Get it on Google Play"></a>
+<a href="https://apps.apple.com/app/codync/id6760984418"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="40" alt="Download on the App Store"></a>
+<a href="https://play.google.com/store/apps/details?id=com.pokai.Codync.android"><img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" height="40" alt="Get it on Google Play"></a>
+<a href="https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg"><img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" height="40" alt="Download for macOS"></a>
+<a href="https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe"><img src="https://img.shields.io/badge/Windows_x64-000000?style=for-the-badge&amp;logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoMTF2MTFIMHptMTMgMGgxMXYxMUgxM3pNMCAxM2gxMXYxMUgwem0xMyAwaDExdjExSDEzeiIvPjwvc3ZnPg==&amp;logoColor=white" height="40" alt="Download for Windows x64"></a>
+<a href="https://github.com/leepokai/Codync/releases/latest/download/codync-linux-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux_x86__64-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" height="40" alt="Download for Linux x86_64"></a>
+<a href="https://github.com/leepokai/Codync/releases/latest/download/codync-linux-arm64.AppImage"><img src="https://img.shields.io/badge/Linux_ARM64-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" height="40" alt="Download for Linux ARM64"></a>
+
+macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage · [All downloads](https://github.com/leepokai/Codync/releases/latest)
 
 </div>
 
@@ -231,7 +230,7 @@ The Xcode project is generated: `xcodegen generate --spec apps/project.yml`.
 ```bash
 cd host && cargo test            # host
 cd apps/desktop && npm test      # desktop app (also: npm run typecheck)
-# iPhone package: xcodebuild test -scheme CodyncKit-Package (apps/ios/Kit, iOS Simulator)
+# iPhone package: ../../../tools/xcodebuild.sh test -scheme CodyncKit-Package (from apps/ios/Kit, iOS Simulator)
 cd cloud && npm test            # cloud API / channel relay
 cd relay && npm test             # relay tickets
 ```

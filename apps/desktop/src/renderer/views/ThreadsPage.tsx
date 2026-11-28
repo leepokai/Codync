@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
-import { taskLine, threadSections, type WorkTask } from '@shared/work'
+import { agentOf, OWN_FOLDER_GROUP, taskLine, threadSections, type WorkTask } from '@shared/work'
+import { AgentIcon } from '../components/AgentIcon'
 import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
@@ -60,6 +61,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
       <ThreadRow
         flip={`${refKey(of.ref)}/${task.id}`}
         task={task}
+        agent={agentOf(task, of.bot)}
         label={label}
         selected={picked !== null && picked.taskId === task.id && sameRef(picked.ref, of.ref)}
         open={task.thread ? () => pick({ ref: of.ref, taskId: task.id }) : undefined}
@@ -79,6 +81,9 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   )
   const label = (title: string) => <Text as="div" size="caption" tone="tertiary" className="thread-label">{tr(title)}</Text>
   const shownRecent = more ? recent : recent.slice(0, SHOWN_RECENT)
+  // Older threads: each computer's first page once the list shows, the next as its end scrolls into view.
+  const stores = [...new Set(roster.map((r) => r.store))]
+  useEffect(() => stores.forEach((s) => s.loadFirstOlderThreads()))
   return (
     <>
       {needsYou.length ? <section aria-label={tr('Needs you')}>{label('Needs you')}{needsYou.map((r) => row(r))}</section> : null}
@@ -93,7 +98,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
               const isFolded = folded.includes(group.key)
               const of = group.rows[0]!.of
               // The box of threads without a bot is no bot: its group says so.
-              const title = of.bot.plain && group.kind === 'bot' ? tr('No bot') : group.title
+              const title = of.bot.plain && group.kind === 'bot' ? tr('No bot') : group.key === OWN_FOLDER_GROUP ? tr(group.title) : group.title
               // Folded, its heading still says that something in it went wrong or works.
               const loud = isFolded ? (group.rows.find((r) => r.task.status === 'failed') ?? group.rows.find((r) => r.task.status === 'working')) : undefined
               return (
@@ -127,6 +132,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
           ) : null}
         </section>
       ) : null}
+      {recent.length > shownRecent.length ? null : <ListEnd reached={() => stores.forEach((s) => s.loadOlderThreads())} />}
       {asking ? (
         <StoreContext.Provider value={asking.of.store}>
           <StopWorkDialog botId={asking.of.bot.id} taskId={asking.kind === 'stop' ? asking.task.id : null} onClose={() => setAsking(null)} />
@@ -137,14 +143,25 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   )
 }
 
+/** The list's end: `reached` while it is in view (watched again on each render, so a page that leaves it in view asks for the next). */
+function ListEnd({ reached }: { reached: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const seen = new IntersectionObserver((at) => at.some((e) => e.isIntersecting) && reached())
+    if (end.current) seen.observe(end.current)
+    return () => seen.disconnect()
+  }, [reached])
+  return <div ref={end} aria-hidden />
+}
+
 /** How a thread stands, at the end of its row: working, needs the user, went wrong, waits; nothing once it is done. */
 function StatusMark({ status }: { status: WorkTask['status'] }) {
   return status === 'done' ? null : <WorkDot mark={WORK_MARK[status]} />
 }
 
-/** One thread of the list: its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
+/** One thread of the list: the coding agent it runs on, its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
  * row is hovered; the `…` and a right-click open its menu. */
-function ThreadRow({ flip, task, label, selected, open, items }: { flip: string; task: WorkTask; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
+function ThreadRow({ flip, task, agent, label, selected, open, items }: { flip: string; task: WorkTask; agent: string | null; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
   const tr = useTr()
   const store = useStore()
   const context = useContextMenu()
@@ -154,6 +171,7 @@ function ThreadRow({ flip, task, label, selected, open, items }: { flip: string;
   return (
     <div className={`thread-item ${more || context.open ? 'menu-open' : ''}`} data-flip={flip} onContextMenu={context.onContextMenu}>
       <Open className={`thread-row ${selected ? 'selected' : ''}`} data-thread-row={task.title} data-work-status={task.status} onClick={open} title={task.title}>
+        <span className="thread-agent">{agent ? <AgentIcon registry={store.agentRegistry(agent)} size={14} /> : null}</span>
         <Text tone="text" truncate grow>{label}</Text>
         <span className="thread-mark"><StatusMark status={task.status} /></span>
       </Open>

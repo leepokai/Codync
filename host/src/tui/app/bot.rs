@@ -120,6 +120,8 @@ pub struct Bot {
     pub project_git_repos: Vec<bool>,
     /// When a thread gets a worktree of its own; `None` from a host before projects.
     pub worktree_mode: Option<crate::store::WorktreeMode>,
+    /// Per git project, the folders linked into each of its new worktrees (`hello.worktreeFill`).
+    pub shared_folders: BTreeMap<String, Vec<String>>,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -311,6 +313,7 @@ impl Bot {
             projects: strs(&v["projects"]),
             project_git_repos: v["projectGitRepos"].as_array().into_iter().flatten().map(|g| *g == true).collect(),
             worktree_mode: serde_json::from_value(v["worktreeMode"].clone()).ok(),
+            shared_folders: serde_json::from_value(v["sharedFolders"].clone()).unwrap_or_default(),
         })
     }
 

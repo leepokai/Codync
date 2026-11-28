@@ -21,6 +21,7 @@ mod memory;
 mod network;
 mod network_rules;
 mod network_setup;
+mod older;
 mod pages;
 mod replies;
 mod routines;
@@ -44,8 +45,9 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
-pub use network_rules::{LEVELS, RuleField, RuleForm, level_detail, level_name};
+pub use network_rules::{RuleField, RuleForm, label, level_detail, level_name};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
+pub use older::OlderThreads;
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
@@ -76,6 +78,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// A page of a bot's older threads (`olderThreads`), for that request (`older::ask`).
+    OlderThreads(String, u64),
     /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
     FollowUpCancelled(String),
     RoutineSaved,
@@ -179,6 +183,8 @@ pub struct DetailsPage {
     pub runs: Vec<Value>,
     /// The follow-ups the bot set for itself that still wait.
     pub follow_ups: Vec<Value>,
+    /// The bot's threads that ended before its `work` carries them, listed under Recent.
+    pub older: Box<OlderThreads>,
     /// Over `rows`.
     pub cursor: usize,
 }

@@ -258,8 +258,13 @@ export function fcmData(ticket: FcmTicket, body: PushBody): Record<string, strin
     if (!body.alert || typeof body.alert.title !== "string" || typeof body.alert.body !== "string" ||
         !data || typeof data.sealed !== "string" || typeof data.botId !== "string" ||
         data.ctx !== ticket.c || data.computerId !== ticket.h) throw new InvalidFcmPayload();
+    // A workflow's alert names where its tap opens: the workflow, its run, or a step run on its own.
+    const link = Object.fromEntries(["workflowId", "runId", "stepId"].flatMap(key => {
+      const value = data[key];
+      return typeof value === "string" && value.length <= 64 ? [[key, value]] : [];
+    }));
     return { kind: "alert", ctx: ticket.c, computerId: ticket.h, botId: data.botId, sealed: data.sealed,
-      title: body.alert.title.slice(0, 120), body: body.alert.body.slice(0, 400), category: body.category ?? "" };
+      title: body.alert.title.slice(0, 120), body: body.alert.body.slice(0, 400), category: body.category ?? "", ...link };
   }
   if (!body.liveActivity || !ticket.b || !ticket.r) throw new InvalidFcmPayload();
   let aps: Record<string, unknown>;

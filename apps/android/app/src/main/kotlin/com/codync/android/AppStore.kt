@@ -77,6 +77,8 @@ class AppStore internal constructor(
     internal var rewoundFor: String? = null
     /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
     internal val residents = ResidentBots()
+    /** How many thread chats show each thread now: its transcript is let go as the last one closes. */
+    internal val threadViews = ConcurrentHashMap<String, Int>()
     /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
     internal val windows = ConcurrentHashMap<String, Int>()
     /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */
@@ -196,6 +198,10 @@ class AppStore internal constructor(
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mirrorBots = snapshot.bots
         mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
+            // An ended thread that leaves its bot's work stays among the older threads listed.
+            olderThreads = current.olderThreads?.let { older ->
+                snapshot.bots.fold(older) { o, bot -> o.keep(bot.id, current.bots.firstOrNull { it.id == bot.id }?.work.orEmpty(), bot.work) }
+            },
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
             historyEnd = if (stranded) current.historyEnd - open!! else current.historyEnd,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }

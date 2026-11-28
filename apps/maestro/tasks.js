@@ -4,7 +4,8 @@
 // `HOLD:<name>` and raises an approval card when it says PERMISSION. `ADD` sends another one and waits until the event
 // box has it and the bot's own turn is over (a message sent during it would wait above the composer); `MAX` sets how
 // many threads work at once; `SIGN_IN` makes the bot Kimi Code (an agent the host knows by name, so a sign-in gets a
-// card) and adds a task of that title whose thread fails once asking to sign in; `SAY` sends the bot a message;
+// card) and adds a task of that title whose thread fails once asking to sign in; `ROUTINE` saves a routine of that name
+// whose run works until stopped and runs it (a read-only thread); `SAY` sends the bot a message;
 // `CLEANUP`, when the flow completes, stops the bot's work and deletes it.
 const api = (method, body) => {
   const res = http.post(`http://127.0.0.1:${HOST_PORT}/api/${method}`, {
@@ -40,6 +41,9 @@ if (typeof CLEANUP !== 'undefined') {
 } else if (typeof SIGN_IN !== 'undefined') {
   api('updateBot', { id: output.bot.id, backend: 'kimi' })
   add(output.bot.id, `${SIGN_IN}|SIGNIN`)
+} else if (typeof ROUTINE !== 'undefined') {
+  const { routine } = api('saveRoutine', { botId: output.bot.id, name: ROUTINE, instruction: 'HOLD:routine', triggers: [{ type: 'webhook' }] })
+  api('runRoutine', { botId: output.bot.id, id: routine.id })
 } else if (typeof SAY !== 'undefined') {
   api('send', { botId: output.bot.id, text: SAY })
 } else {

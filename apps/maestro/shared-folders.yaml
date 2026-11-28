@@ -1,0 +1,53 @@
+# A git project's Shared folders on the phones: in the bot's settings, the project's Shared folders button opens its
+# sheet, where a typed name is added (`./` dropped, as the host keeps it) and removed again, and the host saves each
+# change with the bot. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes); the flow makes its own bot there, with PROJECT_DIR, a git repository, as
+# its project:
+#   project=$(mktemp -d) && git -C "$project" init -q
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" -e PROJECT_DIR="$project" -e ADD_DIR="$project" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - bot-settings
+onFlowComplete:
+  - runScript:
+      file: shared-folders.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: shared-folders.js
+- runFlow:
+    file: subflows/bot-list.yaml
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Shared folders"
+    centerElement: true
+- tapOn: "Shared folders"
+- tapOn: "Folder name"
+- inputText: "./node_modules"
+# Maestro's typing hides the iPhone keyboard for about a second; the first touch while it is away only brings it back,
+# so Add folder is tapped once the keyboard is there again.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: "delete"
+          timeout: 5000
+- tapOn: "Add folder"
+- assertVisible: "node_modules"
+- takeScreenshot: shared-folders
+- runScript:
+    file: shared-folders.js
+    env:
+      SAVED: "node_modules"
+- tapOn: "Remove folder"
+- assertNotVisible: "node_modules"
+- runScript:
+    file: shared-folders.js
+    env:
+      SAVED: ""

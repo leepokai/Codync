@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
@@ -29,8 +29,8 @@ import { QueuedMessages } from './QueuedMessages'
 import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
 import { outsideQueue } from './queued-messages'
-import { ChatSidePanel } from './ChatSidePanel'
-import { CONVERSATION_MIN, fitPanel, PANEL_MIN } from './side-panel-width'
+import { ChatSidePanel, useSidePanelWidth } from './ChatSidePanel'
+import { CONVERSATION_MIN } from './side-panel-width'
 import { WindowBarSlots } from '../WindowBar'
 import { DetailsPanel, showPanelView, type DetailsTab } from './DetailsPanel'
 import { PanelBarButtons } from './PanelBarButtons'
@@ -46,8 +46,6 @@ import { ArtifactView } from '../library/ArtifactView'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
-
-const WIDE = 740
 
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
@@ -68,7 +66,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const [showSettings, setShowSettings] = useState(false)
   // The docked panel covers the conversation.
   const [panelFilled, setPanelFilled] = useState(false)
-  const [compactDetails, setCompactDetails] = useState(false)
   const [calling, setCalling] = useState(false)
   const [callSpeaking, setCallSpeaking] = useState(false)
   const interruptCall = useRef<(() => void) | null>(null)
@@ -80,44 +77,19 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
-  // The width is measured, not rendered: resizing re-renders only when `wide` flips, or while the
-  // window is narrow enough to squeeze the open side panel.
-  const width = useRef(800)
-  const [wide, setWide] = useState(true)
-  const [, setSqueezed] = useState(0)
-  const squeezeBelow = useRef(0)
   const [detailsWidth, setDetailsWidth] = usePref(prefs.detailsPanelWidth)
+  // Beside the conversation whenever both fit, the conversation narrowing to make room; otherwise it covers it.
+  const panel = useSidePanelWidth(root, CONVERSATION_MIN, detailsWidth)
   useReading(store, botId)
   // The chat window remounts this per conversation (`key`), so each one opened counts.
   useScreenViewed('chat')
 
-  useLayoutEffect(() => {
-    const el = root.current
-    if (!el) return
-    const observer = new ResizeObserver(([e]) => {
-      const w = e!.contentRect.width
-      width.current = w
-      setWide(w >= WIDE)
-      setSqueezed(w - CONVERSATION_MIN < squeezeBelow.current ? w : 0)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
   useDockHeight(root, dock)
 
-  const panelOpen = wide && showSettings
+  const panelOpen = showSettings
+  const covers = !panel.beside
   const bar = useContext(WindowBarSlots)
-  squeezeBelow.current = panelOpen ? Math.max(PANEL_MIN, detailsWidth) : 0
-  // The side panel's edge drags its width, leaving the conversation its least.
-  const panelWidth = (w: number) => fitPanel(w, width.current, CONVERSATION_MIN)
-  // A compact Details presentation dismisses once the window is wide enough for the inspector.
-  useEffect(() => {
-    if (wide) setCompactDetails(false)
-  }, [wide])
-  const toggleDetails = useCallback(() => {
-    if (!wide) setCompactDetails((c) => !c)
-    else setShowSettings((s) => !s)
-  }, [wide])
+  const toggleDetails = useCallback(() => setShowSettings((s) => !s), [])
   const devServers = devServerSummary(bot?.devServers ?? [])
   // The title's port leads to its row, whichever page the inspector was left on.
   const openFromTitle = useCallback(() => {
@@ -136,15 +108,14 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const openTrace = useCallback(() => setShowTrace(true), [])
   const openArtifact = useCallback((id: string) => {
     setArtifactId(id)
-    setCompactDetails(false)
     setPanelFilled(false)
-  }, [])
+    if (covers) setShowSettings(false)
+  }, [covers])
 
   const showDetails = useCallback((tab: DetailsTab) => {
     showPanelView(tab)
     setShowSettings(true)
-    if (!wide) setCompactDetails(true)
-  }, [wide])
+  }, [])
 
   const presentRoutine = useCallback((id: string | null) => {
     setRoutineId(id)
@@ -159,13 +130,12 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   // The chat beside the panel at the card a task that needs the user waits on (the one its row reads).
   const [reveal, setReveal] = useState<Reveal | null>(null)
   const openCard = useCallback((taskId: string) => {
-    setCompactDetails(false)
+    if (covers) setShowSettings(false)
     setReveal({ taskId })
-  }, [])
+  }, [covers])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
   const shareBot = () => {
-    setCompactDetails(false)
     if (bot) setTemplateDraft(draftOf(bot))
   }
   const details = (
@@ -173,27 +143,24 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       key={routineRequest}
       botId={botId}
       routineId={routineId}
-      docked={wide}
+      docked={bar.end !== null}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
       share={shareBot}
-      close={() => {
-        setShowSettings(false)
-        setCompactDetails(false)
-      }}
+      close={() => setShowSettings(false)}
     />
   )
 
   return (
     <div className="chat-view" ref={root}>
       {/* Covered by the maximized panel, it leaves the keyboard's reach too. */}
-      <div className="conversation" inert={panelOpen && panelFilled}>
+      <div className="conversation" inert={panelOpen && (panelFilled || covers)}>
         <div className="top-chrome">
           <TopFade />
           {/* The window's bar holds the bot, what runs it, and the panel's toggle with the open panel's own buttons
               before it; nothing while another page covers the conversation. */}
-          {bar.end ? createPortal(<PanelBarButtons open={panelOpen && !!bot && !isGroup(bot)} filled={panelFilled} setFilled={setPanelFilled} share={shareBot} toggle={toggleDetails} />, bar.end) : null}
+          {bar.end ? createPortal(<PanelBarButtons open={panelOpen && !!bot && !isGroup(bot)} filled={panelFilled} setFilled={covers ? undefined : setPanelFilled} share={shareBot} toggle={toggleDetails} />, bar.end) : null}
           {bar.title ? createPortal(<>
           <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title={tr('View conversation details')}>
             <HStack as="span" gap={7}>
@@ -241,17 +208,13 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       </div>
       <ChatSidePanel
         open={panelOpen}
-        filled={panelFilled}
-        width={panelWidth(detailsWidth)}
-        max={panelWidth(Infinity)}
-        onResize={(w) => setDetailsWidth(panelWidth(w))}
+        filled={panelFilled || covers}
+        width={panel.width}
+        max={panel.max}
+        onResize={(w) => setDetailsWidth(panel.fit(w))}
       >
         {details}
       </ChatSidePanel>
-
-      <Sheet open={compactDetails} onClose={() => setCompactDetails(false)} width={400} height={600}>
-        {details}
-      </Sheet>
       <Sheet open={botChat !== null} onClose={() => setBotChat(null)} width={620} height={560}>
         {botChat ? <BotConversationView botId={botId} peerId={botChat} /> : null}
       </Sheet>

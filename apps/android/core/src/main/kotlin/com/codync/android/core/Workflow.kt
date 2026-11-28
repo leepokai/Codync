@@ -105,6 +105,12 @@ data class WorkflowDetail(
     val graph: Graph = Graph(),
 )
 
+/** What the Workflows list's search finds: the [workflows] whose title holds [query] or whose id starts with it; all of them for a blank one. */
+fun workflowMatches(workflows: List<WorkflowSummary>, query: String): List<WorkflowSummary> {
+    val words = query.trim()
+    return if (words.isEmpty()) workflows else workflows.filter { it.title.contains(words, ignoreCase = true) || it.id.startsWith(words) }
+}
+
 @Serializable data class WorkflowList(val workflows: List<WorkflowSummary> = emptyList())
 
 @Serializable

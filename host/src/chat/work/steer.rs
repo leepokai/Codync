@@ -73,6 +73,8 @@ fn release(hub: &Hub, task: &mut Task, front: i64) -> Option<String> {
     let thread = task.thread.clone();
     if let Some(thread) = &thread {
         super::thread::carry(&hub.store, task, thread);
+        super::ask::forget(hub, thread);
+        super::ask_chat::forget(hub, thread);
     }
     task.set_aside(front);
     thread
@@ -195,6 +197,7 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
 /// Takes a waiting task, or one that ended, out of the box. A waiting routine run is cancelled, and the bot whose
 /// request waited hears it was.
 pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    super::archive::bring_back(hub, bot, id)?;
     let dropped = tasks::change(hub, bot, |tasks| {
         let task = find(tasks, id)?.clone();
         if task.status == Status::Working {
@@ -206,8 +209,9 @@ pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     if dropped.status == Status::Waiting {
         sources::deliver(hub, bot, &dropped);
     }
-    // A worktree it had from before it gave way goes with it, if nothing was done there.
+    // A worktree it had from before it gave way goes with it, if nothing was done there; so does a thread's own folder.
     super::worktree::leave(std::slice::from_ref(&dropped));
+    super::plain::forget_folders(std::slice::from_ref(&dropped));
     settle(hub, bot, None);
     Ok(())
 }
@@ -215,6 +219,7 @@ pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
 /// A stopped or failed task goes back to waiting, last. A routine's run isn't done again as it was: the routine
 /// runs again, as a new task.
 pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    super::archive::bring_back(hub, bot, id)?;
     let task = tasks::load(&hub.store, bot).into_iter().find(|i| i.id == id).ok_or_else(|| anyhow!("no such task"))?;
     if !matches!(task.status, Status::Stopped | Status::Failed) {
         bail!("only work that was stopped or failed can be tried again");

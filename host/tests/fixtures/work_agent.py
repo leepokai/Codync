@@ -1,14 +1,25 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
-In the chat: `ADD title|brief[|hold][|after=<title>][|folder=<path>]`, `STEER how|title[|brief, or the title that gives way]`,
-`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
+In the chat: `ADD title|brief[|hold][|after=<title>][|folder=<path>][|place=<here or worktree>]`, `STEER how|title[|brief, or the title that gives way]`,
+`TELL title|words[|now]` (passes words on to a task), `ASKTASK title|question` (asks a working task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
 `RECALL words` (looks back at the first task `recall_task` finds with them: its status, result and thread's steps). In a thread, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
-`NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
-one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
+`NEST` tries what a thread may not, `CHATQ:<question>;` asks its chat (`ask_chat`, its result logged to `ask_chat.jsonl`), `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
+one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `DETACH:<name>` starts a command in a
+session of its own (its pid in `detached.pid`) that writes `detached-done` once `release-<name>` is there, and ends its
+turn while that command still runs: asked by the host to wait for what it left running, it waits for `detached-done`
+and reports, or ends at once again with `AGAIN` in its brief. `WORKFLOW:<name>` (to a host that asked for
+`asyncTasks` in `initialize`, which `initialize.jsonl` logs, of an agent started with `tasks`) starts a workflow the way Claude's adapter reports one and
+ends its turn; once `release-<name>` is there the workflow ends and the agent begins a turn by itself that reports
+(`AFTER:<seconds>` in the brief: it ends after that long; `STOP`: the workflow is stopped instead, and no such turn
+follows; `JOIN`: the workflow ends as its
+turn does, and the agent's own turn begins before that turn's end and reports after it). `SERVE:<port>` (to such a host) runs a server on `port` the way Claude's adapter reports a background command. `LOOP` makes the same tool call six
 times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+A thread's question (`ask_chat`) the chat answers with `answer_task` (`Chat: <the question>`) and `(pass)`;
+`QUIET` in it: it doesn't answer; `DECIDE`: it tries `request_decision` first (logged to `chat_decision.jsonl`)
+and answers that only the user can decide.
 The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
@@ -25,7 +36,8 @@ and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
 Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
 session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
-ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
+ends with `joined <the message>`; the bot's question (`ask_task`) it answers at once with `Answer: <the question>` (`SLOW` in it: after 62 seconds), and
+a late answer's turn in the chat replies `Late: <the answer>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
 turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
 says `SIGNIN` does that once: its turn leaves a `sign-in-asked` file and fails asking to sign in, and the message,
@@ -36,9 +48,11 @@ import json
 import os
 import pathlib
 import re
+import socket
 import subprocess
 import sys
 import threading
+import time
 
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
@@ -48,6 +62,8 @@ if pathlib.Path("no-start").exists():
 
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
+# Like Claude's adapter, it reports its background work to a host that asks (`asyncTasks`).
+HAS_TASKS = "tasks" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
 # What the user's messages steered into the running turn said.
 joined = []
@@ -61,12 +77,18 @@ LONG_COMMAND = (
     "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
     " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
 )
+# What the thread's task left running in the background (`DETACH`), for the host's ask to wait for it.
+left = {}
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
 servers = []
 forked = set()
+# The host asked for the work it runs in the background (`asyncTasks`).
+reports_tasks = False
 count = 0
+# Prompts this process took so far, which `closed.jsonl` says of each session it closed.
+prompted = 0
 
 
 def send(value):
@@ -167,6 +189,11 @@ def work(text, session):
              "saw the chat" if "[The chat you come from, so far]" in text else "no chat"]
     if "set aside" in rest:
         notes.append("again")
+    asked = re.search(r"CHATQ:([^;]+);", brief)
+    if asked:
+        result = chat_tool("ask_chat", {"question": asked.group(1)})
+        log("ask_chat.jsonl", result)
+        notes.append(said(result, "Chat said: ")[:120])
     if "ASK" in brief:
         notes.append(ask())
     if "SHARE" in brief:
@@ -181,6 +208,46 @@ def work(text, session):
         notes.append(said(chat_tool("add_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
     if "TOUCH" in brief:
         pathlib.Path("made.txt").write_text("made by a thread", encoding="utf-8")
+    detach = re.search(r"DETACH:(\w+)", brief)
+    if detach:
+        # Like a review or `gh run watch` the agent left running in the background; gives up after a minute.
+        wait = f'i=0; while [ ! -e release-{detach.group(1)} ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done'
+        started = subprocess.Popen(["/bin/sh", "-c", f"{wait}; echo done > detached-done"], start_new_session=True,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pathlib.Path("detached.pid").write_text(str(started.pid), encoding="utf-8")
+        notes.append("started the review, waiting for it to finish")
+        left.update(title=title, again="AGAIN" in brief, detached=True)
+    workflow = re.search(r"WORKFLOW:(\w+)", brief)
+    if workflow and reports_tasks:
+        for update in (
+            {"sessionUpdate": "tool_call", "toolCallId": "workflow", "title": "Workflow", "kind": "other",
+             "status": "completed", "_meta": {"claudeCode": {"toolName": "Workflow"}}},
+            {"sessionUpdate": "async_task_spawned", "asyncTaskId": "w1", "name": "after-change", "taskType": "workflow",
+             "description": "after-change", "toolCallId": "workflow"},
+            {"sessionUpdate": "async_task_progress", "asyncTaskId": "w1", "description": "Review: diff"},
+        ):
+            send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+        if "JOIN" in brief:
+            # It ends as this turn does: the agent's own turn begins before this one's end and goes on after it.
+            ended = workflow_end(title, False)
+            send_updates(session, ended[:2])
+            threading.Thread(target=send_updates, args=(session, ended[2:], 0.5), daemon=True).start()
+        else:
+            after = re.search(r"AFTER:(\d+)", brief)
+            threading.Thread(target=run_workflow, daemon=True, args=(
+                session, workflow.group(1), title, "STOP" in brief, int(after.group(1)) if after else None)).start()
+        notes.append("started the workflow, waiting for it to finish")
+    serve = re.search(r"SERVE:(\d+)", brief)
+    if serve and reports_tasks:
+        # A dev server Claude runs in the background (`run_in_background`), left listening for the user.
+        server = pathlib.Path(__file__).with_name("port_server.py")
+        subprocess.Popen([sys.executable, str(server), serve.group(1)], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        while not listens(int(serve.group(1))):
+            time.sleep(0.05)
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "async_task_spawned", "asyncTaskId": "server", "name": "npm run dev", "taskType": "shell"}}})
+        notes.append("the dev server runs")
     if "LOOP" in brief:
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
@@ -215,6 +282,45 @@ def work(text, session):
     return f"Report {title}: " + "; ".join(notes)
 
 
+def listens(port):
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def run_workflow(session, name, title, stopped, after):
+    """The workflow `WORKFLOW:<name>` started: it ends once `release-<name>` is there, or `after` seconds."""
+    ends = time.monotonic() + after if after else None
+    while not pathlib.Path("release-" + name).exists() and not (ends and time.monotonic() > ends):
+        time.sleep(0.05)
+    send_updates(session, workflow_end(title, stopped))
+
+
+def workflow_end(title, stopped):
+    """The workflow's end, and the agent's own turn that answers it and reports (none after a stop)."""
+    updates = [{"sessionUpdate": "async_task_state_update", "asyncTaskId": "w1",
+                "state": "stopped" if stopped else "completed"}]
+    if not stopped:
+        updates += [
+            {"sessionUpdate": "async_task_spawned", "asyncTaskId": "turn-1", "name": "Claude is working",
+             "taskType": "turn", "description": 'Dynamic workflow "after-change" completed'},
+            {"sessionUpdate": "tool_call", "toolCallId": "merge", "title": "git merge", "kind": "execute",
+             "status": "completed"},
+            {"sessionUpdate": "agent_message_chunk",
+             "content": {"type": "text", "text": f"Report {title}: the workflow passed"}},
+            {"sessionUpdate": "async_task_state_update", "asyncTaskId": "turn-1", "state": "completed"},
+        ]
+    return updates
+
+
+def send_updates(session, updates, after=0):
+    time.sleep(after)
+    for update in updates:
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+
+
 def thread(text):
     """A thread's turn on what the user wrote to its thread."""
     words = re.findall(r"^\[Codync: message [^\]]+\]\n([^\n]*)", text, re.M)
@@ -227,10 +333,56 @@ def thread(text):
     return f"Thread {' + '.join(words)}: " + "; ".join(notes)
 
 
+ASKED = "[Codync: the bot that gave you this task asks you this"
+
+
+def answer_asked(session, question):
+    """The bot's question, steered into a running turn: one short message, closed by a step, then on with the task.
+    `SLOW` in it answers after the bot's call stopped waiting."""
+    if "SLOW" in question:
+        cancel.wait(62)
+    for update in ({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Answer: " + question}},
+                   {"sessionUpdate": "tool_call", "toolCallId": "after-answer", "title": "Go on", "status": "completed"}):
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+
+
+def chat_answer(text):
+    """The chat's turn on its thread's question (`ask_chat`): answers it with `answer_task`, then passes."""
+    task, question = re.search(r"\(([^)]+)\) asks you this while it works[^\n]*\n([^\n]*)", text).groups()
+    if "QUIET" in question:
+        return "(pass)"
+    answer = "Chat: " + question
+    if "DECIDE" in question:
+        log("chat_decision.jsonl", chat_tool("request_decision", {"question": "Deploy?", "options": ["Yes", "No"]}))
+        answer = "Only the user can decide that: ask them"
+    log("answer_task.jsonl", chat_tool("answer_task", {"task": task, "answer": answer}))
+    return "(pass)"
+
+
+def waited():
+    """The host asked it to wait for what it left running: it does and reports, or (`AGAIN`) ends at once again."""
+    if left.get("again"):
+        return "Still waiting for it"
+    while left.get("detached") and not pathlib.Path("detached-done").exists() and not cancel.wait(0.05):
+        pass
+    return f"Report {left.get('title')}: it finished, all green"
+
+
 def answer(text, session):
     """What this turn replies."""
+    if "[Codync: you ended your turn while" in text:
+        return waited()
+    if "[Codync: your background work" in text:
+        return "Report after the stop"
+    if ASKED in text:
+        # An agent that can't take it mid-turn: the question is a turn of its own.
+        return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
+    if "answered the question you asked it" in text:
+        return "Late: " + re.search(r"after your call stopped waiting\.\]\n([^\n]*)", text).group(1)
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
+    if "asks you this while it works" in text:
+        return chat_answer(text)
     if "[Codync: your task" in text:
         return relayed(text)
     if "[Codync: your chat passed this on" in text:
@@ -243,7 +395,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|ASKTASK|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -258,6 +410,8 @@ def answer(text, session):
                 arguments["after"] = task_id(flag.removeprefix("after="))
             if flag.startswith("folder="):
                 arguments["folder"] = flag.removeprefix("folder=")
+            if flag.startswith("place="):
+                arguments["place"] = flag.removeprefix("place=")
         added = said(chat_tool("add_task", arguments), "Added: ")
         while "hold" in flags and not cancel.wait(0.01):
             pass
@@ -277,6 +431,9 @@ def answer(text, session):
         title, words, *flags = rest.split("|")
         arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
         return said(chat_tool("tell_task", arguments), "Told: ")
+    if name == "ASKTASK":
+        title, question = rest.split("|", 1)
+        return said(chat_tool("ask_task", {"task": task_id(title), "question": question}), "Asked: ")
     if name == "RECALL":
         found = json.loads(chat_tool("recall_task", {"query": rest})["content"][0]["text"])["tasks"]
         if not found:
@@ -289,7 +446,7 @@ def answer(text, session):
 def prompt(request):
     session = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
-    log("prompts.jsonl", {"session": session, "text": text})
+    log("prompts.jsonl", {"session": session, "text": text, "pid": os.getpid()})
     if pathlib.Path("signedout").exists():
         send({"id": request["id"], "error": SIGNED_OUT})
         return
@@ -316,10 +473,15 @@ for line in sys.stdin:
     method = message.get("method")
     params = message.get("params") or {}
     if method == "initialize":
+        asked = params.get("clientCapabilities", {}).get("_meta", {}).get("jetbrains", {}).get("air", {})
+        reports_tasks = HAS_TASKS and "asyncTasks" in asked.get("capabilities", [])
+        log("initialize.jsonl", {"asyncTasks": "asyncTasks" in asked.get("capabilities", [])})
         initialized = {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
+            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}, "_meta": {}}
         if CAN_STEER:
-            initialized["_meta"] = {"steering": {"supported": True}}
+            initialized["_meta"]["steering"] = {"supported": True}
+        if reports_tasks:
+            initialized["_meta"]["jetbrains"] = {"air": {"version": 1, "capabilities": ["asyncTasks"]}}
         send({"id": message["id"], "result": initialized})
     elif method in ("session/new", "session/fork", "session/load"):
         servers = params.get("mcpServers", servers)
@@ -331,16 +493,22 @@ for line in sys.stdin:
             log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
+        log("closed.jsonl", {"session": params.get("sessionId"), "prompts": prompted})
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
+        prompted += 1
         cancel.clear()
         permission.clear()
         joined.clear()
         threading.Thread(target=prompt, args=(message,), daemon=True).start()
     elif method == "_session/steering" and CAN_STEER:
         # The user's words, between Codync's own lines (the message's id before them, a thread's note after).
-        words = [line for line in params["prompt"][0]["text"].splitlines() if line and not line.startswith("[Codync:")]
-        joined.append(words[-1])
+        text = params["prompt"][0]["text"]
+        words = [line for line in text.splitlines() if line and not line.startswith("[Codync:")]
+        if ASKED in text:
+            threading.Thread(target=answer_asked, args=(params["sessionId"], words[-1]), daemon=True).start()
+        else:
+            joined.append(words[-1])
         send({"id": message["id"], "result": {"outcome": "injected"}})
     elif method == "session/cancel":
         cancel.set()

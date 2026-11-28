@@ -34,18 +34,46 @@ pub fn level_detail(access: Access) -> &'static str {
     }
 }
 
-/// A new rule: each choice cycles through "any" and the names the network offers.
-#[derive(Default)]
+/// A new rule: each choice cycles through "any" and the names the network offers. The picks are
+/// ids, so a `network` event that reorders the choices under the form doesn't change them.
 pub struct RuleForm {
-    /// Index into [`LEVELS`].
-    pub access: usize,
-    /// Index into `NetworkSheet::rule_choices`; 0 is any.
-    pub from_computer: usize,
-    pub from_agent: usize,
-    pub to_agent: usize,
+    pub access: Access,
+    pub from_computer: String,
+    pub from_agent: String,
+    pub to_agent: String,
     /// Put it on top instead of after the others.
     pub first: bool,
     pub field: RuleField,
+}
+
+impl Default for RuleForm {
+    fn default() -> Self {
+        Self {
+            access: Access::Allow,
+            from_computer: ANY.into(),
+            from_agent: ANY.into(),
+            to_agent: ANY.into(),
+            first: false,
+            field: RuleField::default(),
+        }
+    }
+}
+
+/// The levels a rule to `to_agent` can take: a coding agent's session's are the ones the host
+/// sends with it (`levels`).
+pub fn levels(n: &NetworkSheet, to_agent: &str) -> Vec<Access> {
+    n.session_levels(to_agent).unwrap_or_else(|| LEVELS.to_vec())
+}
+
+/// How the form shows the pick `id` of `list`: its name, or the id itself once it's gone.
+pub fn label(list: &[(String, String)], id: &str) -> String {
+    list.iter().find(|c| c.0 == id).map_or_else(|| id.to_owned(), |c| c.1.clone())
+}
+
+/// The pick `by` steps from `id` in `list`.
+fn step<T: PartialEq + Clone>(list: &[T], at: &T, by: isize) -> T {
+    let i = list.iter().position(|x| x == at).unwrap_or(0);
+    list[cycle(i, by, list.len())].clone()
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
@@ -86,16 +114,28 @@ impl NetworkSheet {
         let mut computers = vec![any("Any computer")];
         computers.extend(others.iter().map(|c| (s(c, "name"), s(c, "name"))));
         let mut agents = vec![any("Any bot")];
-        if form.from_computer > 0
-            && let Some(c) = others.get(form.from_computer - 1)
-        {
+        if let Some(c) = others.iter().find(|c| c["name"] == form.from_computer.as_str()) {
             agents.extend(agents_of(c));
         }
         let mut mine = vec![any("Any bot here")];
         if let Some(me) = self.me() {
-            mine.extend(agents_of(me));
+            mine.extend(agents_of(me).into_iter().filter(|(id, _)| self.session_levels(id).is_none()));
         }
+        // This computer's coding agents' sessions, by address (a rule can only allow or deny them).
+        mine.extend(self.sessions().iter().map(|session| (s(session, "address"), s(session, "address"))));
         Choices { computers, agents, mine }
+    }
+
+    /// This computer's coding agents' sessions, in the order the host lists them.
+    pub fn sessions(&self) -> &[Value] {
+        self.view.as_ref().and_then(|v| v["sessions"].as_array()).map_or(&[], Vec::as_slice)
+    }
+
+    /// The levels a rule to `address` can take, when it is one of this computer's coding agents'
+    /// sessions.
+    fn session_levels(&self, address: &str) -> Option<Vec<Access>> {
+        let session = self.sessions().iter().find(|s| s["address"] == address)?;
+        Some(serde_json::from_value(session["levels"].clone()).unwrap_or_else(|_| vec![Access::Allow, Access::Deny]))
     }
 
     /// How a rule reads: "Deny: any bot on laptop → any bot here".
@@ -173,25 +213,29 @@ impl App {
             KeyCode::BackTab | KeyCode::Up => form.field = FIELDS[cycle(i, -1, FIELDS.len())],
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
                 let by = if k.code == KeyCode::Left { -1 } else { 1 };
+                let ids = |list: &[(String, String)]| list.iter().map(|c| c.0.clone()).collect::<Vec<_>>();
                 match form.field {
-                    RuleField::Access => form.access = cycle(form.access, by, LEVELS.len()),
+                    RuleField::Access => form.access = step(&levels(n, &form.to_agent), &form.access, by),
                     RuleField::FromComputer => {
-                        form.from_computer = cycle(form.from_computer, by, choices.computers.len());
-                        form.from_agent = 0;
+                        form.from_computer = step(&ids(&choices.computers), &form.from_computer, by);
+                        form.from_agent = ANY.into();
                     }
-                    RuleField::FromAgent => form.from_agent = cycle(form.from_agent, by, choices.agents.len()),
-                    RuleField::ToAgent => form.to_agent = cycle(form.to_agent, by, choices.mine.len()),
+                    RuleField::FromAgent => form.from_agent = step(&ids(&choices.agents), &form.from_agent, by),
+                    RuleField::ToAgent => {
+                        form.to_agent = step(&ids(&choices.mine), &form.to_agent, by);
+                        if !levels(n, &form.to_agent).contains(&form.access) {
+                            form.access = Access::Deny;
+                        }
+                    }
                     RuleField::First => form.first = !form.first,
                 }
             }
             KeyCode::Enter => {
-                let pick =
-                    |list: &[(String, String)], i: usize| list.get(i).map_or_else(|| ANY.to_owned(), |c| c.0.clone());
                 let rule = json!({
-                    "fromComputer": pick(&choices.computers, form.from_computer),
-                    "fromAgent": pick(&choices.agents, form.from_agent),
-                    "toAgent": pick(&choices.mine, form.to_agent),
-                    "access": LEVELS[form.access],
+                    "fromComputer": form.from_computer,
+                    "fromAgent": form.from_agent,
+                    "toAgent": form.to_agent,
+                    "access": form.access,
                 });
                 let mut rules: Vec<Value> = n.rules().to_vec();
                 if form.first {
@@ -243,10 +287,35 @@ mod tests {
             let Step::NewRule(next) = app.rule_form_key(&mut n, form, key(k)) else { panic!("still the form") };
             form = next;
         }
-        let choices = n.rule_choices(&form);
-        assert_eq!((LEVELS[form.access], choices.computers[form.from_computer].0.as_str()), (Access::Auto, "laptop"));
-        assert_eq!(choices.agents[form.from_agent].0, "coder", "only the laptop's agents once it's picked");
+        assert_eq!((form.access, form.from_computer.as_str()), (Access::Auto, "laptop"));
+        assert_eq!(form.from_agent, "coder", "only the laptop's agents once it's picked");
         assert!(matches!(app.rule_form_key(&mut n, form, key(KeyCode::Enter)), Step::Rules(_)));
         assert!(n.busy, "saved with setNetworkRules");
+    }
+
+    #[tokio::test]
+    async fn a_rule_to_a_session_only_allows_or_denies_and_keeps_its_pick() {
+        let mut app = test_app();
+        let mut n = owner();
+        let view = n.view.as_mut().unwrap();
+        view["sessions"] = json!([{"address": "api-codex"}, {"address": "web-claude"}]);
+        let mut form = RuleForm { access: Access::Ask, field: RuleField::ToAgent, ..RuleForm::default() };
+        while form.to_agent != "web-claude" {
+            let Step::NewRule(next) = app.rule_form_key(&mut n, form, key(KeyCode::Right)) else { panic!("the form") };
+            form = next;
+        }
+        assert!(n.rule_choices(&form).mine.iter().any(|c| c.0 == "api-codex"), "sessions are offered");
+        assert_eq!(form.access, Access::Deny, "a session can't be held to Ask");
+        form.field = RuleField::Access;
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            let Step::NewRule(next) = app.rule_form_key(&mut n, form, key(KeyCode::Right)) else { panic!("the form") };
+            form = next;
+            seen.push(form.access);
+        }
+        assert_eq!(seen, [Access::Allow, Access::Deny, Access::Allow]);
+        // A session listed before it doesn't move the pick.
+        n.view.as_mut().unwrap()["sessions"] = json!([{"address": "new-codex"}, {"address": "web-claude"}]);
+        assert_eq!(label(&n.rule_choices(&form).mine, &form.to_agent), "web-claude");
     }
 }

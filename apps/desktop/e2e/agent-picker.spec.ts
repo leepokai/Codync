@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach, steerBot } from './sandbox.ts'
+import { api, attach, openDetails, steerBot } from './sandbox.ts'
 
 type Hello = { backends: { id: string; name: string }[] }
 
@@ -16,8 +16,7 @@ test("the bot's settings pick its agent and login in the model panel's rail, eac
 
     botId = (await steerBot(page, name, 1)).id
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+    await openDetails(page, 'Settings')
     const field = page.locator('.details-panel .model-picker-field')
     await field.click()
     const rail = page.locator('.model-picker .model-picker-agent:not(.model-picker-add)')

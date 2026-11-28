@@ -1,5 +1,5 @@
 import { hasLibrary } from '@shared/artifacts'
-import { closeView, hasTerminal, isThreadTab, PANEL_VIEWS, panelLayout, showChooser, showView, threadTab, toggleSplit, type PanelView } from '@shared/panel-layout'
+import { closeView, hasTerminal, isThreadTab, multiView, PANEL_VIEWS, panelLayout, showChooser, showView, threadTab, toggleSplit, type PanelView } from '@shared/panel-layout'
 import { isGroup, isWorking, type Bot } from '@shared/models'
 import type { WorkTask } from '@shared/work'
 import type { ReactNode } from 'react'
@@ -17,10 +17,9 @@ import { MemoryCard } from '../bots/MemoryView'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { DevServersSection } from './DevServersSection'
-import { BrowserTab } from './BrowserTab'
-import { TerminalTab } from './TerminalTab'
+import { closeTerminal } from './TerminalTab'
 import { ComputerTab } from './ComputerTab'
-import { PanelPane, type PaneView } from './PanelPane'
+import { MultiTab, multiTabViews, PanelPane, type PaneView } from './PanelPane'
 import { ThreadChat } from './ThreadChat'
 import { NO_BAR_SLOTS, WindowBarSlots } from '../WindowBar'
 import { WorkTimeline } from './WorkTimeline'
@@ -74,6 +73,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
   /** The bot's chat, as a view beside `thread`. */
   sideChat?: ReactNode
 }) {
+  const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
   const group = !!bot && isGroup(bot)
@@ -83,9 +83,11 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
   const own = PANEL_VIEWS.filter((v) => (v.id !== 'library' || hasLibrary(host)) && (v.id !== 'terminal' || hasTerminal(host)))
   // The bot's threads open as tabs too, named by their task; a thread's tab goes with its task.
   const threads = (bot?.work ?? []).filter((t) => t.thread && t.id !== thread?.id)
-  const views: PaneView[] = [...own, ...(sideChat ? [SIDE_CHAT] : []), ...threads.map((t) => ({ id: threadTab(t.id), label: t.title, icon: 'arrow.triangle.branch', verbatim: true }))]
+  const fixed: PaneView[] = [...own, ...(sideChat ? [SIDE_CHAT] : []), ...threads.map((t) => ({ id: threadTab(t.id), label: t.title, icon: 'arrow.triangle.branch', verbatim: true }))]
   const [stored, setStored] = usePref(prefs.panelLayout)
-  const layout = panelLayout(stored, (tab) => views.some((v) => v.id === tab))
+  const layout = panelLayout(stored, (tab) => fixed.some((v) => v.id === tab))
+  // Browsers and terminals open as many tabs as are picked.
+  const views = [...fixed, ...multiTabViews(layout.flatMap((p) => p.tabs), own, tr)]
   const view = (id: string, at: number) =>
     !bot ? null : id === 'details' ? (
       <WorkTimeline bot={bot} openCard={openCard} openThread={(taskId) => setStored(showView(layout, threadTab(taskId), at))}>
@@ -118,6 +120,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
             <div className="details-panes">
               {layout.map((pane, at) => {
                 const task = tabTask(pane.shown)
+                const multi = pane.shown ? multiView(pane.shown) : null
                 return (
                 <PanelPane
                   key={at}
@@ -129,13 +132,15 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
                     <IconButton title="Split panel" icon="rectangle.split.1x2" size={26} onClick={splitPanel} />
                     <IconButton title="Close details" icon="xmark" size={26} onClick={close} />
                   </>}
-                  flush={pane.shown === 'browser' || pane.shown === 'terminal' || pane.shown === SIDE_CHAT.id || !!task}
+                  flush={!!multi || pane.shown === SIDE_CHAT.id || !!task}
                   show={(id) => setStored(showView(layout, id, at))}
-                  close={(id) => setStored(closeView(layout, at, id))}
+                  close={(id) => {
+                    closeTerminal(store.client, id)
+                    setStored(closeView(layout, at, id))
+                  }}
                   choose={() => setStored(showChooser(layout, at))}
                 >
-                  {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} />
-                    : pane.shown === 'terminal' ? <TerminalTab key={thread?.thread ?? bot.id} bot={bot} thread={thread?.thread} />
+                  {multi ? <MultiTab bot={bot} thread={thread?.thread} tab={pane.shown!} />
                     : pane.shown === SIDE_CHAT.id ? sideChat
                     : task ? /* No window's bar here: the thread's status shows in the tab. */ <WindowBarSlots.Provider key={task.id} value={NO_BAR_SLOTS}><ThreadChat bot={bot} task={task} openChat={() => openCard(task.id)} /></WindowBarSlots.Provider>
                     : pane.shown ? <div key={pane.shown} className="details-tab fade-in">{view(pane.shown, at)}</div> : null}

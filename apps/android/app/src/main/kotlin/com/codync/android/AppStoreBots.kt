@@ -178,11 +178,24 @@ internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, tim
     }
     try { return request.await() } finally { request.cancel() }
 }
-/** [loginProfile]: the login profile to list them for; null for the default login. */
-suspend fun AppStore.agentModels(backend: String, loginProfile: String?): AgentModels {
-    val response = hostQuery("agentModels", body("backend" to backend, "loginProfile" to loginProfile), timeoutMillis = 300_000)
-    return WireJson.decodeFromJsonElement(response)
+/**
+ * [loginProfile]: the login profile to list them for; null for the default login. The computer answers with the list it
+ * kept when it has one; [refresh] waits for a new one. The answer is kept in [AppState.modelLists] too.
+ */
+suspend fun AppStore.agentModels(backend: String, loginProfile: String?, refresh: Boolean = false): AgentModels {
+    val request = body("backend" to backend, "loginProfile" to loginProfile).let { if (refresh) JsonObject(it + ("refresh" to JsonPrimitive(true))) else it }
+    val models = WireJson.decodeFromJsonElement<AgentModels>(hostQuery("agentModels", request, timeoutMillis = 300_000))
+    keepModels(backend, loginProfile, models)
+    return models
 }
+/** The `models` events: a list the computer read that differs from the one it kept. */
+internal fun AppStore.receiveModels(events: List<MirrorEvent>) {
+    for (event in events.filterIsInstance<MirrorEvent.Models>()) keepModels(event.backend, event.loginProfile, event.models)
+}
+private fun AppStore.keepModels(backend: String, loginProfile: String?, models: AgentModels) =
+    mutableState.update { it.copy(modelLists = it.modelLists + (modelListKey(backend, loginProfile) to models)) }
+/** Where [AppState.modelLists] keeps an agent login's list. */
+internal fun modelListKey(backend: String, loginProfile: String?) = "$backend/${loginProfile.orEmpty()}"
 /** A forced usage read that returns when it's done, for pull to refresh. */
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
@@ -266,6 +279,35 @@ internal fun AppStore.setAutoOrder(on: Boolean) {
 /** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
 internal fun AppStore.showAutoOrder(on: Boolean) =
     mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
+
+/** How many days after a thread last finished the computer deletes it, 0 for never (iOS `threadKeepDays`); missing from older hosts. */
+internal fun threadKeepDays(hello: JsonObject?): Int? = hello?.get("threadKeepDays")?.jsonPrimitive?.intOrNull
+
+/** The choices of Delete old threads: never or after so many days, with a number the computer has that they don't. */
+internal fun threadKeepChoices(days: Int): List<Pair<Int, String>> =
+    (listOf(0, 7, 30, 90) + days).distinct().sorted().map { it to if (it == 0) "Keep forever" else "After $it days" }
+
+/** Sets how long the computer keeps ended threads, shown at once and put back if the computer refuses (iOS `setThreadKeepDays`). */
+internal fun AppStore.setThreadKeepDays(days: Int) {
+    val was = threadKeepDays(state.value.hello) ?: return
+    if (was == days) return
+    showThreadKeepDays(days)
+    command("setThreadKeepDays", buildJsonObject { put("days", days) }, "threadKeepDays", onFailure = { showThreadKeepDays(was) })
+}
+
+/** Delete old threads as chosen here. A new choice may have deleted older threads, so they're read again. */
+internal fun AppStore.showThreadKeepDays(days: Int) = mutableState.update { it.withThreadKeepDays(days) }
+
+/** The computer's `threadKeepDays` event: sent once it deleted threads, the choice the same or not. */
+internal fun AppStore.heardThreadKeepDays(days: Int) = mutableState.update { it.heardThreadKeepDays(days) }
+
+internal fun AppState.withThreadKeepDays(days: Int): AppState {
+    val hello = hello ?: return this
+    return if (threadKeepDays(hello) == days) this
+    else copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days)))).droppingOlderThreads()
+}
+
+internal fun AppState.heardThreadKeepDays(days: Int): AppState = withThreadKeepDays(days).droppingOlderThreads()
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

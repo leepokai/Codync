@@ -108,8 +108,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "routineFolder": true,
                 // Bots have `projects` and `worktreeMode`, and `add_task` takes a folder.
                 "projects": true,
+                // `startThread`'s `setup.place` (`here` | `worktree`) picks where a thread works over its bot's worktree mode.
+                "threadPlace": true,
+                // A new worktree gets the main checkout's `.worktreeinclude` files and the bot's `sharedFolders` linked.
+                "worktreeFill": true,
+                // A thread without a bot and no folder picked works in a folder of its own: the app sends no `cwd`.
+                "threadFolders": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // How many days after it last ended a thread is deleted, 0 never (`setThreadKeepDays`); a host that
+                // says it also lists older threads (`olderThreads`).
+                "threadKeepDays": crate::chat::work::archive::keep_days(&hub.store),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
                 "credentialsReset": !crate::remote::managed::is_managed(&hub.store),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
@@ -218,7 +227,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"term": term})
         }
         "agentModels" => {
-            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?).await?
+            use crate::agent::auth::ModelListWanted;
+            let wanted = if b["refresh"] == true { ModelListWanted::New } else { ModelListWanted::Kept };
+            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?, wanted).await?
         }
         // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
         "agentAuth" if b["loginProfile"].is_string() => {
@@ -317,6 +328,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setComputerName" => {
             crate::remote::managed::rename(hub, b["name"].as_str().unwrap_or_default())?;
             json!({"name": crate::remote::managed::computer_name(&hub.store)})
+        }
+        "setThreadKeepDays" => {
+            let days = b["days"].as_u64().and_then(|d| u32::try_from(d).ok()).context("days must be a whole number")?;
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || crate::chat::work::archive::set_keep_days(&hub, days)).await??;
+            json!({"days": days})
         }
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;

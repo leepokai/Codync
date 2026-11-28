@@ -52,31 +52,15 @@ onFlowComplete:
 - tapOn: "Always"
 - assertVisible: ".*Every thread works in a worktree of its own.*"
 # Another repository (ADD_DIR, inside PROJECT_DIR) added with the folder picker goes under the default; Make default
-# puts it first, and the host keeps that order. The iPhone's picker opens in the default project, so ADD_DIR is a
-# folder there; Android's opens in the computer's home folder, so its path is typed.
+# puts it first, and the host keeps that order. The picker opens in the default project on both phones, so ADD_DIR is a
+# folder there.
 - tapOn: "Add project"
 - tapOn:
     text: "Browse other folders"
     optional: true
-- runFlow:
-    when:
-      platform: iOS
-    commands:
-      - scrollUntilVisible:
-          element: ${output.added}
-      - tapOn: ${output.added}
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - tapOn: "Enter folder path"
-      # The path field, filled with the folder on show (the breadcrumb's parts hold one slash each).
-      - tapOn:
-          text: "/.+/.+"
-          index: 0
-      - eraseText: 200
-      - inputText: ${ADD_DIR}
-      - tapOn: "Go to folder"
+- scrollUntilVisible:
+    element: ${output.added}
+- tapOn: ${output.added}
 - tapOn: "Use this folder"
 - scrollUntilVisible:
     element: "Make default"
@@ -86,6 +70,9 @@ onFlowComplete:
     file: own-folder.js
     env:
       DEFAULT_IS: ${ADD_DIR}
+# Cancel closes the picker without adding anything.
+- tapOn: "Add project"
+- tapOn: "Cancel"
 - tapOn: "Remove project"
 # Without a project in a git repository there is no worktree to make.
 - tapOn: "Remove project"

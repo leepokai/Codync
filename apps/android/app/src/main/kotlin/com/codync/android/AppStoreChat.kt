@@ -42,18 +42,17 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
-/** Opens [botId]'s chat with its details over it, at the thread of its task [taskId] when one is named; the chat takes the request (`takeDetailsRequest`). */
-internal fun AppStore.openDetails(botId: String, taskId: String? = null) {
+/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String) {
     openBot(botId)
-    mutableState.update { it.copy(detailsRequest = botId to taskId) }
+    mutableState.update { it.copy(detailsRequest = botId) }
 }
 
 /** Once: what [botId]'s details were asked to open on, or null when they weren't. */
 internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
-    val (asked, taskId) = state.value.detailsRequest ?: return null
-    if (asked != botId) return null
+    if (state.value.detailsRequest != botId) return null
     mutableState.update { it.copy(detailsRequest = null) }
-    return DetailsRequest(taskId = taskId)
+    return DetailsRequest()
 }
 
 /** Opens [botId]'s chat at the card its [task] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
@@ -81,6 +80,19 @@ internal fun AppStore.pageToCard(botId: String, task: WorkTask) = action(history
     } finally {
         if (!found() && state.value.cardRequest == (botId to task)) takeCardRequest(botId)
     }
+}
+
+/**
+ * Keeps [botId]'s chat in memory while one of its threads is open outside it, for what the thread put there, and pages
+ * it back for the card [task] waits on (null: none) while the rows loaded don't hold it (desktop `cardOf`, iOS
+ * `card(for:in:)`).
+ */
+internal fun AppStore.holdChat(botId: String, task: WorkTask?) = action(historyKey(botId)) {
+    residents.touch(botId)
+    refresh()
+    if (task == null) return@action
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, task) != null }
+    pageUntil(found, more = { botId !in state.value.historyEnd }) { pageHistory(botId) }
 }
 
 /** How many older pages opening a task's card loads to find it, like the iPhone. */
@@ -167,10 +179,11 @@ private suspend fun AppStore.pageHistory(id: String) {
     if (!withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) } && !fetchHistoryPage(id, before)) return
     // The older rows are on the phone now. The window grows over them whatever they hold, so a page of only tool or
     // thought rows moves the chat too.
-    if (state.value.selectedBot == id) windows[id] = residency().widened(id)
+    // ponytail: a thread's chat held outside it ([holdChat]) keeps its widened window until the store resets; drop it as the thread closes if memory shows.
+    windows[id] = residency().widened(id)
     refresh()
     // The window grew and the same rows came back: this chat's memory budget is spent.
-    if (floors[id] == before && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
+    if (floors[id] == before) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
 }
 
 /** Stores the computer's page of [id]'s rows older than [before]. Whether it held any. */

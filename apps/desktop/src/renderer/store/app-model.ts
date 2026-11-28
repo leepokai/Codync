@@ -147,7 +147,7 @@ export class AppModel extends Observable {
       this.changed()
     }
     store.onRosterChanged = () => this.changed()
-    store.onAlert = ({ botId, kind, title, body }) => window.codync.notifications.show({ ref: refKey({ computerId: computer.id, botId }), kind, title, body })
+    store.onAlert = ({ botId, workflowId, ...alert }) => window.codync.notifications.show({ ref: refKey({ computerId: computer.id, botId }), ...alert, workflowId })
     // Kit views select a new bot on their own store; that becomes the window's selection.
     this.storeSubscriptions.set(computer.id, store.subscribe(() => {
       if (store.selection) {

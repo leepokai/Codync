@@ -176,13 +176,7 @@ pub fn mark_started(hub: &Hub, step_id: &str) -> Result<()> {
     // The step is inserted with no start time. Without this event the canvas
     // keeps saying "Waiting 0s" until the reply arrives.
     if let Some((run, workflow)) = placed {
-        hub.emit_workflow(json!({
-            "type": "workflow",
-            "change": "step",
-            "workflowId": workflow,
-            "runId": run,
-            "stepId": step_id,
-        }));
+        run::emit_step(hub, &workflow, run.as_deref(), step_id);
     }
     Ok(())
 }
@@ -239,13 +233,7 @@ pub fn settle(
             run::dispatch_pushes(hub, &effects);
         }
     }
-    hub.emit_workflow(json!({
-        "type": "workflow",
-        "change": "step",
-        "workflowId": workflow,
-        "runId": run,
-        "stepId": step_id,
-    }));
+    run::emit_step(hub, &workflow, run.as_deref(), step_id);
     Ok(Settled { keep, replay })
 }
 

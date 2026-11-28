@@ -80,6 +80,7 @@ extension BotStore {
         guard epoch == iconsEpoch else { return }
         iconsRevision = -1
         hello = h
+        resetOlderThreads()
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteSyncStamp(Self.syncStamp(h))
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
@@ -171,6 +172,8 @@ extension BotStore {
             call.hear(cue)
         case let .usage(u):
             setUsage(u)
+        case let .models(backend, loginProfile, list):
+            keepModels(list, for: AgentLogin(backend: backend, loginProfile: loginProfile))
         case let .screen(s):
             screen = s
         case let .network(view):
@@ -179,6 +182,9 @@ extension BotStore {
             hello?.name = name
         case let .autoOrder(on):
             hello?.autoOrder = on
+        case let .threadKeepDays(days):
+            hello?.threadKeepDays = days
+            resetOlderThreads()
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

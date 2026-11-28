@@ -32,6 +32,7 @@ impl Actor {
                 self.conn = None;
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
+                self.background_lost();
             }
             Some(Incoming::Update(update)) => {
                 if !self.on_session_wide(&update)
@@ -53,13 +54,14 @@ impl Actor {
     }
 
     /// Any session's update, turn or not, about the agent rather than a reply: an option or mode the agent changed
-    /// itself, or its commands. Returns whether it was one.
+    /// itself, its commands, or work it runs in the background. Returns whether it was one.
     pub(super) fn on_session_wide(&mut self, update: &Update) -> bool {
         let sid = update.session.as_deref();
         match (&update.event, sid) {
             (Event::ConfigOptions(options), Some(sid)) => self.note_options(sid, options, Listing::Update),
             (Event::ModeChanged { mode }, Some(sid)) => self.note_current_mode(sid, mode.as_deref()),
             (Event::Commands(commands), _) => self.note_commands(commands),
+            (Event::Task(task), sid) => self.on_task(task.clone(), sid),
             _ => return false,
         }
         true
@@ -431,8 +433,25 @@ impl Actor {
     }
 
     pub(super) fn close_seg(&mut self) {
+        self.end_seg(true);
+    }
+
+    /// Closes the open segment. `mid_turn`: more of the turn may follow, so a message that answers the bot's question
+    /// isn't the turn's report; at the turn's end (`close_attempt`) it stands as that too, the turn's last text.
+    pub(super) fn end_seg(&mut self, mid_turn: bool) {
         self.flush(true);
-        self.seg = Seg::None;
+        let text = match std::mem::replace(&mut self.seg, Seg::None) {
+            Seg::Open { kind: SegKind::Text, entry_id, buf, .. } if !buf.trim().is_empty() => Some((entry_id, buf)),
+            _ => None,
+        };
+        // A thread's message that answers its bot's question (`ask_task`) goes to the bot, not into its report.
+        if let Some((entry_id, text)) = text
+            && crate::chat::work::ask::answered(&self.hub, &self.cfg, &text)
+            && mid_turn
+            && self.last_text.as_deref() == Some(entry_id.as_str())
+        {
+            self.last_text = None;
+        }
     }
 }
 

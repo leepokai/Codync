@@ -78,7 +78,7 @@ onFlowComplete:
 - assertVisible: ".*and the tests.*"
 - assertNotVisible: "Send now"
 - takeScreenshot: task-seat-told
-- tapOn: "Back to details"
+- runFlow: subflows/thread-back.yaml
 - tapOn: "Close details"
 # Answered, the asking task goes on and reports.
 - tapOn: "Allow once"

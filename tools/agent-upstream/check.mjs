@@ -75,7 +75,7 @@ async function scriptedTurn(backend, mode) {
   mock.on({ predicate: () => true }, respond);
   const root = mkdtempSync(path.join(tmpdir(), "cu-"));
   await mock.start();
-  const [home, data, folder] = ["h", "d", "w"].map((dir) => path.join(root, dir));
+  const [home, data] = ["h", "d"].map((dir) => path.join(root, dir));
   const port = String(19500 + Math.floor(Math.random() * 400));
   let host;
   let log = "";
@@ -91,8 +91,7 @@ async function scriptedTurn(backend, mode) {
     return JSON.parse(text || "null");
   };
   try {
-    for (const dir of [home, data, folder]) mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
+    for (const dir of [home, data]) mkdirSync(dir, { recursive: true });
     const base = { ...withoutCredentials(process.env), HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev" };
     const env = { ...base, ...pointAtMock(backend, { url: mock.url, home, env: base }) };
     host = spawn(hostBin, ["serve", "--bind", "127.0.0.1", "--port", port], { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -105,7 +104,10 @@ async function scriptedTurn(backend, mode) {
       if (i > 90) throw new Error(`${backend} never became available`);
       await sleep(2000);
     }
-    const { bot } = await api("createBot", { name: "Upstream check", backend, cwd: folder, ...(mode ? { mode } : {}) });
+    // A bot works in its own folder, which the host makes: the command writes there.
+    const { bot } = await api("createBot", { name: "Upstream check", backend, ...(mode ? { mode } : {}) });
+    const folder = bot.cwd;
+    writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
     const approving = approveCards(api, bot.id);
     const sent = await run(hostBin, ["send", "--port", port, "--bot", bot.id, "--wait", "--timeout", String(TURN_TIMEOUT_SECONDS), "--json", PROMPT], { env })
       .catch((error) => error);

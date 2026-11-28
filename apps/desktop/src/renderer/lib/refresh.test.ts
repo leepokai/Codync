@@ -121,6 +121,28 @@ test("another device's auto order switch shows here", async () => {
   store.retire()
 })
 
+test("another device's choice of when old threads are deleted shows here", async () => {
+  let send!: (event: object) => void
+  const ready = deferred()
+  const store = sync({
+    call: async () => ({ version: '2.55.0', name: 'Test', backends: [], threadKeepDays: 0 }),
+    stream: (_path, onData) => { send = (event) => onData(JSON.stringify(event)); ready.resolve(); return () => {} },
+  })
+  store.start()
+  await ready.promise
+  assert.equal(store.hello?.threadKeepDays, 0)
+  store.olderThreads.rows = [{ id: 'a', botId: 'b1' } as (typeof store.olderThreads.rows)[number]]
+  send({ type: 'threadKeepDays', days: 30 })
+  assert.equal(store.hello?.threadKeepDays, 30)
+  // What the new choice no longer keeps is gone on the computer: the older list loads again.
+  assert.deepEqual(store.olderThreads.rows, [])
+  // The daily look deleted some under the same choice: listed again too.
+  store.olderThreads.rows = [{ id: 'a', botId: 'b1' } as (typeof store.olderThreads.rows)[number]]
+  send({ type: 'threadKeepDays', days: 30 })
+  assert.deepEqual(store.olderThreads.rows, [])
+  store.retire()
+})
+
 /**
  * A store over a cache synced under `stamp` (by default, one an older app left): "gone" and "kept" from the
  * computer and a message that didn't send, with each events stream it opens.

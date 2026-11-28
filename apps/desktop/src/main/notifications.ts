@@ -21,7 +21,7 @@ function show(alert: DesktopAlert, send: (command: WindowCommand) => void, repor
   const forget = () => void shown.delete(notification)
   notification.on('click', () => {
     forget()
-    send({ kind: 'openAlert', ref: alert.ref, alert: alert.kind })
+    send({ kind: 'openAlert', ref: alert.ref, alert: alert.kind, workflowId: alert.workflowId })
   })
   notification.on('close', forget)
   notification.on('failed', (_e, error) => {

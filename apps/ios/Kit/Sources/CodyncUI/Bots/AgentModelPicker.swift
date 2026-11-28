@@ -35,39 +35,15 @@ struct AgentModelPicker: View {
     @State private var stage = Stage.closed
     @State private var query = ""
     @Environment(BotStore.self) private var store
-    @State private var catalog: AgentModels?
-    @State private var catalogScope: String?
+    @State private var models = AgentModelCatalog()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var loading = false
-    @State private var failure: String?
-    @State private var retry = 0
     @State private var adding: Backend?
 
-    private var requestKey: String {
-        "\(store.computer.id)/\(backend)/\(loginProfile ?? "")/\(store.connection == .online)/\(retry)"
-    }
-
-    /// The agent's own "Default (recommended)" entry is the same choice as leaving the model unset,
-    /// so it folds into the single Default row instead of showing twice.
-    private var agentDefault: AgentModels.Model? {
-        catalog?.models.first { $0.name.lowercased().hasPrefix("default") }
-    }
-
-    private var modelChoices: [(String, String)] {
-        let available = (catalog?.models ?? []).filter { $0.id != agentDefault?.id }
-        let current = available.first { $0.id == catalog?.currentModelId }?.name
-        var result = [("", agentDefault?.name ?? current.map { "Default · \($0)" } ?? "Default")]
-        result += available.map { ($0.id, $0.name) }
-        if let selection, !selection.isEmpty, selection != agentDefault?.id,
-           !available.contains(where: { $0.id == selection }) {
-            result.append((selection, selection))
-        }
-        return result
-    }
+    private var modelChoices: [(String, String)] { AgentModels.choices(models.catalog, selection: selection).map { ($0.id, $0.name) } }
 
     private var value: Binding<String> {
         Binding(
-            get: { selection == agentDefault?.id ? "" : selection ?? "" },
+            get: { AgentModels.listValue(models.catalog, model: selection) },
             set: {
                 let model = $0.isEmpty ? nil : $0
                 guard model != selection else { return }
@@ -78,19 +54,13 @@ struct AgentModelPicker: View {
     }
 
     /// Settings the selected model offers.
-    private var selectedModel: AgentModels.Model? {
-        catalog?.models.first { $0.id == (selection ?? agentDefault?.id ?? catalog?.currentModelId) }
-    }
+    private var selectedModel: AgentModels.Model? { AgentModels.selected(models.catalog, model: selection) }
 
-    private var modelOptions: [AgentModels.Option] {
-        guard !value.wrappedValue.isEmpty || catalog?.defaultModelOptions == true else { return [] }
-        return selectedModel?.options ?? []
-    }
+    private var modelOptions: [AgentModels.Option] { AgentModels.settings(models.catalog, model: selection) }
 
     private var showsFastMode: Bool {
         guard let fastMode else { return false }
-        return (backend != "custom" && catalog?.fastMode == true) || fastMode.wrappedValue
-            || (bot?.backend == backend && bot?.fastModeShown == true)
+        return AgentModels.showsFast(models.catalog, backend: backend, on: fastMode.wrappedValue, bot: bot)
     }
 
     private var current: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
@@ -168,14 +138,16 @@ struct AgentModelPicker: View {
                     SwitchRow("Fast mode", detail: bot?.fastModeRefusal, isOn: fastMode)
                 }
                 if let error = selectedModel?.optionsError { Text(error).font(.caption).foregroundStyle(Palette.warning) }
-                if let failure { Text(L10n.tr(failure)).font(.caption).foregroundStyle(Palette.warning) }
+                if let failure = models.failure { Text(L10n.tr(failure)).font(.caption).foregroundStyle(Palette.warning) }
                 if fastMode != nil {
                     Text(L10n.tr("Changing the model starts a new agent session. Chat history is kept."))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
             }
         }
-        .task(id: requestKey) { await load() }
+        .task(id: models.key(store, backend: backend, loginProfile: loginProfile)) {
+            await models.load(store, backend: backend, loginProfile: loginProfile, animation: Motion.reduced(Motion.fade, reduceMotion))
+        }
         .codyncSheet(item: $adding) { AgentSheet(initial: $0) }
         .onAppear { if expanded, stage == .closed { stage = .settings } }
     }
@@ -214,7 +186,7 @@ struct AgentModelPicker: View {
             }
             .scrollEdges()
             .frame(maxHeight: 180)
-            if stage == .models, backend == "custom" || (!loading && catalog?.models.isEmpty != false) {
+            if stage == .models, backend == "custom" || (!models.loading && models.catalog?.models.isEmpty != false) {
                 TextField("Default", text: value).plainTextInput().fieldBox()
             }
         }
@@ -244,46 +216,21 @@ struct AgentModelPicker: View {
     /// Loading and refresh share one fixed slot, so the row never grows for loading.
     private var refreshControl: some View {
         ZStack {
-            IconButton(failure == nil ? "Refresh model list" : "Retry model list", systemImage: "arrow.clockwise") {
-                retry += 1
+            IconButton(models.failure == nil ? "Refresh model list" : "Retry model list", systemImage: "arrow.clockwise") {
+                models.retry += 1
                 onReload?()
             }
-            .opacity(loading ? 0 : 1)
-            .disabled(loading)
-            .accessibilityHidden(loading)
-            if loading {
+            .opacity(models.loading ? 0 : 1)
+            .disabled(models.loading)
+            .accessibilityHidden(models.loading)
+            if models.loading {
                 Spinner(size: 12)
                     .accessibilityLabel("Loading available models")
                     .transition(.opacity)
             }
         }
         .frame(width: 36, height: 36)
-        .animation(Motion.reduced(Motion.fade, reduceMotion), value: loading)
-    }
-
-    @MainActor private func load() async {
-        let scope = "\(store.computer.id)/\(backend)/\(loginProfile ?? "")"
-        if catalogScope != scope {
-            catalog = nil
-            catalogScope = scope
-        }
-        failure = nil
-        loading = false
-        guard backend != "custom" else { return }
-        guard store.connection == .online, let client = store.client else {
-            failure = "Connect to this computer to load its models. You can still enter a model ID."
-            return
-        }
-        loading = true
-        do {
-            let response = try await client.agentModels(backend, loginProfile: loginProfile)
-            try Task.checkCancellation()
-            withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { catalog = response }
-        } catch {
-            guard !Task.isCancelled else { return }
-            failure = "Couldn't load models: \(error.localizedDescription)"
-        }
-        loading = false
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: models.loading)
     }
 }
 

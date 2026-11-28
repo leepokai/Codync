@@ -114,6 +114,9 @@ export interface Bot {
   projectGitRepos: boolean[]
   /** When its threads get a worktree; null from a host before projects (it has `threadWorktrees`). */
   worktreeMode: WorktreeMode | null
+  /** Per project (its path), the folders of its main checkout linked into each new worktree of it (`node_modules`);
+   * null from a host before them (`hello.worktreeFill`). */
+  sharedFolders: Record<string, string[]> | null
   /** Git is on the bot's computer; a host that doesn't say counts as having it. */
   gitInstalled: boolean
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
@@ -196,6 +199,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     projects: raw.projects ?? [],
     projectGitRepos: raw.projectGitRepos ?? [],
     worktreeMode: raw.worktreeMode ?? null,
+    sharedFolders: raw.sharedFolders ?? null,
     gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
@@ -729,6 +733,9 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** Days after a thread last ended that the computer deletes it, 0 never (`setThreadKeepDays`); it lists older threads
+   * (`olderThreads`). Absent from older hosts. */
+  threadKeepDays?: number
   /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
   startThread?: boolean
   /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */
@@ -747,6 +754,12 @@ export interface Hello {
   workflows?: boolean
   /** Bots have `projects` and `worktreeMode`, and `cwd` is always the bot's own folder. */
   projects?: boolean
+  /** A new thread may name its place in a git project (`startThread` with `setup.place`). */
+  threadPlace?: boolean
+  /** Bots have `sharedFolders`, linked into each new worktree of their projects. */
+  worktreeFill?: boolean
+  /** A thread without a bot sent no `cwd` gets a folder of its own (an older host: the home folder). */
+  threadFolders?: boolean
 }
 
 export interface PairingInfo {
@@ -914,6 +927,8 @@ export interface BotDraft {
   projects?: string[]
   /** Left out for a host before projects. */
   worktreeMode?: WorktreeMode
+  /** The whole map, per project; left out for a host before shared folders. */
+  sharedFolders?: Record<string, string[]>
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -949,6 +964,7 @@ export function draftOf(bot: Bot): BotDraft {
     ...(bot.worktreeMode === null
       ? { threadWorktrees: bot.threadWorktrees ?? undefined }
       : { projects: bot.projects, worktreeMode: bot.worktreeMode }),
+    ...(bot.sharedFolders === null ? {} : { sharedFolders: bot.sharedFolders }),
   }
 }
 

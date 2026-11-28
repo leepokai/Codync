@@ -16,7 +16,7 @@ use super::{
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::network::Recipient;
-use crate::network::sessions::{Caller, Session};
+use crate::network::sessions::{Caller, Live, Session};
 use crate::remote::cloud::{self, CloudStatus};
 use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Result, anyhow, bail};
@@ -157,10 +157,21 @@ impl Asker {
     /// The caller's session, registered with its address on its first call.
     async fn session(hub: &Hub, caller: &Caller) -> Result<Self> {
         let looking = caller.clone();
-        let (info, base) = tokio::task::spawn_blocking(move || looking.look()).await?;
+        let (info, base, running) = tokio::task::spawn_blocking(move || {
+            let (info, base) = looking.look();
+            (info, base, looking.running())
+        })
+        .await?;
+        // It calls, so it runs: online where its agent doesn't say more and its process can be told.
+        let live = Live::of_busy(info.busy).or(running.is_some().then_some(Live::Online));
         let owner = format!("session:{}", caller.key());
         let reserve = || hub.network.reserve(&hub.store, &base, &owner);
-        let (s, registered) = hub.network.sessions.register(&hub.store, caller, info.title, reserve)?;
+        let (s, registered) = hub.network.sessions.register(&hub.store, caller, info.title, running, reserve)?;
+        let woke = hub.network.sessions.set_live(&s.key, live);
+        // The apps show it: a new session, a new title, one forgotten, or what its agent does now.
+        if registered.new || registered.offer || woke {
+            crate::network::emit(hub);
+        }
         if registered.new {
             tracing::info!(kind = s.kind.as_str(), temporary = s.temporary, "a session joined the Network");
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Registered, s.kind);
@@ -190,9 +201,10 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
         // for a session the other sessions here.
         "list_bots" => {
             let sessions = match &asker.session {
-                Some(me) => others(hub, me).await?,
+                Some(me) => sessions_here(hub, Some(&me.key), args).await?,
                 None => Vec::new(),
             };
+            let sessions: Vec<_> = sessions.into_iter().filter(|s| !super::names_bot(hub, &s.address)).collect();
             let remote = hub.network.directory().await;
             directory::list(hub, &asker.id, args, &remote, &sessions, |bot| asker.reaches(bot))
         }
@@ -205,10 +217,17 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
     }
 }
 
-/// The sessions on this computer other than `me`, each with whether it is busy now.
-async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
-    let mut others: Vec<Session> =
-        hub.network.sessions.all(&hub.store).into_iter().filter(|s| s.key != me.key).collect();
+/// The coding agents' sessions on this computer (but the one keyed `except`), each with whether it is busy now.
+/// `args`: `list_bots`'s, whose `kind` leaves the others out before any agent's files are read.
+pub(super) async fn sessions_here(hub: &Hub, except: Option<&str>, args: &Value) -> Result<Vec<Session>> {
+    let kind = directory::kind_of(args);
+    let mut others: Vec<Session> = hub
+        .network
+        .sessions
+        .all(&hub.store)
+        .into_iter()
+        .filter(|s| Some(s.key.as_str()) != except && kind.is_none_or(|k| k == s.kind))
+        .collect();
     // ponytail: reads each session's agent files on every listing; cache briefly if listings get slow.
     let others = tokio::task::spawn_blocking(move || {
         for s in &mut others {
@@ -222,7 +241,18 @@ async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
 async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let (to, message) = message_args(args)?;
     check_message(message)?;
+    // An answer to one of this computer's bots that asked this session.
     if let Some(me) = &asker.session
+        && let Some(reply_to) = args["replyTo"].as_str()
+        && remote::session_replied(hub, me, reply_to, to, message)?
+    {
+        return Ok(json!({"to": to, "status": "delivered"}));
+    }
+    // A bot's id or address name names that bot, never a session (as for bots, `team::names_bot`);
+    // sessions whose address does are left out of `list_bots`.
+    let exact_bot = super::names_bot(hub, to);
+    if let Some(me) = &asker.session
+        && !exact_bot
         && let Some(to) = hub.network.sessions.by_address(&hub.store, to)
     {
         return mail_here(hub, me, &to, message, args["replyTo"].as_str());
@@ -285,8 +315,8 @@ fn mail_here(hub: &Hub, me: &Session, to: &Session, message: &str, reply_to: Opt
     }
     let id = super::mailbox::post(hub, to, None, &me.address, message, reply_to)?;
     Ok(json!({
-        "letterId": id, "to": to.address, "status": "delivered", "tier": "pull",
-        "note": "In its inbox: it reads its mail itself (check_inbox), and answers, if it does, come to yours.",
+        "letterId": id, "to": to.address, "status": "delivered", "tier": to.tier,
+        "note": "In its inbox: it reads it with check_inbox (its tier says how soon it hears of it), and answers, if it does, come to yours.",
     }))
 }
 
@@ -307,7 +337,7 @@ pub fn tools() -> Value {
     let mut tools = json!([
         {
             "name": "list_bots",
-            "description": "List the agents you can message, with their IDs, kinds, specialties and status: this computer's Codync bots, the other coding-agent sessions here (tier pull: they read their mail themselves; temporary ones last only while their agent runs), then those on the user's other computers (IDs like reviewer@laptop). Narrow it with query or kind; it returns at most limit at a time, with next for the rest.",
+            "description": "List the agents you can message, with their IDs, kinds, specialties and status: this computer's Codync bots, the other coding-agent sessions here (tier pull: they read their mail themselves; tier turn: their hook tells them of it at their next step; tier push: told as soon as a letter comes, an idle session starts a turn; temporary ones last only while their agent runs), then those on the user's other computers (IDs like reviewer@laptop). Narrow it with query or kind; it returns at most limit at a time, with next for the rest.",
             "inputSchema": {"type": "object", "properties": {
                 "query": {"type": "string", "description": "Words that must all appear in the name or description."},
                 "kind": directory::kind_property(),

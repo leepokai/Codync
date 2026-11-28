@@ -13,6 +13,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,7 +29,9 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.NetworkComputer
 import com.codync.android.core.NetworkInfo
 import com.codync.android.core.NetworkRule
+import com.codync.android.core.NetworkSession
 import com.codync.android.core.NetworkView
+import com.codync.android.core.fill
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 
@@ -33,6 +43,7 @@ import com.kyant.shapes.Capsule
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Network))
     // Presence as of now: the host asks the others when stale, and its event updates this.
     LaunchedEffect(Unit) { refresh() }
+    var showOlder by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader({
             Symbol("codync.network", size = 24.dp, tint = Palette.text)
@@ -54,9 +65,39 @@ import com.kyant.shapes.Capsule
             }
             // The note that changes happen at a computer closes the networks, after the last one's rules.
             if (view.networks.isNotEmpty()) CardSection(footer = "Changes are made on a computer: in Codync's settings there, or with codync-host network.") {}
+            if (view.sessions.isNotEmpty()) {
+                // In the host's order: running first, then the most recent.
+                val (older, recent) = view.sessions.partition { it.older }
+                CardSection("Agents", "Bots and other agents message these sessions at their address; each reads its mail itself.") {
+                    for (session in recent) row { NetworkSessionRow(session) }
+                    if (older.isNotEmpty()) row {
+                        Disclosure(showOlder, { showOlder = !showOlder }, Modifier.semantics { testTagsAsResourceId = true }.testTag("network.olderSessions"), {
+                            Text(fill(tr("Older sessions: {count}"), "count" to older.size.toString()), style = Type.subheadline, color = Palette.secondary)
+                        }) { for (session in older) NetworkSessionRow(session) }
+                    }
+                }
+            }
             if (view.assistantsAvailable) CardSection(footer = "ChatGPT or Claude in your Codync account can message this computer's bots when it's on. Codync's cloud can read these calls.") {
                 row { ValueRow("Cloud assistants", if (view.assistants) "On" else "Off") }
             }
+        }
+    }
+}
+
+/** A coding agent's session: whether it runs, its logo and title (else address), then its address, what it does and how it gets its mail. */
+@Composable private fun NetworkSessionRow(session: NetworkSession) {
+    val detail = listOfNotNull(session.title?.let { session.address }, session.stateTitle?.let { tr(it) }, session.tierTitle?.let { tr(it) })
+        .joinToString(" · ")
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // No state, no dot: unknown isn't offline.
+        val dot = session.dotTitle?.let { tr(it) }
+        Box(Modifier.padding(horizontal = 2.dp).size(8.dp).clip(Capsule())
+            .then(if (session.state == null) Modifier else Modifier.background(if (session.runs) Palette.added else Palette.tertiary))
+            .then(if (dot == null) Modifier else Modifier.semantics { contentDescription = dot }))
+        AgentIcon(session.registry, 18.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(session.title ?: session.address, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail.isNotEmpty()) Text(detail, style = Type.footnote, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

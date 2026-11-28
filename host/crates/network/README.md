@@ -139,6 +139,7 @@ Start the node on each computer and keep it running (a terminal, or a login serv
 codync-network init desk                         # the first computer, its owner; prints the recovery code
 codync-network invite                            # prints codync-network:… (one use, one hour)
 codync-network join 'codync-network:…' laptop    # on the other computer
+codync-network up                                # later runs: the network this computer is in
 ```
 
 Then, from any terminal or agent on either computer:
@@ -149,6 +150,7 @@ codync-network send terminal@desk hello          # delivered to terminal@desk
 codync-network send terminal@desk --notice "tests are green"
 codync-network promote laptop                    # the owner makes laptop an admin
 codync-network remove laptop [--cascade]         # out for good (--cascade: and whom it admitted)
+codync-network recover '<code>'                  # on another computer: it becomes the owner
 codync-network rules deny '*@laptop' reviewer    # laptop's agents can't write to reviewer here
 codync-network rules allow lead@laptop reviewer --first   # except lead (the first match decides)
 codync-network rules ask '*@cloud' terminal      # cloud's letters to this terminal print as (ask); to a session agent
@@ -162,6 +164,8 @@ To put a Claude Code session or a Codex thread on the network, run this in it (o
 ```sh
 codync-network agent reviewer claude "$CLAUDE_CODE_SESSION_ID" --about "Reviews changes"
 codync-network agent coder codex "$CODEX_THREAD_ID" --about "Writes the code"
+codync-network agents                            # the agents this computer offers
+codync-network agent coder --remove              # stop offering one
 ```
 
 A message to `reviewer@desk` then shows up in that session, with the command to reply. A Claude Code session that
@@ -206,6 +210,11 @@ applies).
 `sessions` tells an MCP server which session of which agent it serves: `AgentKind::of_mcp_client` (the client's
 `clientInfo.name`), `session_id(kind, env, meta)` (from the server's environment or a tool call's `_meta`), and
 `info` / `busy` (the title and busy/idle the agent writes in its own files).
+
+`hooks` is the turn tier's per-agent part: `hook_input` reads a Codex, Copilot CLI or Grok hook's stdin (the
+session and whether it is `PostToolUse` or `Stop`), `hook_output` writes the answer that agent reads back. `post_to_own_claude_session` hands text to the Claude Code
+session the calling process runs in (an MCP server it started), on its inbox socket with the token it gave that
+child.
 
 `node.changes()` ticks whenever `node.directory()` would show something new (a computer joins or leaves, a role,
 name or presence changes, another computer offers different agents), for an app that shows the network live.

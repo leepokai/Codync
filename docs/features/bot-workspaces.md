@@ -43,4 +43,6 @@ The desktop, iPhone and Android picker starts with recent selections for the bot
 
 The terminal picker uses Ctrl+R for recent workspaces, Ctrl+B to browse and Ctrl+L to enter a path. Right enters a highlighted folder, Left goes to its parent, Enter confirms the highlighted folder, and `.` uses the current folder. Selection errors keep the picker open.
 
+On the iPhone the picker is native: a sheet (medium and large) with its own navigation stack, titled Choose workspace over "Your bot will work in this folder.", Cancel and Use this folder in the navigation bar, the computer and the recent workspaces as `List` sections searched with the system search field, and Browse other folders pushing one page per folder (a subfolder pushes the next; the title's menu holds Enter folder path, Parent folder and the ancestors). Android and the desktop keep the same order in one scrolling sheet, Cancel and Use this folder in the footer.
+
 With no recent selections, Browse other folders is the first action below the computer context. The empty Recent section and search stay hidden until there is history; filtering existing history to zero matches keeps search visible. The terminal promotes the Ctrl+B browse shortcut when history is empty.

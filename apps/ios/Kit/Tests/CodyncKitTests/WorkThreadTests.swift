@@ -58,6 +58,9 @@ private func entry(_ id: String, seq: Int64, kind: String = "agent", data: Strin
         #expect(task(folder: "/w/a/app", worktree: tree).whereLine(home: home) == WhereLine(kind: .branch, text: "codync/fix-login", path: "/w/a/app"))
         #expect(task(worktree: tree).whereLine(home: home) == WhereLine(kind: .branch, text: "codync/fix-login", path: "/w/a"))
         #expect(task(worktree: .init(branch: "main")).whereLine(home: home)?.path == nil)
+        // The folder Codync made for a thread without a bot: named so, its path still the one to copy.
+        let own = WorkTask(id: "o", title: "Alone", status: .working, folder: "/Users/kai/.codync/threads/1", ownFolder: true)
+        #expect(own.whereLine(home: home) == WhereLine(kind: .folder, text: "Own folder", path: "/Users/kai/.codync/threads/1"))
         #expect(WhereLine.Kind.folder.symbol == "folder" && WhereLine.Kind.branch.symbol == "arrow.triangle.branch")
     }
 
@@ -119,49 +122,13 @@ private func entry(_ id: String, seq: Int64, kind: String = "agent", data: Strin
         #expect(own.sharing(chat, of: "thread-9").map(\.id) == ["t1", "t2"])
     }
 
-    @Test func whatAThreadPutInTheChatIsOneLine() throws {
-        func line(_ kind: String, _ data: String) throws -> SharedLine? {
-            try entry("c", seq: 1, kind: kind, data: data, botId: "b1").sharedLine { $0 }
-        }
-        let options = #""options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"#
-        func approval(_ status: String, _ selected: String = "") throws -> SharedLine? {
-            try line("permission", #"{"status":"\#(status)","title":"npm test",\#(options),"selected":"\#(selected)"}"#)
-        }
-        #expect(try approval("pending") == SharedLine(symbol: "hand.raised", text: "Waiting for your approval: npm test"))
-        #expect(try approval("answered", "ok") == SharedLine(symbol: "checkmark", text: "Approved: npm test"))
-        #expect(try approval("answered", "no") == SharedLine(symbol: "xmark", text: "Denied: npm test"))
-        #expect(try approval("answered", "x")?.text == "Answered: Skip")
-        #expect(try approval("expired") == SharedLine(symbol: "clock", text: "Not answered: npm test"))
-        func choice(_ status: String, _ selected: String = "") throws -> SharedLine? {
-            try line("notice", #"{"decision":true,"status":"\#(status)","question":"Squash?","choices":["Yes","No"],"selected":"\#(selected)"}"#)
-        }
-        #expect(try choice("pending")?.text == "Asked: Squash?")
-        #expect(try choice("answered", "No")?.text == "Answered: No")
-        #expect(try choice("expired")?.text == "Not answered: Squash?")
-        func signIn(_ status: String, kind: String = "agent") throws -> SharedLine? {
-            try line("notice", #"{"text":"Needs you to sign in.","connectionRequest":{"kind":"\#(kind)","status":"\#(status)","title":"Kimi Code","botId":"b1"}}"#)
-        }
-        #expect(try signIn("pending") == SharedLine(symbol: "hand.raised", text: "Needs Kimi Code sign-in"))
-        #expect(try signIn("ready") == SharedLine(symbol: "checkmark", text: "Signed in"))
-        #expect(try signIn("cancelled") == SharedLine(symbol: "xmark", text: "Cancelled"))
-        #expect(try signIn("pending", kind: "oauth") == nil, "a connector's card is not a thread's")
-        let file = #"{"id":"f","name":"log.txt","size":3,"sha256":""}"#
-        #expect(try line("agent", #"{"final":true,"files":[\#(file)]}"#) == SharedLine(symbol: "doc", text: "Sent a file: log.txt"))
-        #expect(try line("agent", #"{"final":true,"files":[\#(file)],"voiceNote":true,"text":"Hi"}"#) == SharedLine(symbol: "waveform", text: "Sent a voice note"))
-        #expect(try line("agent", #"{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"#) == SharedLine(symbol: "doc.richtext", text: "Made an artifact: Plan"))
-        #expect(try line("agent", #"{"text":"Just words","final":true}"#) == nil)
-        #expect(try line("notice", #"{"text":"A notice"}"#) == nil)
-    }
-
     @Test func theNewWordsAreInEveryLanguage() {
         for language in [AppLanguage.zhHant, .zh, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it] {
             // `Git repository` reads the same in Chinese.
             for word in ["Not a git repository", "Git isn't installed on this computer",
-                         "About working folders and git", "Message this thread", "What it was told", "Back to details",
+                         "About working folders and git", "Message this thread", "What it was told",
                          "Copy path", "Path copied", "Near the usage limit: one at a time", "Read only: a routine's run",
-                         "Read only: another bot's request", "Waiting for your approval: {title}", "Approved: {title}",
-                         "Denied: {title}", "Asked: {question}", "Answered: {choice}", "Not answered: {text}",
-                         "Sent a file: {name}", "Sent a voice note", "Made an artifact: {title}", "Show in the chat"] {
+                         "Read only: another bot's request"] {
                 #expect(L10n.tr(word, preference: language) != word, "\(word) in \(language)")
             }
         }

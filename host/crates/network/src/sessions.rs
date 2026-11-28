@@ -1,12 +1,12 @@
 //! Which session of a coding agent an MCP server serves, and what the agent itself says about it.
 //!
 //! An agent starts its MCP servers as children, so a server finds its session the way that agent
-//! tells it: Claude Code and Copilot CLI in the environment, Codex and Antigravity with each tool
+//! tells it: Claude Code, Copilot CLI and Grok in the environment, Codex and Antigravity with each tool
 //! call (`_meta`). The kind comes from the client's own name, never from the environment alone: an
 //! agent started from a Claude Code shell inherits that session's variables.
-//! ([agent sessions](../../../docs/plans/agent-sessions.md))
+//! ([agent sessions](https://github.com/leepokai/Codync/blob/dev/docs/plans/agent-sessions.md))
 
-use crate::reach::{claude_dir, claude_sessions};
+use crate::reach::{ClaudeSession, claude_dir, claude_sessions};
 use crate::wire::AgentKind;
 use serde_json::Value;
 use std::path::Path;
@@ -26,6 +26,8 @@ impl AgentKind {
             "antigravity-client" => Self::Antigravity,
             "pi" => Self::Pi,
             "opencode" => Self::Opencode,
+            // Grok names each server's client after it: `grok-shell-<server>`.
+            name if name.starts_with("grok-shell-") => Self::Grok,
             _ => Self::Other,
         }
     }
@@ -44,6 +46,7 @@ pub fn session_id(kind: AgentKind, env: impl Fn(&str) -> Option<String>, meta: &
             now.or_else(|| env("CLAUDE_CODE_SESSION_ID"))
         }
         AgentKind::Copilot => env("COPILOT_AGENT_SESSION_ID"),
+        AgentKind::Grok => env("GROK_SESSION_ID"),
         AgentKind::Codex => text("sessionId").or_else(|| text("threadId")),
         AgentKind::Antigravity => {
             text("antigravity.google/root_conversation_id").or_else(|| text("antigravity.google/conversation_id"))
@@ -81,21 +84,37 @@ pub fn info(kind: AgentKind, id: &str) -> Info {
     }
 }
 
-/// Whether session `id` is working on a turn now, where its agent says so.
+/// Whether session `id` is working on a turn now, where its agent says so. Blocking: may run `ps`.
 pub fn busy(kind: AgentKind, id: &str) -> Option<bool> {
     match kind {
-        AgentKind::ClaudeCode => claude_dir().ok().and_then(|dir| claude_info(&dir, id).busy),
+        AgentKind::ClaudeCode => claude_dir().ok().and_then(|dir| claude_busy(&dir, id)),
         _ => None,
     }
 }
 
+/// The newest entry Claude Code's registry has for session `id`.
+fn claude_newest(dir: &Path, id: &str) -> Option<ClaudeSession> {
+    claude_sessions(dir).into_iter().filter(|s| s.session_id.as_deref() == Some(id)).max_by_key(|s| s.updated_at)
+}
+
 fn claude_info(dir: &Path, id: &str) -> Info {
-    let Some(s) =
-        claude_sessions(dir).into_iter().filter(|s| s.session_id.as_deref() == Some(id)).max_by_key(|s| s.updated_at)
-    else {
-        return Info::default();
-    };
+    let Some(s) = claude_newest(dir, id) else { return Info::default() };
     Info { title: s.name.as_deref().and_then(cut), busy: s.status.as_deref().map(|s| s == "busy") }
+}
+
+/// What the registry says of session `id`, unless its process is gone: Claude Code killed or
+/// crashed leaves its entry behind.
+fn claude_busy(dir: &Path, id: &str) -> Option<bool> {
+    let s = claude_newest(dir, id).filter(|s| s.pid.is_none_or(alive))?;
+    s.status.as_deref().map(|s| s == "busy")
+}
+
+/// Whether process `pid` still runs; true where this can't tell.
+fn alive(pid: u32) -> bool {
+    if cfg!(windows) {
+        return true;
+    }
+    std::process::Command::new("ps").args(["-p", &pid.to_string()]).output().map_or(true, |out| out.status.success())
 }
 
 /// Codex's own folder: `$CODEX_HOME`, else `~/.codex`.
@@ -134,12 +153,15 @@ mod tests {
         let env = |key: &str| match key {
             "CLAUDE_CODE_SESSION_ID" => Some("parent-claude".to_owned()),
             "COPILOT_AGENT_SESSION_ID" => Some("copilot-1".to_owned()),
+            "GROK_SESSION_ID" => Some("grok-1".to_owned()),
             _ => None,
         };
         let meta = json!({"sessionId": "thread-1", "antigravity.google/conversation_id": "conv-1"});
         assert_eq!(AgentKind::of_mcp_client("copilot-cli"), AgentKind::Copilot);
         assert_eq!(session_id(AgentKind::Copilot, env, &meta).as_deref(), Some("copilot-1"));
         assert_eq!(session_id(AgentKind::Codex, env, &meta).as_deref(), Some("thread-1"));
+        assert_eq!(AgentKind::of_mcp_client("grok-shell-codync"), AgentKind::Grok);
+        assert_eq!(session_id(AgentKind::Grok, env, &meta).as_deref(), Some("grok-1"));
         assert_eq!(session_id(AgentKind::Antigravity, env, &meta).as_deref(), Some("conv-1"));
         // pi started from a Claude Code shell carries that session's id: it isn't pi's.
         assert_eq!(AgentKind::of_mcp_client("pi"), AgentKind::Pi);
@@ -160,6 +182,14 @@ mod tests {
         assert_eq!(claude_session_at(&dir, "/s.sock").as_deref(), Some("after-clear"));
         assert_eq!(claude_info(&dir, "after-clear"), Info { title: Some("Fix the login".into()), busy: Some(true) });
         assert_eq!(claude_info(&dir, "gone"), Info::default());
+        let me = std::process::id();
+        std::fs::write(dir.join(format!("sessions/{me}.json")), entry("running", 3, "Here", "idle").to_string())
+            .unwrap();
+        std::fs::write(dir.join("sessions/999999999.json"), entry("killed", 4, "Gone", "busy").to_string()).unwrap();
+        assert_eq!(claude_busy(&dir, "running"), Some(false));
+        // Windows doesn't look at the process (`alive` says yes there).
+        #[cfg(unix)]
+        assert_eq!(claude_busy(&dir, "killed"), None, "a killed Claude Code leaves its entry behind");
         let _ = std::fs::remove_dir_all(dir);
     }
 

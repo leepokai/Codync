@@ -68,12 +68,18 @@ impl Routines {
         let set = agent_bot(hub, bot)
             .and_then(|_| own_chat(hub, caller))
             .and_then(|()| self.add_follow_up(&hub.store, bot, minutes, note, chain));
-        let properties =
-            json!({"outcome": kept::outcome(&set, "set"), "minutes": minutes.clamp(0, MAX_MINUTES), "chain": chain});
+        // A run in a thread of its own waits on its own task: only the chat's turns hear of the tasks reporting there.
+        let reporting = if caller == bot { crate::chat::work::reporting(&hub.store, bot) } else { Vec::new() };
+        let properties = json!({"outcome": kept::outcome(&set, "set"), "minutes": minutes.clamp(0, MAX_MINUTES),
+            "chain": chain, "tasksUnderWay": set.is_ok() && !reporting.is_empty()});
         analytics::capture(hub, Event::FollowUpSet, properties.as_object().cloned().unwrap_or_default());
         let follow_up = set?;
         notice(hub, bot, &format!("Follow-up in {}: {}", in_words(minutes), shown(&follow_up.note)));
-        Ok(json!({"followUp": follow_up, "atLocal": super::schedule::local_time(follow_up.at)}))
+        let mut answer = json!({"followUp": follow_up, "atLocal": super::schedule::local_time(follow_up.at)});
+        if let Some(hint) = tasks_hint(&reporting) {
+            answer["hint"] = hint.into();
+        }
+        Ok(answer)
     }
 
     fn add_follow_up(&self, store: &Store, bot: &str, minutes: i64, note: &str, chain: u32) -> Result<FollowUp> {
@@ -237,6 +243,23 @@ fn own_chat(hub: &Hub, bot: &str) -> Result<()> {
     Ok(())
 }
 
+/// What a follow-up's answer says when the bot has tasks under way: their reports come by themselves, so a
+/// follow-up that only waits on them is polling. A hint, not a refusal: the host can't tell such a follow-up from one
+/// the user asked for, or one about something outside Codync.
+fn tasks_hint(reporting: &[(String, String)]) -> Option<String> {
+    if reporting.is_empty() {
+        return None;
+    }
+    let tasks: Vec<String> = reporting.iter().map(|(id, title)| format!("\"{title}\" ({id})")).collect();
+    Some(format!(
+        "Set. You have tasks under way: {}. Each one's report comes to you in this chat when it ends, and Codync's \
+         watchdog wakes you if one loops, keeps failing or stalls between tool calls. If this follow-up only waits \
+         for or checks on them, cancel it with cancel_follow_up; keep it if the user asked you to check back then, or \
+         it is about something outside Codync.",
+        tasks.join(", ")
+    ))
+}
+
 /// A line about a follow-up, in its bot's chat.
 fn notice(hub: &Hub, bot: &str, text: &str) {
     hub.add_entry(&Lane::main(bot), EntryKind::Notice, 0, &json!({"text": text, "style": NoticeStyle::Info}));
@@ -396,6 +419,21 @@ mod tests {
         hub.team.start_turn("bot", Turn::Chat(0));
         hub.set_runtime("bot", |r| r.lane = Some(Lane::main("room")));
         assert!(elsewhere(), "a room turn");
+    }
+
+    #[test]
+    fn a_follow_up_set_while_the_bots_own_tasks_are_under_way_names_them() {
+        let (hub, _) = hub();
+        hub.store.save_bot(&crate::chat::calls::context::tests::bot("bot", "Mika", "/tmp")).expect("saved");
+        let routines = Routines::default();
+        let args = json!({"minutes": 5, "note": "Check the deploy"});
+        let hint = |caller: &str| routines.follow_up(&hub, "bot", caller, &args).expect("set").get("hint").cloned();
+        assert_eq!(hint("bot"), None, "nothing under way");
+        crate::chat::work::put_working_for_test(&hub.store, "bot", "thread-1");
+        let named = hint("bot").expect("a hint");
+        let named = named.as_str().unwrap_or_default();
+        assert!(named.contains("\"Work\" (i1)") && named.contains("cancel_follow_up"), "{named}");
+        assert_eq!(hint("thread-1"), None, "a run in a thread of its own");
     }
 
     #[test]

@@ -31,6 +31,21 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
 @Suite struct WorkTaskTests {
     // MARK: the wire
 
+    @Test func aThreadsBackgroundWorkReadsAsSentAndItsCapsuleSaysWhatRuns() throws {
+        let work = try bot(#","work":[{"id":"t","title":"Review","status":"working","background":[{"id":"w1","kind":"workflow","name":"after-change","activity":"Review: diff","startedAt":7},{"id":"b1","kind":"future","name":"npm test","startedAt":9},{"name":"no id"}]},{"id":"o","title":"Old","status":"working"}]"#).work
+        #expect(work[0].background == [
+            .init(id: "w1", name: "after-change", activity: "Review: diff", startedAt: 7),
+            .init(id: "b1", name: "npm test", startedAt: 9),
+        ], "one without an id is left out")
+        #expect(work[1].background.isEmpty, "an older host says nothing")
+        #expect(work[1].backgroundLabel == nil)
+        var one = work[0]
+        one.background.removeLast()
+        #expect(one.backgroundLabel?.text == "after-change · Review: diff")
+        #expect(one.backgroundLabel?.since == 7)
+        #expect(work[0].backgroundLabel?.text == "after-change, npm test")
+    }
+
     @Test func aBotCarriesItsWork() throws {
         let work = try bot(#","work":[{"id":"i1","title":"Fix login","status":"needsYou","activity":"Reading","thread":"thread-1","wait":null,"cutIn":false,"createdAt":1,"startedAt":5,"endedAt":null,"result":""},{"id":"i2","title":"Docs","status":"waiting","activity":"","thread":null,"wait":{"kind":"behind","ahead":2},"cutIn":true,"createdAt":2},{"id":"i3","title":"CI","status":"failed","thread":"thread-2","createdAt":3,"startedAt":10,"endedAt":70,"result":"No network"}]"#).work
         #expect(work == [
@@ -40,6 +55,19 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         ])
         #expect(work[2].timeTaken == .milliseconds(60))
         #expect(work[0].timeTaken == nil)
+    }
+
+    @Test func aTaskNamesTheAgentItsThreadRunsOn() throws {
+        let owner = try bot(#","backend":"claude","work":[{"id":"a","status":"working","runsOn":"codex"},{"id":"b","status":"waiting"},{"id":"c","status":"working","runsOn":"","agent":"gemini"}]"#)
+        #expect(owner.work.map { $0.agent(of: owner) } == ["codex", "claude", "gemini"])
+        var plain = owner
+        plain.plain = true
+        #expect(owner.work[1].agent(of: plain) == nil, "the box of threads without a bot has no agent of its own")
+    }
+
+    @Test func aTaskSaysWhetherItWorksInItsOwnFolder() throws {
+        let owner = try bot(#","work":[{"id":"o","status":"working","folder":"/h/.codync/threads/1","ownFolder":true},{"id":"p","status":"working","folder":"/h/p"}]"#)
+        #expect(owner.work.map(\.ownFolder) == [true, false], "an older host sends no flag")
     }
 
     @Test func aHostFromBeforeTheBoxHasNoWorkAndNoSetting() throws {
@@ -243,6 +271,12 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         c.work = [WorkTask(id: "late", title: "late", status: .done, createdAt: 5), WorkTask(id: "early", title: "early", status: .done, createdAt: 1, endedAt: 9)]
         let moved = ThreadSections([(key: "c", bot: c)], grouping: .none, byActivity: true, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
         #expect(moved.recent.map(\.task.id) == ["early", "late"])
+        // Every thread in a folder Codync made for it, in one "Own folder" group, not one per folder.
+        var box = try bot(#","cwd":"/home","plain":true"#)
+        box.work = [WorkTask(id: "x", title: "x", status: .done, createdAt: 1, folder: "/home/.codync/threads/1", ownFolder: true),
+                    WorkTask(id: "y", title: "y", status: .done, createdAt: 2, folder: "/home/.codync/threads/2", ownFolder: true)]
+        let alone = ThreadSections([(key: "box", bot: box)], grouping: .folder, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+        #expect(alone.groups.map { "\($0.key)=\($0.title):" + $0.rows.map(\.task.id).joined() } == ["folder:own=Own folder:yx"])
         // An empty folder names no place: the worktree's, if any.
         #expect(WorkTask(id: "x", title: "x", status: .done, folder: "").wherePath == nil)
         #expect(ThreadSections.working(in: roster, bot: \.bot) == 1)
@@ -617,6 +651,32 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         var edited = base
         edited.makeDefaultProject("/p/b")
         #expect(edited.rebased(from: base, onto: elsewhere).projects == ["/p/b", "/p/a"])
+    }
+
+    @Test func aBotsSharedFoldersAreSavedWholeAndStayInsideTheProject() throws {
+        func sent(_ draft: BotDraft) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+        }
+        // An older host: not read, not sent.
+        #expect(try sent(BotDraft(try bot(#","projects":["/p/a"]"#)))["sharedFolders"] == nil)
+
+        var draft = BotDraft(try bot(#","projects":["/p/a","/p/b"],"projectGitRepos":[true,true],"sharedFolders":{"/p/a":["node_modules"]}"#))
+        #expect(draft.sharedFolders(of: "/p/a") == ["node_modules"] && draft.sharedFolders(of: "/p/b").isEmpty)
+        // Trimmed, once; absolute names and `..` are refused, as the host would.
+        let added = draft.addSharedFolder(" .cache/pip/ ", to: "/p/a")
+        #expect(added)
+        draft.addSharedFolder("node_modules", to: "/p/a")
+        let refused = ["/etc", "C:\\x", "a/../..", "  "].filter { !draft.addSharedFolder($0, to: "/p/a") }
+        #expect(refused.count == 4)
+        #expect(BotDraft.sharedFolderName("./node_modules") == "node_modules")
+        draft.addSharedFolder("vendor", to: "/p/b")
+        var body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == ["/p/a": ["node_modules", ".cache/pip"], "/p/b": ["vendor"]])
+        // Removing a project's last folder, or the project, takes its entry off.
+        draft.removeSharedFolder("vendor", from: "/p/b")
+        draft.removeProject("/p/a")
+        body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == [:])
     }
 
     @Test func eachWorktreeModeIsTranslated() {

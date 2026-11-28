@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { folderName, type Bot } from '@shared/models'
-import type { ThreadSetup } from '@shared/work'
+import type { ThreadPlace, ThreadSetup } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar, NoBotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
@@ -20,7 +20,7 @@ import { Composer } from './Composer'
 import { ModelPicker } from '../bots/ModelPicker'
 import { readySeats } from '../bots/seats'
 import { Option, useApprovalMenu } from './RunOptions'
-import { defaultFolder, threadFolders } from './thread-folders'
+import { defaultFolder, modePlace, offersPlace, sentSetup, threadFolders } from './thread-folders'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
@@ -34,6 +34,9 @@ export interface ThreadWith {
   bot: Bot | null
 }
 
+/** Where in a git project a new thread can work, as its place menu lists them. */
+const PLACES: { id: ThreadPlace; label: string }[] = [{ id: 'here', label: 'Here' }, { id: 'worktree', label: 'New worktree' }]
+
 /** How a thread without a bot is approved until the user picks: it asks, in the agent's Auto mode, as a new bot. */
 const PLAIN_APPROVAL = { permission: 'ask', mode: 'auto' }
 
@@ -41,8 +44,9 @@ const PLAIN_APPROVAL = { permission: 'ask', mode: 'auto' }
  * The page a thread starts from, in the form of a chat nothing was said in yet: the bot it is with in the middle, and
  * the chat's message box. Over the box, what the thread runs on, each a menu: the bot (or **No bot**, where the
  * computer can), which the others follow (they start as that bot's own), then the folder it works in, how it is
- * approved and its model with that model's settings, on the agent and login picked in the model panel's rail. Without
- * a bot the folder starts as the home folder and nothing of Codync's goes with it. A choice is the thread's alone (`ThreadSetup`): the bot's
+ * approved and its model with that model's settings, on the agent and login picked in the model panel's rail. In a git
+ * project of the bot, where it works there: here or a new worktree. Without a bot the folder starts as a folder of
+ * its own (an older host: the home folder) and nothing of Codync's goes with it. A choice is the thread's alone (`ThreadSetup`): the bot's
  * setup stays as it is. Sent, the thread is the one shown (`started`, with where its task is).
  * ponytail: the model menu lists every model without a search; the bot's settings have one if lists grow long.
  */
@@ -99,13 +103,15 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
     ...(plainOn ? [{ title: 'No bot', leading: <NoBotAvatar size={22} />, divider: bots.length > 0, selected: bot === null, action: () => choose(of.ref, true) }] : []),
   ]
   // Without a bot, the computer it runs on is its own choice.
-  const places = (): MenuItem[] => computers.map((r) => ({
+  const computerItems = (): MenuItem[] => computers.map((r) => ({
     title: r.store.hostName, verbatim: true, icon: 'desktopcomputer', selected: r.ref.computerId === of.ref.computerId,
     action: () => choose({ computerId: r.ref.computerId, botId: '' }, true),
   }))
 
   const home = store.hello?.home ?? ''
-  const ownFolder = folder ?? (bot ? folderName(bot, tr) : lastPathComponent(home) || home)
+  // A thread without a bot gets a folder of its own from a host that makes one.
+  const ownFolders = !bot && !folder && store.givesThreadsOwnFolders
+  const ownFolder = folder ?? (bot ? folderName(bot, tr) : ownFolders ? tr('Own folder') : lastPathComponent(home) || home)
   // From a host with projects: the bot's projects first, then its own folder, then recent folders.
   const listsProjects = !!bot && !folder && store.hasProjects
   const recent = useRecentFolders(listsProjects)
@@ -123,7 +129,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
     ]
   }
   const folders = (): MenuItem[] => listsProjects && bot ? projectFolders(bot) : [
-    { title: ownFolder, verbatim: true, detail: folder || bot?.managedWorkspace ? undefined : (bot?.cwd ?? home), selected: !setup.cwd, action: () => change({ cwd: undefined }) },
+    { title: ownFolder, verbatim: true, detail: folder || bot?.managedWorkspace || ownFolders ? undefined : (bot?.cwd ?? home), selected: !setup.cwd, action: () => change({ cwd: undefined }) },
     ...(setup.cwd ? [{ title: lastPathComponent(setup.cwd), verbatim: true, detail: setup.cwd, selected: true, action: () => {} }] : []),
     { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
   ]
@@ -134,10 +140,18 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
   const ways = useApprovalMenu(approval, models, (a) => change({ approval: { permission: a.permission, mode: a.mode ?? null } }))
   const model = setup.model ?? (own ? { id: own.model ?? null, options: own.modelOptions } : { id: null, options: {} })
 
+  // In a git project of the bot, where there: the bot's worktree mode until the user picks (none shown for side by side).
+  const placeOn = !!bot && !folder && store.startsThreadsInPlace && offersPlace(bot, setup.cwd ?? defaultFolder(bot))
+  const place = setup.place ?? modePlace(bot?.worktreeMode ?? null)
+  const places = (): MenuItem[] => PLACES.map((p) => ({ title: p.label, selected: p.id === place, action: () => change({ place: p.id }) }))
+
   const send = (text: string, files: OutgoingFile[]) => {
     setFailed('')
     // Without a bot, all it runs on goes with it: there is no bot's setup to fall back on.
-    const asked = { ...base, ...(own ? setup : bot ? { ...setup, model, approval } : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
+    const asked = sentSetup(
+      { ...base, ...(own ? setup : bot ? { ...setup, model, approval } : { ...setup, backend, approval }) },
+      { offered: placeOn, plain: !bot, home, hostChooses: !!folder || ownFolders },
+    )
     return store.startThread(bot?.id ?? null, text, asked, files).then(
       (s) => started({ computerId: of.ref.computerId, botId: s.botId }, s.taskId),
       (error: unknown) => {
@@ -172,8 +186,9 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
               there is nothing to choose). */}
           <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, keepFiles: `thread/new/${base?.workflow ?? ''}`, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
-            {bot ? null : <Option title="Computer" items={places} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
+            {bot ? null : <Option title="Computer" items={computerItems} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? (setup.cwd === bot?.cwd ? tr('Own folder') : lastPathComponent(setup.cwd)) : ownFolder} />
+            {placeOn ? <Option title="Worktree mode" items={places} leading={<Icon name="arrow.triangle.branch" size={11} />} label={tr(PLACES.find((p) => p.id === place)?.label ?? 'Side by side')} /> : null}
             {/* The agent and its login are in the panel's rail; another agent starts from its own defaults. */}
             <ModelPicker
               backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways} seats={seats}
@@ -186,7 +201,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
         <FolderPicker
           start={setup.cwd ?? ((bot ? defaultFolder(bot) : home) || null)}
           onPick={(path) => {
-            change({ cwd: path === (bot ? defaultFolder(bot) : home) ? undefined : path })
+            change({ cwd: !ownFolders && path === (bot ? defaultFolder(bot) : home) ? undefined : path })
             setBrowsing(false)
           }}
         />

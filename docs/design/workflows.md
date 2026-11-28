@@ -12,7 +12,7 @@ The behavior page is [docs/features/workflows.md](../features/workflows.md).
 
 On the desktop, a computer's workflow opens onto a dotted canvas. An empty canvas offers a trigger. After nodes are added, a trigger, an agent and an output sit left to right and are joined by wires. The trigger card chooses manual, schedule or webhook. The agent card chooses one bot on this computer; the task is on the card; the model name is that bot's current model and is read-only. The output card targets a notification or a chat. The bottom bar selects, pans, draws, and adds a note, a shape, text or a node. Zoom runs from 25% to 200%, with fit and a minimap. The minimap stays collapsed until its button is pressed. The zoom bar ends in Collapse, which folds both bottom bars into one Tools button (kept on the device); on a canvas narrowed by the chat the tools stand over the zoom, and History and Run show only their icons. Opening a workflow fits the canvas once. History lists the latest result and each run (number, time, duration). A workflow opens with the pan tool, so a drag looks around; V picks select. The window's list beside the canvas is the Threads list's (`WorkflowList.tsx`): each computer the computer filter shows, under its name (a click folds its workflows away, on this device, the heading then marking a run under way; starting or opening a workflow there unfolds it), and its workflows below, a run under way marked at the row's end (working pulses, an approval amber); an offline computer says so in its place. The list's header holds the computer filter, Search (the workflows by title or computer, `search-items.tsx`) and `+` (a new workflow; with more than one computer, a menu of them picks where). The workflow's title above the canvas opens its versions, rename, duplicate, pin and delete. A port's arrow stands just off its card, and a click on an output port opens the add menu beside the card and puts the new step to its right. Beside the canvas is a chat (open until the window bar's toggle hides it; its edge drags it from 300 points wide, the canvas keeping 320; a page too narrow for both is covered by the chat) where the workflow is built by talking: a thread started there, with no bot unless one is picked, carries `setup.workflow` (`BotConfig::workflow` on the thread), so its `workflows` tools (given to it even without a bot) read, save and run that workflow only, whoever owns it. `read_workflow` lists the bots on this computer, a step may name any of them, and `save_workflow` refuses a script the canvas can't draw and asks on a card naming the bots the steps message. Each save is a version, so the canvas's history undoes it. A chat without a picked folder works in the workflow's own folder, `~/.codync/workflows/<id>`, beside the bots' own. The chats of each workflow are remembered on the device, newest first: Previous chats goes back to one, New chat starts another. `hello.workflowThreads` gates it.
 
-On the phone, Workflows is a tab (the desktop's Lucide `workflow` mark: the iOS asset `workflow`, Android's `workflow` drawable); with more than one computer, a computer menu leads its header. The phone is **view only, plus approvals**: the list (each row a name and the latest status; touch and hold pins it on the bot list), a workflow's detail (its steps in reading order with the Mode menu for how much of each step shows, its triggers, its run history, the version line as text), its runs, and one run, where an approval step's **Approve** and **Reject** are the one action. No create, edit, run, stop, retry, pause, rename, delete, version restore or webhook rotation: those are the desktop's and the terminal's. A notification with a `runId` opens that run, else the workflow's detail.
+On the phone, Workflows is a tab (the desktop's Lucide `workflow` mark: the iOS asset `workflow`, Android's `workflow` drawable); with more than one computer, a computer menu leads its header. The phone is **view only, plus approvals**: the list (each row a name and the latest status; touch and hold pins it on the bot list), a workflow's detail (its steps in reading order with the Mode menu for how much of each step shows, its triggers, its run history, the version line as text), its runs, and one run, where an approval step's **Approve** and **Reject** are the one action. No create, edit, run, stop, retry, pause, rename, delete, version restore or webhook rotation: those are the desktop's and the terminal's. A notification with a `runId` opens that run; one with only a `stepId` (a step run on its own) opens that step alone, read with `workflowStep`, its approval answered the same way; else the workflow's detail.
 
 The four clients show one workflow, one run, and the same copy. A shape the terminal's outline cannot edit (more than one condition, a loop, or a canvas annotation) keeps its edges and annotations; the terminal edits step settings only. A script that expands while it runs is not rearranged in the outline.
 
@@ -204,11 +204,11 @@ A script insert freezes `script_text` and `exec = script`, then the gate drops a
 
 ### Stopping, retry, approval
 
-Stop marks the run `stopping` and stops the open step. Retry of a failed step runs it again. For a script run, retry replays after its own write, not under a caller's gate. Accepting an approval copies the input to the output and advances. Rejecting stops the run. A script approval replays after the gate drops.
+Stop marks the run `stopping` and stops the open step. Retry of a failed step runs it again. For a script run, retry replays after its own write, not under a caller's gate. Accepting an approval copies the input to the output and advances. Rejecting stops the run. A script approval replays after the gate drops. Only a step still in `approval` takes an answer: a late one (a second device, a stale card) changes nothing and re-emits the step event, except that approving an already approved step advances (or replays) its run again, so an approval whose follow-up failed can be sent again.
 
 ### Restart
 
-`recover` on host start takes the gate, walks open graph runs, and collects script run ids. It drops the gate, then replays those scripts. A script step whose bot session is gone settles as interrupted and is replayed outside the gate.
+`recover` on host start takes the gate, walks open graph runs, and collects script run ids. It drops the gate, then replays those scripts. A script step whose bot session is gone settles as interrupted and is replayed outside the gate. A running agent step that belongs to no run (Run this step) is picked up the same way: sent to its bot again, or settled as interrupted.
 
 ## Agent steps and prompts
 
@@ -240,7 +240,7 @@ A delivery id (`hooks::delivery_id`) is remembered, and a retry of that id retur
 
 ### Notification
 
-An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app (the workflow's detail when there is no `runId`).
+An output to `notify`, and a finished or failed run, seal a push through an anchor bot. The payload adds `workflowId` and `runId`. Alerts are suppressed while the phone app is connected. Tapping opens the run on a current app (the step alone when the push has only a `stepId`, a step run on its own; the workflow's detail when it has neither). The desktop app's `alert` event carries `workflowId` too, and clicking that notification opens the workflow. A step run on its own sends step events with `runId` null and its `stepId`; the desktop app reads that step back with `workflowStep`.
 
 ## API and events
 
@@ -260,7 +260,7 @@ Methods, all `POST /api/<method>`:
 | `setWorkflowEnabled` | Pause or resume. |
 | `workflowVersions` / `workflowVersion` / `restoreWorkflowVersion` | History. |
 | `startWorkflowRun` / `stopWorkflowRun` / `workflowRuns` / `workflowRun` | Runs. |
-| `decideWorkflowStep` / `runWorkflowStep` / `stopWorkflowStep` / `retryWorkflowStep` | One step. |
+| `workflowStep` / `decideWorkflowStep` / `runWorkflowStep` / `stopWorkflowStep` / `retryWorkflowStep` | One step (`workflowStep` reads one, for a step run on its own). |
 | `rotateWorkflowWebhook` | Replace the secret. The old one stops at once. |
 | `workflowCall` | The bot MCP tools. Requires `botId`. Async, because save and run wait for approval. |
 
@@ -278,7 +278,7 @@ Platform differences go through `window.codync.platform` or the main process.
 
 `apps/ios/Kit/Sources/CodyncKit/Models/Workflow.swift` and `apps/ios/Kit/Sources/CodyncUI/Workflows/`. List, detail, runs and run, read only but for an approval step's Approve and Reject. Controls are the shared ones; menus stay the system menus.
 
-Deep link: `codync-dev://workflows` in the Dev app. A notification with `workflowId` opens the run (`runId`), else the workflow, and clears an open chat first.
+Deep link: `codync-dev://workflows` in the Dev app. A notification with `workflowId` opens the run (`runId`), else the step run on its own (`stepId`), else the workflow, and clears an open chat first.
 
 ## Android
 

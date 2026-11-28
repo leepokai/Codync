@@ -20,6 +20,14 @@ public extension HostClient {
         let _: Empty = try await call("decideWorkflowStep", Body(stepId: stepId, approved: approved))
     }
 
+    /// One step, for a step run on its own outside any run (an approval a push opened).
+    func workflowStep(_ stepId: String) async throws -> WorkflowStep {
+        struct Body: Encodable { var stepId: String }
+        struct Response: Decodable { var step: WorkflowStep }
+        let response: Response = try await call("workflowStep", Body(stepId: stepId))
+        return response.step
+    }
+
     func workflowRuns(_ id: String, limit: Int, before: (startedAt: Int64, id: String)? = nil) async throws -> WorkflowRunPage {
         struct Before: Encodable { var startedAt: Int64; var id: String }
         struct Body: Encodable { var id: String; var limit: Int; var before: Before? }

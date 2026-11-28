@@ -1,7 +1,7 @@
 name: PR validation
 
-# A contributor's pull request must fill in the template's Validation section: every item of the template kept and
-# ticked, and what they ran described (tools/pr-validation.py). pull_request_target runs this file and the script from the base branch, never
+# Every pull request but a bot's, the maintainer's own included, must fill in the template's Validation section: every item of the
+# template kept and ticked, and what the author ran described (tools/pr-validation.py). pull_request_target runs this file and the script from the base branch, never
 # the PR's code, so fork PRs are checked without waiting for CI approval; the body only goes in as an env variable.
 on:
   pull_request_target:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   validation:
-    if: github.event.pull_request.user.login != github.repository_owner && github.event.pull_request.user.type != 'Bot'
+    if: github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

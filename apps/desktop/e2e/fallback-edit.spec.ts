@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach } from './sandbox.ts'
+import { api, attach, openDetails } from './sandbox.ts'
 
 type Fallback = { backend: string; model?: string | null }
 
@@ -19,9 +19,7 @@ test('a fallback row is picked in place and keeps its place in the chain', async
     botId = bot.id
 
     await page.locator('.roster-row', { hasText: name }).click()
-    await page.getByRole('button', { name: `${name}, view details` }).click()
-    const panel = page.locator('.details-panel')
-    await panel.getByRole('tab', { name: 'Settings' }).click()
+    const panel = await openDetails(page, 'Settings')
     // The menu moves and removes; editing is the row itself.
     await panel.locator('.fallback-menu').first().click()
     await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible()

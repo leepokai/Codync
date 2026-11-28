@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach, holdTask, openPage, setPref, withPrefs, workBot } from './sandbox.ts'
+import { api, attach, holdTask, openPage, setPref, sidePanel, withPrefs, workBot } from './sandbox.ts'
 
 /** The buttons at the window bar's end, by name, in order. */
 const barButtons = (page: Page) => page.locator('.window-bar-end button').evaluateAll((all) => all.map((b) => b.getAttribute('aria-label') ?? b.getAttribute('title')))
@@ -19,7 +19,7 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
     // The bot's chat, panel open: the row the thread's must match.
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: 'Conversation details', exact: true }).click()
-    await expect(page.locator('.side-panel:not([inert])').filter({ visible: true })).toBeVisible()
+    await expect(sidePanel(page)).toBeVisible()
     const botBar = await barButtons(page)
     await page.screenshot({ path: info.outputPath('bot-panel.png') })
 
@@ -29,7 +29,7 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
     await expect.poll(() => barButtons(page)).toEqual(['Conversation details'])
     await expect(page.locator('.window-bar-title .window-bar-status')).toContainText('Working')
     await page.getByRole('button', { name: 'Conversation details', exact: true }).click()
-    const panel = page.locator('.side-panel:not([inert])').filter({ visible: true })
+    const panel = sidePanel(page)
     await expect(panel).toBeVisible()
     await expect.poll(() => barButtons(page)).toEqual(botBar)
     expect(botBar).toEqual(['Create template', 'Maximize panel', 'Split panel', 'Conversation details'])
@@ -78,7 +78,7 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
     botId = (await workBot(page, name)).id
     await holdTask(page, botId, title)
     const check = async (where: string) => {
-      const panel = page.locator('.side-panel:not([inert])').filter({ visible: true })
+      const panel = sidePanel(page)
       const row = panel.locator('.panel-tabs-row').first()
       await expect(row.getByRole('tab')).toHaveCount(tabs.length)
       for (const width of [300, 440, 620]) {

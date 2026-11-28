@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { api, attach, openPage, sandbox, setPref, workBot } from './sandbox.ts'
+import { api, attach, openDetails, openPage, sandbox, setPref, workBot } from './sandbox.ts'
 
 // Stage 7 of docs/plans/bots-projects-threads.md: a git project's Shared folders, a new thread's place, and a thread
 // without a bot in a folder of its own.
@@ -52,9 +52,7 @@ test("a git project's Shared folders are added and removed in bot settings and s
     botId = (await workBot(page, name)).id
     await api(page, 'updateBot', { id: botId, projects: [project] })
     await row(page, name).click()
-    const details = page.locator('.details-panel')
-    if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-    await details.getByRole('tab', { name: 'Settings' }).click()
+    const details = await openDetails(page, 'Settings')
 
     await details.getByRole('button', { name: 'Shared folders' }).click()
     const sheet = page.locator('.shared-folders-body')

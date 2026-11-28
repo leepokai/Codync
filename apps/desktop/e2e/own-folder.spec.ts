@@ -4,17 +4,14 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, echoBot, sandbox, setPref, workAgent, typeMessage } from './sandbox.ts'
+import { api, attach, echoBot, openDetails, sandbox, setPref, typeMessage, workAgent } from './sandbox.ts'
 
 const row = (page: Page, name: string) => page.locator('[data-roster-row]').filter({ has: page.getByText(name, { exact: true }) })
 
 /** The Settings tab of the details beside the bot's chat. */
 async function openSettings(page: Page, name: string) {
   await row(page, name).click()
-  const details = page.locator('.details-panel')
-  if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-  await details.getByRole('tab', { name: 'Settings' }).click()
-  return details
+  return openDetails(page, 'Settings')
 }
 
 /** The versions of a folder, newest first (none while it is no repository). */

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { join, resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, typeMessage } from './sandbox.ts'
+import { api, attach, openDetails, showView, typeMessage } from './sandbox.ts'
 
 // A scripted agent that answers `initialize` the way Claude's adapter does and reports the context use a message names
 // (host/tests/fixtures/instructions_agent.py). Playwright loads specs as CommonJS here, so `__dirname` is defined.
@@ -12,9 +12,7 @@ type Bot = { id: string; compaction: unknown }
 /** The bot's Summarize long chats row, in the Agent card on the Settings tab of the details beside its chat. */
 async function summarizeRow(page: Page, name: string) {
   await page.locator('.roster-row', { hasText: name }).click()
-  const details = page.locator('.details-panel')
-  if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-  await details.getByRole('tab', { name: 'Settings' }).click()
+  const details = await openDetails(page, 'Settings')
   return details.locator('.value-row', { hasText: 'Summarize long chats' })
 }
 
@@ -47,7 +45,7 @@ test('before its first reply a Claude Code bot offers only the three choices', a
     // Settings holds how the bot is set up; Details, what it does.
     const details = page.locator('.details-panel')
     await expect(details.locator('.value-row', { hasText: 'Workspace' })).toBeVisible()
-    await details.getByRole('tab', { name: 'Details' }).click()
+    await showView(details, 'Details')
     await expect(row).toHaveCount(0)
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

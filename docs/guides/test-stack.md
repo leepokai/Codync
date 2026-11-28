@@ -65,6 +65,8 @@ npm run e2e            # in a second shell: e2e/*.spec.ts against that sandbox
 
 `e2e/sandbox.ts` finds the sandbox from its `sandbox.json` and attaches to its main window; `e2e/smoke.spec.ts` checks the app renders and runs against the sandbox's own host. A spec reaches the main process only through the `window.codync` bridge, as the renderer does. Keys sent over the DevTools protocol never reach the app menu's shortcuts (⌘F, ⌘G): `e2e/find.spec.ts` picks those menu items through System Events instead, so it runs on macOS only and needs Accessibility access for the terminal running Playwright. Every unpackaged sandbox app is a process named "Electron", so it picks the attached app by the process ID its DevTools protocol reports (`SystemInfo.getProcessInfo`), never by name. One worker per worktree, since one app runs per sandbox; worktrees run in parallel with each other.
 
+A spec never assumes what an earlier one left in the sandbox. The details panel's layout (`prefs.panelLayout`) is shared by every bot and a new panel opens on its chooser alone, so a spec opens a view with `showView` (its tab when the pane has one, else the chooser) or `openDetails` (the panel, then a view), never by clicking a tab it expects to be there.
+
 ### Stand-in agents
 
 Some screens need an agent the host knows by name: an agent's sheet in Extensions, its sign-in terminal, its [login profiles](../features/login-profiles.md). A scripted agent on a custom command (the `echoBot` kind) can't reach them, and the real agents on the computer must not be signed in and out by a test: repeated automated sign-ins can get an account banned by its provider. So an e2e sandbox runs stand-ins of real agents' CLIs.

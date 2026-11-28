@@ -3,14 +3,14 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'nod
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, openPage, setPref, workAgent } from './sandbox.ts'
+import { api, attach, openDetails, openPage, setPref, workAgent } from './sandbox.ts'
 
 type Saved = { routines: { id: string; name: string; folder?: string | null }[] }
 
 /** The routine's editor, from the bot's details. */
 async function openEditor(page: Page, bot: string, routine: string) {
   await page.locator('.roster-row', { hasText: bot }).click()
-  await page.locator('.title-pill').click()
+  await openDetails(page, 'Details')
   await page.locator('.routines-card', { hasText: routine }).locator('.routine-row').click()
   return page.locator('.routine-editor')
 }

@@ -1,5 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test'
-import { api, attach, holdTask, openPage, withPrefs, workBot } from './sandbox.ts'
+import { api, attach, holdTask, openPage, sidePanel, withPrefs, workBot } from './sandbox.ts'
 
 // The window's list at its default width, shown, so the page beside it is as wide as in an ordinary window.
 const LAYOUT = { desktopSidebarWidth: 266, listHidden: false, detailsPanelWidth: 360 }
@@ -8,8 +8,8 @@ const LAYOUT = { desktopSidebarWidth: 266, listHidden: false, detailsPanelWidth:
 async function dragBothWays(panel: Locator) {
   const page = panel.page()
   const shown = async () => (await panel.boundingBox())!.width
-  // Once it has slid in, flush with the window's edge, and stopped moving.
-  const edge = await page.evaluate(() => innerWidth)
+  // Once it has slid in, flush with the page frame's trailing edge, and stopped moving.
+  const edge = await page.locator('.page-frame').evaluate((frame) => Math.round(frame.getBoundingClientRect().right))
   await expect.poll(async () => { const box = (await panel.boundingBox())!; return Math.round(box.x + box.width) }).toBe(edge)
   const settled = async () => { let last = -1; await expect.poll(async () => { const now = await shown(); const same = now === last; last = now; return same }).toBe(true) }
   const drag = async (dx: number) => {
@@ -38,7 +38,7 @@ test('the chat beside a workflow drags wider and narrower in a window of ordinar
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 760, deviceScaleFactor: 1, mobile: false })
     await page.locator('.nav-rail [data-page="workflows"]').click()
     await page.locator('.sidebar-header').getByRole('button', { name: 'New workflow', exact: true }).click()
-    const panel = page.locator('.side-panel')
+    const panel = sidePanel(page)
     await expect(panel).toBeVisible()
     await dragBothWays(panel)
 
@@ -67,7 +67,7 @@ test("a thread's side panel drags wider and narrower in a window of ordinary wid
     await openPage(page, 'Threads')
     await page.locator(`[data-thread-row="${title}"]`).click()
     await page.getByRole('button', { name: 'Conversation details', exact: true }).click()
-    const panel = page.locator('.side-panel')
+    const panel = sidePanel(page)
     await expect(panel).toBeVisible()
     await dragBothWays(panel)
   } finally {

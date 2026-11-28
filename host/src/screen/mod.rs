@@ -182,10 +182,18 @@ impl Screen {
         }
     }
 
+    /// Whether an environment flag turns Remote screen off (e.g. `CODYNC_DISABLE_SCREEN=1` in tests).
+    fn env_disabled() -> bool {
+        env_flag_disables_screen(std::env::var("CODYNC_DISABLE_SCREEN").ok().as_deref())
+    }
+
     /// On by default wherever there is a screen to share: always on macOS, and on Linux
     /// only while a graphical session is up (checked live, so a headless server stays off
     /// and a desktop that logs in after the host started turns on).
     pub fn enabled(&self) -> bool {
+        if Self::env_disabled() {
+            return false;
+        }
         (*self.enabled.locked()).unwrap_or_else(graphical_session)
     }
 
@@ -238,11 +246,25 @@ impl Screen {
     }
 }
 
+fn env_flag_disables_screen(value: Option<&str>) -> bool {
+    matches!(value.map(str::trim), Some("1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
     pub(super) fn retina() -> protocol::Display {
         protocol::Display { id: 1, name: "Built-in".into(), width: 1512.0, height: 982.0, main: true }
+    }
+
+    #[test]
+    fn disable_screen_env_flag_is_recognized() {
+        assert!(env_flag_disables_screen(Some("1")));
+        assert!(env_flag_disables_screen(Some("true")));
+        assert!(env_flag_disables_screen(Some("yes")));
+        assert!(!env_flag_disables_screen(Some("0")));
+        assert!(!env_flag_disables_screen(Some("")));
+        assert!(!env_flag_disables_screen(None));
     }
 }

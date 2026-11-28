@@ -244,6 +244,16 @@ async fn create_and_update_bot_support_avatar_image_validation_persistence_and_c
     assert!(second_url.starts_with("data:image/png;base64,"));
     assert_ne!(second_url, first_url);
 
+    // A rejected combined patch must not change the icon: settings are checked before icons::set. The fixture
+    // "lead" has no lead flag; make it the real lead so `hidden: true` fails config validation.
+    hub.make_lead("lead").unwrap();
+    let err = call(&hub, "lead", "update_bot", &json!({"botId": "lead", "hidden": true, "avatarImage": red_data_url}))
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("lead bot can't be hidden"), "{err:#}");
+    let lead_icon = crate::icons::snapshot(&hub.store).unwrap().icons.get("bot:lead").cloned();
+    assert_eq!(lead_icon.map(|i| i.data_url), None, "a failed update left the lead bot's avatar untouched");
+
     // update_bot with empty string removes custom icon.
     call(&hub, "lead", "update_bot", &json!({"botId": id, "avatarImage": ""})).await.unwrap();
     assert!(!crate::icons::snapshot(&hub.store).unwrap().icons.contains_key(&key));

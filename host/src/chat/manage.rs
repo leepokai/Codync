@@ -276,18 +276,20 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
     fields.remove("avatarImage");
+    // Validate and save the whole config first: an invalid patch (e.g. hiding the lead bot) must not leave a
+    // half-applied avatar behind. The icon can only change once `update_bot` has accepted the settings.
+    if !fields.is_empty() {
+        let mut patch = Value::Object(fields);
+        patch["id"] = id.clone().into();
+        let hub = hub.clone();
+        tokio::task::spawn_blocking(move || hub.update_bot(&patch)).await??;
+    }
     if let Some(change) = avatar {
         let payload = match change {
             AvatarChange::Set { data } => json!({"target": format!("bot:{id}"), "data": data}),
             AvatarChange::Remove => json!({"target": format!("bot:{id}"), "remove": true}),
         };
         crate::icons::set(hub, &payload).await?;
-    }
-    if !fields.is_empty() {
-        let mut patch = Value::Object(fields);
-        patch["id"] = id.clone().into();
-        let hub = hub.clone();
-        tokio::task::spawn_blocking(move || hub.update_bot(&patch)).await??;
     }
     let saved = save_routines(hub, &id, &routines);
     if saved.iter().any(|r| r["error"].is_null()) {

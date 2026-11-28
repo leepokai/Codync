@@ -22,14 +22,19 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// An `avatarImage` is a data URL of up to 5 MiB, i.e. about 6.7 MiB of base64 JSON. Give local tool calls the
+/// same bounded body as `/api/setIcon`, so the bridge's `manageCall` reaches image validation instead of Axum's
+/// default 2 MiB extractor limit. Webhooks keep their own much smaller limits.
+const API_BODY_LIMIT: usize = 8 * 1024 * 1024;
+
 pub fn router(hub: Arc<Hub>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/hooks/workflows/{id}", post(workflow_hook))
         .route("/events", get(events))
-        .route("/api/{method}", post(command))
-        .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
+        .route("/api/{method}", post(command).layer(axum::extract::DefaultBodyLimit::max(API_BODY_LIMIT)))
+        .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(API_BODY_LIMIT)))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .route("/channel", get(channel))

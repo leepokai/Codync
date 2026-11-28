@@ -310,6 +310,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!("nothing to change");
     }
     let model = model_after(&fields, target.model.as_deref());
+    // The settings the change leaves, not only the ones it sends: a model change keeps the bot's saved settings
+    // (`hub::patch`), so they are the ones checked against the model it will run on.
+    let options = options_after(&fields, &target);
     let fallbacks: Vec<Fallback> =
         serde_json::from_value(fields.get("fallbacks").cloned().unwrap_or_default()).unwrap_or_default();
     let validate_only = args["validateOnly"].as_bool() == Some(true) || args["dryRun"].as_bool() == Some(true);
@@ -321,7 +324,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         checks::Models {
             set: fields.get("model").and_then(Value::as_str),
             effective: model,
-            options: fields.get("modelOptions").and_then(Value::as_object),
+            options: options.as_ref(),
             fallbacks: &fallbacks,
         },
         deadline,
@@ -552,6 +555,18 @@ fn setup_patch(args: &Value, fallbacks: &[Fallback]) -> Result<Map<String, Value
 /// or else its own.
 fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> Option<&'a str> {
     fields.get("model").map_or(stored, Value::as_str)
+}
+
+/// The model settings a change leaves a bot on: the ones it sends, else, on a model change, the bot's saved ones
+/// (`hub::patch` keeps them). Nil when it touches neither the model nor its settings, so a change of a name or an
+/// avatar checks no list. The settings are checked against the model the change puts the bot on.
+fn options_after(fields: &Map<String, Value>, target: &BotConfig) -> Option<Map<String, Value>> {
+    if let Some(sent) = fields.get("modelOptions") {
+        return sent.as_object().cloned();
+    }
+    fields
+        .contains_key("model")
+        .then(|| target.model_options.iter().map(|(id, value)| (id.clone(), Value::String(value.clone()))).collect())
 }
 
 /// `routines` for `bot` (empty for a new one), checked the way `save_routine` checks them, with a line for each on the

@@ -167,6 +167,25 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A model change keeps the bot's saved settings (`hub::patch`), so the check is made with those settings too, not
+/// only with the ones the call sends: `validateOnly` can't say valid for a model that refuses them.
+#[test]
+fn a_model_change_is_checked_with_the_settings_it_keeps() {
+    let cfg: BotConfig = serde_json::from_value(json!({"id": "a", "name": "a", "backend": "claude",
+        "model": "opus", "modelOptions": {"effort": "high"}}))
+    .unwrap();
+    let saved = |fields: Value| options_after(fields.as_object().unwrap(), &cfg);
+    let kept = json!({"effort": "high"}).as_object().cloned();
+    assert_eq!(saved(json!({"model": "sonnet"})), kept, "a model change keeps them, so they are checked");
+    assert_eq!(
+        saved(json!({"model": "sonnet", "modelOptions": {"effort": "low"}})).and_then(|o| o.get("effort").cloned()),
+        Some(json!("low")),
+        "the ones the call sends stand"
+    );
+    assert!(saved(json!({"model": "sonnet", "modelOptions": {}})).is_some_and(|o| o.is_empty()), "an empty map clears");
+    assert_eq!(saved(json!({"name": "b"})), None, "a change that touches no model checks no settings");
+}
+
 /// A manager pauses and resumes a bot; `list_team` says where each bot stands.
 #[tokio::test]
 async fn a_manager_pauses_and_resumes_a_bot() {

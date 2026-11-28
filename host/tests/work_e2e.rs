@@ -5,6 +5,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
+#[path = "work_e2e/skill_delivery.rs"]
+mod skill_delivery;
 #[path = "work_e2e/startup_skills.rs"]
 mod startup_skills;
 
@@ -2895,6 +2897,7 @@ async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
         sessions().into_iter().filter(|e| e["method"] == "session/resume" && e["session"] == session).collect()
     };
     let accepted = wait("the held resume", async || resumes().into_iter().next()).await;
+    assert_eq!(accepted["gate"], "initial");
     assert!(accepted["system"].as_str().unwrap().contains("- B: Release steps."));
     let workspace = host.workspace(&bot);
     let background = if close == ResumeClose::Unsupported {
@@ -2910,14 +2913,14 @@ async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
     };
     let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
-    db.execute_batch("CREATE TABLE fixture_resume_failure(k TEXT PRIMARY KEY, fired INTEGER NOT NULL);").unwrap();
-    db.execute("INSERT INTO fixture_resume_failure VALUES(?1, 0)", [format!("context.{bot}.{session}")]).unwrap();
+    let snapshot_key = format!("context.{bot}.{session}");
+    db.execute_batch("CREATE TABLE fixture_resume_failure(k TEXT PRIMARY KEY, armed INTEGER NOT NULL);").unwrap();
+    db.execute("INSERT INTO fixture_resume_failure VALUES(?1, 1)", [&snapshot_key]).unwrap();
     db.execute_batch(
         "CREATE TRIGGER reject_resume_snapshot BEFORE INSERT ON kv
-         WHEN CASE WHEN EXISTS(SELECT 1 FROM fixture_resume_failure WHERE k = NEW.k AND fired = 0)
+         WHEN CASE WHEN EXISTS(SELECT 1 FROM fixture_resume_failure WHERE k = NEW.k AND armed = 1)
               THEN json_type(NEW.v, '$.pendingTaskSkills') IS NOT NULL ELSE 0 END
          BEGIN
-             UPDATE fixture_resume_failure SET fired = 1 WHERE k = NEW.k;
              SELECT RAISE(FAIL, 'fixture refused the snapshot write');
          END;",
     )
@@ -2925,9 +2928,39 @@ async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
     if close == ResumeClose::Refused {
         flag(&host, &bot, &format!("fail-close-{session}"));
     }
+    let retry_gate = flag(&host, &bot, &format!("hold-retry-load-{session}"));
     let retry_text = "retry the same session HOLD:resume_retry";
     assert_eq!(tell(&host, &bot, &done, retry_text).await["queued"], true);
     std::fs::remove_file(gate).unwrap();
+    let refusal_count = async || {
+        transcript(&host, &bot, &done)
+            .await
+            .into_iter()
+            .filter(|entry| {
+                entry["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the snapshot write"))
+            })
+            .count()
+    };
+    wait("the first resume bookkeeping error", async || (refusal_count().await == 1).then_some(())).await;
+    let held_resumes = wait("the held retry resume", async || {
+        let seen = resumes();
+        (seen.len() == 2).then_some(seen)
+    })
+    .await;
+    assert_eq!(held_resumes[0]["gate"], "initial");
+    assert_eq!(held_resumes[1]["gate"], "retry");
+    let stored_before_retry: Value = serde_json::from_str(
+        &db.query_row("SELECT v FROM kv WHERE k = ?1", [&snapshot_key], |r| r.get::<_, String>(0)).unwrap(),
+    )
+    .unwrap();
+    assert!(stored_before_retry["pendingTaskSkills"].is_null(), "first snapshot write was not rolled back");
+    assert!(thread_prompts(&host, &bot).is_empty(), "queued retry prompted before the retry gate opened");
+    eprintln!(
+        "{close:?}: observed 1 refusal for {session} with pendingTaskSkills absent; gates=({}, {}); disarming before retry PID {}",
+        held_resumes[0]["gate"], held_resumes[1]["gate"], held_resumes[1]["pid"]
+    );
+    assert_eq!(db.execute("UPDATE fixture_resume_failure SET armed = 0 WHERE k = ?1", [&snapshot_key]).unwrap(), 1);
+    std::fs::remove_file(retry_gate).unwrap();
     let resumed_prompt = wait("the prompt from the queued retry", async || {
         thread_prompts(&host, &bot).into_iter().find(|p| p["text"].as_str().unwrap().contains(retry_text))
     })
@@ -2960,10 +2993,12 @@ async fn retry_task_after_resume_bookkeeping_error(close: ResumeClose) {
     };
     release(&host, &bot, "resume_retry");
     result(&host, &bot, "Retry resume", &format!("Thread {retry_text}:")).await;
-    assert_eq!(db.query_row("SELECT fired FROM fixture_resume_failure", [], |r| r.get::<_, i32>(0)).unwrap(), 1);
-    assert!(transcript(&host, &bot, &done).await.iter().any(|entry| {
-        entry["data"]["text"].as_str().is_some_and(|text| text.contains("fixture refused the snapshot write"))
-    }));
+    assert_eq!(
+        db.query_row("SELECT armed FROM fixture_resume_failure WHERE k = ?1", [&snapshot_key], |r| r.get::<_, i32>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(refusal_count().await, 1);
     eprintln!(
         "{close:?}: resume of {session} accepted by PID {first_pid}, close {close_event:?}, next resume PID {retry_pid}, retry prompt session {}, detached worker {background:?}",
         resumed_prompt["session"]

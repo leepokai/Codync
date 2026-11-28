@@ -486,6 +486,8 @@ def prompt(request):
     if TRACK_SKILLS:
         overlay = pathlib.Path(f"fixture-skills-{session}")
         update = re.search(r"<skills_update>\n(.*?)\n</skills_update>", text, re.S)
+        if not update and REPORT_COMPACTION:
+            update = re.search(r"<agent_profile_update>\n(.*?)\n</agent_profile_update>", text, re.S)
         if update:
             overlay.write_text(update.group(1), encoding="utf-8")
         if compaction and overlay.exists():
@@ -500,7 +502,8 @@ def prompt(request):
         return
     task_prompt = "[Task]" in text or "in this task's thread" in text
     returns_cancelled = task_prompt and "RETURN_CANCELLED" in text
-    ends_after_cancel = task_prompt and "END_AFTER_CANCEL" in text
+    refuses = task_prompt and "RETURN_REFUSAL" in text
+    ends_after_cancel = (task_prompt and "END_AFTER_CANCEL" in text) or "STOP_CHAT_WITH_END_TURN" in text.splitlines()
     if ends_after_cancel and not cancel.wait(10):
         send({"id": request["id"], "error": {"code": -32603, "message": "Fixture did not receive session/cancel"}})
         return
@@ -513,9 +516,11 @@ def prompt(request):
             time.sleep(0.01)
     cancel_received = cancel.is_set()
     stop_reason = "cancelled" if returns_cancelled or (cancel_received and not ends_after_cancel) else "end_turn"
-    if returns_cancelled or ends_after_cancel:
+    if refuses and stop_reason == "end_turn":
+        stop_reason = "refusal"
+    if returns_cancelled or ends_after_cancel or refuses or (compaction and REPORT_COMPACTION and TRACK_SKILLS):
         log("prompt_outcomes.jsonl", {"session": session, "stopReason": stop_reason, "cancelReceived": cancel_received})
-    if stop_reason == "cancelled":
+    if stop_reason != "end_turn":
         send({"id": request["id"], "result": {"stopReason": stop_reason}})
         return
     failure = {"thread-signedout": SIGNED_OUT, "thread-limit": LIMIT}
@@ -591,23 +596,34 @@ for line in sys.stdin:
                 if not reopened or pathlib.Path(f"apply-system-{session}").exists():
                     opening.write_text(system, encoding="utf-8")
                 event["activeSystem"] = opening.read_text(encoding="utf-8")
-            log(SESSION_LOG, event)
             if STRICT_RESUME and method == "session/resume":
                 if session in resumed:
+                    log(SESSION_LOG, event)
                     send({"id": message["id"], "error": {"code": -32603, "message": "Session already held"}})
                     continue
                 resumed.add(session)
-            gate = pathlib.Path(f"hold-load-{session}")
-            if reopened and gate.exists():
-                if CAN_CLOSE and method == "session/resume":
+            held_gate = None
+            if reopened:
+                gate = pathlib.Path(f"hold-load-{session}")
+                retry_gate = pathlib.Path(f"hold-retry-load-{session}")
+                if gate.exists():
+                    held_gate = ("initial", gate)
+                elif retry_gate.exists():
+                    held_gate = ("retry", retry_gate)
+            if held_gate is not None:
+                gate_kind, gate_path = held_gate
+                event["gate"] = gate_kind
+                if gate_kind == "initial" and CAN_CLOSE and method == "session/resume":
                     child = subprocess.Popen(
                         [sys.executable, __file__, "background-worker"],
                         start_new_session=os.name == "posix",
                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     )
                     threading.Thread(target=child.wait, daemon=True).start()
-                threading.Thread(target=finish_held_reopen, args=(message["id"], session, gate), daemon=True).start()
+                threading.Thread(target=finish_held_reopen, args=(message["id"], session, gate_path), daemon=True).start()
+                log(SESSION_LOG, event)
                 continue
+            log(SESSION_LOG, event)
         send({"id": message["id"], "result": {} if reopened else {"sessionId": session}})
     elif method == "session/close":
         session = params["sessionId"]

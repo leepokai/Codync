@@ -301,6 +301,10 @@ impl Actor {
         // thread started: what the user wants forgotten, the bot does in the chat.
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
+        if let Some((snapshot, identity)) = &mut self.announce {
+            let as_bot = context::as_bot(&self.cfg, &self.task_source);
+            context::mark_announcement_pending(&self.hub.store, self.cfg.owner(), snapshot, identity, as_bot)?;
+        }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
         if std::mem::take(&mut self.relay.handing_off) {
@@ -393,10 +397,11 @@ impl Actor {
         if self.turn.is_none() {
             return false;
         }
-        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
+        let reason = done.as_ref().ok().map(StopReason::of);
+        let cancelled = reason == Some(StopReason::Cancelled);
         let stopped = self.stop_requested || cancelled;
         // The task can resume in another actor once its turn's end is published.
-        self.settle_context(done.is_ok() && !stopped);
+        self.settle_context(!stopped && reason.as_ref().is_some_and(|r| *r != StopReason::Refusal));
         self.after_turn(done);
         self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
@@ -445,10 +450,7 @@ impl Actor {
         if final_text.is_none() {
             final_text = self.files.summary.take();
         }
-        let stop_reason = match &done {
-            Ok(v) => StopReason::of(v).as_str().to_owned(),
-            Err(_) => "error".into(),
-        };
+        let stop_reason = reason.as_ref().map_or("error", StopReason::as_str).to_owned();
         match (&done, stop_reason.as_str()) {
             (Err(e), _) if !self.stop_requested => {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
@@ -597,14 +599,10 @@ impl Actor {
     pub(super) fn settle_context(&mut self, delivered: bool) {
         let store = &self.hub.store;
         let owner = self.cfg.owner();
-        let announcement = match self.announce.take() {
-            Some((snapshot, identity)) if delivered => context::mark_announced(store, owner, &snapshot, identity),
-            Some((snapshot, _)) if !context::as_bot(&self.cfg, &self.task_source) => {
-                context::mark_task_skills_uncertain(store, owner, &snapshot)
-            }
-            _ => Ok(()),
-        };
-        if let Err(error) = announcement {
+        if let Some((snapshot, identity)) = self.announce.take()
+            && delivered
+            && let Err(error) = context::acknowledge_announcement(store, owner, &snapshot, identity)
+        {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the context update");
         }
         if let Some(sent) = self.first_prompt.take()

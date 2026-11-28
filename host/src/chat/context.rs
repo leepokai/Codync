@@ -13,7 +13,8 @@
 
 use crate::chat::work::Source;
 use crate::store::{BotConfig, Store};
-use anyhow::Result;
+use anyhow::{Result, ensure};
+use rusqlite::{Connection, OptionalExtension as _};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -86,6 +87,9 @@ pub struct Snapshot {
     /// The epoch of the delivered opening or update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     announced_epoch: Option<u32>,
+    /// The prompt update still awaiting a receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_announcement: Option<PendingAnnouncement>,
     /// The skill block from the last opening accounted for in the task's context.
     #[serde(default, alias = "loadedTaskSkills", skip_serializing_if = "Option::is_none")]
     confirmed_task_skills: Option<String>,
@@ -103,9 +107,20 @@ pub struct Snapshot {
     pub unprompted: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct PendingAnnouncement {
+    receipt: String,
+    may_have_led: bool,
+}
+
 impl Snapshot {
     pub fn needs_resend(&self) -> bool {
         self.announced_epoch.is_some_and(|announced| announced < self.epoch)
+    }
+
+    fn pending_lead(&self) -> bool {
+        self.pending_announcement.as_ref().is_some_and(|pending| pending.may_have_led)
     }
 }
 
@@ -121,15 +136,17 @@ fn epoch_key(bot_id: &str, session: &str) -> String {
 
 /// `(epoch, last compaction id)` stored as `session \t epoch \t id`.
 fn epoch_state(store: &Store, bot_id: &str, session: &str) -> (u32, String) {
-    store
-        .kv_get(&epoch_key(bot_id, session))
-        .and_then(|v| {
-            let mut parts = v.splitn(3, '\t');
-            (parts.next()? == session).then(|| {
-                (parts.next().and_then(|n| n.parse().ok()).unwrap_or(0), parts.next().unwrap_or("").to_owned())
-            })
-        })
-        .unwrap_or_default()
+    parse_epoch_state(store.kv_get(&epoch_key(bot_id, session)).as_deref(), session)
+}
+
+fn parse_epoch_state(raw: Option<&str>, session: &str) -> (u32, String) {
+    let mut parts = raw.unwrap_or_default().splitn(3, '\t');
+    if parts.next() != Some(session) {
+        return (0, String::new());
+    }
+    let epoch = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
+    let last = parts.next().unwrap_or_default();
+    (epoch, last.to_owned())
 }
 
 /// How many times the agent has compacted `session`.
@@ -148,8 +165,20 @@ pub fn bump_epoch(store: &Store, bot_id: &str, session: &str, compaction_id: &st
     Ok(true)
 }
 
-fn load(store: &Store, bot_id: &str, session: &str) -> Option<Snapshot> {
-    store.kv_get(&key(bot_id, session)).and_then(|v| parse(&v))
+fn read_kv(conn: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(conn.query_row("SELECT v FROM kv WHERE k = ?1", [key], |row| row.get(0)).optional()?)
+}
+
+fn read_snapshot(conn: &Connection, key: &str) -> Result<Option<Snapshot>> {
+    Ok(read_kv(conn, key)?.as_deref().and_then(parse))
+}
+
+fn write_snapshot(conn: &Connection, key: &str, snapshot: &Snapshot) -> Result<()> {
+    conn.execute(
+        "INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        (key, serde_json::to_string(snapshot)?),
+    )?;
+    Ok(())
 }
 
 /// A stored snapshot. One from before the lead could move (2.33.0) told the agent its role in `system` alone.
@@ -171,45 +200,61 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str, opening_in_prompt:
     // A thread's sessions are kept with its bot's, as its memory is.
     let owner = cfg.owner();
     let epoch = epoch(store, owner, session);
-    let stored = load(store, owner, session);
-    if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
-        return Ok(s.clone());
+    let snapshot_key = key(owner, session);
+    if let Some(s) = store.kv_get(&snapshot_key).as_deref().and_then(parse)
+        && s.session == session
+        && s.epoch == epoch
+        && !s.system.is_empty()
+    {
+        return Ok(s);
     }
     let memory = crate::chat::memory::current_revision(store, owner);
     let (system, identity) = render_with_identity(store, cfg);
-    let unprompted = stored.as_ref().map_or(opening_in_prompt && epoch > 0, |old| old.unprompted);
-    let announced_epoch = stored.as_ref().map(|old| old.announced_epoch.unwrap_or(old.epoch));
-    let (announced, confirmed_task_skills, pending_task_skills, task_skills_uncertain) = stored.map_or_else(
-        || (identity.clone(), None, None, false),
-        |old| (old.announced, old.confirmed_task_skills, old.pending_task_skills, old.task_skills_uncertain),
-    );
-    let s = Snapshot {
-        session: session.to_owned(),
-        epoch,
-        system,
-        system_identity: identity.clone(),
-        unprompted,
-        announced,
-        announced_epoch,
-        confirmed_task_skills,
-        pending_task_skills,
-        task_skills_uncertain,
-        memory,
-    };
-    save(store, owner, &s)?;
-    Ok(s)
+    store.with_immediate(|tx| {
+        let stored = read_snapshot(tx, &snapshot_key)?.filter(|s| s.session == session);
+        if let Some(s) = stored.as_ref().filter(|s| s.epoch >= epoch && !s.system.is_empty()) {
+            return Ok(s.clone());
+        }
+        let snapshot = match stored {
+            Some(old) => Snapshot {
+                epoch: epoch.max(old.epoch),
+                system,
+                system_identity: identity,
+                announced_epoch: old.announced_epoch.or(Some(old.epoch)),
+                memory,
+                ..old
+            },
+            None => Snapshot {
+                session: session.to_owned(),
+                epoch,
+                system,
+                system_identity: identity.clone(),
+                announced: identity,
+                announced_epoch: None,
+                pending_announcement: None,
+                confirmed_task_skills: None,
+                pending_task_skills: None,
+                task_skills_uncertain: false,
+                memory,
+                unprompted: opening_in_prompt && epoch > 0,
+            },
+        };
+        write_snapshot(tx, &snapshot_key, &snapshot)?;
+        Ok(snapshot)
+    })
 }
 
 /// One session's instructions are rendered again on its next turn: before a compaction the host starts, so the
 /// compaction keeps them as they are now.
 pub fn refresh(store: &Store, bot_id: &str, session: &str) -> Result<()> {
-    match load(store, bot_id, session) {
-        Some(mut s) => {
+    let snapshot_key = key(bot_id, session);
+    store.with_immediate(|tx| {
+        if let Some(mut s) = read_snapshot(tx, &snapshot_key)? {
             s.system.clear();
-            save(store, bot_id, &s)
+            write_snapshot(tx, &snapshot_key, &s)?;
         }
-        None => Ok(()),
-    }
+        Ok(())
+    })
 }
 
 /// Every session of the bot renders its instructions again on its next turn (after the move from the old memory).
@@ -246,6 +291,7 @@ pub fn adopt(
         system_identity: identity.clone(),
         announced: identity,
         announced_epoch: None,
+        pending_announcement: None,
         confirmed_task_skills,
         pending_task_skills: None,
         task_skills_uncertain: false,
@@ -258,11 +304,12 @@ pub fn adopt(
 
 /// Records the epoch of the opening carried by a successful prompt.
 pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
-    update_if_current(store, bot_id, sent, |current| {
+    update_if_current(store, bot_id, sent, |_, current| {
         let first = std::mem::take(&mut current.unprompted);
         let previous = current.announced_epoch.replace(sent.epoch);
-        first || previous != Some(sent.epoch)
+        Ok(first || previous != Some(sent.epoch))
     })
+    .map(drop)
 }
 
 /// Whether a session of `cfg` working for `source` is told who the bot is (name, description, memory): all but a
@@ -484,14 +531,17 @@ fn workspace_origin(cfg: &BotConfig) -> &'static str {
 /// bot's identity changed since the agent last heard it.
 pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Option<(String, Identity)> {
     let identity = Identity::of(store, cfg);
-    if identity == snapshot.announced {
+    if identity == snapshot.announced && snapshot.pending_announcement.is_none() {
         return None;
     }
     let or_none = |s: &str, none: &str| if s.is_empty() { none.to_owned() } else { s.to_owned() };
     // Its role, when it leads or its instructions or an earlier update said it did.
     let role = if identity.lead == Some(true) {
         crate::chat::lead::BRIEF
-    } else if snapshot.announced.lead == Some(true) || snapshot.system_identity.lead == Some(true) {
+    } else if snapshot.announced.lead == Some(true)
+        || snapshot.system_identity.lead == Some(true)
+        || snapshot.pending_lead()
+    {
         NOT_LEAD
     } else {
         ""
@@ -524,6 +574,7 @@ pub fn task_skills_update(
 ) -> Option<(String, Identity)> {
     let skills_brief = current_skills(store, cfg);
     if !resend
+        && snapshot.pending_announcement.is_none()
         && !snapshot.task_skills_uncertain
         && snapshot.pending_task_skills.is_none()
         && skills_brief == snapshot.announced.skills_brief
@@ -547,7 +598,7 @@ pub enum TaskSystemDelivery {
 /// Accounts for the skills in a successfully reopened task's system prompt.
 pub fn task_system_reopened(store: &Store, bot_id: &str, sent: &Snapshot, delivery: TaskSystemDelivery) -> Result<()> {
     let skills = &sent.system_identity.skills_brief;
-    update_if_current(store, bot_id, sent, |current| {
+    update_if_current(store, bot_id, sent, |_, current| {
         let differs_from_announced = &current.announced.skills_brief != skills;
         let changed = current.confirmed_task_skills.as_ref().map_or(differs_from_announced, |last| last != skills);
         if delivery == TaskSystemDelivery::MayDefer
@@ -556,43 +607,79 @@ pub fn task_system_reopened(store: &Store, bot_id: &str, sent: &Snapshot, delive
                 || current.pending_task_skills.is_some())
         {
             if current.pending_task_skills.as_ref() == Some(skills) {
-                return false;
+                return Ok(false);
             }
             current.pending_task_skills = Some(skills.clone());
-            return true;
+            return Ok(true);
         }
         let cleared = current.pending_task_skills.take().is_some();
         if current.confirmed_task_skills.as_ref() == Some(skills) {
-            return cleared;
+            return Ok(cleared);
         }
         current.confirmed_task_skills = Some(skills.clone());
         if changed && delivery == TaskSystemDelivery::Immediate {
             current.announced.skills_brief.clone_from(skills);
         }
-        true
+        Ok(true)
     })
+    .map(drop)
 }
 
-pub(crate) fn mark_task_skills_uncertain(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
-    update_if_current(store, bot_id, sent, |current| !std::mem::replace(&mut current.task_skills_uncertain, true))
+pub(crate) fn mark_announcement_pending(
+    store: &Store,
+    bot_id: &str,
+    sent: &mut Snapshot,
+    identity: &Identity,
+    as_bot: bool,
+) -> Result<()> {
+    let mut pending = PendingAnnouncement {
+        receipt: uuid::Uuid::new_v4().to_string(),
+        may_have_led: as_bot && identity.lead == Some(true),
+    };
+    let saved = update_if_current(store, bot_id, sent, |_, current| {
+        pending.may_have_led |= current.pending_lead();
+        current.pending_announcement = Some(pending.clone());
+        current.task_skills_uncertain |= !as_bot;
+        Ok(true)
+    })?;
+    ensure!(saved, "session context changed before sending its update");
+    sent.pending_announcement = Some(pending);
+    Ok(())
 }
 
-/// After the turn that carried an update reached the agent: remember it heard
-/// `identity`, unless the snapshot moved on meanwhile (a compaction re-rendered it).
-pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, identity: Identity) -> Result<()> {
-    update_if_current(store, bot_id, turn_snapshot, |current| {
-        let changed = current.announced != identity;
-        current.announced = identity;
-        let previous = current.announced_epoch.replace(turn_snapshot.epoch);
-        let reasserted = turn_snapshot.task_skills_uncertain && std::mem::take(&mut current.task_skills_uncertain);
-        if turn_snapshot.pending_task_skills.is_some()
-            && current.pending_task_skills == turn_snapshot.pending_task_skills
-        {
-            current.confirmed_task_skills = current.pending_task_skills.take();
-            return true;
+pub(crate) fn acknowledge_announcement(store: &Store, bot_id: &str, sent: &Snapshot, identity: Identity) -> Result<()> {
+    update_if_current(store, bot_id, sent, |tx, current| {
+        if sent.pending_announcement.is_none() || current.pending_announcement != sent.pending_announcement {
+            return Ok(false);
         }
-        changed || reasserted || previous != Some(turn_snapshot.epoch)
+        // The compaction epoch can advance before the next prompt refreshes its snapshot.
+        let raw_epoch = read_kv(tx, &epoch_key(bot_id, &sent.session))?;
+        let (current_epoch, _) = parse_epoch_state(raw_epoch.as_deref(), &sent.session);
+        if current_epoch > sent.epoch {
+            return Ok(false);
+        }
+        current.pending_announcement = None;
+        current.task_skills_uncertain = false;
+        record_announced(current, sent, identity);
+        Ok(true)
     })
+    .map(drop)
+}
+
+/// Records the identity delivered in a session's system prompt.
+pub fn mark_announced(store: &Store, bot_id: &str, sent: &Snapshot, identity: Identity) -> Result<()> {
+    update_if_current(store, bot_id, sent, |_, current| Ok(record_announced(current, sent, identity))).map(drop)
+}
+
+fn record_announced(current: &mut Snapshot, sent: &Snapshot, identity: Identity) -> bool {
+    let changed = current.announced != identity;
+    current.announced = identity;
+    let previous = current.announced_epoch.replace(sent.epoch);
+    if sent.pending_task_skills.is_some() && current.pending_task_skills == sent.pending_task_skills {
+        current.confirmed_task_skills = current.pending_task_skills.take();
+        return true;
+    }
+    changed || previous != Some(sent.epoch)
 }
 
 /// Applies `change` to the stored snapshot of `sent`'s session unless it moved on meanwhile (a re-render);
@@ -601,13 +688,21 @@ fn update_if_current(
     store: &Store,
     bot_id: &str,
     sent: &Snapshot,
-    change: impl FnOnce(&mut Snapshot) -> bool,
-) -> Result<()> {
-    let Some(mut current) = load(store, bot_id, &sent.session) else { return Ok(()) };
-    if current.epoch != sent.epoch || current.system != sent.system || !change(&mut current) {
-        return Ok(());
-    }
-    save(store, bot_id, &current)
+    change: impl FnOnce(&Connection, &mut Snapshot) -> Result<bool>,
+) -> Result<bool> {
+    let snapshot_key = key(bot_id, &sent.session);
+    store.with_immediate(|tx| {
+        let Some(mut current) = read_snapshot(tx, &snapshot_key)? else { return Ok(false) };
+        if current.session != sent.session
+            || current.epoch != sent.epoch
+            || current.system != sent.system
+            || !change(tx, &mut current)?
+        {
+            return Ok(false);
+        }
+        write_snapshot(tx, &snapshot_key, &current)?;
+        Ok(true)
+    })
 }
 
 #[cfg(test)]
@@ -850,6 +945,49 @@ mod tests {
 
         mark_announced(&store, &bot.id, &latest, latest.system_identity.clone()).expect("current acknowledgement");
         assert!(!resolve(&store, &bot, sid, true).expect("resolve after current acknowledgement").needs_resend());
+    }
+
+    #[test]
+    fn a_receipt_after_compaction_leaves_the_unrefreshed_snapshot_pending() {
+        let store = store();
+        let bot = cfg("Fixer", "Fix bugs");
+        let mut sent = resolve(&store, &bot, "s1", false).expect("snapshot");
+        let updated = cfg("Fixer", "Fix bugs and write tests");
+        let (_, identity) = profile_update(&store, &sent, &updated).expect("profile update");
+        mark_announcement_pending(&store, &bot.id, &mut sent, &identity, true).expect("record the update");
+        let snapshot_key = key(&bot.id, &sent.session);
+        let pending = store.kv_get(&snapshot_key).expect("pending snapshot");
+
+        assert!(bump_epoch(&store, &bot.id, &sent.session, "c1").expect("compaction"));
+        acknowledge_announcement(&store, &bot.id, &sent, identity).expect("receipt before the snapshot is refreshed");
+        assert!(
+            store.kv_get(&snapshot_key).as_deref() == Some(pending.as_str()),
+            "a receipt from before compaction changed the pending snapshot"
+        );
+    }
+
+    #[test]
+    fn a_late_receipt_does_not_acknowledge_a_newer_update_in_the_same_snapshot() {
+        let store = store();
+        let bot = cfg("Fixer", "Fix bugs");
+        let sid = "s1";
+        let mut grant = resolve(&store, &bot, sid, true).expect("snapshot");
+        let lead = BotConfig { lead: true, ..bot.clone() };
+        let (_, granted) = profile_update(&store, &grant, &lead).expect("grant the role");
+        mark_announcement_pending(&store, &bot.id, &mut grant, &granted, true).expect("record the grant");
+
+        let mut revoke = resolve(&store, &bot, sid, true).expect("snapshot with the pending grant");
+        let (text, revoked) = profile_update(&store, &revoke, &bot).expect("revoke the role");
+        assert!(text.contains(NOT_LEAD), "{text}");
+        mark_announcement_pending(&store, &bot.id, &mut revoke, &revoked, true).expect("record the revocation");
+        acknowledge_announcement(&store, &bot.id, &grant, granted).expect("late receipt");
+        let pending = resolve(&store, &bot, sid, true).expect("snapshot after the late receipt");
+        assert_eq!(pending.pending_announcement, revoke.pending_announcement);
+        assert_eq!(pending.announced, revoked);
+
+        acknowledge_announcement(&store, &bot.id, &revoke, revoked).expect("current receipt");
+        let settled = resolve(&store, &bot, sid, true).expect("snapshot after the current receipt");
+        assert!(profile_update(&store, &settled, &bot).is_none());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
-import { agentOf, taskLine, threadSections, type WorkTask } from '@shared/work'
+import { agentOf, OWN_FOLDER_GROUP, taskLine, threadSections, type WorkTask } from '@shared/work'
 import { AgentIcon } from '../components/AgentIcon'
 import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
@@ -98,7 +98,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
               const isFolded = folded.includes(group.key)
               const of = group.rows[0]!.of
               // The box of threads without a bot is no bot: its group says so.
-              const title = of.bot.plain && group.kind === 'bot' ? tr('No bot') : group.title
+              const title = of.bot.plain && group.kind === 'bot' ? tr('No bot') : group.key === OWN_FOLDER_GROUP ? tr(group.title) : group.title
               // Folded, its heading still says that something in it went wrong or works.
               const loud = isFolded ? (group.rows.find((r) => r.task.status === 'failed') ?? group.rows.find((r) => r.task.status === 'working')) : undefined
               return (

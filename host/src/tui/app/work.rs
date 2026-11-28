@@ -6,7 +6,6 @@ use serde_json::Value;
 
 use super::super::l10n::{fill, tr};
 use super::model::{Entry, Kind};
-use crate::chat::decision;
 pub use crate::chat::work::Status as WorkStatus;
 use crate::chat::work::Wait;
 use crate::store::DEFAULT_THREADS;
@@ -56,7 +55,7 @@ pub struct WorkTask {
     /// The branch of the git worktree its thread works in, while there is one.
     pub branch: Option<String>,
     /// Where its thread works; none before a thread took it, and from a host that doesn't say.
-    pub folder: Option<String>,
+    pub folder: Option<Folder>,
     /// The user may write to its thread: the bot's own work, whose thread is still there.
     pub talk: bool,
     /// Its thread takes files too; a host from before them doesn't say, and the terminal types a dropped path there.
@@ -82,6 +81,14 @@ fn background(v: &Value) -> Option<(String, i64)> {
     Some((text, first["startedAt"].as_i64().unwrap_or_default()))
 }
 
+/// Where a task's thread works.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Folder {
+    /// The folder Codync made for a thread without a bot (`ownFolder`): shown as "Own folder", not its id.
+    Own,
+    Path(String),
+}
+
 impl WorkTask {
     /// A task with an id and a status this terminal knows; any other is left out.
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -103,7 +110,10 @@ impl WorkTask {
                 _ => None,
             },
             branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
-            folder: v["folder"].as_str().filter(|f| !f.is_empty()).map(str::to_owned),
+            folder: v["folder"]
+                .as_str()
+                .filter(|f| !f.is_empty())
+                .map(|f| if v["ownFolder"] == true { Folder::Own } else { Folder::Path(f.to_owned()) }),
             talk: v["talk"] == true,
             talk_files: v["talkFiles"] == true,
             seat: v["seat"].as_bool(),
@@ -257,63 +267,19 @@ impl Background {
     }
 }
 
-/// What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
-/// artifact) says in that thread: one dim line, its mark and its words, where the entry itself stays in the
-/// chat, which `↵` on the line opens. None for anything else. The apps show the entry itself instead.
-pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
-    let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
-    let text = |key: &str| e.data[key].as_str().unwrap_or_default();
-    // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
-    let request = &e.data["connectionRequest"];
-    if request["kind"] == "agent" {
-        let agent = request["title"].as_str().unwrap_or_default();
-        return match request["status"].as_str() {
-            Some("pending") => line("◆", "Needs {agent} sign-in", &[("agent", agent)]),
-            Some("ready") => line("✓", "Signed in", &[]),
-            _ => line("×", "Cancelled", &[]),
-        };
-    }
-    match e.kind {
-        Kind::Permission => {
-            let title = text("title");
-            match e.data["status"].as_str() {
-                Some("pending") => return line("◆", "Waiting for your approval: {title}", &[("title", title)]),
-                Some("answered") => {}
-                _ => return line("·", "Not answered: {text}", &[("text", title)]),
+/// Whether the chat entry `e`, which a thread put in its bot's chat, is one its thread's page shows (`App::shared`): a
+/// card, answered or not, its agent's sign-in card, a file, a voice note, an artifact.
+pub fn is_shared(e: &Entry) -> bool {
+    e.data["connectionRequest"]["kind"] == "agent"
+        || match e.kind {
+            Kind::Permission | Kind::Decision => true,
+            Kind::Agent => {
+                e.data["artifact"]["title"].is_string()
+                    || e.data["voiceNote"] == true
+                    || e.data["files"].as_array().is_some_and(|f| f.iter().any(|f| f["name"].is_string()))
             }
-            let chosen = e.options().into_iter().find(|(id, ..)| id == text("selected"));
-            match chosen {
-                Some((.., kind)) if kind.starts_with("allow") => line("✓", "Approved: {title}", &[("title", title)]),
-                Some((.., kind)) if kind.starts_with("reject") => line("×", "Denied: {title}", &[("title", title)]),
-                _ => {
-                    let name = chosen.map_or_else(|| text("selected").to_owned(), |(_, name, _)| name);
-                    line("✓", "Answered: {choice}", &[("choice", &name)])
-                }
-            }
+            _ => false,
         }
-        Kind::Decision => {
-            let question = text("question");
-            match decision::Status::of(&e.data) {
-                Some(decision::Status::Pending) => line("◆", "Asked: {question}", &[("question", question)]),
-                Some(decision::Status::Answered) => line("✓", "Answered: {choice}", &[("choice", text("selected"))]),
-                _ => line("·", "Not answered: {text}", &[("text", question)]),
-            }
-        }
-        Kind::Agent => {
-            let files: Vec<&str> =
-                e.data["files"].as_array().into_iter().flatten().filter_map(|f| f["name"].as_str()).collect();
-            if let Some(title) = e.data["artifact"]["title"].as_str() {
-                line("▤", "Made an artifact: {title}", &[("title", title)])
-            } else if e.data["voiceNote"] == true {
-                line("♪", "Sent a voice note", &[])
-            } else if files.is_empty() {
-                None
-            } else {
-                line("▤", "Sent a file: {name}", &[("name", &files.join(", "))])
-            }
-        }
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -476,48 +442,25 @@ mod tests {
     }
 
     #[test]
-    fn what_a_thread_put_in_the_chat_is_one_line_of_its_thread() {
-        let line = |kind: &str, data: Value| {
+    fn the_thread_shows_its_cards_sign_in_files_voice_notes_and_artifacts() {
+        let shared = |kind: &str, data: Value| {
             let e = Entry::parse(&json!({"id": "c", "botId": "b", "seq": 1, "kind": kind, "turn": 1, "data": data}));
-            shared_line(&e.expect("an entry").1)
+            is_shared(&e.expect("an entry").1)
         };
-        let options = json!([{"optionId": "ok", "name": "Allow", "kind": "allow_once"},
-            {"optionId": "no", "name": "Deny", "kind": "reject_once"}, {"optionId": "x", "name": "Skip", "kind": "other"}]);
-        let approval = |status: &str, selected: &str| {
-            line("permission", json!({"status": status, "title": "npm test", "options": options, "selected": selected}))
+        assert!(shared("permission", json!({"status": "answered", "title": "npm test"})), "answered or not");
+        assert!(shared("notice", json!({"decision": true, "status": "expired", "question": "Squash?"})));
+        let sign_in = |kind: &str| {
+            let request = json!({"kind": kind, "status": "pending", "title": "Kimi Code"});
+            shared("notice", json!({"text": "Needs you to sign in.", "connectionRequest": request}))
         };
-        let text = |l: Option<(&str, String)>| l.map(|(mark, text)| format!("{mark} {text}"));
-        assert_eq!(text(approval("pending", "")).as_deref(), Some("◆ Waiting for your approval: npm test"));
-        assert_eq!(text(approval("answered", "ok")).as_deref(), Some("✓ Approved: npm test"));
-        assert_eq!(text(approval("answered", "no")).as_deref(), Some("× Denied: npm test"));
-        assert_eq!(text(approval("answered", "x")).as_deref(), Some("✓ Answered: Skip"));
-        assert_eq!(text(approval("expired", "")).as_deref(), Some("· Not answered: npm test"));
-        let choice = |status: &str, selected: &str| {
-            let data = json!({"decision": true, "status": status, "question": "Squash?", "selected": selected});
-            line("notice", data)
-        };
-        assert_eq!(text(choice("pending", "")).as_deref(), Some("◆ Asked: Squash?"));
-        assert_eq!(text(choice("answered", "No")).as_deref(), Some("✓ Answered: No"));
-        assert_eq!(text(choice("expired", "")).as_deref(), Some("· Not answered: Squash?"));
-        let sign_in = |kind: &str, status: &str| {
-            let request = json!({"kind": kind, "status": status, "title": "Kimi Code"});
-            line("notice", json!({"text": "Needs you to sign in.", "connectionRequest": request}))
-        };
-        assert_eq!(text(sign_in("agent", "pending")).as_deref(), Some("◆ Needs Kimi Code sign-in"));
-        assert_eq!(text(sign_in("agent", "ready")).as_deref(), Some("✓ Signed in"));
-        assert_eq!(text(sign_in("agent", "cancelled")).as_deref(), Some("× Cancelled"));
-        assert_eq!(sign_in("oauth", "pending"), None, "a connector's card is not a thread's");
+        assert!(sign_in("agent"));
+        assert!(!sign_in("oauth"), "a connector's card is not a thread's");
         let file = json!({"id": "f", "name": "log.txt", "size": 3});
-        assert_eq!(
-            text(line("agent", json!({"final": true, "files": [file]}))).as_deref(),
-            Some("▤ Sent a file: log.txt")
-        );
-        let voice = json!({"final": true, "files": [file], "voiceNote": true, "text": "Hi"});
-        assert_eq!(text(line("agent", voice)).as_deref(), Some("♪ Sent a voice note"));
-        let artifact = json!({"final": true, "artifact": {"id": "a", "title": "Plan"}});
-        assert_eq!(text(line("agent", artifact)).as_deref(), Some("▤ Made an artifact: Plan"));
-        assert_eq!(line("agent", json!({"text": "Just words", "final": true})), None);
-        assert_eq!(line("notice", json!({"text": "A notice"})), None);
+        assert!(shared("agent", json!({"final": true, "files": [file]})));
+        assert!(shared("agent", json!({"final": true, "voiceNote": true, "text": "Hi"})));
+        assert!(shared("agent", json!({"final": true, "artifact": {"id": "a", "title": "Plan"}})));
+        assert!(!shared("agent", json!({"text": "Just words", "final": true})));
+        assert!(!shared("notice", json!({"text": "A notice"})));
     }
 
     #[test]

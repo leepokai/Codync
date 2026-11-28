@@ -1,5 +1,5 @@
-//! A task's thread: its thread's transcript, with a dim line for each thing the thread put in the bot's chat (a card, a
-//! file), and the composer that writes to it, or why it takes no message.
+//! A task's thread: its thread's transcript, with what the thread put in the bot's chat (a card, a file, an artifact)
+//! drawn as the chat draws it, and the composer that writes to it, or why it takes no message.
 
 use std::borrow::Cow;
 
@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
+use super::super::app::{App, Bot, Entry, Folder, Kind, Source, WorkStatus, WorkTask, nested, tilde};
 use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
@@ -18,16 +18,22 @@ use super::set_cursor;
 use super::style::theme;
 use super::time::elapsed;
 use super::trace::push_nested;
+use super::transcript::shared_entry_lines;
 use super::work::{mark, standing};
 
 /// What a thread was told shows this many lines until `T` unfolds it.
 const TOLD_LINES: usize = 6;
 
 /// Where a task's thread works, for its transcript's heading in `room` cells: the branch of its worktree while it has
-/// one, else its folder, cut in the middle so its last name stays.
+/// one, else its folder, cut in the middle so its last name stays ("Own folder" for the one Codync made for it).
 fn place(app: &App, task: &WorkTask, room: usize) -> Option<String> {
     let branch = task.branch.as_ref().map(|branch| truncate(&format!("⎇ {branch}"), room));
-    branch.or_else(|| task.folder.as_ref().map(|folder| md::truncate_path(&tilde(folder, &app.home), room)))
+    branch.or_else(|| {
+        Some(match task.folder.as_ref()? {
+            Folder::Own => truncate(&tr("Own folder"), room),
+            Folder::Path(folder) => md::truncate_path(&tilde(folder, &app.home), room),
+        })
+    })
 }
 
 /// Why a task's thread takes no message, where a client says so: its result has an owner already.
@@ -43,9 +49,9 @@ fn read_only(task: &WorkTask) -> Option<Cow<'static, str>> {
 enum Keys {
     /// The composer's: the message waits behind a turn that runs.
     Typing,
-    /// A line of what the thread put in the chat is picked.
-    Picked,
-    /// The page's, with `tab` when it has such lines.
+    /// What the thread put in the chat is picked: `opens` an artifact, `saves` its file or artifact.
+    Picked { opens: bool, saves: bool },
+    /// The page's, with `tab` when it has such entries.
     Reading { lines: bool },
 }
 
@@ -53,11 +59,15 @@ enum Keys {
 fn thread_keys(live: bool, keys: Keys) -> String {
     let lines = match keys {
         Keys::Typing => return format!(" ↵ {} · esc", if live { "sends after this turn" } else { "sends" }),
-        Keys::Picked => return " ↵ shows it in the chat · tab ⇧tab another · esc".into(),
+        Keys::Picked { opens, saves } => {
+            let open = if opens { "o opens · " } else { "" };
+            let save = if saves { "f saves · " } else { "" };
+            return format!(" {open}{save}↵ shows it in the chat · tab ⇧tab another · esc");
+        }
         Keys::Reading { lines } => lines,
     };
     let stop = live.then(|| tr("X stops"));
-    let tab = lines.then_some(Cow::Borrowed("tab picks a line"));
+    let tab = lines.then_some(Cow::Borrowed("tab picks a card or file"));
     let keys: Vec<_> = stop.into_iter().chain(tab).chain([tr("T full"), tr("↑↓ scroll · esc close")]).collect();
     format!(" {}", keys.join(" · "))
 }
@@ -142,8 +152,9 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     let foot = inner.bottom() - 1;
     let keys = if talks && s.typing {
         Keys::Typing
-    } else if s.pick.is_some() {
-        Keys::Picked
+    } else if let Some(e) = app.shared(&s.bot, &s.thread).into_iter().find(|e| s.pick.as_ref() == Some(&e.id)) {
+        let opens = e.artifact().is_some();
+        Keys::Picked { opens, saves: opens || e.data["files"].as_array().is_some_and(|f| !f.is_empty()) }
     } else {
         Keys::Reading { lines: !app.shared(&s.bot, &s.thread).is_empty() }
     };
@@ -191,8 +202,9 @@ pub(super) fn thread_details(buf: &mut Buffer, area: Rect, app: &App, s: &Thread
     }
 }
 
-/// The transcript's lines, oldest first, with a dim line for what the thread put in the bot's chat (a card, answered or
-/// not, a file, a voice note, an artifact; `shared_line`) where it came; with none, that it loads or has nothing yet.
+/// The transcript's lines, oldest first, with what the thread put in the bot's chat (a card, answered or not, a file, a
+/// voice note, an artifact; `is_shared` says which) where it came, as the chat shows it; with none, that it loads or
+/// has nothing yet.
 /// A load that failed says so first, with the key that tries again. Also where the picked line is.
 fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>, Option<usize>) {
     let t = theme();
@@ -200,20 +212,26 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
     if let Fetched::Failed(error) = &s.fetched {
         out.push(Line::from(Span::styled(format!(" {error} · {}", tr("r retries")), t.red)));
     }
-    let own = app.thread_entries.of(&s.thread).map(|e| (e, false));
-    let shared = app.shared(&s.bot, &s.thread).into_iter().map(|e| (e, true));
-    let mut entries: Vec<(&Entry, bool)> = own.chain(shared).collect();
+    let own = app.thread_entries.of(&s.thread).map(|e| (e, None));
+    // Drawn with the bot whose chat they are in; a bot just removed leaves none.
+    let shared = app
+        .bots
+        .get(&s.bot)
+        .into_iter()
+        .flat_map(|b| app.shared(&s.bot, &s.thread).into_iter().map(move |e| (e, Some(b))));
+    let mut entries: Vec<(&Entry, Option<&Bot>)> = own.chain(shared).collect();
     // Stable: at the same moment the thread's own entry comes first.
     entries.sort_by_key(|(e, _)| e.created_at);
     let mut picked = None;
-    for ((e, shared), depth) in nested(&entries, |(e, _)| e) {
-        if shared {
+    for ((e, chat), depth) in nested(&entries, |(e, _)| e) {
+        if let Some(b) = chat {
+            if !out.is_empty() {
+                out.push(Line::default());
+            }
             if s.pick.as_ref() == Some(&e.id) {
                 picked = Some(out.len());
             }
-            if let Some((mark, text)) = shared_line(e) {
-                out.push(Line::from(Span::styled(truncate(&format!(" {mark} {text}"), width), t.dim)));
-            }
+            out.extend(shared_entry_lines(app, b, e, width));
         } else if e.kind == Kind::User && e.data["from"] == "host" {
             told(&mut out, e, width, s.full);
         } else if e.queued() {
@@ -306,19 +324,33 @@ mod tests {
             "options": [{"optionId": "ok", "name": "Allow", "kind": "allow_once"}]});
         app.on_msg(Msg::Event(chat("file", 1, 5, "agent", file)));
         app.on_msg(Msg::Event(chat("card", 2, 20, "permission", card)));
+        let choice = json!({"decision": true, "status": "pending", "question": "Squash?", "choices": ["Squash", "Merge"],
+            "thread": thread, "task": "i"});
+        let artifact = json!({"text": "Report", "final": true, "artifact": {"id": "art-1", "title": "Report"},
+            "thread": thread, "task": "i"});
+        app.on_msg(Msg::Event(chat("choice", 4, 22, "notice", choice)));
+        app.on_msg(Msg::Event(chat("art", 5, 24, "agent", artifact)));
         app.on_msg(Msg::Event(chat("own", 3, 30, "agent", json!({"text": "The chat's own reply", "final": true}))));
         let mut sheet =
             ThreadSheet { fetched: Fetched::Loaded, ..ThreadSheet::new("a".into(), "i".into(), "thread-1".into()) };
         let (lines, picked) = detail_lines(&app, &sheet, 60);
         let lines = text(&lines);
-        let at = |text: &str| lines.iter().position(|line| line == text);
-        let (file, card) = (at(" ▤ Sent a file: log.txt"), at(" ◆ Waiting for your approval: Run tests"));
-        let step = lines.iter().position(|line| line.contains("Reading the logs"));
-        assert!(file.is_some() && file < step && step < card, "one dim line each, in time order: {lines:?}");
+        let at = |text: &str| lines.iter().position(|line| line.contains(text));
+        let step = at("Reading the logs");
+        assert!(at("▤ log.txt · 3 B") < step && step < at("◆ A wants to: Run tests"), "in time order: {lines:?}");
+        // Each as the chat draws it: the file and the artifact messages under their author, the cards whole, with their
+        // keys.
+        let (file, card, art) = (at(" A "), at("╭─ ◆ A wants to: Run tests"), at("▤ Artifact: Report"));
+        assert!(file == Some(0) && at("y Allow once") > card, "{lines:?}");
+        assert!(card < at("Squash?") && at("F2 Merge") < art, "{lines:?}");
+        let art = art.map(|at| at - 2);
         assert!(!lines.iter().any(|line| line.contains("The chat's own reply")), "only what this thread put there");
         assert_eq!(picked, None);
 
-        // `tab` picks the newest line first, then the one before.
+        // `tab` picks the newest first (at its first line, the author's), then the one before.
+        sheet.step_pick(&app, true);
+        assert_eq!((sheet.pick.as_deref(), detail_lines(&app, &sheet, 60).1), (Some("art"), art));
+        sheet.step_pick(&app, true);
         sheet.step_pick(&app, true);
         assert_eq!((sheet.pick.as_deref(), detail_lines(&app, &sheet, 60).1), (Some("card"), card));
         sheet.step_pick(&app, true);
@@ -339,7 +371,9 @@ mod tests {
                 "worktree": {"branch": "codync/fix-login", "path": "/w/a/i"}},
             {"id": "j", "title": "Docs", "status": "working", "thread": "thread-2"},
             {"id": "k", "title": "Far", "status": "working", "thread": "thread-3",
-                "folder": format!("/private/tmp/{}/gitrepo", "x".repeat(120))}]),
+                "folder": format!("/private/tmp/{}/gitrepo", "x".repeat(120))},
+            {"id": "o", "title": "Alone", "status": "working", "thread": "thread-4",
+                "folder": "/Users/me/.codync/threads/0b5c", "ownFolder": true}]),
         );
         let area = Rect::new(0, 0, 100, 20);
         let heading = |task: &str| {
@@ -350,6 +384,7 @@ mod tests {
         };
         assert_eq!(heading("i"), "◷ Working · ⎇ codync/fix-login");
         assert_eq!(heading("j"), "◷ Working", "a host that names no folder");
+        assert_eq!(heading("o"), "◷ Working · Own folder", "the folder Codync made, not its path");
         let far = heading("k");
         assert!(
             far.starts_with("◷ Working · /private/tmp/x") && far.ends_with("x…/gitrepo"),

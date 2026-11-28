@@ -132,6 +132,19 @@ test('a thread without a bot starts in a folder of its own', async () => {
     await start.getByRole('textbox').fill(text)
     await start.getByRole('textbox').press('Enter')
     await expect.poll(() => (existsSync(threads) ? readdirSync(threads) : []).filter((task) => !before.has(task)).length, { timeout: 20_000 }).toBe(1)
+    // Its folder is named "Own folder", never by its id, where it works and in the Threads list, all such threads in one group.
+    const where = page.locator('.work-where-copy').filter({ visible: true }).first()
+    await expect(where).toHaveText('Own folder')
+    await expect(where).toHaveAttribute('aria-label', /threads[\\/][0-9a-f-]{36}$/)
+    // The groups are by folder (the default; an earlier spec may have left Group by bot picked).
+    await page.locator('.sidebar-header .computer-filter').click()
+    const byFolder = page.getByRole('menuitemradio', { name: 'Group by folder', exact: true })
+    if ((await byFolder.getAttribute('aria-checked')) !== 'true') await byFolder.click()
+    await page.keyboard.press('Escape')
+    const groups = page.locator('.thread-group[aria-label="Own folder"]')
+    await expect(groups).toHaveCount(1)
+    await expect(groups.getByText(text)).toBeVisible()
+    await expect(page.locator('.thread-group').filter({ hasText: /[0-9a-f]{8}-[0-9a-f]{4}-/ })).toHaveCount(0)
   } finally {
     // ponytail: the ended thread stays in the sandbox's Recent (and its folder until the task leaves the box): no API
     // names the hidden box of threads without a bot to drop it; add one if another spec needs a clean list.

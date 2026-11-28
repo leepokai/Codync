@@ -25,6 +25,15 @@ async fn wait<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
     }
 }
 
+/// Removes `folder` once nothing holds it: Windows refuses while the run's agent still has it open (#603).
+async fn remove(folder: &Path) {
+    wait("the folder to go", async || {
+        let _ = std::fs::remove_dir_all(folder);
+        (!folder.exists()).then_some(())
+    })
+    .await;
+}
+
 async fn history(host: &Host, bot: &str) -> Vec<Value> {
     host.call("history", json!({"botId": bot})).await["entries"].as_array().unwrap().clone()
 }
@@ -566,6 +575,30 @@ async fn a_thread_waiting_on_the_user_gives_its_seat_to_the_next_task_and_both_r
     assert!(reports.contains("Report Asks:") && reports.contains("Report Next:"), "{reports}");
 }
 
+/// A follow-up set while one of the bot's tasks works is still set (the user may have asked for it), and its answer
+/// says the task's report comes by itself; once the task has reported, a follow-up's answer says nothing of it.
+#[tokio::test]
+async fn a_follow_up_set_while_a_task_works_is_set_and_says_its_report_comes_by_itself() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Build|HOLD:build").await;
+    task(&host, &bot, "Build", "working").await;
+    let follow_up = async |note: &str| {
+        let arguments = json!({"minutes": 30, "note": note});
+        host.call("routineCall", json!({"botId": bot, "name": "follow_up", "arguments": arguments})).await
+    };
+    let set = follow_up("Check the Build task").await;
+    assert!(set["followUp"]["id"].is_string(), "{set}");
+    let hint = set["hint"].as_str().expect("a hint");
+    assert!(hint.contains("\"Build\"") && hint.contains("cancel_follow_up"), "{hint}");
+
+    release(&host, &bot, "build");
+    task(&host, &bot, "Build", "done").await;
+    let later = follow_up("Check the deploy").await;
+    assert!(later.get("hint").is_none(), "{later}");
+    assert_eq!(host.call("routines", json!({"botId": bot})).await["followUps"].as_array().unwrap().len(), 2);
+}
+
 #[tokio::test]
 async fn tasks_wait_their_turn_in_order_and_one_moved_first_starts_first() {
     let host = Host::start().await;
@@ -977,7 +1010,7 @@ async fn a_routine_with_a_folder_runs_there_and_fails_once_it_is_gone() {
     let there = logged(&folder, "prompts.jsonl");
     assert!(there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Elsewhere")), "{there:?}");
 
-    std::fs::remove_dir_all(&folder).unwrap();
+    remove(&folder).await;
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("is gone"), "{failed}");
@@ -1017,7 +1050,7 @@ async fn a_routine_with_a_folder_runs_in_a_thread_even_for_a_bot_that_runs_routi
         there.iter().any(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Team elsewhere")),
         "{there:?}"
     );
-    std::fs::remove_dir_all(&folder).unwrap();
+    remove(&folder).await;
 }
 
 #[tokio::test]

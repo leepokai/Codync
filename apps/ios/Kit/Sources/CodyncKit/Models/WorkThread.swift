@@ -56,10 +56,11 @@ public extension WorkTask {
     }
 
     /// Nil before a thread took it. A host that names no folder still shows a worktree's branch. `home`: the
-    /// computer's home folder, which a folder shows as `~`.
+    /// computer's home folder, which a folder shows as `~`; the folder Codync made for it reads "Own folder".
     func whereLine(home: String) -> WhereLine? {
         let path = wherePath
         if let worktree { return WhereLine(kind: .branch, text: worktree.branch, path: path) }
+        if ownFolder, let path { return WhereLine(kind: .folder, text: L10n.tr("Own folder"), path: path) }
         return path.map { WhereLine(kind: .folder, text: WhereLine.homeRelative($0, home: home), path: $0) }
     }
 

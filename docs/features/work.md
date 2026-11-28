@@ -246,12 +246,10 @@ chat's own queue: nothing here is a second copy of it.
   ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The desktop and the phones show a thread in the chat's form (desktop
   `ThreadChat`, iPhone `ThreadChatView`, Android `ThreadChat.kt`): each of these is the chat's own row, in time order
   among the thread's own entries, the same entry of the bot's chat, answered, downloaded and opened in the thread as in
-  the chat ([UI conventions](../design/ui-conventions.md)). Only the terminal shows each as one quiet line with a
-  symbol (`shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
-  `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
-  expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
-  [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry.
+  the chat ([UI conventions](../design/ui-conventions.md)). The terminal's thread page draws each among the steps as
+  the chat draws it (`view::transcript::shared_entry_lines`), and a waiting card answers there with the chat's keys
+  (`y` / `a` / `n` / `N`, `F1`…, `1`–`9`; `C` its agent's [sign-in](#fallbacks-and-sign-in)), the picked one first,
+  else the newest; on a picked file or artifact `o` opens it and `f` saves it, and `↵` opens the chat at it.
 
 With the rest:
 
@@ -294,7 +292,9 @@ the session it has.
 
 When a thread's turn ends, its last message is its task's `result` and goes to its bot as `Cmd::TaskReport`, one per
 task, which becomes a turn in the chat (`HostTurn::TaskReport`; reports that arrive together are one turn). The
-bot's reply there is an ordinary message with the usual alert; `(pass)` stays silent. A report is kept on the task
+bot's reply there is an ordinary message with the usual alert; `(pass)` stays silent. Since the report comes by
+itself, the bot is told not to set a [follow-up](follow-ups.md#not-for-the-bots-own-tasks) to wait for a task, and
+one it sets while its tasks are under way says so in its answer. A report is kept on the task
 until that turn has ended: a host restart before then sends it again (the cut-off report turn isn't resumed). When
 the turn ends without the bot's answer (stopped, failed, or it never started), the chat shows the report as a notice
 (`"<title>" finished in the background: …`), so what the thread found isn't lost with the turn. A task the user
@@ -416,8 +416,8 @@ The apps show the `Work · <title>` line on the sign-in card and on the failure,
 out and a fallback was signed out too, there are two cards: the row names, and opens, the one that holds the task's
 message (`connectionRequest.entryIds`), whose sign-in is what sends the work again; an approval or choice newer than
 it comes first, as what the running turn waits on. In the task's
-[thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
-(`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
+[thread](#talking-to-a-thread) the sign-in card shows beside that transcript line as the chat shows it, and on the
+terminal's thread page `C` signs in there as in the chat; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.
 
 ## Advisor mode
@@ -550,7 +550,11 @@ picked, the approvals and the model with it. With no folder picked it works in *
 share the home folder. It counts as the thread's own folder (`workspace::own_folder`), so it never gets a worktree,
 and it goes with the task (when the user's [`threadKeepDays`](#older-threads) deletes it, as its transcript; or when
 the user drops the task). An app sends no `cwd` for it only on a host that says `hello.threadFolders: true`;
-an older host gets the home folder, as before. Its task waits in the computer's **box of
+an older host gets the home folder, as before. The task's wire row says `ownFolder: true` while its `folder` is that
+folder (`tasks::row`, live and older threads alike), so every client names it **Own folder** (never its id) where
+it shows where the thread works, and the Threads list gathers all such threads in one **Own folder** group under
+Folders instead of one group per folder; copying the path still copies the real one. An older host sends no flag and
+the path shows as before. Its task waits in the computer's **box of
 threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
 hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
 memory or alerts, `maxThreads` 6, the harness's own memory kept. Apps that know it (`hello.threadsWithoutBot: true`)
@@ -868,6 +872,9 @@ aren't watched: their result has an owner other than the bot's chat. What it fla
   per card: the needs-you alert (`AlertKind::NeedsInput`, opening the bot's chat; none when the bot's alerts are off).
 
 A thread that waits on the user (a card, a sign-in) is never flagged otherwise, nor is one between turns.
+
+This is what makes a follow-up on a task needless: the bot hears of a stuck one without asking. A tool call that
+hangs (`pending` or `in_progress` for good) isn't flagged: the turn has a call running, so it is never quiet.
 
 **The wake-up.** On `looping`, `failing` or `quiet` the bot gets a host turn in its own chat (`Cmd::Watchdog`,
 `HostTurn::Watchdog`), queued behind the user's messages as a report is: `[Codync watchdog] Task "<title>" (<id>)

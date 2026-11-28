@@ -10,6 +10,10 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.55.0
 ### zh-Hant
 - 在 thread 裡，Claude Code 在背景執行的指令、workflow 和監看會顯示在輸入框上方的膠囊：「背景 ·」加上正在跑的項目（例如 workflow 的名稱和目前步驟）與時間。背景工作跑完前，這個工作會一直保持進行中，跑完後 Claude Code 會自己接著處理，最後的回覆就是工作的報告。
+- 選擇工作資料夾時，最近使用的資料夾集中在一張卡片裡，「使用此資料夾」旁邊多了「取消」按鈕。
+- 沒有 bot 的 thread 若使用 Codync 為它建立的資料夾，現在會顯示為「專屬資料夾」而不是一串 ID；在 Threads 依資料夾分組時，這些 thread 都會集中在同一個「專屬資料夾」群組。
 
 ### en-US
 - In a thread, what Claude Code runs in the background (a command, a workflow, a monitor) shows in a capsule above the message box: Background · what runs, such as the workflow's name and its current step, with the time. The task stays in progress until that work finishes; then Claude Code picks it up by itself, and its last reply is the task's report.
+- The workspace folder picker groups your recent folders in one card and has a Cancel button beside Use this folder.
+- A thread without a bot that works in the folder Codync made for it now shows Own folder instead of an ID, and grouped by folder, all such threads sit together in one Own folder group.

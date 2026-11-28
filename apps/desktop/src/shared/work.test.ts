@@ -5,7 +5,7 @@ import { agentOf, backgroundLabel, threadSections, rosterRank, canCutIn, canRetr
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
-  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [], ...change,
+  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [], ...change,
 })
 const ids = (tasks: WorkTask[]) => tasks.map((t) => t.id)
 
@@ -26,10 +26,10 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkTask[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: 'codex', background: [] },
-    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
-    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
-    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: 'codex', background: [] },
+    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
+    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
+    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, ownFolder: false, talk: false, agent: null, talkFiles: false, seat: null, runsOn: null, background: [] },
   ], 'a status this app does not know, or none, leaves the task out; a reason it does not know reads as none')
 })
 
@@ -227,6 +227,13 @@ test('the Threads page puts what needs the user on top, groups the rest as chose
   const computers = threadSections(roster, 'computer', (of) => of.ref, (of) => (of.ref === 'ops' ? 'Mini' : 'Mac'))
   assert.deepEqual(computers.groups.map((g) => `${g.title}=${ids(g.rows.map((r) => r.task)).join('')}`), ['Mac=bca', 'Mini=gfe'])
   assert.equal(threadSections(roster.slice(0, 1), 'folder', (of) => of.ref).working, 0, 'the rail shows no count')
+  // Threads without a bot each in the folder Codync made for it: one "Own folder" group, not one per folder.
+  const alone = [{ ref: 'box', bot: { name: 'Agents', cwd: '/home', work: [
+    at('x', 'done', 1, { folder: '/home/.codync/threads/1', ownFolder: true }),
+    at('y', 'done', 2, { folder: '/home/.codync/threads/2', ownFolder: true }),
+    at('z', 'done', 3, { folder: '/w/site' }),
+  ] } }]
+  assert.deepEqual(threadSections(alone, 'folder', (of) => of.ref).groups.map((g) => `${g.key}=${g.title}=${ids(g.rows.map((r) => r.task)).join('')}`), ['folder:/w/site=site=z', 'folder:own=Own folder=yx'])
   // Sorted beside the grouping: working rows first inside each group, the rest newest first.
   const sorted = threadSections(roster, 'bot', (of) => of.ref, undefined, { status: true })
   assert.deepEqual(sorted.groups.map((g) => ids(g.rows.map((r) => r.task)).join('')), ['bca', 'gfe'])
@@ -368,6 +375,10 @@ test('a task says where its thread works: its branch in a worktree, else its fol
   assert.deepEqual(whereLine(task('a', 'working', { folder: '/srv/app' }), ''), { kind: 'folder', text: '/srv/app' }, 'a computer that names no home')
   assert.deepEqual(whereLine(task('a', 'working', { folder: 'C:\\Users\\u\\code\\app' }), 'C:\\Users\\u'), { kind: 'folder', text: '~\\code\\app' })
   assert.deepEqual(whereLine(task('a', 'working', { folder: `${worktree.path}/web`, worktree }), '/Users/u'), { kind: 'branch', text: 'codync/fix-login' })
+  const own = normalizeWork([{ id: 'a', status: 'working', folder: '/Users/u/.codync/threads/1', ownFolder: true }])[0]!
+  assert.deepEqual(whereLine(own, '/Users/u'), { kind: 'own', text: 'Own folder' }, 'the folder Codync made, not its path')
+  assert.equal(wherePath(own), '/Users/u/.codync/threads/1', 'its path is still what the line copies')
+  assert.equal(normalizeWork([{ id: 'a', status: 'working', folder: '/x' }])[0]!.ownFolder, false, 'an older host')
   // What the line copies is the thread's own folder, which is inside the worktree.
   assert.equal(wherePath(task('a', 'working', { folder: `${worktree.path}/web`, worktree })), `${worktree.path}/web`)
   assert.equal(wherePath(task('a', 'working', { worktree })), worktree.path, 'a host that names no folder')

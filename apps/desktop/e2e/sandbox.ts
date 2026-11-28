@@ -236,6 +236,19 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   return id
 }
 
+/**
+ * Removes a login profile a test made, once nothing holds it: a sign-in sheet still open is left first (its Back ends
+ * the sign-in's terminal), and the host refuses while an agent on it or its sign-in still runs ("Try again once it's
+ * done"), so it is asked until it agrees. Left behind, the profile would fail the next run's `addAccount`.
+ */
+export async function dropLoginProfile(page: Page, id: string) {
+  const back = page.locator('.market-screen-header').getByRole('button', { name: 'Back' })
+  if (await back.isVisible()) await back.click()
+  await expect(page.locator('.setup-terminal-surface')).toHaveCount(0)
+  const removed = () => api(page, 'removeLoginProfile', { loginProfile: id }).then(() => true, () => false)
+  await expect.poll(removed, { timeout: 15_000 }).toBe(true)
+}
+
 /** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
   const box = page.locator('.composer:not(.thread-chat .composer) textarea')

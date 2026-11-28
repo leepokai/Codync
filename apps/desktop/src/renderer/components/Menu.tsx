@@ -230,7 +230,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, side, items, reacti
   const { style, width, room, below } = anchorPlacement(rect, wanted, side)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
-      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width, ...(search ? { width } : {}) }}>
+      {/* `--anchored-room`: the height a panel of its own (`children`) has here, so it fits the window as a menu does. */}
+      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width, ...(search ? { width } : {}), ['--anchored-room' as string]: `${room}px` }}>
         {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} search={search} fromEnd={!below} />}
       </div>
     </div>,

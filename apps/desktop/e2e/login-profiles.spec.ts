@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { addAccount, api, attach, loginProfilesOf, openDetails, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
+import { addAccount, api, attach, dropLoginProfile, loginProfilesOf, openDetails, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
 // docs/guides/test-stack.md#stand-in-agents): its sign-in and its agent are that script, so nothing here starts a
@@ -175,7 +175,7 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     profileId = undefined
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
-    if (profileId) await api(page, 'removeLoginProfile', { loginProfile: profileId }).catch(() => {})
+    if (profileId) await dropLoginProfile(page, profileId).catch(() => {})
     if (agentId) await api(page, 'renameLoginProfile', { backend: agentId, name: ownLabel ?? '' }).catch(() => {})
     await page.reload() // Leaves Extensions, which would cover what the next spec clicks.
     await browser.close()
@@ -264,7 +264,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     profileId = undefined
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
-    if (profileId) await api(page, 'removeLoginProfile', { loginProfile: profileId }).catch(() => {})
+    if (profileId) await dropLoginProfile(page, profileId).catch(() => {})
     await page.reload() // Leaves Extensions, which would cover what the next spec clicks.
     await browser.close()
   }

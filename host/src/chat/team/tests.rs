@@ -722,6 +722,27 @@ async fn deleting_a_bot_drops_what_the_hop_limit_kept_for_it() {
     f.shutdown().await;
 }
 
+/// A user message already in the bot's channel is handled after the user deletes the bot: `Hub::delete_bot` sends
+/// `Shutdown` behind it. Handled, it starts a turn and `user_message_started` puts back the hop-limit entry the delete
+/// just dropped — one entry per create/delete cycle in a long-lived host. The send path checks the row instead.
+#[tokio::test]
+async fn a_message_handled_after_the_delete_leaves_no_entry() {
+    let f = Fixture::new();
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "hello"}));
+    // The actor's task doesn't run while this current-thread test does, so both commands wait in its channel.
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "hello".into() }).unwrap();
+    // Handled after the message, so an answer says the message before it was taken (sent or dropped).
+    let (reply, handled) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    f.hub.delete_bot("b").unwrap();
+    assert!(!f.hub.team.tracked("b"));
+    let _ = handled.await.unwrap();
+    assert!(!f.hub.team.tracked("b"), "a message handled after the delete leaves no hop-limit entry");
+    assert!(f.prompts().is_empty(), "and starts no turn");
+    f.shutdown().await;
+}
+
 /// A refusal already produced can reach the host after the bot is deleted. It must not put the bot back into the
 /// hop-limit map: `open_lift` reads a missing actor as generation 0, so an unguarded refusal re-creates the entry the
 /// delete just removed, for the life of the process. Nothing is delivered and the sender gets the plain limit error.

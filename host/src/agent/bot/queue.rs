@@ -33,6 +33,15 @@ impl Actor {
             }
             Cmd::TaskAnswer { prompt, hops } => self.enqueue(Queued::TaskAnswer { prompt, hops }, done_tx).await,
             Cmd::Send { lane, entry_id, mut text } => {
+                // `Hub::delete_bot` sends `Shutdown` behind a message already in this channel. Handled, it starts a
+                // turn for a bot whose row is gone, and `user_message_started` puts back the hop-limit entry the delete
+                // just dropped: one entry per create/delete cycle in a long-lived host. The row is the authority, as
+                // in `chat::team::on_hop_limit`, and the chat went with the bot.
+                if self.hub.store.bot(&self.cfg.id).ok().flatten().is_none_or(|row| row.deleted) {
+                    tracing::debug!(bot = %self.cfg.id, entry_id, "dropped a message for a deleted bot");
+                    // The actor goes on: its `Shutdown` is waiting behind this message.
+                    return true;
+                }
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
                 if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {

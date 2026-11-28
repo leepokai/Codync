@@ -56,6 +56,20 @@ test('a scheduled message older than the loaded window still reaches the tray, f
   assert.deepEqual(heldOutside([], 'b', takenBack, new Set(['gone'])), [], 'a taken-back row does not come back')
 })
 
+test('a held id the chat list has already dropped never comes back to the tray', () => {
+  // `hello.held` is a snapshot, so it still names a row the user took back after it was taken.
+  const snapshot = [user('gone', 'scheduled', { notBefore: 1_000 }), user('kept', 'scheduled', { notBefore: 2_000 })]
+  // The chat's rows: the hidden tombstone a take-back leaves, which every chat list drops (`allEntries`).
+  const rows = [user('gone', 'cancelled', { removed: true, notBefore: 1_000 })]
+  const entries = withoutRemoved(rows)
+  assert.deepEqual(entries, [], 'the chat has dropped the row the snapshot still lists')
+  // `BotMirror.takenBack`, read off those same rows.
+  const takenBack = new Set(rows.filter((e) => e.data.removed).map((e) => e.id))
+  assert.deepEqual(heldOutside(entries, 'b', snapshot).map((e) => e.id), ['gone', 'kept'], 'the raw snapshot re-adds it')
+  const waiting = waitingMessages([...entries, ...heldOutside(entries, 'b', snapshot, takenBack)], false)
+  assert.deepEqual(waiting.map((e) => e.id), ['kept'], 'the tray paints only the held rows the chat still shows')
+})
+
 test('only a host that schedules gets the schedule affordances', () => {
   assert.equal(canSchedule(undefined), false)
   assert.equal(canSchedule({ scheduleSend: true }), true)

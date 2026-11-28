@@ -16,6 +16,11 @@ actor FakeRemote: RemoteTransport {
     private var eventSinks: [AsyncThrowingStream<Data, Error>.Continuation] = []
     private var mailboxSinks: [AsyncStream<MailboxEvent>.Continuation] = []
     private(set) var sent: [String] = []
+    /// Answers for calls the switch below doesn't know; a `HostError` throws it instead.
+    private var canned: [String: Result<Data, any Error>] = [:]
+    func setCanned(_ method: String, _ json: String) { canned[method] = .success(Data(json.utf8)) }
+    /// The method fails like a host that doesn't know it.
+    func setCanned(_ method: String, throwing error: any Error) { canned[method] = .failure(error) }
     /// Each `send`'s quoted message, in order.
     private(set) var replyTos: [String?] = []
     /// Each `send`'s selected part of the quoted message, in order.
@@ -115,6 +120,7 @@ actor FakeRemote: RemoteTransport {
             failures[method] = left - 1
             throw HostError.unreachable
         }
+        if let canned = canned[method] { return try canned.get() }
         switch method {
         case "hello":
             return Data(hello.utf8)

@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
+import type { WindowCommand } from '@shared/ipc'
 import type { IslandBot, IslandPermission, IslandSummary } from '@shared/island'
 import { folderName, isGroup, isWorking, type Bot, type Entry } from '@shared/models'
 import { outsideStatus } from '@shared/work'
 import { useModels } from '../lib/observable'
-import { refKey, type AppModel, type RosterItem } from '../store/app-model'
+import { parseRef, refKey, type AppModel, type RosterItem } from '../store/app-model'
+import { HostError } from '../client/host-client'
 import type { BotStore } from '../store/bot-store'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './chat/PermissionCard'
@@ -32,6 +34,20 @@ export function useIslandSummary(app: AppModel) {
       window.codync.island.setSummary(summary)
     }, 150)
   })
+}
+
+/** Makes the island's host call on its bot's computer through that computer's connection here, and answers it. */
+export async function answerIslandCall(app: AppModel, call: Extract<WindowCommand, { kind: 'islandCall' }>) {
+  const ref = parseRef(call.ref)
+  const store = ref ? app.store(ref.computerId) : null
+  try {
+    if (!store) throw HostError.unreachable()
+    const value = await (await store.ready()).call(call.method, call.body, call.timeoutMs)
+    window.codync.island.answer(call.id, { ok: true, value })
+  } catch (e) {
+    const error = e instanceof HostError ? { status: e.status, message: e.message, presence: e.presence ?? undefined } : { status: 0, message: String(e) }
+    window.codync.island.answer(call.id, { ok: false, error })
+  }
 }
 
 function islandSummary(app: AppModel): IslandSummary {

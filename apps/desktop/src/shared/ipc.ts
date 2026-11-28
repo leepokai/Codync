@@ -11,6 +11,9 @@ import type { Appearance } from './appearance'
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
 
+/** How long a window waits out a reconnect before its host call fails. */
+export const CONNECT_PATIENCE_MS = 20_000
+
 export type HostState =
   | { kind: 'missingBinary' }
   | { kind: 'notInstalled' }
@@ -45,6 +48,9 @@ export interface CallError {
   /** An account computer that isn't connected to the relay. */
   presence?: RelayAbsence
 }
+
+/** A host call's outcome as it crosses IPC (an Error doesn't). */
+export type CallResult = { ok: true; value: unknown } | { ok: false; error: CallError }
 
 /** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
 export interface TrayImage {
@@ -154,6 +160,10 @@ export type WindowCommand =
   | { kind: 'sendMessage'; ref: string; text: string }
   /** The voice input shortcut, while the island is off: a double tap starts dictating into the composer, a tap sends. */
   | { kind: 'voiceKey'; key: VoiceKey }
+  /** Opens Settings at Voice chat (the island asks when a dictation key is missing). */
+  | { kind: 'voiceSettings' }
+  /** A host call the island makes on a bot's computer, through this window's connection to it; answered with `island.answer`. */
+  | { kind: 'islandCall'; id: string; ref: string; method: string; body: unknown; timeoutMs: number }
   /** The chat window was shown again after being hidden (`window_opened`). */
   | { kind: 'windowOpened' }
 
@@ -287,6 +297,12 @@ export interface CodyncBridge {
     openBot(ref: string): void
     newBot(): void
     openApp(): void
+    /** Opens the chat window's Settings at Voice chat. */
+    openVoiceSettings(): void
+    /** Calls the host of the computer `ref`'s bot is on, through the chat window (which holds every computer's connection). */
+    call(ref: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+    /** The chat window's answer to an `islandCall`. */
+    answer(id: string, result: CallResult): void
   }
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {

@@ -240,14 +240,14 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
                 transcribing={dictation.transcribing}
                 className="composer-recording"
               />
-            ) : dictation.available ? (
+            ) : (
               <HStack as="span" gap={0} className="composer-mic-group">
                 <button className="press composer-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => dictation.start(draft)}>
                   <Icon name="mic" size={13} weight="medium" />
                 </button>
                 <DictationEngineMenu />
               </HStack>
-            ) : null}
+            )}
             <button
               className={trailing === 'interrupt' ? 'press composer-send interrupt' : 'press composer-send'}
               disabled={!enabled}

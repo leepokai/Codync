@@ -64,7 +64,7 @@ import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
 import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
-import { useIslandSummary } from './island-summary'
+import { answerIslandCall, useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
@@ -112,6 +112,8 @@ export function ChatWindow() {
             return setConfirmReset(true)
           case 'upToDate':
             return setUpToDate(true)
+          case 'islandCall':
+            return void answerIslandCall(app, c)
           case 'reviewApprovals':
             return app.reviewApprovals()
           case 'setTextSize':
@@ -368,6 +370,7 @@ function ChatSplitView() {
         // Without a conversation in sight there is nothing to find in: ⌘F searches the bots instead.
         if (c.kind === 'find') page === 'bots' && app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setPage('network')
+        if (c.kind === 'voiceSettings') openVoiceSettings()
         if (c.kind === 'toggleSidebar') setListHidden(!prefs.listHidden.get())
         // The window's own handler selects the bot; its chat is on the Bots page.
         if (c.kind === 'openBot') setPage('bots')

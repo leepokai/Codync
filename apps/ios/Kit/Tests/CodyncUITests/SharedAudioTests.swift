@@ -225,7 +225,7 @@ private func silentWAV() -> Data {
             try? session.setActive(false)
             try? session.setCategory(.soloAmbient)
         }
-        let service = DictationService(picked: { .openAI }, hasKey: { _, _ in true }, allowMic: { true },
+        let service = DictationService(picked: { .provider(.openAI) }, check: { _, _ in .open }, allowMic: { true },
                                       openMic: { _, _ in true }, transcribe: { _, _, _ in "" })
         let dictation = Dictation(service: service)
         defer { dictation.stop() }

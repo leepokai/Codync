@@ -91,6 +91,10 @@ export class RelayChannel {
     this.setup = setup
   }
 
+  get computerId() {
+    return this.setup.computerId
+  }
+
   get signKey() {
     return this.setup.signKey
   }

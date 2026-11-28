@@ -175,6 +175,10 @@ pub enum Event {
     VoiceNoteSent,
     /// A voice note played from its start, or failed to (`outcome`).
     VoiceNotePlayed,
+    /// `setSpeechServer` linking a speech server, or failing to (`outcome`).
+    SpeechServerLinked,
+    /// One piece of local-engine dictation transcribed on the linked speech server (`outcome`).
+    LocalDictationTranscribed,
     /// A bot's `send_message` or `send_file` with `reply_to` (`tool`), quoted or sent without it (`outcome`).
     BotQuoted,
     CredentialSaved,
@@ -360,6 +364,8 @@ impl Event {
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",
             Self::VoiceNotePlayed => "voice_note_played",
+            Self::SpeechServerLinked => "speech_server_linked",
+            Self::LocalDictationTranscribed => "local_dictation_transcribed",
             Self::BotQuoted => "bot_quoted",
             Self::CredentialSaved => "credential_saved",
             Self::CredentialsReset => "credentials_reset",

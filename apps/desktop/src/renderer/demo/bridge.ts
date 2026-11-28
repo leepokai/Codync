@@ -116,6 +116,9 @@ const bridge: CodyncBridge = {
     openBot() {},
     newBot() {},
     openApp() {},
+    openVoiceSettings() {},
+    call: unavailable,
+    answer() {},
   },
   cloud: {
     request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }),

@@ -45,6 +45,7 @@ struct Composer: View {
     /// A new thread's send while it is on its way, cancelled when the box goes.
     @State private var starting: Task<Void, Never>?
 
+
     private var bot: Bot? { model.bots[botId] }
     private var draftKey: String { start?.draftKey ?? thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
     /// The task a thread's box writes to.
@@ -221,7 +222,7 @@ struct Composer: View {
     /// listens or transcribes, the recording pill.
     private var micButton: some View {
         Group {
-            if dictation.busy {
+            if dictation.listening || dictation.transcribing {
                 RecordingPill(dictation: dictation, height: buttonSize)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
             } else {
@@ -247,7 +248,7 @@ struct Composer: View {
                 .transition(.opacity)
             }
         }
-        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.busy)
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.listening || dictation.transcribing)
         .codyncSheet(isPresented: $dictation.needsKey) { VoiceChatSettingsView() }
         .codyncDialog("Couldn't dictate", isPresented: Binding(get: { dictation.failure != nil }, set: { if !$0 { dictation.failure = nil } }),
                       message: dictation.failure, cancel: "OK") { [] }

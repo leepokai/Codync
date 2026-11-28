@@ -722,6 +722,55 @@ async fn deleting_a_bot_drops_what_the_hop_limit_kept_for_it() {
     f.shutdown().await;
 }
 
+/// A refusal already produced can reach the host after the bot is deleted. It must not put the bot back into the
+/// hop-limit map: `open_lift` reads a missing actor as generation 0, so an unguarded refusal re-creates the entry the
+/// delete just removed, for the life of the process. Nothing is delivered and the sender gets the plain limit error.
+#[tokio::test]
+async fn a_refusal_for_a_bot_deleted_mid_flight_leaves_no_entry() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    let source = f.hub.store.bot("a").unwrap().unwrap().config;
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    // The refusal is captured while `a` is still working (`generation` and the turn under one lock)…
+    let error = f.hub.team.reserve_message_in("a", "a").unwrap_err();
+    // …then the user deletes the bot before the host handles it.
+    f.hub.delete_bot("a").unwrap();
+    assert!(!f.hub.team.tracked("a"));
+    let late = on_hop_limit(&f.hub, &source, "a", "b", "stuck", error).unwrap_err();
+    assert!(late.to_string().contains("hop limit"), "{late}");
+    assert!(!late.to_string().contains("the lead was notified"), "nothing is delivered for a deleted bot");
+    assert!(!f.hub.team.lift_open("a"));
+    assert!(!f.hub.team.tracked("a"), "the refusal cannot re-create a deleted bot's entry");
+    assert!(f.prompts_of("c").iter().all(|p| !p.contains("Hop limit reached")));
+    f.shutdown().await;
+}
+
+/// The hop-limit state goes only after the row is really deleted. A delete that fails leaves a live bot with the
+/// reset it was approved, instead of wiping the budget for a bot that is still stored.
+#[tokio::test]
+async fn a_failed_delete_keeps_a_live_bots_hop_limit_state() {
+    let f = Fixture::new();
+    f.hub.team.start_turn("b", Turn::Chat(0));
+    f.hub.team.user_message_started("b");
+    let refusal = f.hub.team.open_lift("a", "b", 1).unwrap();
+    f.hub.team.approve(refusal).unwrap();
+    assert!(f.hub.team.grant_is_pending("b"));
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER reject_delete BEFORE UPDATE ON bots WHEN NEW.deleted = 1 \
+         BEGIN SELECT RAISE(ABORT, 'fixture delete failure'); END;",
+    )
+    .unwrap();
+    let failed = f.hub.delete_bot("b").unwrap_err().to_string();
+    assert!(failed.contains("fixture delete failure"), "{failed}");
+    db.execute_batch("DROP TRIGGER reject_delete;").unwrap();
+    drop(db);
+    assert_eq!(f.hub.team.generation("b"), 1, "the stored bot keeps its generation");
+    assert!(f.hub.team.grant_is_pending("b"), "and the reset it was approved");
+    f.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_member_in_a_room_turn_mentions_instead_of_messaging() {
     let f = Fixture::new();

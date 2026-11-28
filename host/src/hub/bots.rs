@@ -99,9 +99,9 @@ impl Hub {
         }
         self.routines.disable_bot(&self.store, id)?;
         crate::workflows::clear_bot(self, id);
+        // Its turn is over for good. What the hop limit kept for it goes after the row is really gone (below): a
+        // delete that fails returns early, and a bot still in the store must keep the reset it was approved.
         self.team.end_turn(id);
-        // Its turn is over for good: the hop-limit map must not keep an entry per bot that ever ran.
-        self.team.forget(id);
         self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
@@ -117,6 +117,9 @@ impl Hub {
                 let _ = self.events.send(deleted);
             }
         }
+        // The row is gone for good, so nothing may open a lift for it again: drop what the hop limit kept, or the map
+        // grows one entry per bot that ever ran for the life of the process.
+        self.team.forget(id);
         crate::chat::work::forget(self, id);
         crate::network::publish(self);
         // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.

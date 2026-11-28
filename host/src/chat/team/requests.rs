@@ -232,6 +232,9 @@ impl Requests {
     /// `bot` was deleted: everything the hop limit kept for it goes too. Without this, [`Self::user_message_started`]
     /// leaves one entry per bot that ever ran, and `actors` grows for the life of the process. A lift the deleted bot
     /// held is gone with it: no approval can reach it any more.
+    ///
+    /// Called only once the bot's row is really deleted. [`Self::open_lift`] treats a missing actor as generation 0 and
+    /// would insert a fresh entry for it, so a refusal still in flight checks the store first (`chat::team::on_hop_limit`).
     pub fn forget(&self, bot: &str) {
         self.0.locked().actors.remove(bot);
     }
@@ -587,6 +590,12 @@ impl Requests {
     #[cfg(test)]
     pub fn lift_open(&self, actor: &str) -> bool {
         self.0.locked().actors.get(actor).is_some_and(|entry| entry.lift.is_some())
+    }
+
+    /// Whether the hop-limit map holds anything at all for `actor`.
+    #[cfg(test)]
+    pub fn tracked(&self, actor: &str) -> bool {
+        self.0.locked().actors.contains_key(actor)
     }
 
     /// Whether `refusal` is still the open lift (not denied, replaced or closed by a user message).

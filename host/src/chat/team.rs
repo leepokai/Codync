@@ -942,6 +942,13 @@ pub(super) fn on_hop_limit(
     // Captured with the rejection. A later read can belong to a user message that started in the gap, and storing
     // that generation would let an approval reset the new chain.
     let Some(generation) = hop_generation(&error) else { return Err(error) };
+    // The bot was deleted while its refusal was in flight: `open_lift` reads a missing actor as generation 0 and would
+    // insert a fresh entry for a bot that is gone, staying for the life of the process. The row is the authority, and
+    // `Hub::delete_bot` drops the entry only after its row is deleted. Nothing is delivered and the sender gets the
+    // plain hop-limit error, as if review were off: a graceful degradation, the bot can no longer act on it.
+    if !matches!(&hub.store.bot(turn), Ok(Some(row)) if !row.deleted) {
+        return Err(error);
+    }
     let Some(refusal) = hub.team.open_lift(&source.id, turn, generation) else { return Err(error) };
     let shown = truncate(message, 400);
     let id = uuid::Uuid::new_v4().to_string();

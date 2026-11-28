@@ -1,6 +1,6 @@
 //! Custom bot icons: host validation, local cache and private encrypted R2 storage.
 mod cleanup;
-mod image;
+pub(crate) mod image;
 pub(crate) use cleanup::run as cleanup_loop;
 mod source;
 mod storage;

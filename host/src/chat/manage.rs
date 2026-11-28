@@ -11,6 +11,7 @@ use crate::hub::Hub;
 use crate::routines::{Folder, Trigger};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::sync::{Arc, LazyLock};
@@ -40,7 +41,7 @@ standing instructions: it doesn't share your conversation. The user may approve 
 when they deny one, don't retry it unasked. Deleting bots is the user's.";
 
 /// The setup a manager sets, by wire name, with its label on approval cards and notices.
-const FIELDS: [(&str, &str); 13] = [
+const FIELDS: [(&str, &str); 14] = [
     ("name", "Name"),
     ("backend", "Agent"),
     ("model", "Model"),
@@ -52,6 +53,7 @@ const FIELDS: [(&str, &str); 13] = [
     ("manageTeam", "Manage the team"),
     ("avatarColor", "Color"),
     ("avatarShape", "Shape"),
+    ("avatarImage", "Avatar image"),
     ("hidden", "Hidden"),
     ("description", "Instructions"),
 ];
@@ -99,6 +101,7 @@ pub fn tools() -> Value {
         "fallbacks": {"type": "array", "items": {"type": "object", "properties": {"agent": {"type": "string"}, "model": {"type": "string"}}, "required": ["agent"]}, "description": "Up to 3 agents, in order, that carry on when the bot's own can't answer (out of usage, rate limited, signed out); each a different agent, not the bot's own. Replaces the list; empty removes it."},
         "avatarColor": {"type": "string", "enum": AVATAR_COLORS},
         "avatarShape": {"type": "string", "enum": AVATAR_SHAPES},
+        "avatarImage": {"type": "string", "description": "Base64 data URL (e.g. data:image/png;base64,...; PNG, JPEG, WebP <= 5 MiB; SVG <= 256 KiB), or empty string to remove custom icon."},
         "routines": {"type": "array", "items": {"type": "object"}, "description": format!("Up to {MAX_ROUTINES} routines to save for the bot, each as save_routine takes it (name, instruction, triggers, optionally enabled and timeoutSeconds). One with an id from list_team replaces that routine.")},
     });
     let mut create = setup.clone();
@@ -162,6 +165,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
             "bots already created {MAX_CREATED} of the user's bots: ask the user to delete some or to create this one"
         );
     }
+    let avatar = parse_avatar_image(args).await?;
     let mut fields = setup_patch(args, &[])?;
     if !fields.contains_key("name") {
         bail!("name is required");
@@ -206,6 +210,11 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     check_model_options(hub, &cfg.backend, cfg.login_profile.as_deref(), cfg.model.as_deref(), &fields, deadline)
         .await?;
     fields.insert("backend".into(), cfg.backend.clone().into());
+    if let Some(ref change) = avatar
+        && let Some(label) = change.label()
+    {
+        fields.insert("avatarImage".into(), label.into());
+    }
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines), deadline).await?;
     let created = {
@@ -213,6 +222,22 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??
     };
     let id = created["id"].as_str().context("the new bot has no id")?;
+    if let Some(AvatarChange::Set { data }) = avatar
+        && let Err(err) = crate::icons::set(hub, &json!({"target": format!("bot:{id}"), "data": data})).await
+    {
+        let rollback_hub = hub.clone();
+        let rollback_id = id.to_owned();
+        match tokio::task::spawn_blocking(move || rollback_hub.delete_bot(&rollback_id)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(bot = %id, error = %e, "failed to roll back bot after avatarImage save failure");
+            }
+            Err(e) => {
+                tracing::warn!(bot = %id, error = %e, "bot rollback task panicked after avatarImage save failure");
+            }
+        }
+        return Err(err.context("couldn't save avatarImage; rolled back bot creation"));
+    }
     let saved = save_routines(hub, id, &routines);
     notice(hub, &source.id, &format!("Created bot {name}"));
     Ok(json!({"bot": setup(hub, &agent_bot(hub, id)?), "routines": saved}))
@@ -222,12 +247,23 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let deadline = Instant::now() + APPROVAL_TIMEOUT;
     let id = text(args, "botId")?.context("botId is required")?;
     let target = agent_bot(hub, &id)?;
+    let avatar = parse_avatar_image(args).await?;
     let mut fields = setup_patch(args, &target.fallbacks)?;
     if id == source.id && fields.contains_key("fallbacks") && !source.self_fallbacks {
         bail!(crate::chat::fallbacks::SELF_OFF);
     }
     if !args["hidden"].is_null() {
         fields.insert("hidden".into(), args["hidden"].as_bool().context("hidden must be true or false")?.into());
+    }
+    if let Some(ref change) = avatar {
+        fields.insert(
+            "avatarImage".into(),
+            match change {
+                AvatarChange::Set { .. } => "custom image",
+                AvatarChange::Remove => "remove",
+            }
+            .into(),
+        );
     }
     let (routines, lines) = routines(hub, &id, args)?;
     if fields.is_empty() && routines.is_empty() {
@@ -239,11 +275,21 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
+    fields.remove("avatarImage");
+    // Validate and save the whole config first: an invalid patch (e.g. hiding the lead bot) must not leave a
+    // half-applied avatar behind. The icon can only change once `update_bot` has accepted the settings.
     if !fields.is_empty() {
         let mut patch = Value::Object(fields);
         patch["id"] = id.clone().into();
         let hub = hub.clone();
         tokio::task::spawn_blocking(move || hub.update_bot(&patch)).await??;
+    }
+    if let Some(change) = avatar {
+        let payload = match change {
+            AvatarChange::Set { data } => json!({"target": format!("bot:{id}"), "data": data}),
+            AvatarChange::Remove => json!({"target": format!("bot:{id}"), "remove": true}),
+        };
+        crate::icons::set(hub, &payload).await?;
     }
     let saved = save_routines(hub, &id, &routines);
     if saved.iter().any(|r| r["error"].is_null()) {
@@ -458,6 +504,67 @@ fn save_routines(hub: &Arc<Hub>, bot: &str, routines: &[Value]) -> Vec<Value> {
 fn notice(hub: &Hub, bot: &str, text: &str) {
     let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
     hub.add_entry(&lane, EntryKind::Notice, hub.store.max_turn(bot), &json!({"text": text}));
+}
+
+enum AvatarChange {
+    Set { data: String },
+    Remove,
+}
+
+impl AvatarChange {
+    fn label(&self) -> Option<&'static str> {
+        match self {
+            Self::Set { .. } => Some("custom image"),
+            Self::Remove => None,
+        }
+    }
+}
+
+/// Validates `avatarImage` before creating or updating a bot so invalid/oversized images never pass approval or leave
+/// an orphan bot behind. Accepts standard `data:image/...;base64,...` URLs, raw base64 images, or `""` to remove.
+async fn parse_avatar_image(args: &Value) -> Result<Option<AvatarChange>> {
+    let raw = match &args["avatarImage"] {
+        Value::Null => return Ok(None),
+        Value::String(s) => s.trim(),
+        _ => return Err(Refused::error("avatar", "avatarImage must be text".to_owned())),
+    };
+    if raw.is_empty() {
+        return Ok(Some(AvatarChange::Remove));
+    }
+    let payload = if raw.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
+        let Some((header, data)) = raw[5..].split_once(',') else {
+            return Err(Refused::error(
+                "avatar",
+                "avatarImage must be a base64 data URL (e.g. data:image/png;base64,...) or base64 image".to_owned(),
+            ));
+        };
+        let mut parts = header.split(';');
+        let mime = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+        if !mime.is_empty()
+            && !matches!(mime.as_str(), "image/png" | "image/jpeg" | "image/jpg" | "image/webp" | "image/svg+xml")
+        {
+            return Err(Refused::error("avatar", "avatarImage must be PNG, JPEG, WebP or SVG".to_owned()));
+        }
+        if !parts.any(|p| p.trim().eq_ignore_ascii_case("base64")) {
+            return Err(Refused::error("avatar", "avatarImage data URL must be base64-encoded".to_owned()));
+        }
+        data.trim()
+    } else {
+        raw
+    };
+    if payload.is_empty() {
+        return Err(Refused::error("avatar", "avatarImage cannot be empty base64 data".to_owned()));
+    }
+    if payload.len() > crate::icons::image::MAX_INPUT.div_ceil(3) * 4 {
+        return Err(Refused::error("avatar", "Choose an image up to 5 MiB".to_owned()));
+    }
+    let bytes = STANDARD
+        .decode(payload)
+        .map_err(|_| Refused::error("avatar", "avatarImage has invalid base64 encoding".to_owned()))?;
+    tokio::task::spawn_blocking(move || crate::icons::image::normalize(&bytes))
+        .await?
+        .map_err(|e| Refused::error("avatar", e.to_string()))?;
+    Ok(Some(AvatarChange::Set { data: payload.to_owned() }))
 }
 
 #[cfg(test)]

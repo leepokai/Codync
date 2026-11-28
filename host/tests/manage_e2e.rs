@@ -7,6 +7,7 @@ mod common;
 
 use common::host::Host;
 use serde_json::{Value, json};
+use std::ffi::OsStr;
 use std::time::{Duration, Instant};
 
 async fn wait(host: &Host, bot: &str, found: impl Fn(&Value) -> bool) -> Value {
@@ -93,6 +94,48 @@ async fn a_lead_creates_a_bot_the_user_allowed_and_not_one_change_they_denied() 
     assert!(
         host.snapshot().await["bots"].as_array().unwrap().iter().any(|b| b["id"] == mine && b["createdBy"].is_null())
     );
+}
+
+/// A large avatar travels through the same HTTP `manageCall` bridge the `manage` MCP client uses. Axum's default
+/// 2 MiB body limit must not reject a valid image near the advertised 5 MiB (roughly 6.7 MiB as base64 JSON).
+#[tokio::test]
+async fn a_large_avatar_goes_through_the_manage_call_http_bridge() {
+    // A cloud stub keeps an accepted avatar from trying to reach a real storage service. Test hosts default to
+    // CODYNC_CLOUD=off, so turn it on for this one and point it at the stub.
+    let router = axum::Router::new().route(
+        "/v1/host/icons/{slot}",
+        axum::routing::put(|| async { axum::http::StatusCode::OK }).delete(|| async { axum::http::StatusCode::OK }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    let host = Host::start_with(&[("CODYNC_CLOUD", OsStr::new("on")), ("CODYNC_CLOUD_URL", OsStr::new(&url))]).await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "auto", "manageTeam": true})).await;
+
+    // A base64 payload of just over 2 MiB needs ~1.6 MiB of PNG bytes. Solid colour compresses far smaller,
+    // so make every pixel a deterministic pseudorandom colour to keep the fixture incompressible.
+    let mut png_bytes = std::io::Cursor::new(Vec::new());
+    let mut pixels = Vec::with_capacity(1024 * 1024 * 4);
+    let mut state = 0x1234_5678_u32;
+    for _ in 0..1024 * 1024 {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        pixels.extend_from_slice(&state.to_le_bytes());
+    }
+    image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(1024, 1024, pixels)
+        .unwrap()
+        .write_to(&mut png_bytes, image::ImageFormat::Png)
+        .unwrap();
+    let png = png_bytes.into_inner();
+    assert!(png.len() > 2 * 1024 * 1024 / 4 * 3, "fixture must exceed the old body limit as base64");
+    let avatar =
+        format!("data:image/png;base64,{}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png));
+    assert!(avatar.len() > 2 * 1024 * 1024);
+    let body = json!({"botId": lead, "name": "update_bot", "arguments": {"botId": lead, "avatarImage": avatar}});
+    host.call("manageCall", body).await;
+    wait(&host, &lead, |e| e["data"]["text"] == "Updated Lead: avatar image").await;
 }
 
 /// A change whose wait ends without an answer ends its card too, and changes nothing.

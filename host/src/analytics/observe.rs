@@ -214,12 +214,25 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
         }
-        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values.
-        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot")) => {
-            let tool = if b["name"] == "create_bot" { "create" } else { "update" };
+        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values. A delete
+        // passes only `botId`, which is an id, not a setting: it reports an empty field list and never a bot's name.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot" | "delete_bot")) => {
+            let tool = match b["name"].as_str() {
+                Some("create_bot") => "create",
+                Some("delete_bot") => "delete",
+                _ => "update",
+            };
             p.insert("tool".into(), tool.into());
-            let passed = crate::chat::manage::arguments().iter().filter(|k| b["arguments"].get(k.as_str()).is_some());
-            p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
+            let passed = if tool == "delete" {
+                Vec::new()
+            } else {
+                crate::chat::manage::arguments()
+                    .iter()
+                    .filter(|k| b["arguments"].get(k.as_str()).is_some())
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
+            p.insert("fields".into(), passed.into());
             Event::TeamManaged
         }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.

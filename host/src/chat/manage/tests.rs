@@ -1,4 +1,5 @@
 use super::*;
+use crate::LockExt;
 use crate::remote::identity::Identity;
 use crate::store::{Permission, Store};
 
@@ -123,6 +124,223 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
         hub.store.save_bot(&cfg).unwrap();
     }
     assert!(refused("lead", "create_bot", json!({"name": "x"})).await.contains("already created"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn delete_bot_is_a_destructive_tool_with_an_explicit_card() {
+    let tools = tools();
+    let delete = tools.as_array().unwrap().iter().find(|t| t["name"] == "delete_bot").unwrap();
+    assert_eq!(delete["annotations"]["readOnlyHint"], false);
+    assert_eq!(delete["annotations"]["destructiveHint"], true);
+    assert_eq!(delete["inputSchema"]["required"], json!(["botId"]));
+    assert_eq!(delete["inputSchema"]["properties"].as_object().unwrap().len(), 1);
+    assert!(!INSTRUCTIONS.contains("Deleting bots is the user's"));
+    assert!(INSTRUCTIONS.contains("every delete needs the user's Allow on an approval card"));
+}
+
+#[tokio::test]
+async fn a_manager_refuses_unsafe_delete_targets_before_any_card() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let bot = |cfg: Value| {
+        let id = cfg["id"].as_str().unwrap().to_owned();
+        hub.store.save_bot(&serde_json::from_value::<BotConfig>(cfg).unwrap()).unwrap();
+        id
+    };
+    let group = bot(
+        json!({"id": "group", "name": "Group", "kind": "group", "backend": "claude", "cwd": dir.to_string_lossy()}),
+    );
+    let thread = bot(
+        json!({"id": "thread-1", "name": "Thread", "backend": "claude", "cwd": dir.to_string_lossy(), "threadOf": "lead"}),
+    );
+    let plain =
+        bot(json!({"id": "plain", "name": "Box", "backend": "claude", "cwd": dir.to_string_lossy(), "plain": true}));
+    let lead = bot(
+        json!({"id": "other-lead", "name": "Lead", "backend": "claude", "cwd": dir.to_string_lossy(), "lead": true}),
+    );
+
+    let refused = |actor: &'static str, args: Value| {
+        let hub = hub.clone();
+        async move { call(&hub, actor, "delete_bot", &args).await.unwrap_err().to_string() }
+    };
+    assert!(refused("dev", json!({"botId": "dev"})).await.contains("may not manage the team"));
+    assert!(refused("lead", json!({})).await.contains("botId is required"));
+    assert!(refused("lead", json!({"botId": "gone"})).await.contains("unknown bot"));
+    assert!(refused("lead", json!({"botId": "lead"})).await.contains("delete yourself"));
+    assert!(refused("lead", json!({"botId": group})).await.contains("unknown bot"));
+    assert!(refused("lead", json!({"botId": thread})).await.contains("thread isn't a bot"));
+    assert!(refused("lead", json!({"botId": plain})).await.contains("box for threads without a bot"));
+    assert!(refused("lead", json!({"botId": lead})).await.contains("current lead can't be deleted"));
+    hub.store.delete_bot("dev").unwrap();
+    assert!(refused("lead", json!({"botId": "dev"})).await.contains("unknown bot"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn delete_bot_stays_under_a_network_ceiling() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-ceiling-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.ceilings.set("lead", codync_network::Access::Ask);
+    let refused = hub.ceilings.check_tool("lead", "delete_bot").unwrap_err().to_string();
+    assert!(refused.contains("delete_bot isn't available in this turn"), "{refused}");
+    hub.ceilings.set("lead", codync_network::Access::Allow);
+    assert!(hub.ceilings.check_tool("lead", "delete_bot").is_ok());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The user can pick the target as lead while a manager's delete card is up. Allowing the card then
+/// must not delete the new lead: `delete_bot_if` rechecks lead under the same `emit_lock` `make_lead`
+/// uses, right before the store delete.
+#[tokio::test]
+async fn a_target_made_lead_while_the_card_waits_is_not_deleted() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-lead-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    // Stand in for the manager's actor: the approval card command arrives here instead of driving a real turn.
+    let mut commands = hub.attach_bot_for_test("lead");
+    let call_hub = hub.clone();
+    let task = tokio::spawn(async move { call(&call_hub, "lead", "delete_bot", &json!({"botId": "dev"})).await });
+
+    let reply = loop {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+        if let Cmd::Approve { title, reply, .. } = cmd {
+            assert!(title.contains("Delete bot dev"), "{title}");
+            break reply;
+        }
+    };
+    // The user makes the deletion target the lead while the card is still unanswered.
+    crate::chat::lead::set(&hub, "dev").unwrap();
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.lead);
+    reply.send(true).unwrap();
+
+    let err = task.await.unwrap().unwrap_err().to_string();
+    assert!(err.contains("current lead can't be deleted"), "{err}");
+    let row = hub.store.bot("dev").unwrap().unwrap();
+    assert!(!row.deleted && row.config.lead, "the new lead is still here");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A finished thread cleared while its owner is being deleted must not abort the rest of the cleanup:
+/// the owner and its other threads all go, even though one thread vanished mid-delete.
+#[tokio::test]
+async fn a_thread_cleared_mid_delete_does_not_abort_the_owner_cleanup() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-thread-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let save = |id: &str, thread_of: Option<&str>| {
+        let mut v = json!({"id": id, "name": id, "backend": "claude", "cwd": dir.to_string_lossy()});
+        if let Some(owner) = thread_of {
+            v["threadOf"] = json!(owner);
+        }
+        hub.store.save_bot(&serde_json::from_value::<BotConfig>(v).unwrap()).unwrap();
+    };
+    save("parent", None);
+    save("thread-a", Some("parent"));
+    save("thread-b", Some("parent"));
+
+    // The check runs under emit_lock before the thread recursion: clearing one thread here is the
+    // same as a concurrent cleanup between the listing and the recursion.
+    let cleared = hub.clone();
+    hub.delete_bot_if("parent", |_| {
+        cleared.store.delete_bot("thread-a")?;
+        Ok(())
+    })
+    .unwrap();
+
+    assert!(hub.store.bot("parent").unwrap().unwrap().deleted, "the owner was deleted");
+    assert!(hub.store.bot("thread-a").unwrap().unwrap().deleted, "the cleared thread is gone");
+    assert!(hub.store.bot("thread-b").unwrap().unwrap().deleted, "the other thread still gets cleaned");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Two bots with the same name show their ids on the delete card, so the user can tell which one
+/// Allow will remove.
+#[tokio::test]
+async fn a_delete_card_names_the_bot_id_so_twins_can_be_told_apart() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-twins-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    for id in ["twin-a", "twin-b"] {
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": id, "name": "Twin", "backend": "claude", "cwd": dir.to_string_lossy()
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+    }
+
+    let mut commands = hub.attach_bot_for_test("lead");
+    for id in ["twin-a", "twin-b"] {
+        let call_hub = hub.clone();
+        let target = id.to_owned();
+        let task = tokio::spawn(async move { call(&call_hub, "lead", "delete_bot", &json!({"botId": target})).await });
+        let reply = loop {
+            let cmd = tokio::time::timeout(Duration::from_secs(5), commands.recv()).await.unwrap().unwrap();
+            if let Cmd::Approve { detail, reply, .. } = cmd {
+                assert!(detail.contains(id), "{detail}");
+                assert!(detail.contains("Name: Twin"), "{detail}");
+                break reply;
+            }
+        };
+        // Deny, so both twins remain for the next card.
+        reply.send(false).unwrap();
+        assert!(task.await.unwrap().is_err(), "a deny leaves the bot alone");
+    }
+    assert!(!hub.store.bot("twin-a").unwrap().unwrap().deleted);
+    assert!(!hub.store.bot("twin-b").unwrap().unwrap().deleted);
+    drop(commands);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The delete marks its target under `emit_lock` before the unlocked cleanup. A lead pick that
+/// lands in that window must be refused: a lead in the store with its runtime already torn down is
+/// worse than a refused pick.
+#[tokio::test]
+async fn a_lead_pick_during_the_cleanup_window_is_refused() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-delete-lead-window-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    // The delete stops after the mark is set and before cleanup, so the pick runs inside that window.
+    *hub.cleanup_gate.locked() = Some(Box::new(move || {
+        entered_tx.send(()).unwrap();
+        resume_rx.recv().unwrap();
+    }));
+    let delete_hub = hub.clone();
+    let task = tokio::task::spawn_blocking(move || delete_hub.delete_bot_if("dev", |_| Ok(())));
+    entered_rx.recv().unwrap();
+    assert!(hub.is_deleting("dev"), "the mark is set before cleanup");
+
+    let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
+    assert!(err.contains("being deleted"), "{err}");
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead, "no half-promoted lead in the store");
+    resume_tx.send(()).unwrap();
+
+    task.await.unwrap().unwrap();
+    let row = hub.store.bot("dev").unwrap().unwrap();
+    assert!(row.deleted && !row.config.lead, "the delete still completed cleanly");
+    assert!(!hub.is_deleting("dev"), "the mark is cleared after the delete");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Deterministic check of the guard itself: a marked bot is refused as lead, and is selectable again
+/// once the mark clears. No delete thread, so no race over which error the pick gets.
+#[tokio::test]
+async fn a_marked_bot_cannot_be_made_lead_then_can_again() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-lead-mark-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.mark_deleting_for_test("dev", true);
+    let err = crate::chat::lead::set(&hub, "dev").unwrap_err().to_string();
+    assert!(err.contains("being deleted"), "{err}");
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.lead);
+
+    hub.mark_deleting_for_test("dev", false);
+    crate::chat::lead::set(&hub, "dev").unwrap();
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.lead, "pickable once the mark clears");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

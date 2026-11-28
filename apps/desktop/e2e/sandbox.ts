@@ -80,6 +80,9 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
   await setPref(page, 'kofiAsk', { asked: 3, day: 0 }) // So would the Ko-fi invitation's, on a sandbox used for days.
+  // A sandbox in no account (started without a Clerk test account, as in CI) would open on the welcome: it goes on
+  // without one, as its "Continue without an account" does. A signed-in sandbox clears it again (`useWelcomeGate`).
+  await setPref(page, 'withoutAccount', true)
   // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox, and a Ko-fi invitation already up.
   for (const sheet of [page.getByRole('alertdialog'), page.getByRole('dialog', { name: 'Support Codync' })]) {
     const notNow = sheet.getByRole('button', { name: 'Not now' })
@@ -231,6 +234,19 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   await page.locator('.market-screen-header').getByRole('button', { name: 'Back' }).click()
   await expect(card.locator('.login-profile', { hasText: 'New login profile' })).toContainText('Not signed in')
   return id
+}
+
+/**
+ * Removes a login profile a test made, once nothing holds it: a sign-in sheet still open is left first (its Back ends
+ * the sign-in's terminal), and the host refuses while an agent on it or its sign-in still runs ("Try again once it's
+ * done"), so it is asked until it agrees. Left behind, the profile would fail the next run's `addAccount`.
+ */
+export async function dropLoginProfile(page: Page, id: string) {
+  const back = page.locator('.market-screen-header').getByRole('button', { name: 'Back' })
+  if (await back.isVisible()) await back.click()
+  await expect(page.locator('.setup-terminal-surface')).toHaveCount(0)
+  const removed = () => api(page, 'removeLoginProfile', { loginProfile: id }).then(() => true, () => false)
+  await expect.poll(removed, { timeout: 15_000 }).toBe(true)
 }
 
 /** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */

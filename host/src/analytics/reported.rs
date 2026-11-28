@@ -123,6 +123,7 @@ pub enum Reported {
     WindowRecovery {
         outcome: WindowRecoveryOutcome,
     },
+    SshStepAfterDisconnect,
     ReachAccountAnswered {
         outcome: ReachOutcome,
         /// Why adding the computer failed.
@@ -726,6 +727,7 @@ mod tests {
             ),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "ssh_step_after_disconnect", "app": "desktop"}), Event::SshStepAfterDisconnect),
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
             (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
             (json!({"event": "kofi_invite_shown", "app": "tui", "ask": 2}), Event::KofiInviteShown),

@@ -1,0 +1,78 @@
+name: Desktop e2e
+
+# The desktop Playwright suite (apps/desktop/e2e) on a headless sandbox, as `after-change` runs it
+# (docs/guides/test-stack.md#playwright-desktop): the host this commit builds, the stand-in agent CLIs, no window on
+# the screen. Nightly on dev, by hand, and on PRs that change the desktop app, so a UI change that breaks a spec shows
+# on its own PR instead of rotting until someone runs the suite.
+on:
+  schedule:
+    - cron: "0 19 * * *" # 03:00 in Taiwan; schedules run from the default branch, so the job checks out dev
+  workflow_dispatch:
+  pull_request:
+    paths: ["apps/desktop/**", "host/tests/fixtures/**", ".github/workflows/desktop-e2e.yml"]
+
+# A newer push to the same PR supersedes the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: macos-26
+    timeout-minutes: 100
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - name: Install Rust (rust-toolchain.toml)
+        working-directory: host
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+          key: desktop-e2e
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      # Built before the sandbox starts, so its 30-second start wait never includes the compile.
+      - name: Build the host
+        run: node tools/native-host.mjs dev
+      # The checkout is a main checkout, so --sandbox; no --cloud and no Clerk key, so the sandbox is in no account.
+      - name: Start the sandbox
+        run: |
+          npm run dev -- --sandbox --cdp > "$RUNNER_TEMP/sandbox.log" 2>&1 &
+          for i in $(seq 1 150); do
+            cdp=$(grep -o 'DevTools protocol *127.0.0.1:[0-9]*' "$RUNNER_TEMP/sandbox.log" | grep -o '[0-9]*$' || true)
+            if [ -n "$cdp" ] && curl -sf "http://127.0.0.1:$cdp/json/version" > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/sandbox.log"
+          exit 1
+      - name: Debug dev servers, then the full suite twice
+        run: |
+          npx playwright test -c e2e/playwright.config.ts dev-servers-debug --reporter=list --output=test-results-0 || true
+          for i in 1 2; do npx playwright test -c e2e/playwright.config.ts --reporter=list --output=test-results-$i || echo "run $i failed"; done
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report
+      - name: Logs
+        if: always()
+        run: cat "$RUNNER_TEMP/sandbox.log"; cat ~/.codync-dev-*/host.log | tail -200
+      - run: cp ~/.codync-dev-*/host.log test-results-1/ || true
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-e2e-report
+          path: |
+            apps/desktop/test-results-*
+          retention-days: 14

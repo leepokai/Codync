@@ -87,6 +87,8 @@ export type AnalyticsEvent =
       /** Gemini's Google Search was on; `searches`: answers with its suggestions (never the query). */
       google_search?: true; searches?: number }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
+  /** A disconnected SSH computer's connection attempt reached a step it no longer shows. */
+  | { event: 'ssh_step_after_disconnect' }
   | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
   | { event: 'continued_without_account' }
   | { event: 'join_offer_answered'; outcome: 'added' | 'kept_out' | 'failed' }

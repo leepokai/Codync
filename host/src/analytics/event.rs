@@ -154,6 +154,8 @@ pub enum Event {
     VoiceCallQuality,
     /// A desktop window's crashed page loaded again, or crashed too often and stays down.
     WindowRecovery,
+    /// A disconnected SSH computer's connection attempt reached a step it no longer shows (desktop).
+    SshStepAfterDisconnect,
     RemoteScreenOpened,
     /// A viewer's screen session ended (`screen::watch_viewer`).
     RemoteScreenFinished,
@@ -344,6 +346,7 @@ impl Event {
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
             Self::WindowRecovery => "window_recovery",
+            Self::SshStepAfterDisconnect => "ssh_step_after_disconnect",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::RemoteScreenFinished => "remote_screen_finished",
             Self::ScreenTakenOver => "screen_taken_over",

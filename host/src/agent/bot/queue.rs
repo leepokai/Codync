@@ -548,6 +548,15 @@ impl Actor {
             }
             let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
             let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
+            // The row check `Cmd::Send` makes, for a message it accepted while the bot was live: that message waits
+            // behind the running turn, and `Hub::delete_bot` sends `Shutdown` behind it, so if the turn's done event
+            // wins the actor's `select!` this batch starts for a bot whose row is gone. `user_message_started` would
+            // put back the hop-limit entry the delete just dropped: one entry per create/delete cycle in a long-lived
+            // host. The row is the authority.
+            if self.hub.store.bot(&self.cfg.id).ok().flatten().is_none_or(|row| row.deleted) {
+                tracing::debug!(bot = %self.cfg.id, messages = batch.len(), "dropped queued messages for a deleted bot");
+                continue;
+            }
             // A handoff waiting in the chat starts a new conversation with this message, as does one already taken
             // for a turn that couldn't start.
             if lane == main {

@@ -743,6 +743,44 @@ async fn a_message_handled_after_the_delete_leaves_no_entry() {
     f.shutdown().await;
 }
 
+/// #537, second guard: a message the user sent while the bot was live, still queued behind the turn it interrupted,
+/// reaches the batch start in `next_in_queue` after the delete. `Hub::delete_bot` sends `Shutdown` behind it, but the
+/// running turn's done event can win the actor's `select!`, and `user_message_started` then put back the hop-limit
+/// entry the delete just dropped. The batch start checks the row too, as the send path does.
+///
+/// `Shutdown` and the done event race, so a test through `delete_bot` would pass on the unfixed code whenever
+/// `Shutdown` won. Removing the record while the turn still runs, as the delete does (`store.delete_bot` and
+/// `team.forget`), puts the batch start in the state the delete leaves behind on every run.
+#[tokio::test]
+async fn a_message_queued_behind_the_turn_of_a_bot_deleted_meanwhile_starts_no_turn() {
+    let f = Fixture::new();
+    // b's turn holds the chat, so the user's next message waits in the queue, as one sent while the bot worked does.
+    f.send_to("b", "BLOCK work").await;
+    f.until(|| f.prompts_of("b").len() == 1).await;
+    // The message the user sends while b works: accepted for a live bot, it waits in the actor's queue behind the turn.
+    let lane = Lane::main("b");
+    let entry = f.hub.add_entry(&lane, EntryKind::User, f.hub.store.max_turn("b") + 1, &json!({"text": "second"}));
+    f.hub.send_cmd("b", Cmd::Send { lane, entry_id: entry.unwrap().id, text: "second".into() }).unwrap();
+    // An answer to a command sent behind it says the actor took that message while the bot was still there.
+    let (reply, taken) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = taken.await.unwrap();
+    // The delete: its record and what the hop limit kept for it, the delete's own two writes.
+    f.hub.store.delete_bot("b").unwrap();
+    f.hub.team.forget("b");
+    assert!(!f.hub.team.tracked("b"));
+    // The turn ends: the batch it unblocks must not start a turn or put the entry back. An answer to a command sent
+    // afterwards says the actor got past that batch, as the actor handles commands only between queue passes.
+    std::fs::write(f.dir.join("b").join("release"), "go").unwrap();
+    f.until(|| f.idle("b")).await;
+    let (reply, handled) = tokio::sync::oneshot::channel();
+    f.hub.send_cmd("b", Cmd::SendToUser { text: "marker".into(), quote: None, reply }).unwrap();
+    let _ = handled.await.unwrap();
+    assert!(!f.hub.team.tracked("b"), "a queued message for a deleted bot leaves no hop-limit entry");
+    assert_eq!(f.prompts_of("b").len(), 1, "and starts no turn");
+    f.shutdown().await;
+}
+
 /// A refusal already produced can reach the host after the bot is deleted. It must not put the bot back into the
 /// hop-limit map: `open_lift` reads a missing actor as generation 0, so an unguarded refusal re-creates the entry the
 /// delete just removed, for the life of the process. Nothing is delivered and the sender gets the plain limit error.

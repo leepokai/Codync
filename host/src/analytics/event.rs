@@ -9,6 +9,9 @@ use serde::Deserialize;
 pub enum Event {
     AppOpened,
     WindowOpened,
+    /// A `PageUp` in the desktop message box found the conversation's view keyboard-scrollable: the
+    /// composer-scroll bug has returned (the fix clips the hidden measuring copy).
+    ComposerPageupScrolledChat,
     HostStarted,
     /// The watchdog aborted the last host process, which had stopped answering, and the service started this one.
     HostRestartedStuck,
@@ -251,6 +254,7 @@ impl Event {
         match self {
             Self::AppOpened => "app_opened",
             Self::WindowOpened => "window_opened",
+            Self::ComposerPageupScrolledChat => "composer_pageup_scrolled_chat",
             Self::HostStarted => "host_started",
             Self::HostRestartedStuck => "host_restarted_stuck",
             Self::OnboardingCompleted => "onboarding_completed",

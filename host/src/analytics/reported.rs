@@ -44,6 +44,8 @@ pub enum Reported {
         at_login: Option<bool>,
     },
     WindowOpened,
+    /// A `PageUp` in the desktop message box found `.chat-view` keyboard-scrollable.
+    ComposerPageupScrolledChat,
     OnboardingCompleted {
         #[serde(skip_serializing_if = "Option::is_none")]
         signed_in: Option<bool>,
@@ -665,6 +667,7 @@ mod tests {
         let cases = [
             (json!({"event": "app_opened", "app": "desktop", "at_login": true}), Event::AppOpened),
             (json!({"event": "window_opened", "app": "desktop"}), Event::WindowOpened),
+            (json!({"event": "composer_pageup_scrolled_chat", "app": "desktop"}), Event::ComposerPageupScrolledChat),
             (
                 json!({"event": "onboarding_completed", "app": "desktop", "signed_in": false}),
                 Event::OnboardingCompleted,

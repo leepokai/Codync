@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type ClipboardEvent, type KeyboardEvent, type RefObject } from 'react'
+import { analytics } from '../../store/analytics'
 import { composerEnter } from './composer-keyboard'
 
 /**
@@ -18,6 +19,7 @@ export function ComposerField({ field, value, placeholder, label, onChange, onSe
 }) {
   const measure = useRef<HTMLDivElement>(null)
   const composing = useRef(false)
+  const reportedPageUpScroll = useRef(false)
 
   // Measure a separate, wrapping copy: collapsing the live textarea to zero breaks its
   // height transition, caret scroll and IME composition. Observe font/width changes too.
@@ -53,6 +55,14 @@ export function ComposerField({ field, value, placeholder, label, onChange, onSe
         onCompositionEnd={() => { composing.current = false }}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          // The bug this guards against left the composer's hidden measuring copy spilling out of
+          // the field and made `.chat-view` keyboard-scrollable. A PageUp is when a user met it.
+          // Report it once per box so a version that brings it back is visible in PostHog.
+          const view = e.currentTarget.closest<HTMLElement>('.chat-view')
+          if (e.key === 'PageUp' && !reportedPageUpScroll.current && view && view.scrollHeight - view.clientHeight > 1) {
+            reportedPageUpScroll.current = true
+            analytics.track({ event: 'composer_pageup_scrolled_chat' })
+          }
           const isComposing = composing.current || e.nativeEvent.isComposing
           if (onKey?.(e, isComposing || e.keyCode === 229)) return
           const action = composerEnter({ key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, repeat: e.repeat, isComposing, keyCode: e.keyCode })

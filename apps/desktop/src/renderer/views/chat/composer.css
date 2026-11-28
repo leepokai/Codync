@@ -120,6 +120,16 @@
   flex: 1;
   min-width: 0;
   position: relative;
+  /* The field measures its own height from a hidden copy that is as tall as the whole draft. The
+     field tops out at eight lines and scrolls the rest, but the copy does not, so a very large
+     paste made it thousands of pixels deep, hanging out of the box and far below the chat. The
+     chat view is `overflow: hidden`, which still makes it a scroll container, so that spill counted
+     toward its scrollHeight and let the keyboard scroll the view: a PageUp with the caret in the
+     field chained out of it and threw the whole conversation, composer and all, to the top of the
+     window. Clipping here keeps the spill inside the field's own box, so the copy can no longer
+     make anything outside it scroll. The `/` and `@` menus are siblings in `.composer-surface`, not
+     children of this field, so they are never clipped. */
+  overflow: clip;
 }
 .composer-box textarea,
 .composer-measure {

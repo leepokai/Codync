@@ -64,6 +64,7 @@ export type ClaimFailure = 'unreachable' | 'refused' | 'host'
 export type AnalyticsEvent =
   | { event: 'app_opened'; at_login: boolean }
   | { event: 'window_opened' }
+  | { event: 'composer_pageup_scrolled_chat' }
   | { event: 'onboarding_completed'; signed_in: boolean }
   | { event: 'computer_access_finished'; ready: boolean; onboarding: boolean }
   | { event: 'sign_in_started'; provider: SignInProvider }

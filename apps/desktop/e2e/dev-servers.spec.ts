@@ -36,7 +36,9 @@ test('a dev server shows its port in the title, and the details open, log, stop,
     await expect(pill).toContainText(name)
     await expect(pill).not.toContainText(`:${port}`)
 
-    await start(page, botId, `python3 -m http.server ${port} --bind 127.0.0.1`, 'web')
+    // A bare listener, not `python3 -m http.server`: that one binds, then looks up the address's host name before it
+    // listens, which on a CI runner can take longer than the 5 s the port is waited for.
+    await start(page, botId, `python3 -c "import socket, time; s = socket.create_server(('127.0.0.1', ${port})); time.sleep(3600)"`, 'web')
     await expect(pill).toContainText(`:${port}`)
 
     await pill.click()
@@ -47,7 +49,7 @@ test('a dev server shows its port in the title, and the details open, log, stop,
     await row.locator('.dev-server-more').click()
     await expect(page.getByText('Copy address')).toBeVisible()
     await page.locator('.menu-row', { hasText: 'Logs' }).click()
-    await expect(page.locator('.modal-content')).toContainText('python3 -m http.server')
+    await expect(page.locator('.modal-content')).toContainText('socket.create_server')
     await page.keyboard.press('Escape')
     await expect(page.locator('.modal-content')).toBeHidden()
 

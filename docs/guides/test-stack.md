@@ -65,7 +65,16 @@ npm run e2e            # in a second shell: e2e/*.spec.ts against that sandbox
 
 `e2e/sandbox.ts` finds the sandbox from its `sandbox.json` and attaches to its main window; `e2e/smoke.spec.ts` checks the app renders and runs against the sandbox's own host. A spec reaches the main process only through the `window.codync` bridge, as the renderer does. Keys sent over the DevTools protocol never reach the app menu's shortcuts (⌘F, ⌘G): `e2e/find.spec.ts` picks those menu items through System Events instead, so it runs on macOS only and needs Accessibility access for the terminal running Playwright. Every unpackaged sandbox app is a process named "Electron", so it picks the attached app by the process ID its DevTools protocol reports (`SystemInfo.getProcessInfo`), never by name. One worker per worktree, since one app runs per sandbox; worktrees run in parallel with each other.
 
-A spec never assumes what an earlier one left in the sandbox. The details panel's layout (`prefs.panelLayout`) is shared by every bot and a new panel opens on its chooser alone, so a spec opens a view with `showView` (its tab when the pane has one, else the chooser) or `openDetails` (the panel, then a view), never by clicking a tab it expects to be there.
+A spec never assumes what an earlier one left in the sandbox. The details panel's layout (`prefs.panelLayout`) is shared by every bot and a new panel opens on its chooser alone, so a spec opens a view with `showView` (its tab when the pane has one, else the chooser) or `openDetails` (the panel, then a view), never by clicking a tab it expects to be there. A sandbox in no account (no Clerk test account, as in CI) would open on the welcome, so `attach()` goes on without one as its "Continue without an account" does; a signed-in sandbox clears that again. A login profile a spec made is removed with `dropLoginProfile`, which first leaves an open sign-in and then waits until the host lets go of it, so a failed run leaves nothing for the next one.
+
+### In CI
+
+`.github/workflows/desktop-e2e.yml` runs the whole suite (`npm run e2e`) on a macOS runner, the way a worktree does: it builds the host the commit has (`tools/native-host.mjs dev`, cached), starts a headless `npm run dev -- --sandbox --cdp` (the checkout is a main checkout, so `--sandbox`; no Clerk key and no `--cloud`, so the sandbox is in no account and the specs that need the dev cloud or a real agent skip themselves), and uploads the Playwright report, the traces and the host log when it fails. It runs:
+
+- on pull requests that change `apps/desktop/`, the stand-in agents (`host/tests/fixtures/`) or the workflow: the specs live there, and a UI change that breaks one shows on its own PR instead of on a later run. The repository is public, so the macOS minutes cost nothing; the price is about 15 minutes of wall time (alongside the other checks) and one of the account's macOS runners.
+- nightly on `dev` (19:00 UTC) and by hand (`gh workflow run desktop-e2e.yml`): host changes reach every client, so the nightly run catches what a host-only PR broke. GitHub runs schedules and manual runs from the default branch, so both start once the workflow has reached `main`; the scheduled run checks out `dev`.
+
+The runner's screen (about 1024 × 768) is smaller than the app's default window: `window-minimum.spec.ts` leaves the window at the size the screen allows, so the specs after it run in a 1024 × 674 window, which is how the model panel running past a short window's edge showed up.
 
 ### Stand-in agents
 

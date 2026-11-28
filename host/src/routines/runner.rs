@@ -163,10 +163,11 @@ impl Routines {
             return Ok(None);
         }
         // A pause names the runs it cancels while it saves the flag (`Hub::update_bot`); one that came due, or was
-        // asked for, after that snapshot is in no cancel set, so it is caught here, before anything is spent.
+        // asked for, after that snapshot is in no cancel set, so it is caught here, before anything is spent. It is
+        // often cancelled already (by that snapshot, or by the actor's `refuse_paused`): the caller releases the
+        // bot's place when this answers none, and a boxed run never held it, so this does not release it here.
         if hub.paused(bot) {
             self.cancel_ids_for_pause(&hub.store, &[id.to_owned()])?;
-            self.release(bot);
             return Ok(None);
         }
         let prepared = self.change(&hub.store, |s| {

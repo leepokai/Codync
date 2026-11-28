@@ -559,22 +559,17 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
 
 /// The model settings a change leaves a bot on: the ones it sends, else, on a model change, the bot's saved ones
 /// (`hub::patch` keeps them). Nil when it touches neither the model nor its settings, so a change of a name or an
-/// avatar checks no list. The settings are checked against the model the change puts the bot on. A custom command's
-/// list is its own to answer (`checks::change`): its saved settings aren't checked against a list that doesn't
+/// avatar checks no list. The settings are checked against the model the change puts the bot on. A custom-command
+/// bot's list is its own to answer (`checks::change`): its saved settings aren't checked against a list that doesn't
 /// exist, and its model is taken as it comes.
 fn options_after(fields: &Map<String, Value>, target: &BotConfig) -> Option<Map<String, Value>> {
     if let Some(sent) = fields.get("modelOptions") {
         return sent.as_object().cloned();
     }
-    let custom = command_after(fields, target.command.as_deref()).is_some_and(|c| !c.trim().is_empty());
+    // A setup change never carries a command (it isn't one of its fields), so only the bot's own says it runs one.
+    let custom = target.command.as_deref().is_some_and(|command| !command.trim().is_empty());
     (fields.contains_key("model") && !custom && !target.model_options.is_empty())
         .then(|| target.model_options.iter().map(|(id, value)| (id.clone(), Value::String(value.clone()))).collect())
-}
-
-/// The custom command a change leaves a bot on (`stored`: the one it runs now): the one `fields` sets, or else its
-/// own. A change that gives a bot a command makes it a custom-command bot for the checks that follow.
-fn command_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> Option<&'a str> {
-    fields.get("command").map_or(stored, |command| command.as_str())
 }
 
 /// `routines` for `bot` (empty for a new one), checked the way `save_routine` checks them, with a line for each on the

@@ -360,6 +360,21 @@ fn begin(
 ) {
     // Copied before the lock, which every bot's box shares: a copy again is harmless.
     let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
+    // A thread that starts here takes its pause pair, read under the transition. Read it before the box's lock:
+    // `update_bot` holds that transition and then takes the box (`work::paused`), so taking the box here and then
+    // the transition through `spawn_bot` would deadlock the two. A caller that already holds the transition passes
+    // its pair in.
+    let startup = match startup {
+        Some(startup) => Some(startup),
+        None if first && thread.is_thread() => {
+            let pair = {
+                let _transition = hub.pause.transition();
+                crate::agent::bot::startup_pair(hub, thread)
+            };
+            Some(pair)
+        }
+        None => None,
+    };
     let posted = {
         let _g = hub.work.boxes.locked();
         if tasks::of_thread(&tasks::load(&hub.store, bot), &thread.id).is_none_or(|on| on.id != task.id) {

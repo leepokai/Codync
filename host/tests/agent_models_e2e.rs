@@ -30,6 +30,8 @@ fn write_devin_shim(bin: &Path) {
 }
 
 /// A host whose PATH starts with the stand-in Devin under `shim_root`, the fixture's variables cleared, `extra` set.
+/// Its model checks run for real against the stand-in, so it checks only Devin, in a home of its own: the computer's
+/// other agents and the user's logins stay out.
 async fn devin_host(shim_root: &Path, extra: &[(&str, &OsStr)]) -> Host {
     let bin = shim_root.join("bin");
     write_devin_shim(&bin);
@@ -38,6 +40,8 @@ async fn devin_host(shim_root: &Path, extra: &[(&str, &OsStr)]) -> Host {
     let empty = OsStr::new("");
     let mut env = vec![
         ("PATH", path.as_os_str()),
+        ("HOME", shim_root.as_os_str()),
+        ("CODYNC_AGENT_CHECKS", OsStr::new("devin")),
         ("CODYNC_AGENT_ACCOUNT", empty),
         ("E2E_MODEL_TIER", empty),
         ("XDG_DATA_HOME", empty),

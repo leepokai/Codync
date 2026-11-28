@@ -37,10 +37,13 @@ async function startHost() {
   // 0.0.0.0 so step 7 can prove a non-loopback bearer token is refused.
   host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
     CODYNC_HOME: home,
+    // oh-my-pi keeps its probe sessions here, removed with `tmp`, not in the user's ~/.omp.
+    PI_CODING_AGENT_DIR: join(tmp, "pi-agent"),
     CODYNC_CLOUD_URL: CLOUD,
     CODYNC_DEVICE_CERT_KEY: local.certPub,
     CODYNC_AGENT_CHECKS: "off",
-  });
+    CODYNC_EXIT_WITH_STDIN: "1",
+  }, "pipe");
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }
 
@@ -276,6 +279,11 @@ async function main() {
 }
 
 const cleanup = () => local.cleanup();
+
+// A run stopped by Ctrl-C or SIGTERM still stops wrangler and the host and deletes its data.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => void cleanup().finally(() => process.exit(1)));
+}
 
 try {
   if (spawnSync(HOST_BIN, ["--version"]).error) {

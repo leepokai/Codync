@@ -45,7 +45,7 @@ impl Actor {
     /// background.
     pub(super) fn file_codex_session(&mut self) {
         let Some(thread) = self.unfiled.due(self.turn_session.as_deref()) else { return };
-        if backends::agent_checks_off() {
+        if !backends::agent_checks_on("codex") {
             return;
         }
         let home = self.conn.as_ref().and_then(|conn| conn.codex_home.clone());

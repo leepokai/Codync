@@ -44,6 +44,9 @@ impl InFlight {
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    if !codync_agent::backends::agent_checks_on(backend) {
+        bail!("agent checks for {backend} are off on this host");
+    }
     let login_profile = login_profile.filter(|s| !s.is_empty());
     let running = crate::agent::login_profiles::hold(store, backend, login_profile)?;
     let Started { acp, mut inbox, .. } = start_with(store, backend, login_profile, &[]).await?;

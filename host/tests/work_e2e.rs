@@ -2093,7 +2093,7 @@ async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_
     let again = result(&host, &bot, "Look at the tests", "Thread and").await;
     assert_eq!(again["result"], "Thread and the docs: same session");
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(relayed(&host, &bot).await, Vec::<String>::new());
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0]);
 
     // Only a bot starts one, with something to say.
     let empty = "a thread starts with a message of at most 32000 bytes";

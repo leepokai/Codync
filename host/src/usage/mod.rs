@@ -289,11 +289,8 @@ async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<
 /// Each reading lands as it comes in: a slow agent doesn't hold back the others. A reader that can read a login
 /// profile reads each one listed under its agent, beside the default login.
 async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
-    if codync_agent::backends::agent_checks_off() {
-        return;
-    }
     let mut readings: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
-    for reader in readers {
+    for reader in readers.into_iter().filter(|reader| codync_agent::backends::agent_checks_on(reader.id)) {
         readings.push(Box::pin(async move {
             let reading = match (reader.read)(hub).await {
                 Outcome::Read(windows) => Reading::All(windows),

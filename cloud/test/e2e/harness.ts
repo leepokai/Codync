@@ -139,8 +139,9 @@ export class LocalCloud {
     this.certPub = this.cert.publicKey.export({ format: "jwk" }).x!;
   }
 
-  run(cmd: string, args: string[], env: Record<string, string> = {}): ChildProcess {
-    const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  /** `stdin: "pipe"` for a host: with `CODYNC_EXIT_WITH_STDIN` it stops when the pipe closes, so a killed run takes it along. */
+  run(cmd: string, args: string[], env: Record<string, string> = {}, stdin: "ignore" | "pipe" = "ignore"): ChildProcess {
+    const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: [stdin, "pipe", "pipe"] });
     const tag = cmd.split("/").pop();
     child.stdout?.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[${tag}] ${d}`));
     child.stderr?.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[${tag}] ${d}`));

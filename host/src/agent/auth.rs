@@ -215,7 +215,7 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
 }
 
 async fn probe(store: &Store, backend: &str) -> Result<Status> {
-    if backends::agent_checks_off() {
+    if !backends::agent_checks_on(backend) {
         return Ok(Status::default());
     }
     let Started { acp, mut inbox, init, cmd } = start(store, backend).await?;

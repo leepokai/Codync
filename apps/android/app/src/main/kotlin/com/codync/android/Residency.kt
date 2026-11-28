@@ -229,9 +229,13 @@ private fun boundedEntry(
 /**
  * Fields a stub keeps from the card. The large body is replaced. `toolKind` and `title` name it.
  * `status` and `options` say whether a queued row can still be sent. They do not make an approval
- * answerable: Allow and Deny wait until the full row is read.
+ * answerable: Allow and Deny wait until the full row is read. `final` and `bookkeeping` say what kind of row
+ * it is: [Entry.isChat] shows a reply only when it is final, and [Entry.isWorkingStep] counts a tool only when it
+ * is not the bot's bookkeeping.
  */
-private val STUB_KEPT_KEYS = setOf("status", "options", "selected", "clientNonce", "removed", "toolKind", "title")
+private val STUB_KEPT_KEYS = setOf(
+    "status", "options", "selected", "clientNonce", "removed", "toolKind", "title", "final", "bookkeeping",
+)
 
 /** The fields that offer an answer. They stay off a stub whose route was not proven. */
 private val ANSWER_KEYS = setOf("options", "selected")
@@ -518,11 +522,92 @@ internal fun Entry.withApprovalReadFailure(): Entry =
 
 private const val APPROVAL_READ_FAILED = "approvalReadFailed"
 
-/** Text to show for one decoded payload: the message, or a tool row's output. */
+/**
+ * Text to show for one decoded payload: the message, a tool row's output, or the patches it made. A patch-only row
+ * would otherwise open an empty sheet.
+ */
 internal fun Entry.storedDisplayText(): String {
     if (text.isNotBlank()) return text
     fun field(key: String) = (data[key] as? JsonPrimitive)?.contentOrNull
-    return field("output")?.takeIf { it.isNotBlank() } ?: field("title").orEmpty()
+    val output = field("output")?.takeIf { it.isNotBlank() }
+    val patches = (data["diffs"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull(::patchText)
+    val body = listOfNotNull(output, patches.joinToString("\n\n").takeIf { it.isNotEmpty() }).joinToString("\n\n")
+    return body.ifEmpty { field("title").orEmpty() }
+}
+
+/** One stored file change, its path over its patch. Null for a diff that carries no lines this sheet can show. */
+private fun patchText(diff: JsonObject): String? {
+    val patch = (diff["patch"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    val path = (diff["path"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return patch
+    return "$path\n$patch"
+}
+
+/** What the walk over a payload slice expects next. */
+private const val JSON_NAME = 0
+private const val JSON_COLON = 1
+private const val JSON_VALUE = 2
+private const val JSON_SEPARATOR = 3
+
+/**
+ * [payload], the front of a stored row that a bounded read cut off, closed so that it parses: the fields it holds whole
+ * are kept, a string the cut falls inside keeps the part that arrived, and the objects and arrays still open are shut.
+ * A cut inside a name, a number or a literal drops what was being read, so what is left is always whole fields. This is
+ * what lets a sheet read a bounded slice of a row that is longer than [PER_MESSAGE_CHARS] instead of the whole row.
+ */
+internal fun closedPayloadSlice(payload: String): String {
+    val open = StringBuilder()
+    var expect = JSON_VALUE
+    var inString = false
+    var name = false
+    var bare = false
+    var escaped = false
+    // The longest front of [payload] that ends between two values, and the containers open where it ends.
+    var safe = 0
+    var safeOpen = ""
+    fun boundary(at: Int) {
+        if (at > safe) { safe = at; safeOpen = open.toString() }
+    }
+    for (index in payload.indices) {
+        val c = payload[index]
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                c == '\\' -> escaped = true
+                c == '"' -> {
+                    inString = false
+                    if (name) expect = JSON_COLON else { expect = JSON_SEPARATOR; boundary(index + 1) }
+                }
+            }
+            continue
+        }
+        when (c) {
+            '"' -> { inString = true; name = expect == JSON_NAME; bare = false }
+            '{' -> { open.append('{'); expect = JSON_NAME }
+            '[' -> { open.append('['); expect = JSON_VALUE }
+            ':' -> { expect = JSON_VALUE; bare = false }
+            ',' -> { boundary(index); expect = if (open.lastOrNull() == '{') JSON_NAME else JSON_VALUE; bare = false }
+            '}', ']' -> {
+                if (open.isEmpty()) return payload
+                open.deleteCharAt(open.lastIndex)
+                expect = JSON_SEPARATOR
+                bare = false
+                boundary(index + 1)
+            }
+            ' ', '\n', '\r', '\t' -> if (bare) { bare = false; expect = JSON_SEPARATOR; boundary(index) }
+            else -> if (expect == JSON_VALUE) bare = true
+        }
+    }
+    // A cut inside a value's string keeps the value as far as it arrived, escaping aside; anywhere else the row's last
+    // whole field is what still parses.
+    if (inString && !name) {
+        return payload.substring(0, if (escaped) payload.length - 1 else payload.length) + '"' + closers(open)
+    }
+    return payload.substring(0, safe) + closers(safeOpen)
+}
+
+/** The characters that shut the objects and arrays in [open], innermost first. */
+private fun closers(open: CharSequence): String = buildString {
+    for (index in open.indices.reversed()) append(if (open[index] == '{') '}' else ']')
 }
 
 /** Top-level JSON fields that [head] holds in full. A value cut off at the end is left out. */

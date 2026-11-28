@@ -900,6 +900,13 @@ class MirrorDatabaseTest {
         val bad = "{not-json"
         repeat(2) { assertTrue(runCatching { storedTextOfPayload(bad, "once-stored") }.isFailure) }
         assertEquals("two reads of a payload that will not decode send one event", 1, reported("stored_message_read_failed"))
+        val blank = WireJson.encodeToString(chat("bot", 3).copy(data = buildJsonObject { put("text", "   ") }))
+        repeat(2) { assertTrue(runCatching { storedTextOfPayload(blank, "once-blank") }.isFailure) }
+        assertEquals("a row with no text is its own failure, once", 2, reported("stored_message_read_failed"))
+    }
+
+    @Test fun aRowBiggerThanTheSheetReadsOpensWithItsBound() {
+        armAnalytics()
         val approval = Entry("once-open", 1, "bot", rev = 1, kind = "user", data = buildJsonObject {
             put("text", "D".repeat(3_000_000))
         })
@@ -914,8 +921,12 @@ class MirrorDatabaseTest {
         mirror = MirrorDatabase(context, directory, computer)
         val store = previewStore()
         store.database = mirror
-        repeat(2) { assertTrue(runCatching { store.storedMessageText(approval) }.isFailure) }
-        assertEquals("opening that row twice adds one event, not a second copy of the first", 2, reported("stored_message_read_failed"))
+        // Bigger than one cursor window: the sheet reads its bound, not the row, so the message opens.
+        val shown = store.storedMessageText(approval)
+        assertTrue(shown.startsWith("DDDD"))
+        assertTrue("the sheet reads at most one message's characters", shown.length <= PER_MESSAGE_CHARS)
+        assertEquals("the sheet says the rest of the row was not read", STORED_CUT_MARK, shown.takeLast(1))
+        assertEquals("a message that opened reports nothing", 0, reported("stored_message_read_failed"))
     }
 
     private fun armAnalytics() {

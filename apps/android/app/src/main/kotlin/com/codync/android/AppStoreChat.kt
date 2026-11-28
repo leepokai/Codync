@@ -59,12 +59,14 @@ private suspend fun AppStore.commitHistoryEnd(botId: String, epoch: Long, end: H
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
 /**
- * The full text of one stored row, for the sheet its stub opens. Call off the main thread. Does not change the
+ * The text of one stored row, for the sheet its stub opens. Call off the main thread. Does not change the
  * resident snapshot. Throws when the row is gone or can't be read, so the tap says so instead of doing nothing.
+ * Reads only the row's first [PER_MESSAGE_CHARS] characters (`storedSlice`), so opening a message larger than the
+ * sheet shows costs that bound, not the whole row.
  */
 internal fun AppStore.storedMessageText(entry: Entry): String {
     val payload = try {
-        database?.storedPayload(entry.botId, entry.id)
+        database?.storedSlice(entry.botId, entry.id)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -78,12 +80,14 @@ internal fun AppStore.storedMessageText(entry: Entry): String {
 }
 
 /**
- * The text a stored row's payload shows in that sheet. Throws when the payload cannot be read or has no text,
- * the same failures [AppStore.storedMessageText] reports.
+ * The text a stored row's payload shows in that sheet. A [payload] the read cut short is closed at its last whole field
+ * ([closedPayloadSlice]) and ends with [STORED_CUT_MARK], so a message longer than the sheet reads says so instead of
+ * passing its front off as the whole row. Throws when the payload cannot be read or has no text, the same failures
+ * [AppStore.storedMessageText] reports.
  */
 internal fun storedTextOfPayload(payload: String, rowId: String): String {
     val text = try {
-        WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
+        storedDisplayOf(payload)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -97,6 +101,19 @@ internal fun storedTextOfPayload(payload: String, rowId: String): String {
     ReadFailureReports.clear(rowId)
     return text
 }
+
+/** [payload]'s display text, or the part of it a bounded read kept. */
+private fun storedDisplayOf(payload: String): String = try {
+    WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText()
+} catch (error: CancellationException) {
+    throw error
+} catch (error: Exception) {
+    val kept = WireJson.decodeFromString<Entry>(closedPayloadSlice(payload)).threadNamed().storedDisplayText()
+    if (kept.isBlank()) kept else kept + STORED_CUT_MARK
+}
+
+/** Ends the sheet's text when the stored row is longer than the part of it the sheet reads. */
+internal const val STORED_CUT_MARK = "…"
 
 /** One event per row per failure. A later successful read of [rowId] allows a new one. */
 private fun reportStoredReadFailure(rowId: String, reason: StoredReadFailure) {

@@ -134,6 +134,17 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     }
 
     /**
+     * One row's payload as far as the sheet that opens it reads: at most [PER_MESSAGE_CHARS] characters of it, however
+     * long the stored row is, so a message bigger than one cursor window still opens. The caller closes a slice that is
+     * short of the row (`closedPayloadSlice`). Null when the row is gone.
+     */
+    @Synchronized internal fun storedSlice(botId: String, id: String): String? = readableDatabase.rawQuery(
+        "SELECT substr(payload, 1, $PER_MESSAGE_CHARS) FROM entries WHERE bot_id=? AND id=? LIMIT 1",
+        arrayOf(botId, id)).use {
+        if (it.moveToFirst()) it.getString(0) else null
+    }
+
+    /**
      * Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not
      * offered twice. A draft's key is its chat's id, or "chat/artifact/id" for one of its artifacts: the message is the chat's.
      */

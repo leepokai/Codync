@@ -1,5 +1,12 @@
 package com.codync.android
 
+import com.codync.android.core.Entry
+import com.codync.android.core.WireJson
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,5 +61,50 @@ class StoredMessageTest {
         assertTrue(ranges.all { it.last - it.first + 1 == STORED_CHUNK_CHARS })
         assertEquals(0, ranges.first().first)
         assertEquals(text.length - 1, ranges.last().last)
+    }
+
+    @Test fun `a payload the read cut off opens with the part that arrived and says it was cut`() {
+        val text = "M".repeat(PER_MESSAGE_CHARS * 2)
+        val stored = Entry("e-cut", 1, "a", rev = 1, kind = "agent", data = buildJsonObject {
+            put("text", text)
+            put("final", true)
+        })
+        val payload = WireJson.encodeToString(stored)
+        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut")
+        assertTrue(shown.startsWith("MMMM"))
+        assertEquals("the formatter marks a message longer than the sheet reads", STORED_CUT_MARK, shown.takeLast(1))
+        assertTrue("the slice's whole body is kept, not a field or two", shown.length > PER_MESSAGE_CHARS - 200)
+        // The row is unchanged: the same bound reads the same front.
+        assertEquals(shown, storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-cut"))
+    }
+
+    @Test fun `a cut tool payload keeps the patches it holds`() {
+        val patch = "+ " + "line\n+ ".repeat(PER_MESSAGE_CHARS)
+        val stored = Entry("e-tool", 2, "a", rev = 2, kind = "tool", data = buildJsonObject {
+            put("toolKind", "edit")
+            put("title", "Edit src/a.kt")
+            put("diffs", buildJsonArray { add(buildJsonObject { put("path", "src/a.kt"); put("patch", patch) }) })
+        })
+        val payload = WireJson.encodeToString(stored)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        val shown = storedTextOfPayload(payload.take(PER_MESSAGE_CHARS), "e-tool")
+        assertTrue(shown.startsWith("src/a.kt\n+ "))
+        assertEquals(STORED_CUT_MARK, shown.takeLast(1))
+    }
+
+    @Test fun `a closed slice is whole JSON again`() {
+        val stored = Entry("e-close", 3, "a", rev = 3, kind = "tool", data = buildJsonObject {
+            put("title", "Edit")
+            putJsonObject("thread") { put("id", "thread-1") }
+            put("diffs", buildJsonArray { add(buildJsonObject { put("path", "src/a.kt"); put("patch", "+ line") }) })
+        })
+        val payload = WireJson.encodeToString(stored)
+        // Cut inside a string, inside a name, and between two values: each closes into a row that decodes.
+        for (cut in listOf(payload.indexOf("+ line") + 2, payload.indexOf("thread-1") + 3, payload.lastIndexOf('}') - 1)) {
+            val closed = closedPayloadSlice(payload.substring(0, cut))
+            val decoded = WireJson.decodeFromString<Entry>(closed)
+            assertEquals(closed, "e-close", decoded.id)
+            assertEquals(closed, 3L, decoded.seq)
+        }
     }
 }

@@ -76,6 +76,56 @@ class HistoryPagingTest {
         assertEquals("tool output", tool.storedDisplayText())
     }
 
+    @Test fun `a patch-only tool row opens with the patches it made`() {
+        val tool = row(2, "tool").copy(data = buildJsonObject {
+            put("toolKind", "edit")
+            put("title", "Edit two files")
+            put("diffs", buildJsonArray {
+                add(buildJsonObject { put("path", "src/a.kt"); put("patch", "- old\n+ new") })
+                add(buildJsonObject { put("path", "src/b.kt"); put("patch", "+ added") })
+            })
+        })
+        val shown = tool.storedDisplayText()
+        assertTrue(shown.contains("src/a.kt"))
+        assertTrue(shown.contains("- old\n+ new"))
+        assertTrue(shown.contains("src/b.kt"))
+        assertTrue(shown.contains("+ added"))
+        // Nothing to show of a diff is still not a sheet of nothing: the row's name stands.
+        val unnamed = row(3, "tool").copy(data = buildJsonObject { put("title", "Edit") })
+        assertEquals("Edit", unnamed.storedDisplayText())
+    }
+
+    @Test fun `a stubbed final reply is still a chat row the thread keeps`() {
+        val filler = "R".repeat(PER_MESSAGE_CHARS)
+        val reply = row(3, "agent").copy(data = buildJsonObject { put("text", filler); put("final", true) })
+        val payload = WireJson.encodeToString(reply)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        assertTrue("\"final\" is after the body, so the tail is what keeps it", payload.takeLast(PAYLOAD_TAIL_CHARS).contains("\"final\""))
+        val kept = newestWindow(sequenceOf(payload), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertTrue(kept.isStoredStub)
+        assertEquals("true", kept.data["final"]?.jsonPrimitive?.content)
+        assertTrue("a thread lists its rows by isChat, so a stub reply has to stay one", kept.isChat)
+    }
+
+    @Test fun `a stubbed tool row is still one of the working steps`() {
+        val filler = "T".repeat(PER_MESSAGE_CHARS)
+        val tool = row(4, "tool").copy(turn = 1, data = buildJsonObject {
+            put("toolKind", "execute")
+            put("title", "npm test")
+            put("output", filler)
+            put("bookkeeping", false)
+        })
+        val payload = WireJson.encodeToString(tool)
+        assertTrue(payload.length > PER_MESSAGE_CHARS)
+        val kept = newestWindow(sequenceOf(payload), 10, PER_MESSAGE_CHARS.toLong() + 1_000).single()
+        assertTrue(kept.isStoredStub)
+        assertTrue("a tool is a step only when bookkeeping is explicitly false", kept.isWorkingStep)
+        assertEquals(listOf(kept.seq), workingSteps(listOf(kept)).map { it.seq })
+        // The bot's own bookkeeping stays out of the steps, stub or not.
+        val bookkeeping = kept.copy(data = JsonObject(kept.data + ("bookkeeping" to JsonPrimitive(true))))
+        assertFalse(bookkeeping.isWorkingStep)
+    }
+
     @Test fun `an oversized newest row stays a stub and an older row still loads`() {
         val filler = "F".repeat(PER_MESSAGE_CHARS + 1)
         val huge = WireJson.encodeToString(row(10, "user").copy(data = buildJsonObject { put("text", filler) }))

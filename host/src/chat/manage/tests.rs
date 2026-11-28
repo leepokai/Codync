@@ -329,7 +329,7 @@ fn a_config_change_keeps_names_and_private_models_off_the_analytics_event() {
     let mut fields = Map::new();
     fields.insert("model".into(), after.model.clone().into());
     fields.insert("fallbacks".into(), json!(after.fallbacks));
-    audit_change(&hub, &source, &before, &after, &fields);
+    audit_change(&hub, &source, &before, &after, &fields, 0);
 
     let notes = notices(&hub, "dev");
     let timeline = notes.iter().filter_map(|n| n.as_str()).collect::<Vec<_>>().join("\n");
@@ -356,5 +356,52 @@ fn a_config_change_keeps_names_and_private_models_off_the_analytics_event() {
     }
     let fields = event["properties"]["fields"].as_array().expect("fields");
     assert!(fields.iter().any(|f| f == "model") && fields.iter().any(|f| f == "fallbacks"), "{raw}");
+
+    // A routines-only change is a change too: the event names `routines` and nothing of the routines themselves.
+    audit_change(&hub, &source, &before, &before, &Map::new(), 2);
+    let sent = crate::analytics::queued_for_test(&hub);
+    let event = sent.iter().find(|e| e["event"] == "bot_config_changed").expect("the routines change is captured");
+    assert!(
+        event["properties"]["fields"].as_array().is_some_and(|fields| fields.iter().any(|f| f == "routines")),
+        "{event}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A routines-only change is a change like any other: the target's own timeline records who made it and what
+/// moved. Only the config fields used to reach the audit, so a manager that changed nothing but routines left the
+/// audit empty: no line naming it, and no `bot_config_changed` behind the generic notice.
+#[tokio::test]
+async fn a_manager_routine_change_reaches_the_targets_audit() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-routines-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let routine =
+        json!({"name": "Scan", "instruction": "Scan the repo", "triggers": [{"type": "interval", "seconds": 1800}]});
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "routines": [routine]})).await.unwrap();
+
+    assert_eq!(hub.routines.list("dev")["routines"].as_array().unwrap().len(), 1, "the routine was saved");
+    let timeline = notices(&hub, "dev").iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n");
+    assert!(
+        timeline.contains("Changed by lead (lead) via update_bot"),
+        "the target's timeline names the manager and the change: {timeline}"
+    );
+    assert!(timeline.contains("routines"), "the timeline says what moved: {timeline}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A bot run by a custom command has no stock catalog to list: the command answers its own model list, so
+/// `list_models` says so instead of showing the backend's models as if they were this bot's.
+#[tokio::test]
+async fn list_models_does_not_list_a_custom_commands_bot_as_the_stock_agent() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-custom-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let custom: BotConfig = serde_json::from_value(json!({"id": "custom", "name": "Custom", "backend": "claude",
+        "command": "my-agent --acp", "cwd": dir.to_string_lossy()}))
+    .unwrap();
+    hub.store.save_bot(&custom).unwrap();
+    let refused = call(&hub, "lead", "list_models", &json!({"botId": "custom"})).await.unwrap_err().to_string();
+    assert!(refused.contains("custom command"), "{refused}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

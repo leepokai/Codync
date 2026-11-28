@@ -181,6 +181,13 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             } else {
                 let bot = text(args, "botId")?.context("pass agent, or botId for a managed bot's agent")?;
                 let cfg = agent_bot(hub, &bot)?;
+                // A custom command answers its own model list (a change takes its model id as it comes): listing the
+                // stock backend here would show another agent's models as this bot's, so say whose list it is.
+                if cfg.command.as_deref().is_some_and(|command| !command.trim().is_empty()) {
+                    bail!(
+                        "this bot runs a custom command, whose model list is its own to answer: pass agent to list a stock agent's models, or use a model id the command accepts"
+                    );
+                }
                 (cfg.backend, cfg.login_profile, Some(cfg.model))
             };
             let query = text(args, "query")?.map(|q| q.to_ascii_lowercase());
@@ -371,16 +378,18 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         tokio::task::spawn_blocking(move || hub.update_bot(&patch)).await??;
     }
     let saved = save_routines(hub, &id, &routines);
-    if saved.iter().any(|r| r["error"].is_null()) {
+    let routines_saved = saved.iter().filter(|r| r["error"].is_null()).count();
+    if routines_saved > 0 {
         changed.push("routines".into());
     }
     if !changed.is_empty() {
         notice(hub, &source.id, &format!("Updated {}: {}", target.name, changed.join(", ")));
         // The audit trail: the target's own timeline gets who changed what and how it was approved. The
         // analytics event records actor, target and which fields, never the values. A validateOnly check
-        // or a refusal never reaches this point.
+        // or a refusal never reaches this point. Routines count here too: a manager that changed nothing but
+        // routines made a change, so it is audited like one.
         if let Ok(after) = agent_bot(hub, &id) {
-            audit_change(hub, source, &target, &after, &audited_fields);
+            audit_change(hub, source, &target, &after, &audited_fields, routines_saved);
         }
     }
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))
@@ -390,7 +399,17 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
 /// was approved automatically or by the user. The old and new values stay on the target bot's timeline. The
 /// `bot_config_changed` event carries the field names and the pause booleans, never a bot name or a model
 /// string: a custom command accepts any model id, and a catalog that did not load does too.
-fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotConfig, fields: &Map<String, Value>) {
+///
+/// `routines_saved` is how many of the manager's routines replaced or made one: a count, never the routine's
+/// name or instruction.
+fn audit_change(
+    hub: &Hub,
+    source: &BotConfig,
+    before: &BotConfig,
+    after: &BotConfig,
+    fields: &Map<String, Value>,
+    routines_saved: usize,
+) {
     let mode = if hub.ceilings.approves_by_itself(source) { "auto" } else { "approved" };
     let on = |m: &Option<String>| m.as_deref().unwrap_or("the agent's default").to_owned();
     let chain = |list: &[Fallback]| {
@@ -432,6 +451,12 @@ fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotCo
             }
             _ => moves.push((*key).to_owned()),
         }
+    }
+    // A routines-only change has no config field in `fields`, and is a change all the same: the notice the target's
+    // timeline gets waits below on `moves`, so without this line it had neither the audit entry nor the event.
+    if routines_saved > 0 {
+        names.push("routines");
+        moves.push(format!("routines: {routines_saved} saved"));
     }
     props.insert("fields".into(), names.into());
     if moves.is_empty() {

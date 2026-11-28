@@ -1,0 +1,101 @@
+# Swipe to reply on the phones: a short sideways drag springs back with nothing changed; past the threshold, letting go
+# quotes the message in the composer. Checked on the bot's voice note, its files and the user's own message. The phone
+# must already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes),
+# so run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there, in a folder holding a
+# voice note and a PDF:
+#   mkdir files && ffmpeg -f lavfi -i "sine=duration=9" files/note.m4a && printf '%%PDF-1.4\n' > files/report.pdf \
+#     && touch files/binary.dat files/.hidden files/empty
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags conversation \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FILE_AGENT="$PWD/host/tests/fixtures/file_agent.py" -e FILES="$PWD/files" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - conversation
+onFlowComplete:
+  - runScript:
+      file: swipe-to-reply.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: swipe-to-reply.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A cold launch can take minutes to connect and bring a bot made a moment ago to the list; swipe only once its chat
+# is shown and online.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 240000
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "Here is the plan."
+    timeout: 240000
+- extendedWaitUntil:
+    notVisible: "Offline"
+    timeout: 240000
+- takeScreenshot: swipe-to-reply-rest
+# A mostly vertical drag stays the list's scroll.
+- swipe:
+    from: "Read me the spoken plan"
+    direction: DOWN
+    duration: 600
+- assertNotVisible: "Cancel reply"
+# Released before the threshold: it springs back and nothing is quoted. The voice note is the last message; start below
+# its seek bar, on the caption, as a slow press opens the message's menu instead.
+- swipe:
+    start: 20%, 84%
+    end: 33%, 84%
+    duration: 300
+- assertNotVisible: "Cancel reply"
+# The bot's voice note, swiped right past the threshold from its caption, below the seek bar.
+- swipe:
+    from:
+      text: "Here is the plan."
+      point: "20%, 80%"
+    direction: RIGHT
+    duration: 600
+- assertVisible: "Cancel reply"
+- assertVisible: "“Here is the plan.”"
+- takeScreenshot: swipe-to-reply-voice-note
+- tapOn: "Cancel reply"
+- assertNotVisible: "Cancel reply"
+# The bot's file, the same way.
+- swipe:
+    from: "report.pdf"
+    direction: RIGHT
+    duration: 600
+- assertVisible: "Cancel reply"
+- tapOn: "Cancel reply"
+# The user's own message, swiped left.
+- swipe:
+    from: "Read me the spoken plan"
+    direction: LEFT
+    duration: 600
+- assertVisible: "Cancel reply"
+- takeScreenshot: swipe-to-reply-own-message
+- tapOn: "Cancel reply"
+# The edge swipe still goes back to the bot list on the iPhone (Android's back is the system's gesture).
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          start: 1%, 50%
+          end: 80%, 50%
+          duration: 400
+      - extendedWaitUntil:
+          notVisible: "Read me the spoken plan"
+          timeout: 10000
+      - assertVisible: ${output.bot.name}
+      - takeScreenshot: swipe-to-reply-back

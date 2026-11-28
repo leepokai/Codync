@@ -183,6 +183,8 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
+    /** A message dragged sideways far enough to start a reply (iOS `replySwiped`). */
+    data object ReplySwiped : AnalyticsEvent("reply_swiped")
 }
 
 /** One of a property's catalog values, as sent. */

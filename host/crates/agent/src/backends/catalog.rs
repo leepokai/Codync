@@ -362,7 +362,7 @@ pub const HARNESSES: &[Harness] = &[
         id: "antigravity",
         name: "Google Antigravity",
         bins: &["agy"],
-        local: None,
+        local: Some("{bin} acp --app-data-dir antigravity-acp --stdio"),
         registry: Some("antigravity-acp"),
         setup: "Install the Antigravity CLI (curl -fsSL https://antigravity.google/cli/install.sh | bash), then sign in from Codync with Log in with Google.",
         install: Some(Install::Scripts {

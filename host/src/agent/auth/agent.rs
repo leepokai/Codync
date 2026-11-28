@@ -48,13 +48,14 @@ pub(crate) async fn start_with(
     for (i, candidate) in candidates.into_iter().enumerate() {
         // A first `npx` run downloads the package: give the last candidate time.
         let budget = Duration::from_secs(if i + 1 < count { 20 } else { 180 });
-        let cmd = match candidate.resolve(|_| {}).await {
+        let mut cmd = match candidate.resolve(|_| {}).await {
             Ok(cmd) => cmd,
             Err(e) => {
                 last = Some(e);
                 continue;
             }
         };
+        backends::prepare_launch_command(backend, &mut cmd, &env);
         let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
             Ok(v) => v,
             Err(e) => {

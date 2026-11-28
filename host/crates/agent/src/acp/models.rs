@@ -340,4 +340,51 @@ mod tests {
         assert_eq!(model_config(&session).unwrap()["id"], "engine");
         assert!(model_config(&json!({"configOptions": [{"id": "model", "type": "boolean"}]})).is_none());
     }
+
+    #[tokio::test]
+    async fn antigravity_claude_and_gemini_models_pass_through_catalog() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model_options_agent.py");
+        let command = crate::shell::python(&fixture);
+        let (acp, _inbox) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let session = json!({
+            "sessionId": "s-agy",
+            "models": {
+                "currentModelId": "gemini-4-hydrogen-high",
+                "availableModels": [
+                    {"modelId": "gemini-4-hydrogen-high", "name": "Gemini 4 Hydrogen (High)"},
+                    {"modelId": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Thinking)"},
+                    {"modelId": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)"},
+                    {"modelId": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"}
+                ]
+            },
+            "configOptions": [
+                {
+                    "id": "model",
+                    "name": "Model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "gemini-4-hydrogen",
+                    "options": [
+                        {"value": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen"},
+                        {"value": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Thinking)"},
+                        {"value": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)"},
+                        {"value": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"}
+                    ]
+                },
+                {
+                    "id": "thought_level",
+                    "name": "Thinking Level",
+                    "category": "thought_level",
+                    "type": "select",
+                    "currentValue": "high",
+                    "options": [{"value": "medium"}, {"value": "high"}]
+                }
+            ]
+        });
+        let catalog = catalog(&acp, &session, "antigravity").await.unwrap();
+        acp.kill().await;
+        let ids: Vec<&str> = catalog["models"].as_array().unwrap().iter().filter_map(|m| m["id"].as_str()).collect();
+        assert_eq!(ids, ["gemini-4-hydrogen", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"]);
+        assert_eq!(catalog["currentModelId"], "gemini-4-hydrogen");
+    }
 }

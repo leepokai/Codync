@@ -133,3 +133,71 @@ fn an_outdated_cli_is_told_to_update() {
     assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
     assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));
 }
+
+#[test]
+fn antigravity_prefers_installed_agy_and_falls_back_to_registry() {
+    let dir = TempDir::new();
+    let _path = TestSearchPath::set(dir.0.clone());
+    registry::set_cache(Some(json!({"agents": [{"id": "antigravity-acp", "name": "Google Antigravity"}]})));
+
+    let without_agy = launch_candidates("antigravity");
+    write_cli(&dir.0, "agy");
+    let with_agy = launch_candidates("antigravity");
+    registry::set_cache(None);
+
+    let fallback = without_agy.expect("registry build should be returned when agy is absent");
+    assert!(
+        matches!(&fallback[..], [registry::Candidate::Build(agent)] if agent["id"] == "antigravity-acp"),
+        "missing agy must fall back to registry antigravity-acp"
+    );
+
+    let preferred = with_agy.expect("local agy and registry fallback");
+    assert!(
+        matches!(
+            &preferred[..],
+            [registry::Candidate::Ready(cmd), registry::Candidate::Build(agent)]
+                if cmd.program.contains("agy")
+                    && cmd.program.contains("acp --app-data-dir antigravity-acp")
+                    && cmd.args == "--stdio"
+                    && cmd.acp().ends_with("acp --app-data-dir antigravity-acp --stdio")
+                    && agent["id"] == "antigravity-acp"
+        ),
+        "installed agy must be preferred ahead of registry antigravity-acp"
+    );
+}
+
+#[test]
+fn antigravity_launch_command_isolates_profiles_without_touching_registry() {
+    let slot = "/tmp/codync slot/antigravity/p1";
+    let env = vec![("GEMINI_HOME".to_owned(), slot.to_owned())];
+    let mut local = registry::Cmd {
+        program: "/usr/local/bin/agy acp --app-data-dir antigravity-acp".to_owned(),
+        args: "--stdio".to_owned(),
+    };
+    prepare_launch_command("antigravity", &mut local, &env);
+    let expected_flag = format!("--gemini-dir {}", shell::quote(slot));
+    assert!(local.program.ends_with(&expected_flag), "{}", local.program);
+    assert_eq!(local.acp(), format!("/usr/local/bin/agy acp --app-data-dir antigravity-acp {expected_flag} --stdio"));
+
+    let once = local.acp();
+    prepare_launch_command("antigravity", &mut local, &env);
+    assert_eq!(local.acp(), once, "preparing twice must not duplicate --gemini-dir");
+
+    let mut default_login = registry::Cmd {
+        program: "/usr/local/bin/agy acp --app-data-dir antigravity-acp".to_owned(),
+        args: "--stdio".to_owned(),
+    };
+    prepare_launch_command("antigravity", &mut default_login, &[("GEMINI_HOME".to_owned(), String::new())]);
+    assert!(!default_login.acp().contains("--gemini-dir"), "default login keeps ~/.gemini/antigravity-acp");
+
+    let mut registry_build = registry::Cmd {
+        program: "/home/u/.codync/agents/antigravity-acp/1.5.2/agy_acp_server.par".to_owned(),
+        args: String::new(),
+    };
+    prepare_launch_command("antigravity", &mut registry_build, &env);
+    assert!(!registry_build.acp().contains("--gemini-dir"), "registry binary reads GEMINI_HOME env directly");
+
+    let mut other = registry::Cmd { program: "gemini".to_owned(), args: "--acp".to_owned() };
+    prepare_launch_command("gemini", &mut other, &env);
+    assert_eq!(other.acp(), "gemini --acp");
+}

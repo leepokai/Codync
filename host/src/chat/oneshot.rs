@@ -31,7 +31,9 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let candidates = crate::agent::bot::launch_commands(cfg)?;
     let workspace = cwd.as_str();
     let mut conn = crate::agent::bot::start_first(candidates, &env, |candidate, mut env, _| async move {
-        let mut command = [candidate.resolve(|_| {}).await?.acp()];
+        let mut cmd = candidate.resolve(|_| {}).await?;
+        codync_agent::backends::prepare_launch_command(&cfg.backend, &mut cmd, &env);
+        let mut command = [cmd.acp()];
         crate::agent::own_memory::turn_off(&cfg.backend, workspace, &mut env, &mut command).await;
         crate::agent::bot::start_agent(
             &cfg.backend,

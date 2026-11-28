@@ -29,6 +29,12 @@ fn observed_events_carry_no_content() {
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
     let (_, p) = props("installConnector", &custom).expect("tracked");
     assert_eq!(p["connector"], "custom");
+    let private_bot = json!({"kind": "bot", "backend": "custom", "model": "my-agent --token secret",
+        "fallbacks": [{"agent": "custom", "model": "private-fallback"}]});
+    let (event, p) = props("createBot", &private_bot).expect("a new bot is tracked");
+    assert_eq!(event, Event::BotCreated);
+    assert_eq!(p, json!({"kind": "bot", "agent": "custom", "client": "local"}));
+    assert!(!p.to_string().contains("secret") && !p.to_string().contains("private-fallback"));
     assert!(props("history", &json!({})).is_none());
     assert!(props("memory", &json!({"botId": "b1"})).is_none(), "reading memory is not an edit");
     assert!(props("memoryFile", &json!({"name": "notes.md"})).is_none());

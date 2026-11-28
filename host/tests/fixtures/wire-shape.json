@@ -265,6 +265,7 @@
     "hello.joinAccount": "bool",
     "hello.latestVersion": "null",
     "hello.minApp": "string",
+    "hello.modelManagerApplyGuard": "bool",
     "hello.name": "string",
     "hello.os": "string",
     "hello.projects": "bool",

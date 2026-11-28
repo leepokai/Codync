@@ -61,6 +61,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** Echoed by a host that has pause. Absent when that host ignored the field. */
+  paused?: boolean
   /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
   plain: boolean
   notify?: boolean | null
@@ -170,6 +172,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    ...(typeof raw.paused === 'boolean' ? { paused: raw.paused } : {}),
     plain: raw.plain === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
@@ -746,6 +749,8 @@ export interface Hello {
   threadLogins?: boolean
   /** A thread may start with files (`startThread` with `attachments`; `upload` without `botId` for one without a bot). */
   threadFiles?: boolean
+  /** `updateBot` checks `expectedLoginProfile` against the saved bot under its write lock. */
+  modelManagerApplyGuard?: boolean
   /** A routine may name the folder its runs work in (`saveRoutine` with `folder`). Absent from older hosts. */
   routineFolder?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */

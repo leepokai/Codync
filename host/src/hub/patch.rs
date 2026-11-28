@@ -9,7 +9,7 @@ use serde_json::Value;
 pub(crate) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     let mut merged = serde_json::to_value(stored)?;
     for (k, v) in patch.as_object().into_iter().flatten() {
-        if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
+        if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead" | "expectedLoginProfile") {
             merged[k] = v.clone();
         }
     }

@@ -1,0 +1,134 @@
+.model-manager {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Below the shared title row, indented like every other sheet's content (`card-form-content`). */
+.model-manager-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 20px 20px;
+}
+
+.model-manager-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.model-manager-tools {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* At the sheet's narrowest width the action buttons wrap onto another line; the count and
+   Apply stay together at the right, on the first line when they fit and on the new one when
+   they don't, so Apply is never clipped by the sheet's overflow. */
+.model-manager-tools-end {
+  margin-left: auto;
+}
+
+.model-manager-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+}
+
+.model-manager-row {
+  align-items: center;
+  gap: 10px;
+}
+
+.model-manager-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  /* The theme's real border: visible in both schemes, so the empty box reads as a checkbox. */
+  border: 1px solid var(--border);
+  background: var(--control-background, transparent);
+  color: var(--accent-contrast, var(--on-accent, #fff));
+}
+
+.model-manager-row:hover .model-manager-check {
+  border-color: var(--stroke-strong);
+}
+
+.model-manager-check.on {
+  border-color: var(--accent, #0a84ff);
+  background: var(--accent, #0a84ff);
+}
+
+.model-manager-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40%;
+}
+
+.model-manager-status.bad {
+  color: var(--attention, var(--danger, #c0392b));
+}
+
+/* The bot's current agent -> model path: a tab-like indent under the name, in the muted small
+   text (it is pure data, so it reads through the row's own truncation). */
+.model-manager-model-path {
+  padding-left: 12px;
+}
+
+/* The row under the search field: the search's own switch on the left, the provider filter on the
+   right, so the two narrow the same list in one band. */
+.model-manager-filters {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The search's switch says only its own name, so it takes the width of its label rather than
+   pushing the provider filter across. */
+.model-manager-model-search {
+  width: auto;
+  flex: 0 0 auto;
+  gap: 8px;
+  color: var(--secondary);
+}
+
+/* The provider filter beside it: the roster filter's own idiom (ComputerFilterHeader),
+   marked while a provider is chosen. */
+.model-manager-provider {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-s);
+  color: var(--secondary);
+}
+.model-manager-provider.on {
+  color: var(--text);
+  background: rgba(var(--text-rgb), 0.08);
+}
+
+/* The sheet's draggable edges and corners: hairline strips that sit on the card's rim (inside
+   the padding, so they never cover a row or the list's scrollbar). Pointer-captured like the
+   app's panel ResizeHandle; the arrows step them too. */
+.model-manager-resize {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.mm-left { left: 0; top: 0; bottom: 0; width: 9px; cursor: ew-resize; }
+.mm-right { right: 0; top: 0; bottom: 0; width: 9px; cursor: ew-resize; }
+.mm-bottom { left: 0; right: 0; bottom: 0; height: 9px; cursor: ns-resize; }
+.mm-corner-br { right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; }
+.mm-corner-bl { left: 0; bottom: 0; width: 18px; height: 18px; cursor: nesw-resize; }
+
+/* While a drag is live the whole page takes the drag's cursor (the col-resizing precedent). */
+.mm-resizing-ew, .mm-resizing-ew *, .mm-resizing-ew *::after { cursor: ew-resize !important; user-select: none; }
+.mm-resizing-ns, .mm-resizing-ns *, .mm-resizing-ns *::after { cursor: ns-resize !important; user-select: none; }
+.mm-resizing-nwse, .mm-resizing-nwse *, .mm-resizing-nwse *::after { cursor: nwse-resize !important; user-select: none; }
+.mm-resizing-nesw, .mm-resizing-nesw *, .mm-resizing-nesw *::after { cursor: nesw-resize !important; user-select: none; }

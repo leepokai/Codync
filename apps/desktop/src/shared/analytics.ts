@@ -106,6 +106,8 @@ export type AnalyticsEvent =
   | { event: 'list_layout_changed'; list: 'bots' | 'threads'; option: 'folder' | 'bot' | 'computer' | 'status' | 'activity'; on: boolean }
   | { event: 'desktop_notifications_set'; on: boolean }
   | { event: 'desktop_notification_opened'; kind: AlertAnalyticsKind }
+  | { event: 'model_manager_applied'; requested: number; applied: number; failed: number }
+  | { event: 'bot_manager_paused'; requested: number; applied: number; failed: number; paused: boolean }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

@@ -12,7 +12,7 @@ use crate::routines::{Folder, Trigger};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -89,6 +89,15 @@ impl std::fmt::Display for Refused {
 }
 
 impl std::error::Error for Refused {}
+
+/// What a change leaves a bot's model on when it touches the model or its settings, after the
+/// patch's own rule has run (a new model without explicit settings starts on its defaults).
+struct ModelCheck {
+    backend: String,
+    login_profile: Option<String>,
+    model: Option<String>,
+    options: BTreeMap<String, String>,
+}
 
 pub fn tools() -> Value {
     let mut setup = json!({
@@ -203,8 +212,15 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         );
     }
     crate::hub::validate(&cfg)?;
-    check_model_options(hub, &cfg.backend, cfg.login_profile.as_deref(), cfg.model.as_deref(), &fields, deadline)
-        .await?;
+    check_model_options(
+        hub,
+        &cfg.backend,
+        cfg.login_profile.as_deref(),
+        cfg.model.as_deref(),
+        &cfg.model_options,
+        deadline,
+    )
+    .await?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines), deadline).await?;
@@ -233,8 +249,17 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     if fields.is_empty() && routines.is_empty() {
         bail!("nothing to change");
     }
-    let model = model_after(&fields, target.model.as_deref());
-    check_model_options(hub, &target.backend, target.login_profile.as_deref(), model, &fields, deadline).await?;
+    if let Some(check) = model_check(&target, &fields)? {
+        check_model_options(
+            hub,
+            &check.backend,
+            check.login_profile.as_deref(),
+            check.model.as_deref(),
+            &check.options,
+            deadline,
+        )
+        .await?;
+    }
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     let mut changed: Vec<String> =
@@ -344,26 +369,35 @@ fn setup_patch(args: &Value, fallbacks: &[crate::store::Fallback]) -> Result<Map
     Ok(patch)
 }
 
-/// The model a change leaves a bot on (`stored`: its model now; none: the agent's default): the one `fields` sets,
-/// or else its own.
-fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> Option<&'a str> {
-    fields.get("model").map_or(stored, Value::as_str)
+/// The effective model and settings a change leaves a bot on, when it touches either: the patch's
+/// own rule decides whether a new model keeps the settings sent with it or starts on its defaults.
+fn model_check(target: &BotConfig, fields: &Map<String, Value>) -> Result<Option<ModelCheck>> {
+    if !fields.contains_key("model") && !fields.contains_key("modelOptions") {
+        return Ok(None);
+    }
+    let cfg = crate::hub::patched(target, &Value::Object(fields.clone()))?;
+    Ok(Some(ModelCheck {
+        backend: cfg.backend,
+        login_profile: cfg.login_profile,
+        model: cfg.model,
+        options: cfg.model_options,
+    }))
 }
 
-/// The `modelOptions` a change sets (`setup_patch` checked they're strings) must be ones `model` (none: the agent's
-/// default) of `backend` offers, as a client's model settings do: a value the agent refuses would keep the bot from
-/// starting. Loading the agent's model list counts against the call's `deadline`, which its approval card shares.
+/// The `modelOptions` a change leaves (`setup_patch` checked the sent values are strings) must be ones `model` (none:
+/// the agent's default) of `backend` offers, as a client's model settings do: a value the agent refuses would keep the
+/// bot from starting. Loading the agent's model list counts against the call's `deadline`, which its approval card shares.
 async fn check_model_options(
     hub: &Arc<Hub>,
     backend: &str,
     login_profile: Option<&str>,
     model: Option<&str>,
-    fields: &Map<String, Value>,
+    options: &BTreeMap<String, String>,
     deadline: Instant,
 ) -> Result<()> {
-    let Some(options) = fields.get("modelOptions").and_then(Value::as_object).filter(|o| !o.is_empty()) else {
+    if options.is_empty() {
         return Ok(());
-    };
+    }
     // A fresh list: a value the agent added or dropped since an old one was read is judged by what it offers now.
     let fresh =
         crate::agent::auth::shared_models(hub, backend, login_profile, crate::agent::auth::ModelListWanted::Fresh);
@@ -377,7 +411,7 @@ async fn check_model_options(
         }
         Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
     };
-    let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
+    let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str()));
     codync_agent::acp::models::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
         .map_err(|e| Refused::error("options", e.to_string()))
 }

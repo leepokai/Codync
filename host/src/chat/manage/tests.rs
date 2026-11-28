@@ -140,8 +140,8 @@ fn a_card_lists_the_routines_before_the_instructions() {
 }
 
 /// #395: a manager sets a bot's model settings (effort…) the way it sets its model; a card shows them. Checking a
-/// value against the agent's model list (`acp::models::check_options`) starts the agent, so the calls here set them empty
-/// and the model they'd be checked against is picked by `model_after`.
+/// value against the agent's model list (`acp::models::check_options`) starts the agent, so the calls here set them empty;
+/// `a_model_change_checks_the_options_the_patch_will_leave` covers which effective settings that check receives.
 #[tokio::test]
 async fn a_manager_sets_a_bots_reasoning_effort() {
     let dir = std::env::temp_dir().join(format!("codync-manage-{}", uuid::Uuid::new_v4()));
@@ -157,10 +157,25 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
         setup_patch(&json!({"model": "opus", "modelOptions": {"effort": "high", "fast": "true"}}), &[]).unwrap();
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     assert_eq!(describe(&store, &fields, &[]), "Model: opus\nModel settings: effort high, fast true");
-    assert_eq!(model_after(&fields, Some("sonnet")), Some("opus"), "checked against the new model");
-    let options_only = setup_patch(&json!({"modelOptions": {"effort": "high"}}), &[]).unwrap();
-    assert_eq!(model_after(&options_only, Some("sonnet")), Some("sonnet"), "against the bot's own");
-    let default = setup_patch(&json!({"model": "", "modelOptions": {"effort": "high"}}), &[]).unwrap();
-    assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_model_change_checks_the_options_the_patch_will_leave() {
+    let target: BotConfig = serde_json::from_value(json!({"id": "dev", "name": "dev", "backend": "claude",
+        "model": "opus", "modelOptions": {"effort": "low"}}))
+    .unwrap();
+    let check = |args: Value| {
+        let fields = setup_patch(&args, &[]).unwrap();
+        model_check(&target, &fields).unwrap()
+    };
+    assert!(check(json!({"name": "Renamed"})).is_none(), "no model change: no catalog read");
+    let model_only = check(json!({"model": "sonnet"})).expect("a model change");
+    assert_eq!(model_only.model.as_deref(), Some("sonnet"));
+    assert!(model_only.options.is_empty(), "the new model starts on its own defaults");
+    let explicit = check(json!({"model": "sonnet", "modelOptions": {"effort": "high"}})).expect("a model change");
+    assert_eq!(explicit.options.get("effort").map(String::as_str), Some("high"));
+    let options_only = check(json!({"modelOptions": {"effort": "high"}})).expect("a settings change");
+    assert_eq!(options_only.model.as_deref(), Some("opus"), "checked against the bot's own model");
+    assert_eq!(options_only.options.get("effort").map(String::as_str), Some("high"));
 }

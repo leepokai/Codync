@@ -95,9 +95,9 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("kind".into(), (if group { "group" } else { "bot" }).into());
             if group {
                 p.insert("members".into(), b["members"].as_array().map_or(0, Vec::len).into());
-            } else {
-                p.insert("agent".into(), b["backend"].clone());
-                p.insert("model".into(), b["model"].clone());
+            } else if let Some(agent) = b["backend"].as_str().filter(|agent| !agent.is_empty()) {
+                // The agent's catalog id is public; a model id can be a custom command's private text.
+                p.insert("agent".into(), agent.into());
             }
             Event::BotCreated
         }

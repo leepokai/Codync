@@ -34,6 +34,7 @@ import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
+import { ModelManagerView } from './bots/ModelManagerView'
 import type { ExtensionFocus } from './marketplace/market-models'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { ScreenViewer } from './screen/ScreenViewer'
@@ -236,6 +237,7 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  const [modelManager, setModelManager] = useState(false)
   // Find in the open conversation (⌘F).
   const find = useFindBar(app.selection ? refKey(app.selection) : null)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
@@ -296,6 +298,8 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
+  // The Bot Manager ignores the sidebar's computer filter: it always sees every computer's bots.
+  const fullRoster = useComputerRoster(app, new Set(app.computers.map((c) => c.id)))
   // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
   const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
   const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
@@ -589,6 +593,7 @@ function ChatSplitView() {
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
+                  <IconButton title="Bot Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
                   <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {list.add}
@@ -698,6 +703,7 @@ function ChatSplitView() {
         empty={search.empty}
         onClose={() => setSearching(false)}
       />
+      {modelManager ? <ModelManagerView items={[...fullRoster.items, ...app.hiddenBots]} onClose={() => setModelManager(false)} /> : null}
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

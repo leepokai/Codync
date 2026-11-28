@@ -51,6 +51,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot workspaces](features/bot-workspaces.md)
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
 - [Login profiles](features/login-profiles.md) (more than one login per agent, by account or API key; each bot picks its own)
+- [Bot Manager](features/bot-manager.md) (one agent, model and settings applied to many bots at once, plus bulk pause and resume, desktop)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Work: tasks and threads](features/work.md) (a bot puts long work in its event box as tasks, its threads take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))

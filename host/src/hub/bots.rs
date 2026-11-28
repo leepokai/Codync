@@ -4,7 +4,7 @@ use super::{Hub, patch, projects, sections, validate};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::store::BotConfig;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -58,10 +58,21 @@ impl Hub {
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
+        // The outer option distinguishes an old client (no expectation) from a new client expecting
+        // the default login (`null`); the inner option names that default or one saved profile.
+        let expected_login: Option<Option<String>> = patch
+            .get("expectedLoginProfile")
+            .map(|expected| serde_json::from_value::<Option<String>>(expected.clone()))
+            .transpose()
+            .context("expectedLoginProfile must be a string or null")?
+            .map(|expected| expected.filter(|id| !id.is_empty()));
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();
             let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            if expected_login.is_some_and(|expected| row.config.login_profile != expected) {
+                bail!("the bot's login profile changed while the model manager was applying; try the row again");
+            }
             let mut cfg = patch::patched(&row.config, patch)?;
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
@@ -133,5 +144,100 @@ impl Hub {
         });
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::remote::identity::Identity;
+    use crate::store::Store;
+
+    /// The Bot Manager read the default login's catalog, then another device chose a named login
+    /// before its update arrived. Compare-and-save under `emit_lock` must preserve that newer choice.
+    #[test]
+    fn a_stale_expected_login_profile_cannot_restore_the_old_login_or_model() {
+        let dir = std::env::temp_dir().join(format!("codync-bots-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "bots-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "dev", "name": "dev", "backend": "claude", "cwd": dir,
+            "loginProfile": "before", "model": "old-model", "modelOptions": {"effort": "low"}
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+        let mut cfg = cfg;
+        cfg.login_profile = Some("after".into());
+        hub.store.save_bot(&cfg).unwrap();
+
+        let error = hub
+            .update_bot(&json!({
+                "id": "dev", "expectedLoginProfile": "before", "loginProfile": "before",
+                "model": "stale-model", "modelOptions": {"effort": "high"}
+            }))
+            .expect_err("a changed login refuses the stale apply");
+        assert!(error.to_string().contains("login profile changed"), "{error}");
+        let saved = hub.store.bot("dev").unwrap().unwrap().config;
+        assert_eq!(
+            serde_json::to_value(saved).unwrap(),
+            serde_json::to_value(cfg).unwrap(),
+            "neither the newer login nor its model is overwritten"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_apply_refuses_to_restore_a_login_changed_since_its_catalog_check() {
+        let dir = std::env::temp_dir().join(format!("codync-bot-update-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "bot-update-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let cfg: BotConfig = serde_json::from_value(json!({
+            "id": "dev", "name": "dev", "backend": "claude", "cwd": dir, "model": "original"
+        }))
+        .unwrap();
+        hub.store.save_bot(&cfg).unwrap();
+        let _commands = hub.attach_bot_for_test("dev");
+        let profile =
+            crate::agent::login_profiles::add(&hub.store, "claude", crate::agent::login_profiles::Kind::ApiKey)
+                .await
+                .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+
+        // Another window moves the bot from the default login while Apply is still loading catalogs.
+        hub.update_bot(&json!({
+            "id": "dev", "expectedLoginProfile": null, "loginProfile": profile, "model": "other-window"
+        }))
+        .unwrap();
+        let current = hub.store.bot("dev").unwrap().unwrap();
+
+        let refused = hub
+            .update_bot(&json!({
+                "id": "dev", "expectedLoginProfile": null, "loginProfile": null,
+                "model": "stale-apply", "modelOptions": {"effort": "low"}
+            }))
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("login profile changed"), "{refused}");
+        let after = hub.store.bot("dev").unwrap().unwrap();
+        assert_eq!(after.rev, current.rev, "a refused stale patch writes nothing");
+        assert_eq!(after.config.login_profile.as_deref(), Some(profile.as_str()));
+        assert_eq!(after.config.model.as_deref(), Some("other-window"));
+        assert!(after.config.model_options.is_empty());
+
+        // Retrying against the fresh login and catalog works without restoring the old one.
+        hub.update_bot(&json!({
+            "id": "dev", "expectedLoginProfile": profile, "loginProfile": profile,
+            "model": "fresh-apply", "modelOptions": {"effort": "high"}
+        }))
+        .unwrap();
+        let saved = hub.store.bot("dev").unwrap().unwrap().config;
+        assert_eq!(saved.login_profile.as_deref(), Some(profile.as_str()));
+        assert_eq!(saved.model.as_deref(), Some("fresh-apply"));
+        assert_eq!(saved.model_options.get("effort").map(String::as_str), Some("high"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

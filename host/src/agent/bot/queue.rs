@@ -213,6 +213,8 @@ impl Actor {
                 _ => {}
             }
         }
+        // The reply held back for those messages goes too: a later turn that says nothing must not alert with it.
+        self.unannounced = None;
         self.cancel_turn().await;
         // A thread whose task waited for a sign-in has no turn to cancel: it no longer needs the user, and its box is
         // looked over again (its task stopped or gave way, so the thread ends).

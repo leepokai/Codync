@@ -267,13 +267,14 @@ Your iPhone gets a notification when a bot:
 | Kind | When | Action |
 | --- | --- | --- |
 | **Response needed** | It's waiting for you, such as on an approval card. | **Review request** |
-| **Task complete** | It finished. Sent once, after its last queued message is answered. The text is an excerpt of its final reply. | **Open conversation** |
+| **Task complete** | It finished and left you a reply, file, artifact card or reaction. Sent once, after its last queued message is answered, with an excerpt of the latest reply it left you. | **Open conversation** |
 | **Task failed** | It hit an error or stopped short. | **Open conversation** |
 
 You don't get one when:
 
 - the Codync app on your iPhone is open and connected to the computer,
 - the bot's **Notifications** switch is off, or the bot is hidden,
+- the turn sent you nothing: no reply, file, artifact card or reaction (a choice or approval it asked already sent **Response needed**),
 - you stopped the turn yourself.
 
 The Codync icon on the Home Screen can show how many unread messages your chats have, the same count the chats' badges add up to. It's off by default: turn on **Unread count on app icon** in Settings → Notifications (and keep **Badges** on for Codync in iOS Settings). Turned off, the icon shows no number. A chat you read on your computer lowers it the next time a notification arrives or you open the app. On Android, the launcher badge follows your notifications, and a chat's notification goes away once you've read the chat.

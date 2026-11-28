@@ -143,6 +143,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         last_text: None,
         sent: Vec::new(),
         reacted: Reacted::No,
+        unannounced: None,
         joined: false,
         unheard: Vec::new(),
         files: files::FileShares::default(),
@@ -362,6 +363,9 @@ struct Actor {
     sent: Vec<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
+    /// What a finished turn left the user while their next message was already queued: the turn that ends the queue
+    /// announces it when it has nothing of its own to say.
+    unannounced: Option<String>,
     /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
